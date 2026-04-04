@@ -38,6 +38,30 @@ from .tool_cache import ToolCache, get_tool_cache
 from .token_estimation import TokenEstimator, get_token_estimator, estimate_tokens
 from .context_compression import ContextCompressor, PriorityBasedCompressor, get_context_compressor
 from .tool_orchestrator import ToolOrchestrator, ExecutionMode, get_tool_orchestrator
+from .binary_feedback import (
+    BinaryFeedbackTester,
+    BinaryFeedbackAnalysis,
+    FeedbackResult,
+    StabilityLevel,
+    get_binary_feedback_tester,
+    is_binary_feedback_enabled,
+)
+from .conversation_fork import (
+    ConversationForker,
+    ConversationSummarizer,
+    ForkResult,
+    ConversationSummary,
+    get_conversation_forker,
+    fork_current_conversation,
+)
+from .update_checker import (
+    UpdateChecker,
+    UpdateCheckResult,
+    UpdateInfo,
+    UpdateStatus,
+    check_for_updates,
+    should_check_updates,
+)
 
 __all__ = [
     # MCP
@@ -84,4 +108,25 @@ __all__ = [
     "ToolOrchestrator",
     "ExecutionMode",
     "get_tool_orchestrator",
+    # Binary feedback
+    "BinaryFeedbackTester",
+    "BinaryFeedbackAnalysis",
+    "FeedbackResult",
+    "StabilityLevel",
+    "get_binary_feedback_tester",
+    "is_binary_feedback_enabled",
+    # Conversation fork
+    "ConversationForker",
+    "ConversationSummarizer",
+    "ForkResult",
+    "ConversationSummary",
+    "get_conversation_forker",
+    "fork_current_conversation",
+    # Update checker
+    "UpdateChecker",
+    "UpdateCheckResult",
+    "UpdateInfo",
+    "UpdateStatus",
+    "check_for_updates",
+    "should_check_updates",
 ]
