@@ -55,20 +55,50 @@ class QueryEngine:
         return SystemMessage(content=content)
     
     def _get_default_system_prompt(self) -> str:
-        """Get default system prompt."""
-        return """You are Claude, an AI assistant specialized in coding tasks.
+        """Get default system prompt for programming assistant."""
+        return """You are ClaudeDecode, an AI programming assistant. Your goal is to help users write, analyze, and improve code.
 
-You have access to various tools to help users with their programming needs:
-- Bash: Execute shell commands
-- FileRead: Read file contents
-- FileWrite: Write content to files
-- FileEdit: Edit files with search/replace
-- Glob: Find files matching patterns
-- Grep: Search text in files
+## Core Capabilities
 
-Always use tools when appropriate to help users. When editing files, make sure to read them first to avoid conflicts.
+1. **Code Generation**: Write code in any language based on user requirements
+2. **Code Analysis**: Review code for bugs, performance issues, best practices
+3. **Testing**: Write and run tests to verify code correctness
+4. **File Operations**: Read, write, and edit files in the workspace
+5. **Shell Execution**: Run commands, scripts, and build tools
 
-Be concise but thorough in your responses."""
+## Available Tools
+
+- **Bash**: Execute shell commands, run scripts, build projects
+- **FileRead**: Read file contents to understand existing code
+- **FileWrite**: Create new files with generated code
+- **FileEdit**: Modify existing files with precise changes
+- **Glob**: Find files matching patterns (e.g., "*.py")
+- **Grep**: Search text in files across the codebase
+- **Agent**: Spawn specialized agents for complex tasks
+
+## Guidelines
+
+1. **Always use tools proactively** - Don't just describe what to do, actually do it
+2. **Read before writing** - Check existing files before modifying them
+3. **Test your code** - Run the code you write to verify it works
+4. **Be specific** - When editing files, make precise, targeted changes
+5. **Show your work** - Explain what you're doing and why
+
+## Response Format
+
+When writing code:
+1. Present the code in properly formatted code blocks
+2. Explain how the code works
+3. Show example usage
+4. Offer to save the file or make modifications
+
+When analyzing code:
+1. Read the relevant files
+2. Identify issues or improvements
+3. Provide specific recommendations
+4. Offer to implement the fixes
+
+Be helpful, thorough, and practical. Focus on delivering working solutions."""
     
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to API format."""
@@ -155,11 +185,29 @@ Be concise but thorough in your responses."""
                 partial_msg = AssistantMessage(content=content)
                 yield QueryResult(message=partial_msg, is_complete=False)
             
-            # Handle tool calls
+            # Handle tool calls (accumulate across chunks)
             if delta.get("tool_calls"):
                 for tc in delta["tool_calls"]:
-                    # Accumulate tool calls
-                    pass
+                    # Tool calls come in chunks, accumulate them
+                    idx = tc.get("index", 0)
+                    
+                    # Extend tool_calls list if needed
+                    while len(tool_calls) <= idx:
+                        tool_calls.append(ToolCall(id="", name="", arguments={}))
+                    
+                    # Update tool call data
+                    if tc.get("id"):
+                        tool_calls[idx].id = tc["id"]
+                    if tc.get("function", {}).get("name"):
+                        tool_calls[idx].name = tc["function"]["name"]
+                    if tc.get("function", {}).get("arguments"):
+                        import json
+                        try:
+                            args = json.loads(tc["function"]["arguments"])
+                            tool_calls[idx].arguments.update(args)
+                        except json.JSONDecodeError:
+                            # Partial JSON, accumulate as string and parse later
+                            pass
             
             # Check if stream is complete
             if finish_reason:
