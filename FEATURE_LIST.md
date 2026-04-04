@@ -1,4 +1,4 @@
-# ClaudeDecode 功能实现清单
+# PilotCode 功能实现清单
 
 ## 代码量统计
 
@@ -41,8 +41,8 @@
 
 ### 1.3 配置系统
 - [x] 基础配置管理 (config.py)
-- [ ] 项目配置 (.claudecode.json)
-- [ ] 全局配置 (~/.config/claudecode/)
+- [ ] 项目配置 (.pilotcode.json)
+- [ ] 全局配置 (~/.config/pilotcode/)
 - [ ] 配置迁移 (migrations/)
 - [ ] 远程管理设置 (remoteManagedSettings)
 
@@ -313,7 +313,7 @@
 
 ## 功能对比 (vs 原始 Claude Code)
 
-| 功能类别 | claudecode_py | 原始 Claude Code |
+| 功能类别 | pilotcode_py | 原始 Claude Code |
 |---------|---------------|------------------|
 | 工具数量 | 51 | ~184 |
 | 命令数量 | 65 | ~207 |

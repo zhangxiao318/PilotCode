@@ -4,7 +4,7 @@
 
 | 项目 | 语言 | 代码量 | 性质 | 目标 |
 |------|------|--------|------|------|
-| **claudecode_py** | Python | ~9,500 行 | 个人实现 | Claude Code 替代品 |
+| **pilotcode_py** | Python | ~9,500 行 | 个人实现 | Claude Code 替代品 |
 | **claw-code-main** | Python/Rust | ~20,000 行 | 开源社区 | 追踪/记录原始功能 |
 | **原始 Claude Code** | TypeScript | ~512,000 行 | 闭源商业产品 | 参考标准 |
 
@@ -16,13 +16,13 @@
 
 | 项目 | 已实现工具 | 目标工具 | 完成度 |
 |------|-----------|---------|--------|
-| claudecode_py | **51** | ~80 | 64% |
+| pilotcode_py | **51** | ~80 | 64% |
 | claw-code-main (Rust) | **20** | ~80 | 25% |
 | claw-code-main (Python) | **0** | ~184 (镜像) | 0% (仅元数据) |
 
 ### 1.2 工具详细对比
 
-| 工具类别 | claudecode_py | claw-code-main (Rust) | 原始 Claude Code |
+| 工具类别 | pilotcode_py | claw-code-main (Rust) | 原始 Claude Code |
 |---------|---------------|----------------------|------------------|
 | **文件操作** | FileRead, FileWrite, FileEdit | ✅ 完整 | ✅ 完整 |
 | **Shell** | Bash, PowerShell | ✅ Bash, PowerShell | ✅ Bash, PowerShell |
@@ -56,13 +56,13 @@
 
 | 项目 | 已实现命令 | 目标命令 | 完成度 |
 |------|-----------|---------|--------|
-| claudecode_py | **64** | ~80 | 80% |
+| pilotcode_py | **64** | ~80 | 80% |
 | claw-code-main (Rust) | **15** | ~207 | 7% |
 | claw-code-main (Python) | **0** | ~207 (镜像) | 0% (仅元数据) |
 
 ### 2.2 命令详细对比
 
-| 命令类别 | claudecode_py | claw-code-main (Rust) | 原始 Claude Code |
+| 命令类别 | pilotcode_py | claw-code-main (Rust) | 原始 Claude Code |
 |---------|---------------|----------------------|------------------|
 | **基础** | help, clear, quit | ✅ help, clear, status | ✅ 完整 |
 | **配置** | config, theme, model | ✅ config, model | ✅ config, theme, color |
@@ -81,7 +81,7 @@
 
 ### 3.1 核心架构组件
 
-| 组件 | claudecode_py | claw-code-main (Rust) | 原始 Claude Code |
+| 组件 | pilotcode_py | claw-code-main (Rust) | 原始 Claude Code |
 |------|---------------|----------------------|------------------|
 | **状态管理** | ✅ Store 模式 (Zustand-like) | ✅ Session 管理 | ✅ 复杂状态管理 |
 | **工具注册表** | ✅ ToolRegistry | ✅ ToolRegistry | ✅ 工具注册表 |
@@ -95,7 +95,7 @@
 
 ### 3.2 TUI/界面
 
-| 功能 | claudecode_py | claw-code-main (Rust) | 原始 Claude Code |
+| 功能 | pilotcode_py | claw-code-main (Rust) | 原始 Claude Code |
 |------|---------------|----------------------|------------------|
 | **REPL** | ✅ Rich-based | ✅ 自定义 REPL | ✅ Ink-based |
 | **权限对话框** | ❌ 缺失 | ⚠️ 基础提示 | ✅ 交互式对话框 |
@@ -105,7 +105,7 @@
 
 ### 3.3 服务/集成
 
-| 服务 | claudecode_py | claw-code-main (Rust) | 原始 Claude Code |
+| 服务 | pilotcode_py | claw-code-main (Rust) | 原始 Claude Code |
 |------|---------------|----------------------|------------------|
 | **LLM 客户端** | ✅ OpenAI-compatible | ✅ Anthropic API | ✅ Anthropic SDK |
 | **多模型支持** | ✅ 配置化 | ✅ 模型别名 | ✅ 多模型 |
@@ -118,14 +118,14 @@
 
 ## 4. 关键差异总结
 
-### 4.1 claudecode_py 的优势
+### 4.1 pilotcode_py 的优势
 
 1. **命令覆盖度高**: 64/80 命令 (80%)，远超 claw-code-main Rust 的 15/207 (7%)
 2. **Git 集成完整**: 实现了 stash, tag, remote, merge, rebase 等高级 Git 命令
 3. **开发工具**: 实现了 lint, format, test, coverage, symbols, references 等开发命令
 4. **代码量精简**: 9,500 行实现核心功能，代码效率较高
 
-### 4.2 claudecode_py 的劣势
+### 4.2 pilotcode_py 的劣势
 
 1. **Agent 系统薄弱**: Agent/Team 工具仅基础实现，缺少完整的子代理编排
 2. **Hook 系统缺失**: 没有 PreToolUse/PostToolUse 等 Hook 机制
@@ -176,7 +176,7 @@
 
 ## 6. 代码统计对比
 
-| 指标 | claudecode_py | claw-code-main (Rust) | 原始 Claude Code |
+| 指标 | pilotcode_py | claw-code-main (Rust) | 原始 Claude Code |
 |------|---------------|----------------------|------------------|
 | **总代码行数** | ~9,500 | ~20,000 | ~512,000 |
 | **工具实现** | 51 | 20 | ~184 |
@@ -189,15 +189,15 @@
 
 ## 7. 结论
 
-### claudecode_py 定位
+### pilotcode_py 定位
 - **当前**: 可用的 Claude Code 替代品，适合个人日常使用
 - **优势**: 命令覆盖度高、Git 集成好、代码精简
 - **劣势**: 企业级功能缺失、TUI 简陋、Agent 系统薄弱
 
 ### 与 claw-code-main 的关系
 - claw-code-main 更注重**功能追踪和记录** (PARITY.md)
-- claudecode_py 更注重**实际可用性** (64 命令 vs 15 命令)
-- 两者可以互补：claudecode_py 提供功能，claw-code-main 提供参考
+- pilotcode_py 更注重**实际可用性** (64 命令 vs 15 命令)
+- 两者可以互补：pilotcode_py 提供功能，claw-code-main 提供参考
 
 ### 未来方向
 1. 补齐 P0 核心差距 (AskUser、权限对话框、Hook 系统)

@@ -1,5 +1,5 @@
 [project]
-name = "claudecode"
+name = "pilotcode"
 version = "0.1.0"
 description = "Python rewrite of Claude Code - AI-powered coding assistant"
 readme = "README.md"
@@ -38,15 +38,15 @@ dev = [
 ]
 
 [project.scripts]
-claudecode = "claudecode.cli:main"
-cc = "claudecode.cli:main"
+pilotcode = "pilotcode.cli:main"
+pc = "pilotcode.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/claudecode"]
+packages = ["src/pilotcode"]
 
 [tool.black]
 line-length = 100

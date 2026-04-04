@@ -1,9 +1,9 @@
 #!/bin/bash
-# Installation script for ClaudeDecode
+# Installation script for PilotCode
 
 set -e
 
-echo "Installing ClaudeDecode..."
+echo "Installing PilotCode..."
 
 # Check Python version
 python_version=$(python3 --version 2>&1 | awk '{print $2}')
@@ -27,15 +27,15 @@ echo "Installing dependencies..."
 pip install -r requirements.txt
 
 # Install package in editable mode
-echo "Installing ClaudeDecode..."
+echo "Installing PilotCode..."
 pip install -e .
 
 echo ""
 echo "Installation complete!"
 echo ""
-echo "To use ClaudeDecode:"
+echo "To use PilotCode:"
 echo "  source .venv/bin/activate"
-echo "  claudecode"
+echo "  pilotcode"
 echo ""
 echo "Or directly:"
 echo "  ./run.sh"

@@ -11,8 +11,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 
-from claudecode.query_engine import QueryEngine, QueryEngineConfig
-from claudecode.types.message import AssistantMessage
+from pilotcode.query_engine import QueryEngine, QueryEngineConfig
+from pilotcode.types.message import AssistantMessage
 
 console = Console()
 

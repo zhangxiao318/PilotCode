@@ -1,7 +1,7 @@
-# ClaudeDecode Python - Development Status
+# PilotCode Python - Development Status
 
 ## Overview
-ClaudeDecode Python is a rewrite of the TypeScript ClaudeDecode project in Python. It provides an AI-powered programming assistant with tool support, agent orchestration, and a rich terminal UI.
+PilotCode Python is a rewrite of the TypeScript PilotCode project in Python. It provides an AI-powered programming assistant with tool support, agent orchestration, and a rich terminal UI.
 
 **Current Version:** v0.2.0  
 **Total Lines of Code:** ~13,000  
@@ -161,8 +161,8 @@ export LC_ALL=en_US.UTF-8
 ## Project Structure
 
 ```
-claudecode_py/
-├── src/claudecode/
+pilotcode_py/
+├── src/pilotcode/
 │   ├── agents/          # Agent system
 │   ├── commands/        # Slash commands
 │   ├── components/      # TUI components
@@ -218,19 +218,19 @@ claudecode_py/
 ## Development Notes
 
 ### Adding a New Tool
-1. Create tool file in `src/claudecode/tools/`
+1. Create tool file in `src/pilotcode/tools/`
 2. Define input/output schemas with Pydantic
 3. Implement call function
 4. Register with `@register_tool` or `register_tool()`
 
 ### Adding a New Command
-1. Create command file in `src/claudecode/commands/`
+1. Create command file in `src/pilotcode/commands/`
 2. Implement command function with `@command` decorator
 3. Add to command registry
 
 ### Adding a New Hook
-1. Define hook type in `src/claudecode/hooks/base.py`
-2. Implement hook in `src/claudecode/hooks/builtin_hooks.py`
+1. Define hook type in `src/pilotcode/hooks/base.py`
+2. Implement hook in `src/pilotcode/hooks/builtin_hooks.py`
 3. Register in `HookManager`
 
 ---

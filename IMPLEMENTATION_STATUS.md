@@ -1,4 +1,4 @@
-# ClaudeDecode Python - Implementation Status
+# PilotCode Python - Implementation Status
 
 ## Summary
 
@@ -330,7 +330,7 @@ Documentation: README, ARCHITECTURE, FEATURE_LIST, IMPLEMENTATION_STATUS
 python3 full_demo.py
 
 # Run CLI
-python3 -m claudecode
+python3 -m pilotcode
 
 # Or
 ./run.sh

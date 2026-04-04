@@ -1,9 +1,9 @@
 #!/bin/bash
 # 快速配置Qwen API
 
-mkdir -p ~/.config/claudecode
+mkdir -p ~/.config/pilotcode
 
-cat > ~/.config/claudecode/settings.json << 'CONFIG'
+cat > ~/.config/pilotcode/settings.json << 'CONFIG'
 {
   "theme": "default",
   "verbose": false,
@@ -17,7 +17,7 @@ cat > ~/.config/claudecode/settings.json << 'CONFIG'
 CONFIG
 
 echo "✓ Qwen API配置完成！"
-echo "配置路径: ~/.config/claudecode/settings.json"
+echo "配置路径: ~/.config/pilotcode/settings.json"
 echo ""
 echo "API地址: http://172.19.201.40:3509/v1"
 echo "模型: qwen"

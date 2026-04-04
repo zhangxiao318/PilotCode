@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Full demo script for ClaudeDecode with all features."""
+"""Full demo script for PilotCode with all features."""
 
 import asyncio
 import sys
@@ -13,10 +13,10 @@ from rich.table import Table
 from rich.tree import Tree
 from rich import box
 
-from claudecode.tools.registry import get_all_tools
-from claudecode.commands.base import get_all_commands
-from claudecode.tools.task_tools import TaskCreateInput, TaskCreateTool, TaskListInput, TaskListTool
-from claudecode.tools.base import ToolUseContext
+from pilotcode.tools.registry import get_all_tools
+from pilotcode.commands.base import get_all_commands
+from pilotcode.tools.task_tools import TaskCreateInput, TaskCreateTool, TaskListInput, TaskListTool
+from pilotcode.tools.base import ToolUseContext
 
 console = Console()
 
@@ -24,7 +24,7 @@ console = Console()
 def show_header():
     """Show header."""
     console.print(Panel.fit("""
-[bold cyan]ClaudeDecode[/bold cyan] [dim]v0.2.0[/dim]
+[bold cyan]PilotCode[/bold cyan] [dim]v0.2.0[/dim]
 [cyan]Python rewrite of Claude Code[/cyan]
 [dim]Complete Feature Demo[/dim]
 """, border_style="cyan"))
@@ -48,12 +48,12 @@ def show_tools():
         try:
             sample = None
             if tool.name == "Bash":
-                from claudecode.tools.bash_tool import BashInput
+                from pilotcode.tools.bash_tool import BashInput
                 sample = BashInput(command="echo test")
             elif tool.name in ["FileRead", "FileWrite", "FileEdit"]:
                 sample = tool.input_schema(file_path="test.txt")
             elif "Task" in tool.name:
-                from claudecode.tools.task_tools import TaskCreateInput
+                from pilotcode.tools.task_tools import TaskCreateInput
                 sample = TaskCreateInput(description="test")
             
             is_ro = tool.is_read_only(sample) if sample else False
@@ -137,7 +137,7 @@ async def demo_tasks():
 
 def show_architecture():
     """Show architecture tree."""
-    tree = Tree("[bold]ClaudeDecode Architecture[/bold]")
+    tree = Tree("[bold]PilotCode Architecture[/bold]")
     
     types = tree.add("📦 Types")
     types.add("Message types")
@@ -206,7 +206,7 @@ async def main():
 • Add MCP full support
 • Add Git integration
 
-[dim]Run with: python3 -m claudecode[/dim]
+[dim]Run with: python3 -m pilotcode[/dim]
 """, border_style="green"))
 
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run script for ClaudeDecode
+# Run script for PilotCode
 
 # Set UTF-8 encoding for proper international character support
 export LANG=en_US.UTF-8
@@ -18,10 +18,10 @@ if [ -d ".venv" ]; then
     source .venv/bin/activate
 fi
 
-# Run ClaudeDecode
+# Run PilotCode
 # If no command specified, default to 'main'
 if [ $# -eq 0 ]; then
-    python3 -m claudecode main
+    python3 -m pilotcode main
 else
-    python3 -m claudecode "$@"
+    python3 -m pilotcode "$@"
 fi

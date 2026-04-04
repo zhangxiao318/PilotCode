@@ -1,4 +1,4 @@
-# ClaudeDecode 启动指南
+# PilotCode 启动指南
 
 ## 快速开始
 
@@ -18,25 +18,25 @@ chmod +x run.sh
 ### 方法 2: Python 模块启动
 
 ```bash
-# 确保在 claudecode_py 目录下
+# 确保在 pilotcode_py 目录下
 export PYTHONPATH=src:$PYTHONPATH
 
 # 启动主程序
-python3 -m claudecode main
+python3 -m pilotcode main
 
 # 查看帮助
-python3 -m claudecode --help
-python3 -m claudecode main --help
+python3 -m pilotcode --help
+python3 -m pilotcode main --help
 ```
 
 ### 方法 3: 直接运行 CLI
 
 ```bash
 # 使用 PYTHONPATH
-PYTHONPATH=src python3 src/claudecode/cli.py
+PYTHONPATH=src python3 src/pilotcode/cli.py
 
 # 或使用 python -c
-PYTHONPATH=src python3 -c "from claudecode.cli import cli_main; cli_main()"
+PYTHONPATH=src python3 -c "from pilotcode.cli import cli_main; cli_main()"
 ```
 
 ### 方法 4: 演示模式
@@ -55,13 +55,13 @@ PYTHONPATH=src python3 full_demo.py
 
 ### 配置文件位置
 
-- **项目配置**: `.claudecode.json`
-- **全局配置**: `~/.config/claudecode/settings.json`
-- **本地配置**: `.claudecode/settings.local.json`
+- **项目配置**: `.pilotcode.json`
+- **全局配置**: `~/.config/pilotcode/settings.json`
+- **本地配置**: `.pilotcode/settings.local.json`
 
 ### 示例配置
 
-创建 `.claudecode.json`:
+创建 `.pilotcode.json`:
 
 ```json
 {
@@ -81,7 +81,7 @@ PYTHONPATH=src python3 full_demo.py
 ### 主程序选项
 
 ```bash
-python3 -m claudecode main [OPTIONS]
+python3 -m pilotcode main [OPTIONS]
 
 Options:
   -v, --version          显示版本
@@ -95,18 +95,18 @@ Options:
 
 ```bash
 # 查看配置
-python3 -m claudecode config --list
+python3 -m pilotcode config --list
 
 # 设置配置
-python3 -m claudecode config --set theme --value dark
-python3 -m claudecode config --set default_model --value gpt-4
+python3 -m pilotcode config --set theme --value dark
+python3 -m pilotcode config --set default_model --value gpt-4
 ```
 
 ### 工具列表
 
 ```bash
 # 列出所有工具
-python3 -m claudecode tools --list
+python3 -m pilotcode tools --list
 ```
 
 ---
@@ -201,7 +201,7 @@ pip install -r requirements.txt
 
 **解决**: 确保设置了 PYTHONPATH
 ```bash
-export PYTHONPATH=/path/to/claudecode_py/src:$PYTHONPATH
+export PYTHONPATH=/path/to/pilotcode_py/src:$PYTHONPATH
 ```
 
 ### 问题: 模型连接失败
@@ -209,10 +209,10 @@ export PYTHONPATH=/path/to/claudecode_py/src:$PYTHONPATH
 **解决**: 检查配置中的 `base_url` 和 `api_key`
 ```bash
 # 检查配置
-python3 -m claudecode config --list
+python3 -m pilotcode config --list
 
 # 修改配置
-python3 -m claudecode config --set base_url --value http://your-server:port/v1
+python3 -m pilotcode config --set base_url --value http://your-server:port/v1
 ```
 
 ### 问题: 权限被拒绝

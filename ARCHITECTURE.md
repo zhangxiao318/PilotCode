@@ -1,12 +1,12 @@
-# ClaudeDecode Python - Architecture
+# PilotCode Python - Architecture
 
 This document describes the architecture of the Python rewrite of Claude Code, mapping TypeScript concepts to Python implementations.
 
 ## Directory Structure
 
 ```
-claudecode_py/
-├── src/claudecode/           # Main source code
+pilotcode_py/
+├── src/pilotcode/           # Main source code
 │   ├── types/                # Type definitions (Pydantic models)
 │   ├── tools/                # Tool implementations
 │   ├── commands/             # Slash command implementations
@@ -61,7 +61,7 @@ type Tool<Input, Output, Progress> = {
 }
 ```
 
-**Python (`src/claudecode/tools/base.py`)**:
+**Python (`src/pilotcode/tools/base.py`)**:
 ```python
 class Tool:
     def __init__(
@@ -186,7 +186,7 @@ Mapped to Python `utils/model_client.py`.
 
 ### Development
 ```bash
-cd /home/zx/mycc/claudecode_py
+cd /home/zx/mycc/pilotcode_py
 python3 demo.py  # Run demo
 ```
 
@@ -198,7 +198,7 @@ python3 demo.py  # Run demo
 ### Usage
 ```bash
 ./run.sh        # Run with shell script
-python3 -m claudecode  # Run as module
+python3 -m pilotcode  # Run as module
 ```
 
 ## Testing

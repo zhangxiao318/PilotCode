@@ -10,9 +10,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from rich.console import Console
 from rich.panel import Panel
 
-from claudecode.query_engine import QueryEngine, QueryEngineConfig
-from claudecode.tools.registry import get_all_tools
-from claudecode.types.message import AssistantMessage, ToolUseMessage, ToolResultMessage
+from pilotcode.query_engine import QueryEngine, QueryEngineConfig
+from pilotcode.tools.registry import get_all_tools
+from pilotcode.types.message import AssistantMessage, ToolUseMessage, ToolResultMessage
 
 console = Console()
 

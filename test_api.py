@@ -7,7 +7,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from claudecode.utils.model_client import get_model_client, Message
+from pilotcode.utils.model_client import get_model_client, Message
 
 async def test_api():
     """Test API connection."""

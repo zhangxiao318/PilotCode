@@ -1,4 +1,4 @@
-# ClaudeDecode Python - Progress Summary
+# PilotCode Python - Progress Summary
 
 ## Current Status
 
@@ -101,7 +101,7 @@
 ```
 20a3f0b Add file operation commands (46 total)
 652304b Add more commands (33 total)
-a324d65 Initial commit: ClaudeDecode Python v0.2.0
+a324d65 Initial commit: PilotCode Python v0.2.0
 ```
 
 ---
@@ -141,8 +141,8 @@ a324d65 Initial commit: ClaudeDecode Python v0.2.0
 
 ```bash
 # Clone and run
-cd /home/zx/mycc/claudecode_py
-python3 -m claudecode
+cd /home/zx/mycc/pilotcode_py
+python3 -m pilotcode
 
 # Or run demo
 python3 full_demo.py
@@ -203,7 +203,7 @@ python3 full_demo.py
 
 ## Summary
 
-ClaudeDecode Python is now a **functional MVP** with:
+PilotCode Python is now a **functional MVP** with:
 - **90%** of planned tools (36/40)
 - **57%** of planned commands (46/80)
 - Full core architecture

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Demo script for ClaudeDecode tools."""
+"""Demo script for PilotCode tools."""
 
 import asyncio
 import sys
@@ -12,8 +12,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from claudecode.tools.registry import get_all_tools, get_tool_by_name
-from claudecode.tools.base import ToolUseContext
+from pilotcode.tools.registry import get_all_tools, get_tool_by_name
+from pilotcode.tools.base import ToolUseContext
 
 
 console = Console()
@@ -23,10 +23,10 @@ async def demo_bash_tool():
     """Demo Bash tool."""
     console.print(Panel("[bold cyan]Bash Tool Demo[/bold cyan]", border_style="cyan"))
     
-    from claudecode.tools.bash_tool import BashTool, BashInput
+    from pilotcode.tools.bash_tool import BashTool, BashInput
     
     commands = [
-        "echo 'Hello from ClaudeDecode!'",
+        "echo 'Hello from PilotCode!'",
         "pwd",
         "ls -la | head -5",
     ]
@@ -56,9 +56,9 @@ async def demo_file_tools():
     console.print(Panel("\n[bold cyan]File Tools Demo[/bold cyan]", border_style="cyan"))
     
     import tempfile
-    from claudecode.tools.file_write_tool import FileWriteTool, FileWriteInput
-    from claudecode.tools.file_read_tool import FileReadTool, FileReadInput
-    from claudecode.tools.glob_tool import GlobTool, GlobInput
+    from pilotcode.tools.file_write_tool import FileWriteTool, FileWriteInput
+    from pilotcode.tools.file_read_tool import FileReadTool, FileReadInput
+    from pilotcode.tools.glob_tool import GlobTool, GlobInput
     
     async def allow_permission(*args, **kwargs):
         return type('obj', (object,), {'behavior': 'allow'})()
@@ -67,7 +67,7 @@ async def demo_file_tools():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
         f.write("Line 1: Hello\n")
         f.write("Line 2: World\n")
-        f.write("Line 3: From ClaudeDecode\n")
+        f.write("Line 3: From PilotCode\n")
         test_file = f.name
     
     try:
@@ -110,7 +110,7 @@ async def demo_grep_tool():
     """Demo Grep tool."""
     console.print(Panel("\n[bold cyan]Grep Tool Demo[/bold cyan]", border_style="cyan"))
     
-    from claudecode.tools.grep_tool import GrepTool, GrepInput, OutputMode
+    from pilotcode.tools.grep_tool import GrepTool, GrepInput, OutputMode
     
     async def allow_permission(*args, **kwargs):
         return type('obj', (object,), {'behavior': 'allow'})()
@@ -121,7 +121,7 @@ async def demo_grep_tool():
     result = await GrepTool.call(
         GrepInput(
             pattern="^class ",
-            path="src/claudecode/tools",
+            path="src/pilotcode/tools",
             glob="*.py",
             output_mode=OutputMode.CONTENT,
             head_limit=10
@@ -185,7 +185,7 @@ def list_all_tools():
 async def main():
     """Run all demos."""
     console.print(Panel.fit(
-        "[bold green]ClaudeDecode Demo[/bold green]\n"
+        "[bold green]PilotCode Demo[/bold green]\n"
         "[dim]Python rewrite of Claude Code[/dim]",
         border_style="green"
     ))
@@ -200,7 +200,7 @@ async def main():
     
     console.print(Panel("\n[bold green]Demo Complete![/bold green]", border_style="green"))
     console.print("\nTo start the full application, run:")
-    console.print("  [cyan]python -m claudecode[/cyan]")
+    console.print("  [cyan]python -m pilotcode[/cyan]")
     console.print("Or:")
     console.print("  [cyan]./run.sh[/cyan]")
 

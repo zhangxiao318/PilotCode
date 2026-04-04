@@ -1,1 +1,1 @@
-"""Tests for ClaudeDecode."""
+"""Tests for PilotCode."""

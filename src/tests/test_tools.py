@@ -6,13 +6,13 @@ import os
 import tempfile
 from pathlib import Path
 
-from claudecode.tools.registry import get_tool_registry, get_tool_by_name
-from claudecode.tools.base import ToolUseContext
-from claudecode.tools.bash_tool import BashInput, BashTool
-from claudecode.tools.file_read_tool import FileReadInput, FileReadTool
-from claudecode.tools.file_write_tool import FileWriteInput, FileWriteTool
-from claudecode.tools.glob_tool import GlobInput, GlobTool
-from claudecode.tools.grep_tool import GrepInput, GrepTool, OutputMode
+from pilotcode.tools.registry import get_tool_registry, get_tool_by_name
+from pilotcode.tools.base import ToolUseContext
+from pilotcode.tools.bash_tool import BashInput, BashTool
+from pilotcode.tools.file_read_tool import FileReadInput, FileReadTool
+from pilotcode.tools.file_write_tool import FileWriteInput, FileWriteTool
+from pilotcode.tools.glob_tool import GlobInput, GlobTool
+from pilotcode.tools.grep_tool import GrepInput, GrepTool, OutputMode
 
 
 class TestBashTool:
@@ -33,7 +33,7 @@ class TestBashTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda **kwargs: {"behavior": "allow"},
+            lambda *args, **kwargs: {"behavior": "allow"},
             None,
             lambda x: None
         )
@@ -51,7 +51,7 @@ class TestBashTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda **kwargs: {"behavior": "allow"},
+            lambda *args, **kwargs: {"behavior": "allow"},
             None,
             lambda x: None
         )
@@ -77,7 +77,7 @@ class TestFileTools:
             write_result = await write_tool.call(
                 write_input,
                 ToolUseContext(),
-                lambda **kwargs: {"behavior": "allow"},
+                lambda *args, **kwargs: {"behavior": "allow"},
                 None,
                 lambda x: None
             )
@@ -91,7 +91,7 @@ class TestFileTools:
             write_result = await write_tool.call(
                 write_input,
                 context,
-                lambda **kwargs: {"behavior": "allow"},
+                lambda *args, **kwargs: {"behavior": "allow"},
                 None,
                 lambda x: None
             )
@@ -103,7 +103,7 @@ class TestFileTools:
             read_result = await read_tool.call(
                 read_input,
                 ToolUseContext(),
-                lambda **kwargs: {"behavior": "allow"},
+                lambda *args, **kwargs: {"behavior": "allow"},
                 None,
                 lambda x: None
             )
@@ -124,7 +124,7 @@ class TestGlobTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda **kwargs: {"behavior": "allow"},
+            lambda *args, **kwargs: {"behavior": "allow"},
             None,
             lambda x: None
         )
@@ -141,7 +141,7 @@ class TestGlobTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda **kwargs: {"behavior": "allow"},
+            lambda *args, **kwargs: {"behavior": "allow"},
             None,
             lambda x: None
         )
@@ -174,7 +174,7 @@ class TestGrepTool:
             result = await tool.call(
                 input_data,
                 ToolUseContext(),
-                lambda **kwargs: {"behavior": "allow"},
+                lambda *args, **kwargs: {"behavior": "allow"},
                 None,
                 lambda x: None
             )
@@ -198,7 +198,7 @@ class TestGrepTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda **kwargs: {"behavior": "allow"},
+            lambda *args, **kwargs: {"behavior": "allow"},
             None,
             lambda x: None
         )
@@ -212,7 +212,7 @@ class TestToolRegistry:
     
     def test_all_tools_registered(self):
         """Test that all tools are registered."""
-        from claudecode.tools.registry import get_all_tools
+        from pilotcode.tools.registry import get_all_tools
         
         tools = get_all_tools()
         tool_names = [t.name for t in tools]

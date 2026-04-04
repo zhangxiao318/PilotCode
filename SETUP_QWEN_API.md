@@ -9,7 +9,7 @@
 ## 方法 1: 使用命令行配置（推荐）
 
 ```bash
-cd /home/zx/mycc/claudecode_py
+cd /home/zx/mycc/pilotcode_py
 
 # 查看当前配置
 ./run.sh config --list
@@ -28,11 +28,11 @@ cd /home/zx/mycc/claudecode_py
 
 ## 方法 2: 手动创建全局配置文件
 
-创建文件 `~/.config/claudecode/settings.json`：
+创建文件 `~/.config/pilotcode/settings.json`：
 
 ```bash
-mkdir -p ~/.config/claudecode
-cat > ~/.config/claudecode/settings.json << 'EOF'
+mkdir -p ~/.config/pilotcode
+cat > ~/.config/pilotcode/settings.json << 'EOF'
 {
   "theme": "default",
   "verbose": false,
@@ -50,11 +50,11 @@ EOF
 
 ## 方法 3: 项目级配置
 
-在项目目录创建 `.claudecode.json`：
+在项目目录创建 `.pilotcode.json`：
 
 ```bash
 cd /your/project/path
-cat > .claudecode.json << 'EOF'
+cat > .pilotcode.json << 'EOF'
 {
   "allowed_tools": [],
   "mcp_servers": {},
@@ -145,9 +145,9 @@ curl http://172.19.201.40:3509/v1/models
 #!/bin/bash
 # setup_qwen.sh
 
-mkdir -p ~/.config/claudecode
+mkdir -p ~/.config/pilotcode
 
-cat > ~/.config/claudecode/settings.json << 'EOF'
+cat > ~/.config/pilotcode/settings.json << 'EOF'
 {
   "theme": "default",
   "verbose": false,
@@ -161,7 +161,7 @@ cat > ~/.config/claudecode/settings.json << 'EOF'
 EOF
 
 echo "Qwen API配置完成！"
-echo "配置路径: ~/.config/claudecode/settings.json"
+echo "配置路径: ~/.config/pilotcode/settings.json"
 echo ""
 echo "启动命令: ./run.sh"
 ```

@@ -1,4 +1,4 @@
-# ClaudeDecode Python
+# PilotCode Python
 
 Python rewrite of Claude Code - an AI-powered coding assistant.
 
@@ -22,7 +22,7 @@ This is a Python reimplementation of the Claude Code CLI tool, maintaining archi
 python3 full_demo.py
 
 # Run the CLI
-python3 -m claudecode
+python3 -m pilotcode
 
 # Or use the run script
 ./run.sh
@@ -93,7 +93,7 @@ python3 -m claudecode
 ## Architecture
 
 ```
-claudecode/
+pilotcode/
 ├── types/          # Pydantic models for type safety
 ├── tools/          # Tool implementations (18 tools)
 ├── commands/       # Slash commands (13 commands)
@@ -117,7 +117,7 @@ claudecode/
 
 ## Configuration
 
-Configuration is loaded from `~/.config/claudecode/settings.json`:
+Configuration is loaded from `~/.config/pilotcode/settings.json`:
 
 ```json
 {
