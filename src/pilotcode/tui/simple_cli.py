@@ -87,6 +87,14 @@ class SimpleCLI:
         print("=" * 60)
         print("  PilotCode v0.2.0 - Your AI Programming Assistant")
         print("=" * 60)
+        
+        # Check if API key looks valid
+        api_key = self.config.api_key or ""
+        if not api_key or api_key in ("sk-placeholder", "", "test-api-key") or len(api_key) < 20:
+            print()
+            print("⚠️  Warning: API key not configured or invalid!")
+            print("   Run: ./pilotcode configure")
+            print()
         print()
         print("Commands:")
         print("  /help     - Show available commands")
@@ -229,6 +237,7 @@ class SimpleCLI:
                 pending_tools = []
                 
                 # Process through query engine with streaming
+                response_received = False
                 async for result in self.query_engine.submit_message(current_prompt):
                     msg = result.message
                     
@@ -240,13 +249,21 @@ class SimpleCLI:
                         # Accumulate assistant message content
                         if msg.content:
                             accumulated_response += msg.content
+                            response_received = True
                         
                         # Only print when message is complete
-                        if result.is_complete and accumulated_response:
-                            print()
-                            print("📝 Response:")
-                            print(accumulated_response)
-                            print()
+                        if result.is_complete:
+                            if accumulated_response:
+                                print()
+                                print("📝 Response:")
+                                print(accumulated_response)
+                                print()
+                            elif not response_received and not pending_tools:
+                                # No response from model
+                                print()
+                                print("⚠️  No response from model. Check your API key and model configuration.")
+                                print("   Run: ./pilotcode configure --show")
+                                print()
                     
                     elif isinstance(msg, ToolUseMessage):
                         # Collect tool use requests
