@@ -235,9 +235,13 @@ Be helpful, thorough, and practical. Focus on delivering working solutions."""
         # Handle tool calls if any
         if tool_calls:
             for tc in tool_calls:
+                # Ensure arguments is a dict
+                if not isinstance(tc.arguments, dict):
+                    tc.arguments = {}
+                    
                 tool_use_msg = ToolUseMessage(
-                    tool_use_id=tc.id,
-                    name=tc.name,
+                    tool_use_id=tc.id or "",
+                    name=tc.name or "unknown",
                     input=tc.arguments
                 )
                 self.messages.append(tool_use_msg)
@@ -249,7 +253,7 @@ Be helpful, thorough, and practical. Focus on delivering working solutions."""
                 yield QueryResult(message=tool_result, is_complete=False)
             
             # Continue conversation with tool results
-            async for result in self.submit_message("", options):
+            async for result in self.submit_message("Tool execution complete", options):
                 yield result
     
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResultMessage:
