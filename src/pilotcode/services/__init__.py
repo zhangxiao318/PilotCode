@@ -62,6 +62,34 @@ from .update_checker import (
     check_for_updates,
     should_check_updates,
 )
+from .file_watcher import (
+    FileWatcher,
+    FileChangeEvent,
+    FileChangeType,
+    WatcherConfig,
+    get_file_watcher,
+    watch_path,
+)
+from .code_index import (
+    CodeIndexer,
+    CodeIndex,
+    Symbol,
+    get_code_indexer,
+)
+from .snapshot import (
+    SnapshotManager,
+    SnapshotInfo,
+    SnapshotDiff,
+    get_snapshot_manager,
+)
+from .task_queue import (
+    BackgroundTaskQueue,
+    Task,
+    TaskResult,
+    TaskStatus,
+    get_task_queue,
+    run_in_background,
+)
 
 __all__ = [
     # MCP
@@ -129,4 +157,28 @@ __all__ = [
     "UpdateStatus",
     "check_for_updates",
     "should_check_updates",
+    # File watcher
+    "FileWatcher",
+    "FileChangeEvent",
+    "FileChangeType",
+    "WatcherConfig",
+    "get_file_watcher",
+    "watch_path",
+    # Code indexing
+    "CodeIndexer",
+    "CodeIndex",
+    "Symbol",
+    "get_code_indexer",
+    # Snapshot
+    "SnapshotManager",
+    "SnapshotInfo",
+    "SnapshotDiff",
+    "get_snapshot_manager",
+    # Task queue
+    "BackgroundTaskQueue",
+    "Task",
+    "TaskResult",
+    "TaskStatus",
+    "get_task_queue",
+    "run_in_background",
 ]
