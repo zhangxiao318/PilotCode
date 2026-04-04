@@ -15,6 +15,9 @@ from .tools.base import Tool, ToolUseContext, Tools
 from .tools.registry import assemble_tool_pool
 from .state.app_state import AppState
 from .utils.model_client import ModelClient, Message as APIMessage, ToolCall, get_model_client
+from .services.token_estimation import get_token_estimator, TokenEstimator
+from .services.context_compression import get_context_compressor, CompressionResult
+from .services.tool_orchestrator import get_tool_orchestrator, ToolOrchestrator
 
 
 @dataclass
@@ -57,6 +60,14 @@ class QueryEngine:
         self.messages: list[MessageType] = []
         self.client = get_model_client()
         self.abort_event = asyncio.Event()
+        
+        # Initialize services
+        self._token_estimator = get_token_estimator()
+        self._context_compressor = get_context_compressor()
+        if config.cache_tool_results:
+            self._tool_orchestrator = get_tool_orchestrator()
+        else:
+            self._tool_orchestrator = None
     
     def _build_system_message(self) -> SystemMessage:
         """Build system message."""
@@ -260,18 +271,19 @@ After showing code, offer to save it to a file if appropriate."""
     def count_tokens(self) -> int:
         """Count tokens in current conversation.
         
-        Uses a simple approximation: ~4 characters per token.
-        For accurate counting, use tiktoken or similar.
+        Uses the token estimator service for accurate counting.
         """
-        total_chars = 0
-        for msg in self.messages:
-            if isinstance(msg.content, str):
-                total_chars += len(msg.content)
-            elif isinstance(msg.content, list):
-                for block in msg.content:
-                    if hasattr(block, 'text'):
-                        total_chars += len(block.text)
-        return total_chars // 4
+        return self._token_estimator.estimate_messages([
+            {"role": getattr(m, "type", "unknown"), "content": str(m.content)}
+            for m in self.messages
+        ])
+    
+    def get_token_budget(self) -> dict[str, Any]:
+        """Get current token budget status."""
+        return self._token_estimator.get_budget_status(
+            self.count_tokens(),
+            self.config.max_tokens
+        )
     
     def track_cost(self, tokens: int, cost_usd: float) -> None:
         """Track cost for this session.
@@ -285,10 +297,45 @@ After showing code, offer to save it to a file if appropriate."""
             if self.config.set_app_state:
                 self.config.set_app_state(lambda s: state)
     
+    async def smart_compact(self) -> CompressionResult | None:
+        """Intelligently compress conversation using summarization.
+        
+        Returns compression result or None if not needed.
+        """
+        if not self.config.auto_compact:
+            return None
+        
+        token_count = self.count_tokens()
+        if token_count < self.config.max_tokens:
+            return None
+        
+        # Use smart compression
+        result = await self._context_compressor.compress(
+            self.messages,
+            summarizer=None  # Could pass Brief tool here
+        )
+        
+        if result.summary or result.removed_indices:
+            self.messages = [
+                m for i, m in enumerate(self.messages)
+                if i not in result.removed_indices
+            ]
+            # If we have a summary, prepend it
+            if result.summary:
+                from .types.message import SystemMessage
+                self.messages.insert(1, SystemMessage(
+                    content=f"[Earlier conversation]: {result.summary}"
+                ))
+        
+        return result
+    
     def auto_compact_if_needed(self) -> bool:
         """Auto-compact conversation if token count exceeds limit.
         
         Returns True if compaction was performed.
+        
+        This is the synchronous fallback that uses simple compaction.
+        For smart compression with summarization, use smart_compact().
         """
         if not self.config.auto_compact:
             return False
@@ -297,11 +344,14 @@ After showing code, offer to save it to a file if appropriate."""
         if token_count < self.config.max_tokens:
             return False
         
-        # Simple compaction: keep system message (first), summarize older messages
-        # For now, we just remove oldest messages except system
-        if len(self.messages) > 4:
-            # Keep first message (usually system), keep last 3 messages
-            self.messages = [self.messages[0]] + self.messages[-3:]
+        # Use simple priority-based compaction
+        compressed = self._context_compressor.simple_compact(
+            self.messages,
+            keep_recent=6
+        )
+        
+        if len(compressed) < len(self.messages):
+            self.messages = compressed
             return True
         return False
     

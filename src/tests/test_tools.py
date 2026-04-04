@@ -15,6 +15,11 @@ from pilotcode.tools.glob_tool import GlobInput, GlobTool
 from pilotcode.tools.grep_tool import GrepInput, GrepTool, OutputMode
 
 
+async def mock_can_use_tool(*args, **kwargs):
+    """Mock permission callback that allows all operations."""
+    return {"behavior": "allow"}
+
+
 class TestBashTool:
     """Tests for BashTool."""
     
@@ -33,7 +38,7 @@ class TestBashTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda *args, **kwargs: {"behavior": "allow"},
+            mock_can_use_tool,
             None,
             lambda x: None
         )
@@ -51,7 +56,7 @@ class TestBashTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda *args, **kwargs: {"behavior": "allow"},
+            mock_can_use_tool,
             None,
             lambda x: None
         )
@@ -77,7 +82,7 @@ class TestFileTools:
             write_result = await write_tool.call(
                 write_input,
                 ToolUseContext(),
-                lambda *args, **kwargs: {"behavior": "allow"},
+                mock_can_use_tool,
                 None,
                 lambda x: None
             )
@@ -91,7 +96,7 @@ class TestFileTools:
             write_result = await write_tool.call(
                 write_input,
                 context,
-                lambda *args, **kwargs: {"behavior": "allow"},
+                mock_can_use_tool,
                 None,
                 lambda x: None
             )
@@ -103,7 +108,7 @@ class TestFileTools:
             read_result = await read_tool.call(
                 read_input,
                 ToolUseContext(),
-                lambda *args, **kwargs: {"behavior": "allow"},
+                mock_can_use_tool,
                 None,
                 lambda x: None
             )
@@ -124,7 +129,7 @@ class TestGlobTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda *args, **kwargs: {"behavior": "allow"},
+            mock_can_use_tool,
             None,
             lambda x: None
         )
@@ -141,7 +146,7 @@ class TestGlobTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda *args, **kwargs: {"behavior": "allow"},
+            mock_can_use_tool,
             None,
             lambda x: None
         )
@@ -174,7 +179,7 @@ class TestGrepTool:
             result = await tool.call(
                 input_data,
                 ToolUseContext(),
-                lambda *args, **kwargs: {"behavior": "allow"},
+                mock_can_use_tool,
                 None,
                 lambda x: None
             )
@@ -198,7 +203,7 @@ class TestGrepTool:
         result = await tool.call(
             input_data,
             ToolUseContext(),
-            lambda *args, **kwargs: {"behavior": "allow"},
+            mock_can_use_tool,
             None,
             lambda x: None
         )

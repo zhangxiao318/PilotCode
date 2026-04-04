@@ -1,5 +1,87 @@
 """Services for PilotCode."""
 
 from .mcp_client import MCPClient, MCPConfig, MCPServerConnection
+from .mcp_config_manager import (
+    MCPConfigManager,
+    ConfigScope,
+    MCPServerEntry,
+    get_mcp_config_manager,
+)
+from .file_metadata_cache import (
+    FileMetadataCache,
+    FileMetadata,
+    LineEndingType,
+    detect_file_encoding,
+    detect_line_endings,
+    get_file_metadata_cache,
+    clear_file_metadata_cache,
+    LRUCache,
+    cached_file_operation,
+)
+from .ai_security import (
+    SecurityAnalysis,
+    RiskLevel,
+    get_command_security_analysis,
+    extract_command_prefix,
+    split_command,
+    clear_security_cache,
+)
+from .result_truncation import (
+    TruncatedResult,
+    TruncationConfig,
+    truncate_file_list,
+    truncate_text_content,
+    truncate_search_results,
+    truncate_directory_listing,
+)
+from .tool_cache import ToolCache, get_tool_cache
+from .token_estimation import TokenEstimator, get_token_estimator, estimate_tokens
+from .context_compression import ContextCompressor, PriorityBasedCompressor, get_context_compressor
+from .tool_orchestrator import ToolOrchestrator, ExecutionMode, get_tool_orchestrator
 
-__all__ = ["MCPClient", "MCPConfig", "MCPServerConnection"]
+__all__ = [
+    # MCP
+    "MCPClient",
+    "MCPConfig",
+    "MCPServerConnection",
+    "MCPConfigManager",
+    "ConfigScope",
+    "MCPServerEntry",
+    "get_mcp_config_manager",
+    # File metadata cache
+    "FileMetadataCache",
+    "FileMetadata",
+    "LineEndingType",
+    "detect_file_encoding",
+    "detect_line_endings",
+    "get_file_metadata_cache",
+    "clear_file_metadata_cache",
+    "LRUCache",
+    "cached_file_operation",
+    # AI Security
+    "SecurityAnalysis",
+    "RiskLevel",
+    "get_command_security_analysis",
+    "extract_command_prefix",
+    "split_command",
+    "clear_security_cache",
+    # Result truncation
+    "TruncatedResult",
+    "TruncationConfig",
+    "truncate_file_list",
+    "truncate_text_content",
+    "truncate_search_results",
+    "truncate_directory_listing",
+    # Existing services
+    "ToolCache",
+    "get_tool_cache",
+    "TokenEstimator",
+    "get_token_estimator",
+    "estimate_tokens",
+    "ContextCompressor",
+    "PriorityBasedCompressor",
+    "get_context_compressor",
+    "ToolOrchestrator",
+    "ExecutionMode",
+    "get_tool_orchestrator",
+]
