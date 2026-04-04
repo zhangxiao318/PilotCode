@@ -1,99 +1,133 @@
 # ClaudeDecode Python - Progress Summary
 
-## Current Status (2024)
-
-### Statistics
+## Current Status
 
 | Metric | Value | Target | Progress |
 |--------|-------|--------|----------|
-| **Tools** | 36 | 40+ | 90% |
-| **Commands** | 24 | 80+ | 30% |
-| **Lines of Code** | ~8,500 | ~150,000 | 6% |
-| **Files** | ~70 | ~500 | 14% |
+| **Tools** | 36 | 40+ | **90%** ✅ |
+| **Commands** | 46 | 80+ | **57%** |
+| **Lines of Code** | ~10,000 | ~150,000 | 7% |
+| **Files** | ~85 | ~500 | 17% |
+| **Git Commits** | 3 | - | - |
 
 ---
 
 ## Tools by Category (36 Total)
 
-### ✅ File Operations (4)
-- FileRead, FileWrite, FileEdit, NotebookEdit
-
-### ✅ Shell Execution (2)
-- Bash, PowerShell
-
-### ✅ Search (3)
-- Glob, Grep, ToolSearch
-
-### ✅ Web (2)
-- WebSearch, WebFetch
-
-### ✅ Git Integration (4)
-- GitStatus, GitDiff, GitLog, GitBranch
-
-### ✅ Task Management (5)
-- TaskCreate, TaskGet, TaskList, TaskStop, TaskUpdate
-
-### ✅ MCP Integration (3)
-- ListMcpResources, ReadMcpResource, MCP
-
-### ✅ Plan Mode (3)
-- EnterPlanMode, ExitPlanMode, UpdatePlanStep
-
-### ✅ Cron/Scheduled Tasks (4)
-- CronCreate, CronDelete, CronList, CronUpdate
-
-### ✅ Other (6)
-- Agent, AskUser, TodoWrite, Brief, Config, LSP
+| Category | Count | Tools |
+|----------|-------|-------|
+| **File** | 4 | FileRead, FileWrite, FileEdit, NotebookEdit |
+| **Git** | 4 | GitStatus, GitDiff, GitLog, GitBranch |
+| **Shell** | 2 | Bash, PowerShell |
+| **Search** | 3 | Glob, Grep, ToolSearch |
+| **Web** | 2 | WebSearch, WebFetch |
+| **Agent** | 1 | Agent |
+| **Task** | 5 | TaskCreate, TaskGet, TaskList, TaskStop, TaskUpdate |
+| **MCP** | 3 | ListMcpResources, ReadMcpResource, MCP |
+| **Plan** | 3 | EnterPlanMode, ExitPlanMode, UpdatePlanStep |
+| **Cron** | 4 | CronCreate, CronDelete, CronList, CronUpdate |
+| **Other** | 5 | AskUser, TodoWrite, Brief, Config, LSP |
 
 ---
 
-## Commands by Category (24 Total)
+## Commands by Category (46 Total)
 
-### System (3)
-- /help, /clear, /quit
+### File Operations (13)
+- `/cat` - Display file contents
+- `/ls` - List directory
+- `/edit` - Edit file
+- `/mkdir` - Create directory
+- `/rm` - Remove file/directory
+- `/pwd` - Print working directory
+- `/cd` - Change directory
+- `/cp` - Copy file/directory
+- `/mv` - Move/rename file
+- `/touch` - Create empty file
+- `/head` - Show first lines
+- `/tail` - Show last lines
+- `/wc` - Count lines/words/chars
 
-### Git Operations (4)
-- /git, /commit, /diff, /branch
+### Git (4)
+- `/git` - Git operations
+- `/commit` - Git commit helper
+- `/diff` - Show diff
+- `/branch` - Branch management
 
-### Configuration (3)
-- /config, /theme, /model
+### System (6)
+- `/help` - Show help
+- `/clear` - Clear screen
+- `/quit` - Exit
+- `/version` - Show version
+- `/doctor` - Run diagnostics
+- `/debug` - Debug tools
 
-### Session/History (5)
-- /session, /export, /history, /status, /compact
+### Configuration (4)
+- `/config` - Configuration management
+- `/theme` - Change theme
+- `/model` - Model settings
+- `/env` - Environment variables
 
-### Task/Agent (4)
-- /tasks, /agents, /plan, /cron
+### Session (7)
+- `/session` - Session management
+- `/history` - Command history
+- `/status` - Show status
+- `/export` - Export session
+- `/compact` - Compact history
+- `/rename` - Rename session
+- `/share` - Share session
 
-### Information (4)
-- /cost, /tools, /memory, /version
+### Task/Agent (5)
+- `/tasks` - List tasks
+- `/agents` - Manage agents
+- `/cron` - Manage cron jobs
+- `/plan` - Plan mode
+- `/skills` - Manage skills
 
-### System (1)
-- /env
+### Info (5)
+- `/cost` - Usage statistics
+- `/tools` - List tools
+- `/memory` - Memory management
+- `/find` - Find files
+- `/review` - Code review
+
+### MCP/LSP (2)
+- `/mcp` - Manage MCP servers
+- `/lsp` - Manage LSP servers
+
+---
+
+## Git History
+
+```
+20a3f0b Add file operation commands (46 total)
+652304b Add more commands (33 total)
+a324d65 Initial commit: ClaudeDecode Python v0.2.0
+```
 
 ---
 
 ## Architecture Completion
 
-### ✅ Completed
+### ✅ Completed (90%+)
 - Type system (Pydantic)
 - Tool registry and base classes
-- Command registry
+- Command registry (46 commands)
 - Query engine (basic)
 - State management (Store)
 - Configuration system
 - Model client (OpenAI-compatible)
 - MCP client (basic)
 - TUI (Rich + Prompt Toolkit)
-- Git integration (basic)
+- Git integration
 
-### 🚧 Partial
+### 🚧 Partial (40-70%)
 - Tool orchestration
 - Permission system
 - Agent system
 - LSP client
 
-### ❌ Not Started
-- Permission dialogs
+### ❌ Not Started (<40%)
+- Permission dialogs (UI)
 - Agent swarms
 - Full MCP support
 - Skills system
@@ -103,82 +137,75 @@
 
 ---
 
-## Code Quality
-
-- **Type Safety**: Pydantic models throughout
-- **Async**: Full asyncio support
-- **Error Handling**: Try-except with meaningful messages
-- **Documentation**: Docstrings for major components
-- **Testing**: Basic tests for tools
-
----
-
-## Next Steps
-
-### High Priority (v0.3.0)
-1. Add 4 more tools (Sleep, TeamCreate, etc.)
-2. Add 20+ more commands
-3. Enhance TUI with Textual
-4. Permission dialog system
-
-### Medium Priority (v0.4.0)
-1. MCP full support
-2. Agent coordination
-3. Memory system
-4. Session persistence
-
-### Low Priority (v0.5.0)
-1. Skills system
-2. Plugin system
-3. Analytics
-4. Remote sync
-
----
-
 ## How to Use
 
 ```bash
-# Run the CLI
+# Clone and run
+cd /home/zx/mycc/claudecode_py
 python3 -m claudecode
 
-# Or
-./run.sh
-
-# Run demo
+# Or run demo
 python3 full_demo.py
 ```
 
 ---
 
-## Comparison with Original
+## Current Capabilities ✅
 
-| Aspect | TypeScript Original | Python (Current) |
-|--------|---------------------|------------------|
-| Files | 1,884 | ~70 |
-| Lines | ~512,000 | ~8,500 |
-| Tools | 40+ | 36 |
-| Commands | 80+ | 24 |
-| Bundle | Large | Lightweight |
-| Startup | Slow | Fast |
-| Extensibility | Moderate | High |
+- Chat with LLM (streaming)
+- File operations (read/write/edit/cat/ls/etc.)
+- Shell command execution (Bash/PowerShell)
+- Code search (grep/glob/find)
+- Web search/fetch
+- Task management (create/get/list/stop/update)
+- Cron/scheduled tasks
+- Git integration (status/diff/log/branch/commit)
+- Agent spawning
+- MCP integration
+- Plan mode
+- Configuration management
+- Session management
+- Skills management (basic)
 
 ---
 
-## Conclusion
+## Next Steps
 
-ClaudeDecode Python now has:
+### v0.3.0 Goals
+- 50+ commands (add 4+ more)
+- Complete permission system
+- Enhanced TUI with Textual
+
+### v0.4.0 Goals
+- Full MCP support
+- Agent coordination
+- Memory system
+
+### v0.5.0 Goals
+- Skills system
+- Plugin system
+- Analytics
+
+---
+
+## Comparison
+
+| Aspect | TypeScript Original | Python (Current) |
+|--------|---------------------|------------------|
+| Files | 1,884 | ~85 |
+| Lines | ~512,000 | ~10,000 |
+| Tools | 40+ | 36 (90%) |
+| Commands | 80+ | 46 (57%) |
+| Bundle | Large | Lightweight |
+| Startup | Slow | Fast |
+
+---
+
+## Summary
+
+ClaudeDecode Python is now a **functional MVP** with:
 - **90%** of planned tools (36/40)
-- **30%** of planned commands (24/80)
-- **Core architecture** fully functional
-- **Basic but working** TUI
-
-It's now a **usable MVP** that can:
-- Execute shell commands
-- Read/write/edit files
-- Search code
-- Manage tasks and agents
-- Integrate with Git
-- Use MCP servers
-- Run scheduled tasks
-
-The foundation is solid for continued development.
+- **57%** of planned commands (46/80)
+- Full core architecture
+- Git version control
+- Ready for continued development
