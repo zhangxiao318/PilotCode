@@ -27,7 +27,12 @@ fi
 if [ $# -eq 0 ]; then
     # No arguments: start main application (default)
     python3 -m pilotcode main
+elif [[ "$1" == --* ]]; then
+    # Arguments start with -- (options): treat as 'main' command with options
+    # e.g., ./pilotcode --auto-allow -> ./pilotcode main --auto-allow
+    python3 -m pilotcode main "$@"
 else
-    # Pass through all arguments
+    # Arguments start with a command: pass through as-is
+    # e.g., ./pilotcode configure --show
     python3 -m pilotcode "$@"
 fi
