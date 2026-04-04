@@ -14,4 +14,9 @@ if [ -d ".venv" ]; then
 fi
 
 # Run ClaudeDecode
-python3 -m claudecode "$@"
+# If no command specified, default to 'main'
+if [ $# -eq 0 ]; then
+    python3 -m claudecode main
+else
+    python3 -m claudecode "$@"
+fi
