@@ -82,11 +82,34 @@ class SimpleCLI:
             print(f"❌ Failed to initialize: {e}")
             sys.exit(1)
     
-    async def test_api_connection(self) -> bool:
-        """Test LLM API connection before starting.
+    def is_local_model(self) -> bool:
+        """Check if using a local model (e.g., Ollama) that doesn't need API key.
         
         Returns:
-            True if API is working, False otherwise.
+            True if using a local model.
+        """
+        model = self.config.default_model or ""
+        base_url = self.config.base_url or ""
+        
+        # Check for local model indicators
+        local_indicators = [
+            "ollama",
+            "localhost",
+            "127.0.0.1",
+            ":11434",  # Ollama default port
+        ]
+        
+        for indicator in local_indicators:
+            if indicator in model.lower() or indicator in base_url.lower():
+                return True
+        
+        return False
+    
+    async def test_api_connection(self) -> tuple[bool, str]:
+        """Test LLM API connection by sending an actual request.
+        
+        Returns:
+            Tuple of (success, message/error)
         """
         from pilotcode.utils.model_client import get_model_client, Message
         
@@ -103,50 +126,78 @@ class SimpleCLI:
                     response_content += content
             
             # If we got any response, API is working
-            return len(response_content) > 0
+            if len(response_content) > 0:
+                return True, response_content.strip()
+            else:
+                return False, "Empty response from model"
             
         except Exception as e:
-            return False
+            error_msg = str(e)
+            if "authentication" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                return False, "Authentication failed - check your API key"
+            elif "connection" in error_msg.lower():
+                return False, "Connection failed - check network and base URL"
+            else:
+                return False, f"API error: {error_msg}"
     
     def print_welcome(self):
-        """Print welcome message."""
+        """Print welcome message and test API connection."""
         print("=" * 60)
         print("  PilotCode v0.2.0 - Your AI Programming Assistant")
         print("=" * 60)
         
-        # Check if API key looks valid
-        api_key = self.config.api_key or ""
-        if not api_key or api_key in ("sk-placeholder", "", "test-api-key") or len(api_key) < 20:
-            print()
-            print("⚠️  Warning: API key not configured or invalid!")
-            print("   Run: ./pilotcode configure")
-            print()
-            return
+        # Check if using local model
+        is_local = self.is_local_model()
         
-        # Test API connection
+        if is_local:
+            print()
+            print(f"🖥️  Local model detected: {self.config.default_model}")
+            print(f"   Base URL: {self.config.base_url}")
+        else:
+            # Check if API key looks valid for cloud models
+            api_key = self.config.api_key or ""
+            if not api_key or api_key in ("sk-placeholder", "", "test-api-key") or len(api_key) < 20:
+                print()
+                print("⚠️  Warning: API key not configured or invalid!")
+                print("   Run: ./pilotcode configure")
+                print()
+                return
+        
+        # Test API connection with actual request
         print()
         print("🔄 Testing LLM API connection...")
         
         try:
             import asyncio
-            api_working = asyncio.run(self.test_api_connection())
+            api_working, message = asyncio.run(self.test_api_connection())
             
             if not api_working:
                 print()
                 print("❌ API connection failed!")
                 print(f"   Model: {self.config.default_model}")
                 print(f"   Base URL: {self.config.base_url}")
+                print(f"   Error: {message}")
                 print()
-                print("Please check:")
-                print("  1. Your API key is correct")
-                print("  2. Your network connection")
-                print("  3. The model service is available")
+                
+                if is_local:
+                    print("Please check:")
+                    print("  1. Your local model server is running")
+                    print("  2. The base URL is correct")
+                    print(f"     Example: ollama run {self.config.default_model}")
+                else:
+                    print("Please check:")
+                    print("  1. Your API key is correct")
+                    print("  2. Your network connection")
+                    print("  3. The model service is available")
+                
                 print()
                 print("To reconfigure, run: ./pilotcode configure")
                 print()
                 sys.exit(1)
             else:
                 print(f"✅ API connection successful ({self.config.default_model})")
+                if not is_local:
+                    print(f"   Response preview: {message[:50]}...")
                 print()
                 
         except Exception as e:
