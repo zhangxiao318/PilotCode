@@ -55,13 +55,14 @@ class REPL:
         self.auto_allow = auto_allow
         if auto_allow:
             # Grant all permissions automatically
-            from ..permissions import get_permission_manager, PermissionLevel
+            from ..permissions import get_permission_manager, PermissionLevel, ToolPermission
             pm = get_permission_manager()
             for tool in tools:
-                pm._permissions[tool.name] = type('obj', (object,), {
-                    'tool_name': tool.name,
-                    'level': PermissionLevel.ALWAYS_ALLOW
-                })()
+                pm._permissions[tool.name] = ToolPermission(
+                    tool_name=tool.name,
+                    level=PermissionLevel.ALWAYS_ALLOW
+                )
+            self.console.print("[dim]⚡ Auto-allow mode enabled - all tool executions will be allowed[/dim]\n")
         
         self.running = True
         
