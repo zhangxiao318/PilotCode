@@ -10,12 +10,13 @@ export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export PYTHONIOENCODING=utf-8
 
-# Get script directory
+# Get script directory (for PYTHONPATH)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
 
 # Set PYTHONPATH to include src directory
 export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH}"
+
+# Note: Do NOT cd to SCRIPT_DIR, keep current working directory
 
 # Check if virtual environment exists and activate it
 if [ -d ".venv" ] && [ -f ".venv/bin/activate" ]; then
