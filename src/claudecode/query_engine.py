@@ -144,12 +144,12 @@ Be concise but thorough in your responses."""
         ):
             delta = chunk.get("choices", [{}])[0].get("delta", {})
             
-            # Handle content
+            # Handle content - yield delta (incremental) content
             if delta.get("content"):
-                content = delta["content"]
-                accumulated_content += content
-                # Stream partial assistant message
-                partial_msg = AssistantMessage(content=accumulated_content)
+                delta_content = delta["content"]
+                accumulated_content += delta_content
+                # Stream delta content (not accumulated)
+                partial_msg = AssistantMessage(content=delta_content)
                 yield QueryResult(message=partial_msg, is_complete=False)
             
             # Handle tool calls
@@ -158,7 +158,7 @@ Be concise but thorough in your responses."""
                     # Accumulate tool calls
                     pass
         
-        # Final assistant message
+        # Final assistant message with complete content
         if accumulated_content:
             assistant_msg = AssistantMessage(content=accumulated_content)
             self.messages.append(assistant_msg)

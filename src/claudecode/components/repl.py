@@ -89,16 +89,17 @@ Type /help for available commands, or start chatting!
             async for result in self.query_engine.submit_message(prompt):
                 msg = result.message
                 
-                # Handle assistant message content
+                # Handle assistant message content (delta/incremental)
                 if isinstance(msg, AssistantMessage) and isinstance(msg.content, str):
-                    # Only append new content (avoid duplicates)
-                    if len(msg.content) > len(accumulated_content):
+                    if result.is_complete:
+                        # Final complete message - replace accumulated
                         accumulated_content = msg.content
-                        # Update live display with cursor
-                        live.update(Markdown(accumulated_content + "▌"))
-                    elif result.is_complete:
-                        # Final update without cursor
-                        live.update(Markdown(accumulated_content))
+                    else:
+                        # Delta content - accumulate
+                        accumulated_content += msg.content
+                    
+                    # Update live display with cursor during streaming
+                    live.update(Markdown(accumulated_content + "▌"))
                 
                 # Handle tool use
                 if isinstance(msg, ToolUseMessage):
@@ -113,7 +114,7 @@ Type /help for available commands, or start chatting!
                         self.console.print(f"[red]Tool error: {msg.content}[/red]")
                     live.start()
             
-            # Final output
+            # Streaming complete - final display without cursor
             live.stop()
             if accumulated_content:
                 self.console.print(Markdown(accumulated_content))
