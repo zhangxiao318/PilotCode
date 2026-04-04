@@ -197,16 +197,29 @@ Be helpful, thorough, and practical. Focus on delivering working solutions."""
                     
                     # Update tool call data
                     if tc.get("id"):
-                        tool_calls[idx].id = tc["id"]
+                        tool_calls[idx] = ToolCall(
+                            id=tc["id"],
+                            name=tool_calls[idx].name,
+                            arguments=tool_calls[idx].arguments
+                        )
                     if tc.get("function", {}).get("name"):
-                        tool_calls[idx].name = tc["function"]["name"]
+                        tool_calls[idx] = ToolCall(
+                            id=tool_calls[idx].id,
+                            name=tc["function"]["name"],
+                            arguments=tool_calls[idx].arguments
+                        )
                     if tc.get("function", {}).get("arguments"):
                         import json
                         try:
-                            args = json.loads(tc["function"]["arguments"])
-                            tool_calls[idx].arguments.update(args)
+                            args_str = tc["function"]["arguments"]
+                            args = json.loads(args_str)
+                            tool_calls[idx] = ToolCall(
+                                id=tool_calls[idx].id,
+                                name=tool_calls[idx].name,
+                                arguments=args
+                            )
                         except json.JSONDecodeError:
-                            # Partial JSON, accumulate as string and parse later
+                            # Partial JSON, skip for now
                             pass
             
             # Check if stream is complete
