@@ -42,6 +42,15 @@ from .git_tools import GitStatusTool, GitDiffTool, GitLogTool, GitBranchTool
 from .tool_search_tool import ToolSearchTool
 from .brief_tool import BriefTool
 from .cron_tools import CronCreateTool, CronDeleteTool, CronListTool, CronUpdateTool
+from .worktree_tools import EnterWorktreeTool, ExitWorktreeTool, ListWorktreesTool
+from .sleep_tool import SleepTool
+from .team_tools import TeamCreateTool, TeamDeleteTool, TeamAddMemberTool, TeamListTool
+from .skill_tool import SkillTool
+from .send_message_tool import SendMessageTool, ReceiveMessageTool
+from .repl_tool import REPLTool
+from .task_output_tool import TaskOutputTool
+from .synthetic_output_tool import SyntheticOutputTool
+from .remote_trigger_tool import RemoteTriggerTool
 
 __all__ = [
     "Tool",
