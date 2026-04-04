@@ -54,6 +54,24 @@ from . import touch_cmd
 from . import head_cmd
 from . import tail_cmd
 from . import wc_cmd
+from . import stash_cmd
+from . import tag_cmd
+from . import remote_cmd
+from . import merge_cmd
+from . import rebase_cmd
+from . import test_cmd
+from . import coverage_cmd
+from . import format_cmd
+from . import lint_cmd
+from . import symbols_cmd
+from . import references_cmd
+from . import blame_cmd
+from . import cherrypick_cmd
+from . import reset_cmd
+from . import clean_cmd
+from . import bisect_cmd
+from . import switch_cmd
+from . import revert_cmd
 
 __all__ = [
     "CommandHandler",
