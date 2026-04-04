@@ -82,6 +82,32 @@ class SimpleCLI:
             print(f"❌ Failed to initialize: {e}")
             sys.exit(1)
     
+    async def test_api_connection(self) -> bool:
+        """Test LLM API connection before starting.
+        
+        Returns:
+            True if API is working, False otherwise.
+        """
+        from pilotcode.utils.model_client import get_model_client, Message
+        
+        try:
+            client = get_model_client()
+            # Send a simple test message
+            messages = [Message(role="user", content="Hi")]
+            
+            response_content = ""
+            async for chunk in client.chat_completion(messages, stream=True, max_tokens=10):
+                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content")
+                if content:
+                    response_content += content
+            
+            # If we got any response, API is working
+            return len(response_content) > 0
+            
+        except Exception as e:
+            return False
+    
     def print_welcome(self):
         """Print welcome message."""
         print("=" * 60)
@@ -94,6 +120,37 @@ class SimpleCLI:
             print()
             print("⚠️  Warning: API key not configured or invalid!")
             print("   Run: ./pilotcode configure")
+            print()
+            return
+        
+        # Test API connection
+        print()
+        print("🔄 Testing LLM API connection...")
+        
+        try:
+            import asyncio
+            api_working = asyncio.run(self.test_api_connection())
+            
+            if not api_working:
+                print()
+                print("❌ API connection failed!")
+                print(f"   Model: {self.config.default_model}")
+                print(f"   Base URL: {self.config.base_url}")
+                print()
+                print("Please check:")
+                print("  1. Your API key is correct")
+                print("  2. Your network connection")
+                print("  3. The model service is available")
+                print()
+                print("To reconfigure, run: ./pilotcode configure")
+                print()
+                sys.exit(1)
+            else:
+                print(f"✅ API connection successful ({self.config.default_model})")
+                print()
+                
+        except Exception as e:
+            print(f"⚠️  Could not test API: {e}")
             print()
         print()
         print("Commands:")

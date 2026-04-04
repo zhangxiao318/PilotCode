@@ -25,8 +25,8 @@ fi
 
 # Run PilotCode
 if [ $# -eq 0 ]; then
-    # No arguments: start main application
-    python3 -m pilotcode
+    # No arguments: start main application (default)
+    python3 -m pilotcode main
 else
     # Pass through all arguments
     python3 -m pilotcode "$@"
