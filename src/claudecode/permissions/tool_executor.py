@@ -110,6 +110,17 @@ class ToolExecutor:
             except (KeyboardInterrupt, EOFError):
                 return PermissionLevel.DENY
     
+    def _normalize_tool_input(self, tool_name: str, tool_input: dict) -> dict:
+        """Normalize tool input field names to match Pydantic models."""
+        normalized = tool_input.copy()
+        
+        # FileWrite/FileRead/FileEdit: map 'path' to 'file_path'
+        if tool_name in ("FileWrite", "FileRead", "FileEdit"):
+            if "path" in normalized and "file_path" not in normalized:
+                normalized["file_path"] = normalized.pop("path")
+        
+        return normalized
+    
     async def execute_tool(
         self,
         tool: Tool,
@@ -119,6 +130,9 @@ class ToolExecutor:
     ) -> ToolExecutionResult:
         """Execute a tool with permission checking."""
         tool_name = tool.name
+        
+        # Normalize field names (handle LLM using different field names)
+        tool_input = self._normalize_tool_input(tool_name, tool_input)
         
         # Check if permission is already granted
         is_permitted, reason = self.permission_manager.check_permission(tool_name, tool_input)

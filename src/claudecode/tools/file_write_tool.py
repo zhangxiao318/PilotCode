@@ -118,8 +118,20 @@ async def file_write_call(
     on_progress: Any
 ) -> ToolResult[FileWriteOutput]:
     """Execute file write."""
-    # Resolve path
-    file_path = input_data.file_path
+    # Handle field name mapping - LLM might use 'path' instead of 'file_path'
+    file_path = getattr(input_data, 'file_path', None)
+    if not file_path:
+        # Try 'path' as fallback
+        file_path = getattr(input_data, 'path', None)
+    
+    if not file_path:
+        return ToolResult(
+            data=FileWriteOutput(
+                file_path="",
+                bytes_written=0,
+                error="Missing required field: file_path (or path)"
+            )
+        )
     if not os.path.isabs(file_path) and context.get_app_state:
         app_state = context.get_app_state()
         cwd = getattr(app_state, 'cwd', os.getcwd())
