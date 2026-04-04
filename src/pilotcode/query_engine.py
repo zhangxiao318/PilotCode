@@ -137,7 +137,8 @@ After showing code, offer to save it to a file if appropriate."""
         api_messages = []
         
         # Track pending tool calls that need to be attached to assistant message
-        pending_tool_calls: list[dict] = []
+        # Using ToolCall objects as expected by model_client
+        pending_tool_calls: list[ToolCall] = []
         
         for i, msg in enumerate(messages):
             if isinstance(msg, SystemMessage):
@@ -167,14 +168,11 @@ After showing code, offer to save it to a file if appropriate."""
                     api_messages.append(APIMessage(role="assistant", content=content))
             elif isinstance(msg, ToolUseMessage):
                 # Accumulate tool calls to attach to next assistant message
-                pending_tool_calls.append({
-                    "id": msg.tool_use_id,
-                    "type": "function",
-                    "function": {
-                        "name": msg.name,
-                        "arguments": json.dumps(msg.input)
-                    }
-                })
+                pending_tool_calls.append(ToolCall(
+                    id=msg.tool_use_id,
+                    name=msg.name,
+                    arguments=msg.input
+                ))
             elif isinstance(msg, ToolResultMessage):
                 # Flush pending tool calls before tool result
                 if pending_tool_calls:
