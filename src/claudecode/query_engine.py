@@ -143,20 +143,36 @@ Be concise but thorough in your responses."""
             stream=True
         ):
             delta = chunk.get("choices", [{}])[0].get("delta", {})
+            finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
             
-            # Handle content - yield delta (incremental) content
+            # Handle content
             if delta.get("content"):
-                delta_content = delta["content"]
-                accumulated_content += delta_content
-                # Stream delta content (not accumulated)
-                partial_msg = AssistantMessage(content=delta_content)
-                yield QueryResult(message=partial_msg, is_complete=False)
+                content = delta["content"]
+                # Some APIs return accumulated content, some return delta
+                # Check if this looks like accumulated content
+                if len(content) > len(accumulated_content) and content.startswith(accumulated_content):
+                    # This is accumulated content - only yield the delta part
+                    delta_content = content[len(accumulated_content):]
+                    accumulated_content = content
+                else:
+                    # This is delta content
+                    delta_content = content
+                    accumulated_content += content
+                
+                # Yield the delta content for streaming display
+                if delta_content:
+                    partial_msg = AssistantMessage(content=delta_content)
+                    yield QueryResult(message=partial_msg, is_complete=False)
             
             # Handle tool calls
             if delta.get("tool_calls"):
                 for tc in delta["tool_calls"]:
                     # Accumulate tool calls
                     pass
+            
+            # Check if stream is complete
+            if finish_reason:
+                break
         
         # Final assistant message with complete content
         if accumulated_content:

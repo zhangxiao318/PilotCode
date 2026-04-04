@@ -7,9 +7,9 @@ from typing import Any
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
-from rich.syntax import Syntax
 from rich.live import Live
 from rich.spinner import Spinner
+from rich.text import Text
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
@@ -80,44 +80,41 @@ Type /help for available commands, or start chatting!
         return False
     
     async def stream_response(self, prompt: str) -> None:
-        """Stream response from model."""
+        """Stream response from model - simplified version."""
         from ..types.message import AssistantMessage, ToolUseMessage, ToolResultMessage
         
-        accumulated_content = ""
+        # Collect all content first, then print once
+        full_content = ""
+        current_tool = None
         
-        with Live(Spinner("dots", text="Thinking..."), refresh_per_second=10) as live:
+        # Show spinner while waiting
+        with self.console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
             async for result in self.query_engine.submit_message(prompt):
                 msg = result.message
                 
-                # Handle assistant message content (delta/incremental)
+                # Accumulate assistant content
                 if isinstance(msg, AssistantMessage) and isinstance(msg.content, str):
                     if result.is_complete:
-                        # Final complete message - replace accumulated
-                        accumulated_content = msg.content
+                        # Final message - use this as complete content
+                        full_content = msg.content
                     else:
-                        # Delta content - accumulate
-                        accumulated_content += msg.content
-                    
-                    # Update live display with cursor during streaming
-                    live.update(Markdown(accumulated_content + "▌"))
+                        # Accumulate delta
+                        full_content += msg.content
                 
-                # Handle tool use
+                # Show tool use
                 if isinstance(msg, ToolUseMessage):
-                    live.stop()
-                    self.console.print(f"\n[dim]🔧 Using tool: {msg.name}[/dim]")
-                    live.start()
+                    self.console.print(f"[dim]🔧 Using tool: {msg.name}[/dim]")
+                    current_tool = msg.name
                 
-                # Handle tool result
-                if isinstance(msg, ToolResultMessage):
-                    live.stop()
-                    if msg.is_error:
-                        self.console.print(f"[red]Tool error: {msg.content}[/red]")
-                    live.start()
-            
-            # Streaming complete - final display without cursor
-            live.stop()
-            if accumulated_content:
-                self.console.print(Markdown(accumulated_content))
+                # Show tool errors
+                if isinstance(msg, ToolResultMessage) and msg.is_error:
+                    self.console.print(f"[red]Tool error: {msg.content}[/red]")
+        
+        # Print final result once
+        if full_content:
+            self.console.print(Markdown(full_content))
+        elif not current_tool:
+            self.console.print("[dim]No response[/dim]")
     
     async def run(self) -> None:
         """Run the REPL."""
