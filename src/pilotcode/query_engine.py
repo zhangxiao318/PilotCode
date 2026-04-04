@@ -136,22 +136,68 @@ After showing code, offer to save it to a file if appropriate."""
         """Convert internal messages to API format."""
         api_messages = []
         
-        for msg in messages:
+        # Track pending tool calls that need to be attached to assistant message
+        pending_tool_calls: list[dict] = []
+        
+        for i, msg in enumerate(messages):
             if isinstance(msg, SystemMessage):
                 api_messages.append(APIMessage(role="system", content=msg.content))
             elif isinstance(msg, UserMessage):
+                # Flush any pending tool calls before user message
+                if pending_tool_calls:
+                    api_messages.append(APIMessage(
+                        role="assistant",
+                        content="",
+                        tool_calls=pending_tool_calls
+                    ))
+                    pending_tool_calls = []
                 content = msg.content if isinstance(msg.content, str) else str(msg.content)
                 api_messages.append(APIMessage(role="user", content=content))
             elif isinstance(msg, AssistantMessage):
-                content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                api_messages.append(APIMessage(role="assistant", content=content))
+                # Flush pending tool calls if any
+                if pending_tool_calls:
+                    api_messages.append(APIMessage(
+                        role="assistant",
+                        content=msg.content or "",
+                        tool_calls=pending_tool_calls
+                    ))
+                    pending_tool_calls = []
+                else:
+                    content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                    api_messages.append(APIMessage(role="assistant", content=content))
+            elif isinstance(msg, ToolUseMessage):
+                # Accumulate tool calls to attach to next assistant message
+                pending_tool_calls.append({
+                    "id": msg.tool_use_id,
+                    "type": "function",
+                    "function": {
+                        "name": msg.name,
+                        "arguments": json.dumps(msg.input)
+                    }
+                })
             elif isinstance(msg, ToolResultMessage):
+                # Flush pending tool calls before tool result
+                if pending_tool_calls:
+                    api_messages.append(APIMessage(
+                        role="assistant",
+                        content="",
+                        tool_calls=pending_tool_calls
+                    ))
+                    pending_tool_calls = []
                 api_messages.append(APIMessage(
                     role="tool",
                     content=msg.content if isinstance(msg.content, str) else json.dumps(msg.content),
                     tool_call_id=msg.tool_use_id,
                     name=msg.tool_use_id
                 ))
+        
+        # Flush any remaining pending tool calls
+        if pending_tool_calls:
+            api_messages.append(APIMessage(
+                role="assistant",
+                content="",
+                tool_calls=pending_tool_calls
+            ))
         
         return api_messages
     
