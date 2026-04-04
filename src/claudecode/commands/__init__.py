@@ -32,6 +32,15 @@ from . import plan_cmd
 from . import env_cmd
 from . import compact_cmd
 from . import version_cmd
+from . import find_cmd
+from . import review_cmd
+from . import doctor_cmd
+from . import rename_cmd
+from . import share_cmd
+from . import skill_cmd
+from . import mcp_cmd
+from . import lsp_cmd
+from . import debug_cmd
 
 __all__ = [
     "CommandHandler",
