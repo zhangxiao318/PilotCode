@@ -81,36 +81,42 @@ Type /help for available commands, or start chatting!
     
     async def stream_response(self, prompt: str) -> None:
         """Stream response from model."""
+        from ..types.message import AssistantMessage, ToolUseMessage, ToolResultMessage
+        
+        accumulated_content = ""
+        
         with Live(Spinner("dots", text="Thinking..."), refresh_per_second=10) as live:
-            current_content = ""
-            
             async for result in self.query_engine.submit_message(prompt):
                 msg = result.message
                 
-                if hasattr(msg, 'content') and isinstance(msg.content, str):
-                    current_content = msg.content
-                    # Update live display
-                    if result.is_complete:
-                        live.stop()
-                        self.console.print(Markdown(current_content))
-                    else:
-                        live.update(Markdown(current_content + "▌"))
+                # Handle assistant message content
+                if isinstance(msg, AssistantMessage) and isinstance(msg.content, str):
+                    # Only append new content (avoid duplicates)
+                    if len(msg.content) > len(accumulated_content):
+                        accumulated_content = msg.content
+                        # Update live display with cursor
+                        live.update(Markdown(accumulated_content + "▌"))
+                    elif result.is_complete:
+                        # Final update without cursor
+                        live.update(Markdown(accumulated_content))
                 
                 # Handle tool use
-                if msg.type == "tool_use":
+                if isinstance(msg, ToolUseMessage):
                     live.stop()
-                    self.console.print(f"[dim]🔧 Using tool: {msg.name}[/dim]")
+                    self.console.print(f"\n[dim]🔧 Using tool: {msg.name}[/dim]")
                     live.start()
                 
                 # Handle tool result
-                if msg.type == "tool_result":
+                if isinstance(msg, ToolResultMessage):
                     live.stop()
                     if msg.is_error:
                         self.console.print(f"[red]Tool error: {msg.content}[/red]")
-                    else:
-                        # Don't print tool results, they go back to model
-                        pass
                     live.start()
+            
+            # Final output
+            live.stop()
+            if accumulated_content:
+                self.console.print(Markdown(accumulated_content))
     
     async def run(self) -> None:
         """Run the REPL."""
