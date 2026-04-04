@@ -146,23 +146,14 @@ Be concise but thorough in your responses."""
             finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
             
             # Handle content
-            if delta.get("content"):
-                content = delta["content"]
-                # Some APIs return accumulated content, some return delta
-                # Check if this looks like accumulated content
-                if len(content) > len(accumulated_content) and content.startswith(accumulated_content):
-                    # This is accumulated content - only yield the delta part
-                    delta_content = content[len(accumulated_content):]
-                    accumulated_content = content
-                else:
-                    # This is delta content
-                    delta_content = content
-                    accumulated_content += content
+            content = delta.get("content")
+            if content:
+                # API returns delta content (incremental)
+                accumulated_content += content
                 
                 # Yield the delta content for streaming display
-                if delta_content:
-                    partial_msg = AssistantMessage(content=delta_content)
-                    yield QueryResult(message=partial_msg, is_complete=False)
+                partial_msg = AssistantMessage(content=content)
+                yield QueryResult(message=partial_msg, is_complete=False)
             
             # Handle tool calls
             if delta.get("tool_calls"):

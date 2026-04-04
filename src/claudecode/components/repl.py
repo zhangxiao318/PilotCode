@@ -32,7 +32,7 @@ class REPL:
         
         # Initialize state
         config = get_global_config()
-        self.store.set_state(lambda s: s)  # Trigger initial state
+        self.store.set_state(lambda s: s)
         
         # Setup prompt session
         self.session = PromptSession(
@@ -66,10 +66,7 @@ Type /help for available commands, or start chatting!
         self.console.print(header, style="cyan")
     
     async def handle_command(self, input_text: str) -> bool:
-        """Handle a command or message.
-        
-        Returns True if handled as command, False if should send to model.
-        """
+        """Handle a command or message."""
         context = CommandContext(cwd=self.store.get_state().cwd)
         is_command, result = await process_user_input(input_text, context)
         
@@ -80,38 +77,47 @@ Type /help for available commands, or start chatting!
         return False
     
     async def stream_response(self, prompt: str) -> None:
-        """Stream response from model - simplified version."""
+        """Stream response from model."""
         from ..types.message import AssistantMessage, ToolUseMessage, ToolResultMessage
         
-        # Collect all content first, then print once
         full_content = ""
         current_tool = None
+        has_started = False
         
-        # Show spinner while waiting
-        with self.console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
-            async for result in self.query_engine.submit_message(prompt):
-                msg = result.message
+        async for result in self.query_engine.submit_message(prompt):
+            msg = result.message
+            
+            # Accumulate assistant content
+            if isinstance(msg, AssistantMessage) and isinstance(msg.content, str):
+                if not has_started:
+                    # First content received - clear status
+                    has_started = True
                 
-                # Accumulate assistant content
-                if isinstance(msg, AssistantMessage) and isinstance(msg.content, str):
-                    if result.is_complete:
-                        # Final message - use this as complete content
-                        full_content = msg.content
-                    else:
-                        # Accumulate delta
-                        full_content += msg.content
-                
-                # Show tool use
-                if isinstance(msg, ToolUseMessage):
-                    self.console.print(f"[dim]🔧 Using tool: {msg.name}[/dim]")
-                    current_tool = msg.name
-                
-                # Show tool errors
-                if isinstance(msg, ToolResultMessage) and msg.is_error:
-                    self.console.print(f"[red]Tool error: {msg.content}[/red]")
+                if result.is_complete:
+                    # Final complete message
+                    full_content = msg.content
+                else:
+                    # Accumulate and print incrementally
+                    full_content += msg.content
+                    # Print each chunk as it arrives
+                    self.console.print(msg.content, end="")
+            
+            # Show tool use
+            if isinstance(msg, ToolUseMessage):
+                if has_started:
+                    self.console.print()  # New line
+                self.console.print(f"[dim]🔧 Using tool: {msg.name}[/dim]")
+                current_tool = msg.name
+                has_started = False
+            
+            # Show tool errors
+            if isinstance(msg, ToolResultMessage) and msg.is_error:
+                self.console.print(f"[red]Tool error: {msg.content}[/red]")
         
-        # Print final result once
+        # Final newline and formatted output
+        self.console.print()
         if full_content:
+            # Print formatted version
             self.console.print(Markdown(full_content))
         elif not current_tool:
             self.console.print("[dim]No response[/dim]")
@@ -134,6 +140,10 @@ Type /help for available commands, or start chatting!
                 if is_command:
                     continue
                 
+                # Show thinking indicator
+                with self.console.status("[cyan]Thinking...[/cyan]", spinner="dots"):
+                    pass  # Status will be cleared after first chunk
+                
                 # Send to model
                 await self.stream_response(user_input)
                 
@@ -144,6 +154,8 @@ Type /help for available commands, or start chatting!
                 break
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
+                import traceback
+                traceback.print_exc()
                 continue
         
         self.console.print("\n[dim]Goodbye! 👋[/dim]")
