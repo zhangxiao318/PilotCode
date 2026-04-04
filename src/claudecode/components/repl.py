@@ -38,10 +38,11 @@ class REPL:
             style=Style.from_dict({'prompt': '#00aa00 bold'})
         )
         
-        tools = get_all_tools()
+        # Initialize with empty tools list to avoid tool call issues
+        # Tools can be enabled later when the tool system is stable
         self.query_engine = QueryEngine(QueryEngineConfig(
             cwd=self.store.get_state().cwd,
-            tools=tools,
+            tools=[],  # Empty for now - add tools back when stable
             get_app_state=self.store.get_state,
             set_app_state=lambda f: self.store.set_state(f)
         ))

@@ -252,9 +252,19 @@ Be helpful, thorough, and practical. Focus on delivering working solutions."""
                 self.messages.append(tool_result)
                 yield QueryResult(message=tool_result, is_complete=False)
             
-            # Continue conversation with tool results
-            async for result in self.submit_message("Tool execution complete", options):
-                yield result
+            # Continue conversation with tool results (limit recursion)
+            if not options:
+                options = {}
+            tool_count = options.get('_tool_call_count', 0)
+            if tool_count < 5:  # Limit to 5 tool call rounds
+                options['_tool_call_count'] = tool_count + 1
+                async for result in self.submit_message("Tool execution complete", options):
+                    yield result
+            else:
+                # Too many tool calls, return a message
+                final_msg = AssistantMessage(content="I've completed the tool operations. Let me know if you need anything else.")
+                self.messages.append(final_msg)
+                yield QueryResult(message=final_msg, is_complete=True)
     
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResultMessage:
         """Execute a tool call."""
