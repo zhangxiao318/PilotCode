@@ -8,6 +8,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.align import Align
+from prompt_toolkit import PromptSession
+from prompt_toolkit.styles import Style
 
 from .permission_manager import (
     PermissionManager,
@@ -35,10 +37,15 @@ class ToolExecutor:
     def __init__(self, console: Console | None = None):
         self.console = console or Console()
         self.permission_manager = get_permission_manager()
+        # Create async prompt session for permission prompts
+        self._prompt_session = PromptSession(
+            style=Style.from_dict({
+                'prompt': '#00aa00 bold',
+            })
+        )
         
     def _format_permission_request(self, request: PermissionRequest) -> Panel:
         """Format permission request for display."""
-        # Determine color based on risk
         risk_colors = {
             "low": "green",
             "medium": "yellow",
@@ -47,14 +54,12 @@ class ToolExecutor:
         }
         color = risk_colors.get(request.risk_level, "yellow")
         
-        # Build content
         content = Text()
         content.append(f"Tool: ", style="bold")
         content.append(f"{request.tool_name}\n", style="cyan")
         content.append(f"Risk: ", style="bold")
         content.append(f"{request.risk_level.upper()}\n", style=f"bold {color}")
         
-        # Show tool input details
         content.append("\nDetails:\n", style="bold")
         for key, value in request.tool_input.items():
             content.append(f"  {key}: ", style="dim")
@@ -75,7 +80,6 @@ class ToolExecutor:
         self.console.print()
         self.console.print(self._format_permission_request(request))
         
-        # Show options
         self.console.print("\n[bold]Options:[/bold]")
         self.console.print("  [y] Yes - Allow this once")
         self.console.print("  [n] No - Deny this once")
@@ -83,11 +87,13 @@ class ToolExecutor:
         self.console.print("  [s] Session - Always allow this specific action")
         self.console.print("  [d] Don't ask again - Never allow this")
         
-        # Get user input
         while True:
             try:
-                from prompt_toolkit import prompt
-                choice = prompt("\nChoice [y/n/a/s/d]: ").strip().lower()
+                # Use async prompt
+                choice = await self._prompt_session.prompt_async(
+                    "\nChoice [y/n/a/s/d]: "
+                )
+                choice = choice.strip().lower()
                 
                 if choice in ("y", "yes"):
                     return PermissionLevel.ALLOW
@@ -111,17 +117,7 @@ class ToolExecutor:
         context: ToolUseContext,
         can_use_tool_callback: Callable | None = None,
     ) -> ToolExecutionResult:
-        """Execute a tool with permission checking.
-        
-        Args:
-            tool: The tool to execute
-            tool_input: Tool input parameters
-            context: Tool execution context
-            can_use_tool_callback: Optional callback for permission checking
-        
-        Returns:
-            ToolExecutionResult with execution details
-        """
+        """Execute a tool with permission checking."""
         tool_name = tool.name
         
         # Check if permission is already granted
@@ -130,7 +126,6 @@ class ToolExecutor:
         if not is_permitted:
             # Need to ask for permission
             if self.permission_manager._permission_callback is None:
-                # Set up interactive callback
                 self.permission_manager.set_permission_callback(
                     self._interactive_permission_prompt
                 )
@@ -150,16 +145,14 @@ class ToolExecutor:
         
         # Permission granted, execute the tool
         try:
-            # Show execution
             self.console.print(f"[dim]🔧 Executing {tool_name}...[/dim]")
             
-            # Call the tool
             result = await tool.call(
                 tool_input,
                 context,
                 can_use_tool_callback or (lambda **kwargs: {"behavior": "allow"}),
-                None,  # parent_message
-                lambda x: None  # on_progress
+                None,
+                lambda x: None
             )
             
             if result.is_error:
@@ -195,7 +188,6 @@ class ToolExecutor:
         context: ToolUseContext,
     ) -> ToolExecutionResult:
         """Execute a tool by name with permission checking."""
-        # Find tool
         all_tools = get_all_tools()
         tool = None
         for t in all_tools:
