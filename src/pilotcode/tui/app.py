@@ -5,7 +5,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal
 from textual.widgets import Input, Static, Button, Label
 
-from ..tools.registry import get_all_tools
+from ..tools.registry import get_all_tools, get_tool
 from ..tools.base import ToolUseContext
 from ..commands.base import process_user_input, CommandContext
 from ..query_engine import QueryEngine, QueryEngineConfig

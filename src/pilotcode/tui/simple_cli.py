@@ -18,10 +18,16 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from pilotcode.query_engine import QueryEngine, QueryResult
-from pilotcode.types.message import UserMessage, AssistantMessage, ToolUseMessage, ToolResultMessage
+from pilotcode.types.message import UserMessage, AssistantMessage, ToolUseMessage, ToolResultMessage, SystemMessage
 from pilotcode.utils.config import get_global_config, GlobalConfig
 from pilotcode.commands.base import process_user_input
 from pilotcode.tools.base import ToolUseContext as CommandContext
+from pilotcode.services.session_context import (
+    get_session_context_manager, 
+    reset_session_context,
+    SessionContextManager
+)
+from pilotcode.services.context_compression import get_context_compressor
 
 
 @dataclass
@@ -40,6 +46,12 @@ class SimpleCLI:
         self.query_engine: Optional[QueryEngine] = None
         self.auto_allow = auto_allow
         self.session_file: Optional[str] = None
+        
+        # Initialize session context manager for maintaining project context
+        self.session_context = get_session_context_manager()
+        
+        # Context compression threshold
+        self.compression_threshold = 20  # Compress after 20 messages
         
         # Initialize query engine
         try:
@@ -224,13 +236,16 @@ class SimpleCLI:
         print("  /help           Show this help message")
         print("  /save [file]    Save conversation to file (default: session.json)")
         print("  /load [file]    Load conversation from file")
-        print("  /clear          Clear conversation history")
+        print("  /clear          Clear conversation history and context")
+        print("  /context        Show current session context")
+        print("  /project        Set project information")
         print("  /quit or /exit  Exit the application")
         print()
         print("Tips:")
         print("  • Use @filename to reference files in your queries")
         print("  • The AI can read, write, and analyze code files")
-        print("  • Type your questions in natural language")
+        print("  • Session context is maintained automatically")
+        print("  • Context compresses automatically when it gets too long")
         print()
     
     def ask_permission(self, tool_name: str, params: dict) -> bool:
@@ -277,12 +292,19 @@ class SimpleCLI:
             # Clear conversation in query engine
             if self.query_engine:
                 # Re-initialize to clear history
+                from pilotcode.query_engine import QueryEngineConfig
                 self.query_engine = QueryEngine(
-                    model_name=self.query_engine.model_name,
-                    api_key=None,
-                    config=None
+                    config=QueryEngineConfig(
+                        cwd=str(Path.cwd()),
+                        tools=self.query_engine.config.tools,
+                        get_app_state=self.store.get_state,
+                        set_app_state=lambda f: self.store.set_state(f)
+                    )
                 )
-            print("✅ Conversation history cleared")
+            # Reset session context
+            reset_session_context()
+            self.session_context = get_session_context_manager()
+            print("✅ Conversation history and context cleared")
         
         elif cmd == '/save':
             filename = args[0] if args else 'session.json'
@@ -305,6 +327,38 @@ class SimpleCLI:
                     print(f"❌ File not found: {filename}")
             except Exception as e:
                 print(f"❌ Failed to load: {e}")
+        
+        elif cmd == '/context':
+            # Show current session context
+            print()
+            print(self.session_context.get_system_prompt_addition())
+            print(f"   Messages: {len(self.query_engine.messages)}")
+        
+        elif cmd == '/project':
+            # Set project information
+            if len(args) >= 1:
+                project_name = args[0]
+                self.session_context.set_project_info(name=project_name)
+                print(f"✅ Project name set to: {project_name}")
+                if len(args) >= 2:
+                    description = ' '.join(args[1:])
+                    self.session_context.context.project.description = description
+                    print(f"   Description: {description}")
+            else:
+                print("Usage: /project <name> [description]")
+                print("Example: /project 博客系统 '一个基于Python的博客系统'")
+        
+        elif cmd == '/compact':
+            # Manually trigger context compression
+            print("\n🔄 Manually compressing context...")
+            original_count = len(self.query_engine.messages)
+            compressor = get_context_compressor()
+            self.query_engine.messages = compressor.simple_compact(
+                self.query_engine.messages,
+                keep_recent=10
+            )
+            compressed_count = len(self.query_engine.messages)
+            print(f"   Compressed: {original_count} -> {compressed_count} messages")
         
         else:
             print(f"❌ Unknown command: {cmd}")
@@ -335,6 +389,12 @@ class SimpleCLI:
         print()
         
         try:
+            # Check if we need to compress context before processing
+            await self._check_and_compress_context()
+            
+            # Add session context to query engine messages if not present
+            self._inject_session_context()
+            
             iteration = 0
             max_iterations = 5
             current_prompt = text
@@ -433,9 +493,75 @@ class SimpleCLI:
                 # Continue loop to get LLM response with tool results
                 # Use empty string to continue without adding new user message
                 current_prompt = ""
+            
+            # Update session context with this exchange
+            self.session_context.update_from_message(text, accumulated_response)
+            
+            # Show project context hint if available
+            project = self.session_context.context.project
+            if project.name and iteration == 1:  # Only on first response
+                print(f"\n📋 Project: {project.name}")
+                if project.current_focus:
+                    print(f"   Focus: {project.current_focus}")
         
         except Exception as e:
             print(f"❌ Error processing query: {e}")
+    
+    def _inject_session_context(self):
+        """Inject session context into query engine messages as system message."""
+        context_msg = self.session_context.get_system_prompt_addition()
+        
+        # Check if we already have a context message
+        has_context = False
+        for msg in self.query_engine.messages:
+            if isinstance(msg, SystemMessage) and "=== Current Session Context ===" in msg.content:
+                # Update existing context message
+                msg.content = context_msg
+                has_context = True
+                break
+        
+        if not has_context and len(self.query_engine.messages) > 0:
+            # Insert after first system message (or at beginning if no system message)
+            first_system_idx = -1
+            for i, msg in enumerate(self.query_engine.messages):
+                if isinstance(msg, SystemMessage):
+                    first_system_idx = i
+                    break
+            
+            if first_system_idx >= 0:
+                self.query_engine.messages.insert(first_system_idx + 1, SystemMessage(content=context_msg))
+            else:
+                self.query_engine.messages.insert(0, SystemMessage(content=context_msg))
+    
+    async def _check_and_compress_context(self):
+        """Check if context needs compression and perform it if necessary."""
+        msg_count = len(self.query_engine.messages)
+        
+        if self.session_context.should_compress_context(msg_count, self.compression_threshold):
+            print("\n🔄 Context getting long, compressing...")
+            
+            from pilotcode.services.token_estimation import estimate_tokens
+            
+            # Get compressor
+            compressor = get_context_compressor()
+            
+            # Compress messages
+            original_count = len(self.query_engine.messages)
+            self.query_engine.messages = compressor.simple_compact(
+                self.query_engine.messages,
+                keep_recent=10  # Keep last 10 messages
+            )
+            compressed_count = len(self.query_engine.messages)
+            
+            # Record compression
+            self.session_context.record_compression()
+            
+            # Estimate tokens saved
+            tokens_saved = estimate_tokens("dummy") * (original_count - compressed_count)
+            
+            print(f"   Compressed: {original_count} -> {compressed_count} messages (~{tokens_saved} tokens saved)")
+            print("   Older messages summarized. Key context preserved.")
+            print()
     
     async def run(self):
         """Main run loop."""

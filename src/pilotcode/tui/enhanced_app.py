@@ -105,8 +105,8 @@ class StatusBarWidget(Static):
     }
     """
     
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.model_name = "PilotCode 0.2"
         self.connected = True
         self.token_usage = (0, 262100)
@@ -324,7 +324,8 @@ class MessageBubble(Static):
         self.content = content
         self.renderer = MessageRenderer()
     
-    def compose(self) -> ComposeResult:
+    def on_mount(self) -> None:
+        """Render message on mount."""
         # Convert role to MessageType
         role_map = {
             "user": RenderMessageType.USER,
@@ -375,8 +376,10 @@ class PilotCodeTUI(App):
         Binding("escape", "cancel", "Cancel"),
     ]
     
-    def __init__(self, auto_allow: bool = False) -> None:
+    def __init__(self, store: Store | None = None, tools: list | None = None, auto_allow: bool = False) -> None:
         self.auto_allow = auto_allow
+        self._provided_store = store
+        self._provided_tools = tools
         self.store = None
         self.query_engine = None
         self.tool_executor = None
@@ -397,11 +400,14 @@ class PilotCodeTUI(App):
     async def on_mount(self) -> None:
         """Initialize application."""
         # State
-        self.store = Store(get_default_app_state())
+        if self._provided_store is not None:
+            self.store = self._provided_store
+        else:
+            self.store = Store(get_default_app_state())
         set_global_store(self.store)
         
         # Query engine
-        tools = get_all_tools()
+        tools = self._provided_tools if self._provided_tools is not None else get_all_tools()
         self.query_engine = QueryEngine(QueryEngineConfig(
             cwd=self.store.get_state().cwd,
             tools=tools,

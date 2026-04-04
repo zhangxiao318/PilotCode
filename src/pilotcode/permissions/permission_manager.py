@@ -66,7 +66,14 @@ class PermissionManager:
     """
     
     # Tools that are always safe (read-only)
-    READONLY_TOOLS = {"FileRead", "Glob", "Grep", "WebSearch", "WebFetch"}
+    READONLY_TOOLS = {
+        "FileRead", "Glob", "Grep", "WebSearch", "WebFetch",
+        "GitStatus", "GitDiff", "GitLog", "GitBranch",
+        "TaskGet", "TaskList", "TaskOutput",
+        "ListMcpResources", "ReadMcpResource",
+        "CronList", "ListWorktrees", "TeamList",
+        "Config", "ToolSearch", "Brief",
+    }
     
     # Tools that can modify files
     WRITE_TOOLS = {"FileWrite", "FileEdit", "Bash"}
