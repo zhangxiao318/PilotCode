@@ -49,11 +49,20 @@ class SimpleCLI:
             from pilotcode.permissions.permission_manager import (
                 ToolPermission, PermissionLevel, get_permission_manager
             )
+            from pilotcode.state.app_state import get_default_app_state
+            from pilotcode.state.store import Store, set_global_store
+            
+            # Initialize store for state management
+            app_state = get_default_app_state()
+            self.store = Store(app_state)
+            set_global_store(self.store)
             
             tools = get_all_tools()
             config = QueryEngineConfig(
                 cwd=str(Path.cwd()),
-                tools=tools
+                tools=tools,
+                get_app_state=self.store.get_state,
+                set_app_state=lambda f: self.store.set_state(f)
             )
             self.query_engine = QueryEngine(config=config)
             
@@ -195,7 +204,10 @@ class SimpleCLI:
         
         # Check if it's a local command first
         if text.startswith('/'):
-            context = CommandContext(cwd=str(Path.cwd()))
+            context = CommandContext(
+                get_app_state=self.store.get_state,
+                set_app_state=lambda f: self.store.set_state(f)
+            )
             is_command, result = await process_user_input(text, context)
             if is_command:
                 if isinstance(result, str):
@@ -263,7 +275,10 @@ class SimpleCLI:
                     try:
                         from pilotcode.tools.base import ToolUseContext
                         
-                        ctx = ToolUseContext()
+                        ctx = ToolUseContext(
+                            get_app_state=self.store.get_state,
+                            set_app_state=lambda f: self.store.set_state(f)
+                        )
                         result = await self.tool_executor.execute_tool_by_name(
                             tool_name,
                             params,
