@@ -1,4 +1,4 @@
-"""REPL for ClaudeDecode - Programming Assistant."""
+"""REPL for ClaudeDecode - Programming Assistant with Tool Support."""
 
 import asyncio
 import sys
@@ -7,23 +7,24 @@ from typing import Any
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
-from rich.syntax import Syntax
 from rich.status import Status
 from rich.text import Text
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
 from ..tools.registry import get_all_tools
+from ..tools.base import ToolUseContext
 from ..commands.base import process_user_input, CommandContext
 from ..query_engine import QueryEngine, QueryEngineConfig
 from ..state.app_state import get_default_app_state
 from ..state.store import Store, set_global_store
 from ..utils.config import get_global_config
-from ..types.message import AssistantMessage, ToolUseMessage, ToolResultMessage
+from ..types.message import AssistantMessage, ToolUseMessage
+from ..permissions import get_tool_executor, PermissionLevel
 
 
 class REPL:
-    """Programming Assistant REPL."""
+    """Programming Assistant REPL with full tool support."""
     
     def __init__(self):
         self.console = Console()
@@ -38,14 +39,17 @@ class REPL:
             style=Style.from_dict({'prompt': '#00aa00 bold'})
         )
         
-        # Initialize with empty tools list to avoid tool call issues
-        # Tools can be enabled later when the tool system is stable
+        # Enable all tools
+        tools = get_all_tools()
         self.query_engine = QueryEngine(QueryEngineConfig(
             cwd=self.store.get_state().cwd,
-            tools=[],  # Empty for now - add tools back when stable
+            tools=tools,
             get_app_state=self.store.get_state,
             set_app_state=lambda f: self.store.set_state(f)
         ))
+        
+        # Set up tool executor with our console
+        self.tool_executor = get_tool_executor(self.console)
         
         self.running = True
         
@@ -58,10 +62,11 @@ class REPL:
             border_style="cyan"
         ))
         self.console.print("\n[bold green]💡 Tips:[/bold green]")
-        self.console.print("  • 'Write a Python function to...'")
-        self.console.print("  • 'Analyze this code for bugs'")
-        self.console.print("  • 'Create a web scraper'")
-        self.console.print("  • Use /agents for specialized assistants\n")
+        self.console.print("  • 'Create a Python script that...'")
+        self.console.print("  • 'Fix the bug in this code...'")
+        self.console.print("  • 'Write tests for...'")
+        self.console.print("  • Tools: FileRead, FileWrite, FileEdit, Bash, Glob, Grep")
+        self.console.print("  • I will ask for permission before making changes\n")
         
     async def handle_command(self, input_text: str) -> bool:
         """Handle slash commands."""
@@ -71,47 +76,84 @@ class REPL:
             self.console.print(result)
             return True
         return False
-        
-    async def stream_response(self, prompt: str) -> None:
-        """Stream response from model."""
+    
+    async def process_response(self, prompt: str) -> None:
+        """Process a prompt through the LLM with tool support."""
         full_content = ""
-        tool_info = []
+        max_iterations = 10
+        iteration = 0
         
-        with Status("[cyan]Thinking...[/cyan]", console=self.console, spinner="dots"):
-            try:
-                async for result in self.query_engine.submit_message(prompt):
-                    msg = result.message
-                    
-                    if isinstance(msg, AssistantMessage) and msg.content:
-                        if isinstance(msg.content, str):
-                            if result.is_complete:
-                                full_content = msg.content
-                            else:
-                                full_content += msg.content
-                    
-                    elif isinstance(msg, ToolUseMessage):
-                        tool_info.append(f"🔧 {msg.name}")
-                        
-                    elif isinstance(msg, ToolResultMessage):
-                        if msg.is_error:
-                            tool_info.append(f"✗ Error")
-                        else:
-                            tool_info.append(f"✓ Done")
-                            
-            except Exception as e:
-                self.console.print(f"[red]Error: {e}[/red]")
-                return
-        
-        # Display result
-        if full_content:
-            self.console.print()
-            self.console.print(Markdown(full_content))
+        while iteration < max_iterations:
+            iteration += 1
+            pending_tools = []
             
-            # Show tool usage summary
-            if tool_info:
-                self.console.print(f"\n[dim]{' | '.join(set(tool_info))}[/dim]")
-        else:
-            self.console.print("[dim]No response[/dim]")
+            # Show status
+            with Status("[cyan]Thinking...[/cyan]", console=self.console, spinner="dots"):
+                try:
+                    async for result in self.query_engine.submit_message(prompt):
+                        msg = result.message
+                        
+                        if isinstance(msg, AssistantMessage) and msg.content:
+                            if isinstance(msg.content, str):
+                                if result.is_complete:
+                                    full_content = msg.content
+                                else:
+                                    full_content += msg.content
+                        
+                        elif isinstance(msg, ToolUseMessage):
+                            pending_tools.append(msg)
+                            
+                except Exception as e:
+                    self.console.print(f"[red]Error: {e}[/red]")
+                    return
+            
+            # Display the assistant's response
+            if full_content:
+                self.console.print()
+                self.console.print(Markdown(full_content))
+                full_content = ""  # Reset for next iteration
+            
+            # Execute pending tools
+            if not pending_tools:
+                # No tools to execute, we're done
+                break
+            
+            for tool_msg in pending_tools:
+                self.console.print(f"\n[dim]🔧 Tool: {tool_msg.name}[/dim]")
+                
+                # Execute with permission
+                context = ToolUseContext(
+                    get_app_state=self.store.get_state,
+                    set_app_state=lambda f: self.store.set_state(f)
+                )
+                
+                exec_result = await self.tool_executor.execute_tool_by_name(
+                    tool_msg.name,
+                    tool_msg.input,
+                    context
+                )
+                
+                # Add result to conversation
+                result_content = ""
+                if exec_result.success and exec_result.result:
+                    result_content = str(exec_result.result.data) if exec_result.result.data else "Success"
+                    self.console.print(f"[dim]✓ {tool_msg.name} completed[/dim]")
+                else:
+                    result_content = exec_result.message
+                    self.console.print(f"[red]✗ {exec_result.message}[/red]")
+                
+                # Add to query engine history
+                self.query_engine.add_tool_result(
+                    tool_msg.tool_use_id,
+                    result_content,
+                    is_error=not exec_result.success
+                )
+            
+            # Continue the conversation with tool results
+            prompt = "Please continue based on the tool results above."
+        
+        if iteration >= max_iterations:
+            self.console.print("[yellow]⚠️ Reached maximum tool execution rounds[/yellow]")
             
     async def run(self) -> None:
         """Run the REPL."""
@@ -128,7 +170,7 @@ class REPL:
                 if await self.handle_command(user_input):
                     continue
                 
-                await self.stream_response(user_input)
+                await self.process_response(user_input)
                 
             except KeyboardInterrupt:
                 self.console.print("\n[yellow]Use /quit to exit[/yellow]")
@@ -137,6 +179,8 @@ class REPL:
                 break
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
+                import traceback
+                traceback.print_exc()
                 continue
         
         self.console.print("\n[dim]Goodbye! 👋[/dim]")

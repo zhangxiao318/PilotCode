@@ -37,7 +37,16 @@ class QueryResult:
 
 
 class QueryEngine:
-    """Engine for managing queries to LLM."""
+    """Engine for managing queries to LLM.
+    
+    This class is responsible for:
+    - Managing conversation history
+    - Streaming responses from LLM
+    - Detecting tool calls
+    
+    Tool execution is handled externally (e.g., by REPL) to avoid
+    tight coupling and allow for permission checking.
+    """
     
     def __init__(self, config: QueryEngineConfig):
         self.config = config
@@ -61,44 +70,40 @@ class QueryEngine:
 ## Core Capabilities
 
 1. **Code Generation**: Write code in any language based on user requirements
-2. **Code Analysis**: Review code for bugs, performance issues, best practices
-3. **Testing**: Write and run tests to verify code correctness
-4. **File Operations**: Read, write, and edit files in the workspace
-5. **Shell Execution**: Run commands, scripts, and build tools
+2. **Code Analysis**: Review code for bugs, performance issues, best practices  
+3. **File Operations**: Read, write, and edit files in the workspace
+4. **Shell Execution**: Run commands, scripts, and build tools
 
 ## Available Tools
 
-- **Bash**: Execute shell commands, run scripts, build projects
 - **FileRead**: Read file contents to understand existing code
 - **FileWrite**: Create new files with generated code
 - **FileEdit**: Modify existing files with precise changes
 - **Glob**: Find files matching patterns (e.g., "*.py")
 - **Grep**: Search text in files across the codebase
-- **Agent**: Spawn specialized agents for complex tasks
+- **Bash**: Execute shell commands, run tests, build projects
+- **WebSearch**: Search for documentation and examples
 
 ## Guidelines
 
-1. **Always use tools proactively** - Don't just describe what to do, actually do it
+1. **Use tools proactively** - Actually write files and run commands, don't just describe them
 2. **Read before writing** - Check existing files before modifying them
 3. **Test your code** - Run the code you write to verify it works
-4. **Be specific** - When editing files, make precise, targeted changes
-5. **Show your work** - Explain what you're doing and why
+4. **Be specific** - Make precise, targeted file changes
+5. **Show your work** - Explain what you're doing
+
+## Important
+
+When the user asks you to write code, create files, or make changes:
+- Use FileWrite to create new files
+- Use FileEdit to modify existing files  
+- Use Bash to run the code or tests
+- The user will be asked for permission before destructive operations
 
 ## Response Format
 
-When writing code:
-1. Present the code in properly formatted code blocks
-2. Explain how the code works
-3. Show example usage
-4. Offer to save the file or make modifications
-
-When analyzing code:
-1. Read the relevant files
-2. Identify issues or improvements
-3. Provide specific recommendations
-4. Offer to implement the fixes
-
-Be helpful, thorough, and practical. Focus on delivering working solutions."""
+When writing code, wrap it in markdown code blocks with the language specified.
+After showing code, offer to save it to a file if appropriate."""
     
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to API format."""
@@ -125,15 +130,12 @@ Be helpful, thorough, and practical. Focus on delivering working solutions."""
             elif isinstance(msg, AssistantMessage):
                 content = msg.content if isinstance(msg.content, str) else str(msg.content)
                 api_messages.append(APIMessage(role="assistant", content=content))
-            elif isinstance(msg, ToolUseMessage):
-                # Tool use is embedded in assistant message
-                pass
             elif isinstance(msg, ToolResultMessage):
                 api_messages.append(APIMessage(
                     role="tool",
                     content=msg.content if isinstance(msg.content, str) else json.dumps(msg.content),
                     tool_call_id=msg.tool_use_id,
-                    name=msg.tool_use_id  # Should be tool name
+                    name=msg.tool_use_id
                 ))
         
         return api_messages
@@ -143,7 +145,13 @@ Be helpful, thorough, and practical. Focus on delivering working solutions."""
         prompt: str,
         options: dict[str, Any] | None = None
     ) -> AsyncIterator[QueryResult]:
-        """Submit a message and get streaming results."""
+        """Submit a message and get streaming results.
+        
+        Yields:
+            QueryResult with message content. Tool calls are yielded as
+            ToolUseMessage objects. The caller is responsible for executing
+            tools and calling submit_message again with tool results.
+        """
         options = options or {}
         
         # Add user message
@@ -151,21 +159,21 @@ Be helpful, thorough, and practical. Focus on delivering working solutions."""
         self.messages.append(user_msg)
         yield QueryResult(message=user_msg, is_complete=False)
         
-        # Build system message if first interaction
+        # Build API messages
         api_messages = []
         if len(self.messages) == 1:
             system_msg = self._build_system_message()
             api_messages.append(APIMessage(role="system", content=system_msg.content))
         
-        # Add conversation history
         api_messages.extend(self._convert_to_api_messages(self.messages))
         
-        # Get tools
+        # Get available tools
         tools = self.config.tools if self.config.tools else []
         
         # Stream response
         accumulated_content = ""
-        tool_calls: list[ToolCall] = []
+        pending_tool_calls: list[ToolCall] = []
+        current_tool_call: dict[int, dict] = {}  # Accumulate tool call parts
         
         async for chunk in self.client.chat_completion(
             messages=api_messages,
@@ -178,157 +186,76 @@ Be helpful, thorough, and practical. Focus on delivering working solutions."""
             # Handle content
             content = delta.get("content")
             if content:
-                # API returns delta content (incremental)
                 accumulated_content += content
-                
-                # Yield the delta content for streaming display
                 partial_msg = AssistantMessage(content=content)
                 yield QueryResult(message=partial_msg, is_complete=False)
             
             # Handle tool calls (accumulate across chunks)
             if delta.get("tool_calls"):
                 for tc in delta["tool_calls"]:
-                    # Tool calls come in chunks, accumulate them
                     idx = tc.get("index", 0)
                     
-                    # Extend tool_calls list if needed
-                    while len(tool_calls) <= idx:
-                        tool_calls.append(ToolCall(id="", name="", arguments={}))
+                    if idx not in current_tool_call:
+                        current_tool_call[idx] = {"id": "", "name": "", "arguments": ""}
                     
-                    # Update tool call data
                     if tc.get("id"):
-                        tool_calls[idx] = ToolCall(
-                            id=tc["id"],
-                            name=tool_calls[idx].name,
-                            arguments=tool_calls[idx].arguments
-                        )
+                        current_tool_call[idx]["id"] = tc["id"]
                     if tc.get("function", {}).get("name"):
-                        tool_calls[idx] = ToolCall(
-                            id=tool_calls[idx].id,
-                            name=tc["function"]["name"],
-                            arguments=tool_calls[idx].arguments
-                        )
+                        current_tool_call[idx]["name"] = tc["function"]["name"]
                     if tc.get("function", {}).get("arguments"):
-                        import json
-                        try:
-                            args_str = tc["function"]["arguments"]
-                            args = json.loads(args_str)
-                            tool_calls[idx] = ToolCall(
-                                id=tool_calls[idx].id,
-                                name=tool_calls[idx].name,
-                                arguments=args
-                            )
-                        except json.JSONDecodeError:
-                            # Partial JSON, skip for now
-                            pass
+                        current_tool_call[idx]["arguments"] += tc["function"]["arguments"]
             
-            # Check if stream is complete
             if finish_reason:
                 break
         
-        # Final assistant message with complete content
+        # Final assistant message
         if accumulated_content:
             assistant_msg = AssistantMessage(content=accumulated_content)
             self.messages.append(assistant_msg)
             yield QueryResult(message=assistant_msg, is_complete=True)
         
-        # Handle tool calls if any
-        if tool_calls:
-            for tc in tool_calls:
-                # Ensure arguments is a dict
-                if not isinstance(tc.arguments, dict):
-                    tc.arguments = {}
-                    
-                tool_use_msg = ToolUseMessage(
-                    tool_use_id=tc.id or "",
-                    name=tc.name or "unknown",
-                    input=tc.arguments
-                )
-                self.messages.append(tool_use_msg)
-                yield QueryResult(message=tool_use_msg, is_complete=False)
-                
-                # Execute tool
-                tool_result = await self._execute_tool(tc)
-                self.messages.append(tool_result)
-                yield QueryResult(message=tool_result, is_complete=False)
+        # Parse and yield tool calls
+        for idx, tc_data in current_tool_call.items():
+            try:
+                arguments = json.loads(tc_data.get("arguments", "{}"))
+            except json.JSONDecodeError:
+                arguments = {}
             
-            # Continue conversation with tool results (limit recursion)
-            if not options:
-                options = {}
-            tool_count = options.get('_tool_call_count', 0)
-            if tool_count < 5:  # Limit to 5 tool call rounds
-                options['_tool_call_count'] = tool_count + 1
-                async for result in self.submit_message("Tool execution complete", options):
-                    yield result
-            else:
-                # Too many tool calls, return a message
-                final_msg = AssistantMessage(content="I've completed the tool operations. Let me know if you need anything else.")
-                self.messages.append(final_msg)
-                yield QueryResult(message=final_msg, is_complete=True)
+            tool_call = ToolCall(
+                id=tc_data.get("id", ""),
+                name=tc_data.get("name", ""),
+                arguments=arguments
+            )
+            pending_tool_calls.append(tool_call)
+            
+            tool_use_msg = ToolUseMessage(
+                tool_use_id=tool_call.id,
+                name=tool_call.name,
+                input=tool_call.arguments
+            )
+            self.messages.append(tool_use_msg)
+            yield QueryResult(message=tool_use_msg, is_complete=False)
     
-    async def _execute_tool(self, tool_call: ToolCall) -> ToolResultMessage:
-        """Execute a tool call."""
-        # Find tool
-        tool = None
-        for t in self.config.tools:
-            if t.name == tool_call.name or tool_call.name in t.aliases:
-                tool = t
-                break
+    def add_tool_result(self, tool_use_id: str, content: str, is_error: bool = False) -> None:
+        """Add a tool result to the conversation history.
         
-        if tool is None:
-            return ToolResultMessage(
-                tool_use_id=tool_call.id,
-                content=f"Tool '{tool_call.name}' not found",
-                is_error=True
-            )
-        
-        # Create context
-        context = ToolUseContext(
-            get_app_state=self.config.get_app_state,
-            set_app_state=self.config.set_app_state
+        Call this after executing a tool, then call submit_message again
+        to let the LLM continue with the tool result.
+        """
+        tool_result_msg = ToolResultMessage(
+            tool_use_id=tool_use_id,
+            content=content,
+            is_error=is_error
         )
-        
-        # Parse input
-        try:
-            input_data = tool.input_schema(**tool_call.arguments)
-        except Exception as e:
-            return ToolResultMessage(
-                tool_use_id=tool_call.id,
-                content=f"Invalid input: {str(e)}",
-                is_error=True
-            )
-        
-        # Execute
-        try:
-            result = await tool.call(
-                input_data,
-                context,
-                self.config.can_use_tool or (lambda **kwargs: {"behavior": "allow"}),
-                None,
-                lambda x: None
-            )
-            
-            if result.is_error:
-                return ToolResultMessage(
-                    tool_use_id=tool_call.id,
-                    content=result.error or "Unknown error",
-                    is_error=True
-                )
-            
-            return ToolResultMessage(
-                tool_use_id=tool_call.id,
-                content=result.output_for_assistant or str(result.data)
-            )
-        except Exception as e:
-            return ToolResultMessage(
-                tool_use_id=tool_call.id,
-                content=f"Error: {str(e)}",
-                is_error=True
-            )
+        self.messages.append(tool_result_msg)
     
     def abort(self) -> None:
         """Abort current query."""
         self.abort_event.set()
+    
+    def clear_history(self) -> None:
+        """Clear conversation history."""
+        self.messages.clear()
 
 
 def create_query_engine(config: QueryEngineConfig) -> QueryEngine:
