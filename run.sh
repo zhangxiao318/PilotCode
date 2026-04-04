@@ -1,6 +1,11 @@
 #!/bin/bash
 # Run script for ClaudeDecode
 
+# Set UTF-8 encoding for proper international character support
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export PYTHONIOENCODING=utf-8
+
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
