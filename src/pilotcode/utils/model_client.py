@@ -8,6 +8,7 @@ from enum import Enum
 import httpx
 
 from .config import get_global_config
+from .models_config import get_model_info
 
 
 @dataclass
@@ -43,13 +44,30 @@ class ModelClient:
         self,
         api_key: str | None = None,
         base_url: str | None = None,
-        model: str = "default"
+        model: str | None = None
     ):
         config = get_global_config()
         
         self.api_key = api_key or config.api_key or "sk-placeholder"
-        self.base_url = base_url or config.base_url
-        self.model = model
+        
+        # Determine model name: use provided, or config, or fallback
+        model_key = model or config.default_model or "default"
+        
+        # Map model key to actual API model name (e.g., "qwen" -> "qwen-max")
+        model_info = get_model_info(model_key)
+        if model_info and model_info.default_model:
+            self.model = model_info.default_model
+        else:
+            self.model = model_key
+        
+        # Determine base URL: use provided, or from model info, or from config
+        if base_url:
+            self.base_url = base_url
+        elif model_info and model_info.base_url:
+            # Use model-specific base URL if available
+            self.base_url = model_info.base_url
+        else:
+            self.base_url = config.base_url
         
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -167,9 +185,12 @@ _client: ModelClient | None = None
 def get_model_client(
     api_key: str | None = None,
     base_url: str | None = None,
-    model: str = "default"
+    model: str | None = None
 ) -> ModelClient:
-    """Get or create model client."""
+    """Get or create model client.
+    
+    If no parameters are provided, uses configuration from settings.
+    """
     global _client
     if _client is None:
         _client = ModelClient(api_key, base_url, model)

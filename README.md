@@ -6,15 +6,6 @@ Python rewrite of Claude Code - an AI-powered coding assistant.
 
 This is a Python reimplementation of the Claude Code CLI tool, maintaining architectural parity with the original TypeScript version while leveraging Python's strengths.
 
-## Current Status
-
-| Component | Implemented | Total | Progress |
-|-----------|-------------|-------|----------|
-| **Tools** | 18 | 40+ | 45% |
-| **Commands** | 13 | 80+ | 16% |
-| **Core Infrastructure** | - | - | 70% |
-| **Lines of Code** | 6,080 | ~150,000 | 4% |
-
 ## Quick Start
 
 ```bash
@@ -27,6 +18,134 @@ python3 -m pilotcode
 # Or use the run script
 ./run.sh
 ```
+
+## Model Configuration
+
+PilotCode supports both international and domestic (China) language models. You can configure the model through:
+
+1. **Interactive Configuration Wizard** (Recommended)
+2. **Environment Variables**
+3. **Configuration File** (`~/.config/pilotcode/settings.json`)
+
+### Interactive Configuration (Recommended)
+
+Run the interactive configuration wizard to easily set up your model:
+
+```bash
+# Run configuration wizard
+python3 -m pilotcode configure
+
+# Or use the shortcut
+python3 -m pilotcode.cli configure --wizard
+```
+
+The wizard will guide you through:
+1. Selecting a model category (International/Domestic/Local)
+2. Choosing a specific model
+3. Entering your API key
+4. Optional settings (theme, auto-compact, etc.)
+
+### Quick Configuration
+
+```bash
+# Configure with specific model
+python3 -m pilotcode configure --model deepseek --api-key your-api-key
+
+# List all available models
+python3 -m pilotcode configure --list-models
+
+# Show current configuration
+python3 -m pilotcode configure --show
+```
+
+### Supported Models
+
+#### International Models
+
+| Model | Provider | Description |
+|-------|----------|-------------|
+| `openai` | OpenAI | GPT-4o - Most capable multimodal model |
+| `openai-gpt4` | OpenAI | GPT-4 Turbo - High capability model |
+| `anthropic` | Anthropic | Claude 3.5 Sonnet - Excellent coding assistant |
+| `azure` | Azure | Azure OpenAI Service - Enterprise grade |
+
+#### Domestic (China) Models
+
+| Model | Provider | Description |
+|-------|----------|-------------|
+| `deepseek` | DeepSeek | DeepSeek V3 - Strong coding capabilities, cost-effective |
+| `qwen` | Alibaba | Qwen Max - Powerful Chinese/English model |
+| `qwen-plus` | Alibaba | Qwen Plus - Balanced performance and cost |
+| `zhipu` | Zhipu | GLM-4 - Strong Chinese model with tool use |
+| `moonshot` | Moonshot | Kimi - Long context window model |
+| `baichuan` | Baichuan | Baichuan 4 - Advanced Chinese model |
+| `doubao` | ByteDance | Doubao - Versatile model |
+
+#### Local/Custom Models
+
+| Model | Description |
+|-------|-------------|
+| `ollama` | Local Ollama instance (no API key needed) |
+| `custom` | Custom OpenAI-compatible endpoint |
+
+### Environment Variables
+
+You can configure PilotCode using environment variables:
+
+```bash
+# Generic configuration
+export PILOTCODE_API_KEY="your-api-key"
+export PILOTCODE_MODEL="deepseek"
+export PILOTCODE_BASE_URL="https://api.deepseek.com/v1"
+
+# Provider-specific (auto-detected)
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+export DEEPSEEK_API_KEY="sk-..."
+export DASHSCOPE_API_KEY="sk-..."
+export ZHIPU_API_KEY="..."
+export MOONSHOT_API_KEY="sk-..."
+export BAICHUAN_API_KEY="sk-..."
+export ARK_API_KEY="..."
+```
+
+### Configuration File
+
+The configuration is stored in `~/.config/pilotcode/settings.json`:
+
+```json
+{
+  "theme": "default",
+  "verbose": false,
+  "auto_compact": true,
+  "default_model": "deepseek",
+  "model_provider": "deepseek",
+  "api_key": "sk-...",
+  "base_url": "https://api.deepseek.com/v1",
+  "allowed_tools": [],
+  "mcp_servers": {}
+}
+```
+
+### Getting API Keys
+
+- **OpenAI**: https://platform.openai.com/api-keys
+- **Anthropic**: https://console.anthropic.com/settings/keys
+- **DeepSeek**: https://platform.deepseek.com/api_keys
+- **Qwen (Alibaba)**: https://dashscope.aliyun.com/api-key-management
+- **Zhipu**: https://open.bigmodel.cn/usercenter/apikeys
+- **Moonshot**: https://platform.moonshot.cn/console/api-keys
+- **Baichuan**: https://platform.baichuan-ai.com/console/apikey
+- **Doubao**: https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey
+
+## Current Status
+
+| Component | Implemented | Total | Progress |
+|-----------|-------------|-------|----------|
+| **Tools** | 18 | 40+ | 45% |
+| **Commands** | 13 | 80+ | 16% |
+| **Core Infrastructure** | - | - | 70% |
+| **Lines of Code** | 6,080 | ~150,000 | 4% |
 
 ## Implemented Features
 
@@ -100,6 +219,9 @@ pilotcode/
 ├── components/     # TUI components
 ├── state/          # State management
 ├── utils/          # Utilities
+│   ├── config.py           # Configuration management
+│   ├── models_config.py    # Supported models
+│   └── configure.py        # Interactive configuration wizard
 ├── services/       # External services
 └── query_engine.py # LLM interaction
 ```
@@ -115,36 +237,20 @@ pilotcode/
 | Zod validation | Pydantic validation |
 | Zustand | Custom Store class |
 
-## Configuration
-
-Configuration is loaded from `~/.config/pilotcode/settings.json`:
-
-```json
-{
-  "theme": "default",
-  "default_model": "default",
-  "base_url": "http://172.19.201.40:3509/v1",
-  "api_key": "sk-..."
-}
-```
-
-Or from environment variables:
-```bash
-export LOCAL_API_KEY="sk-..."
-export OPENAI_BASE_URL="http://172.19.201.40:3509/v1"
-```
-
 ## Development
 
 ```bash
 # Install dependencies
-pip3 install platformdirs rich prompt-toolkit httpx pydantic
+pip3 install -e .
 
 # Run tests
 python3 run_tests.py
 
 # Run demo
 python3 full_demo.py
+
+# Configure
+python3 -m pilotcode configure
 ```
 
 ## Documentation
