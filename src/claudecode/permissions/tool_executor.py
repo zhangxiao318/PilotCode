@@ -7,9 +7,6 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
-from rich.align import Align
-from prompt_toolkit import PromptSession
-from prompt_toolkit.styles import Style
 
 from .permission_manager import (
     PermissionManager,
@@ -37,12 +34,6 @@ class ToolExecutor:
     def __init__(self, console: Console | None = None):
         self.console = console or Console()
         self.permission_manager = get_permission_manager()
-        # Create async prompt session for permission prompts
-        self._prompt_session = PromptSession(
-            style=Style.from_dict({
-                'prompt': '#00aa00 bold',
-            })
-        )
         
     def _format_permission_request(self, request: PermissionRequest) -> Panel:
         """Format permission request for display."""
@@ -75,8 +66,8 @@ class ToolExecutor:
             padding=(1, 2)
         )
     
-    async def _interactive_permission_prompt(self, request: PermissionRequest) -> PermissionLevel:
-        """Show interactive permission prompt and get user choice."""
+    def _sync_permission_prompt(self, request: PermissionRequest) -> str:
+        """Synchronous permission prompt - runs in executor."""
         self.console.print()
         self.console.print(self._format_permission_request(request))
         
@@ -89,26 +80,39 @@ class ToolExecutor:
         
         while True:
             try:
-                # Use async prompt
-                choice = await self._prompt_session.prompt_async(
-                    "\nChoice [y/n/a/s/d]: "
-                )
-                choice = choice.strip().lower()
+                # Use standard input() wrapped in executor for async compatibility
+                choice = input("\nChoice [y/n/a/s/d]: ").strip().lower()
                 
-                if choice in ("y", "yes"):
-                    return PermissionLevel.ALLOW
+                if choice in ("y", "yes", ""):
+                    return "y"
                 elif choice in ("n", "no"):
-                    return PermissionLevel.DENY
+                    return "n"
                 elif choice == "a":
-                    return PermissionLevel.ALLOW
+                    return "a"
                 elif choice == "s":
-                    return PermissionLevel.ALWAYS_ALLOW
+                    return "s"
                 elif choice == "d":
-                    return PermissionLevel.NEVER_ALLOW
+                    return "d"
                 else:
                     self.console.print("[yellow]Invalid choice. Please enter y, n, a, s, or d.[/yellow]")
             except (KeyboardInterrupt, EOFError):
-                return PermissionLevel.DENY
+                return "n"
+    
+    async def _interactive_permission_prompt(self, request: PermissionRequest) -> PermissionLevel:
+        """Show interactive permission prompt and get user choice."""
+        # Run synchronous input in executor to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        choice = await loop.run_in_executor(None, self._sync_permission_prompt, request)
+        
+        # Map choice to permission level
+        choice_map = {
+            "y": PermissionLevel.ALLOW,
+            "n": PermissionLevel.DENY,
+            "a": PermissionLevel.ALLOW,
+            "s": PermissionLevel.ALWAYS_ALLOW,
+            "d": PermissionLevel.NEVER_ALLOW,
+        }
+        return choice_map.get(choice, PermissionLevel.DENY)
     
     def _normalize_tool_input(self, tool_name: str, tool_input: dict) -> dict:
         """Normalize tool input field names to match Pydantic models."""
