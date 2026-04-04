@@ -21,6 +21,7 @@ def main(
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose mode"),
     model: str = typer.Option("default", "--model", "-m", help="Model to use"),
     cwd: str = typer.Option(".", "--cwd", help="Working directory"),
+    auto_allow: bool = typer.Option(False, "--auto-allow", help="Auto-allow all tool executions (for testing)"),
 ):
     """ClaudeDecode - Python rewrite of Claude Code."""
     
@@ -37,8 +38,8 @@ def main(
 """
     console.print(Panel(banner, border_style="cyan"))
     
-    # Start REPL
-    run_repl()
+    # Start REPL with options
+    run_repl(auto_allow=auto_allow)
 
 
 @app.command()

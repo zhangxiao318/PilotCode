@@ -26,7 +26,7 @@ from ..permissions import get_tool_executor, PermissionLevel
 class REPL:
     """Programming Assistant REPL with full tool support."""
     
-    def __init__(self):
+    def __init__(self, auto_allow: bool = False):
         self.console = Console()
         self.store = Store(get_default_app_state())
         set_global_store(self.store)
@@ -50,6 +50,18 @@ class REPL:
         
         # Set up tool executor with our console
         self.tool_executor = get_tool_executor(self.console)
+        
+        # Auto-allow mode for testing
+        self.auto_allow = auto_allow
+        if auto_allow:
+            # Grant all permissions automatically
+            from ..permissions import get_permission_manager, PermissionLevel
+            pm = get_permission_manager()
+            for tool in tools:
+                pm._permissions[tool.name] = type('obj', (object,), {
+                    'tool_name': tool.name,
+                    'level': PermissionLevel.ALWAYS_ALLOW
+                })()
         
         self.running = True
         
@@ -186,7 +198,7 @@ class REPL:
         self.console.print("\n[dim]Goodbye! 👋[/dim]")
 
 
-def run_repl() -> None:
+def run_repl(auto_allow: bool = False) -> None:
     """Run the REPL."""
-    repl = REPL()
+    repl = REPL(auto_allow=auto_allow)
     asyncio.run(repl.run())
