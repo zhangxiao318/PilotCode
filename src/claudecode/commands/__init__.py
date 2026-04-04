@@ -41,6 +41,19 @@ from . import skill_cmd
 from . import mcp_cmd
 from . import lsp_cmd
 from . import debug_cmd
+from . import cat_cmd
+from . import ls_cmd
+from . import edit_cmd
+from . import mkdir_cmd
+from . import rm_cmd
+from . import pwd_cmd
+from . import cd_cmd
+from . import cp_cmd
+from . import mv_cmd
+from . import touch_cmd
+from . import head_cmd
+from . import tail_cmd
+from . import wc_cmd
 
 __all__ = [
     "CommandHandler",
