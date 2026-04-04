@@ -72,6 +72,7 @@ from . import clean_cmd
 from . import bisect_cmd
 from . import switch_cmd
 from . import revert_cmd
+from . import workflow_cmd
 
 __all__ = [
     "CommandHandler",
