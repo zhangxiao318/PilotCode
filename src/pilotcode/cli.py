@@ -76,6 +76,7 @@ def main(
     prompt: str | None = typer.Option(None, "--prompt", "-p", help="Run a single prompt in headless mode"),
     json_mode: bool = typer.Option(False, "--json", help="Output structured JSON in headless mode"),
     tui: bool = typer.Option(False, "--tui/--no-tui", help="Use Textual TUI interface (default: False)"),
+    tui_v2: bool = typer.Option(False, "--tui-v2", help="Use enhanced TUI v2 interface (beta)"),
     simple: bool = typer.Option(True, "--simple/--no-simple", help="Use simple CLI (default: True, use --tui for TUI)"),
     skip_config_check: bool = typer.Option(False, "--skip-config-check", help="Skip configuration check (for testing)"),
 ):
@@ -99,7 +100,13 @@ def main(
         asyncio.run(run_headless(prompt, auto_allow=auto_allow, json_mode=json_mode))
         raise typer.Exit()
     
-    if tui:
+    if tui_v2:
+        # Launch Enhanced TUI v2
+        from .tui_v2.app import EnhancedApp
+        
+        app_tui = EnhancedApp(auto_allow=auto_allow)
+        app_tui.run()
+    elif tui:
         # Launch Textual TUI
         from .tui.simple_app import SimpleTUI
         from .state.app_state import get_default_app_state

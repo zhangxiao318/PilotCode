@@ -151,10 +151,10 @@ def is_read_only_command(command: str) -> bool:
     """Check if command is read-only (doesn't modify files)."""
     # List of read-only commands/patterns
     read_only_patterns = [
-        'ls', 'cat', 'echo', 'pwd', 'whoami', 'id', 'uname',
+        'ls', 'cat', 'echo', 'pwd', 'whoami', 'id', 'uname', 'date',
         'head', 'tail', 'less', 'more', 'grep', 'find', 'which',
-        'ps', 'top', 'htop', 'df', 'du', 'free', 'uptime',
-        'git status', 'git log', 'git diff', 'git show',
+        'ps', 'top', 'htop', 'df', 'du', 'free', 'uptime', 'env',
+        'git status', 'git log', 'git diff', 'git show', 'git branch',
         'python --version', 'node --version', 'npm --version',
         'curl -I', 'curl --head', 'wget --spider',
     ]

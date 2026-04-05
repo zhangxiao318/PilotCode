@@ -405,10 +405,20 @@ DON'T STOP after reading files. You MUST execute the code to test it!"""
         
         Uses the token estimator service for accurate counting.
         """
-        return self._token_estimator.estimate_messages([
-            {"role": getattr(m, "type", "unknown"), "content": str(m.content)}
-            for m in self.messages
-        ])
+        api_messages = []
+        for m in self.messages:
+            # Get content based on message type
+            if hasattr(m, 'content'):
+                content = str(m.content)
+            elif hasattr(m, 'name') and hasattr(m, 'input'):
+                # ToolUseMessage - serialize name and input
+                content = f"Tool: {m.name}\nInput: {m.input}"
+            else:
+                content = str(m)
+            
+            api_messages.append({"role": getattr(m, "type", "unknown"), "content": content})
+        
+        return self._token_estimator.estimate_messages(api_messages)
     
     def get_token_budget(self) -> dict[str, Any]:
         """Get current token budget status."""

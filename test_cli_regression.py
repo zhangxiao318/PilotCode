@@ -39,7 +39,7 @@ class CLIRegressionTester:
     """Test Simple CLI using input/output test cases."""
     
     def __init__(self, cli_cmd: List[str] = None):
-        self.cli_cmd = cli_cmd or ["./run.sh"]
+        self.cli_cmd = cli_cmd or ["./pilotcode"]
         self.cwd = "/home/zx/mycc/PilotCode"
         self.env = dict(os.environ)
         self.results: List[TestResult] = []
@@ -267,14 +267,22 @@ def main():
     
     parser = argparse.ArgumentParser(description='PilotCode CLI Regression Tests')
     parser.add_argument('--cli-cmd', default=None,
-                       help='CLI command to test (default: ./run.sh)')
+                       help='CLI command to test (default: ./pilotcode). Use "./pilotcode --tui-v2" to test TUI v2.')
+    parser.add_argument('--tui-v2', action='store_true',
+                       help='Test TUI v2 interface (shorthand for --cli-cmd "./pilotcode --tui-v2")')
     parser.add_argument('--test', default=None,
                        help='Run specific test only')
     
     args = parser.parse_args()
     
-    # Create tester
-    cli_cmd = args.cli_cmd.split() if args.cli_cmd else None
+    # Determine CLI command
+    if args.tui_v2:
+        cli_cmd = ["./pilotcode", "--tui-v2"]
+    elif args.cli_cmd:
+        cli_cmd = args.cli_cmd.split()
+    else:
+        cli_cmd = None
+    
     tester = CLIRegressionTester(cli_cmd=cli_cmd)
     
     # Run specific test or all
