@@ -147,7 +147,7 @@ class MessageDisplay(Static):
     DEFAULT_CSS = """
     MessageDisplay {
         height: auto;
-        margin: 0 0 1 0;
+        margin: 0;
         padding: 0 1;
         background: transparent;
         color: $text;
@@ -163,7 +163,7 @@ class MessageDisplay(Static):
         background: transparent;
         color: $text;
         padding: 0 1;
-        margin: 0 0 1 0;
+        margin: 0;
     }
     
     MessageDisplay.user:hover {
@@ -175,7 +175,7 @@ class MessageDisplay(Static):
         background: transparent;
         color: $text;
         padding: 0 1;
-        margin: 0 0 1 0;
+        margin: 0;
     }
     
     MessageDisplay.assistant:hover {
@@ -195,7 +195,7 @@ class MessageDisplay(Static):
         background: transparent;
         color: $success;
         padding: 0 1;
-        margin: 0 0 1 0;
+        margin: 0;
     }
     
     /* Error - visible red */
@@ -438,12 +438,12 @@ class MessageList(ScrollableContainer):
         width: 100%;
         height: 1fr;
         border: none;
-        padding: 0 0 1 0;
+        padding: 0;
         background: $background;
         color: $text;
     }
     MessageList > * {
-        margin: 0 0 0 0;
+        margin: 0;
     }
     """
     

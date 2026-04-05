@@ -21,7 +21,7 @@ class HybridMessageList(ScrollableContainer):
         width: 100%;
         height: 1fr;
         border: none;
-        padding: 0 0 1 0;
+        padding: 0;
         background: $background;
         color: $text;
         overflow-y: auto;
