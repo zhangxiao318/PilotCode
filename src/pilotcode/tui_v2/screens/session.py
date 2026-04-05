@@ -193,16 +193,13 @@ class SessionScreen(Screen):
             )
             self.message_list.add_message(user_msg)
         
-        # Process as normal message
-        await self._process_message(text)
+        # Process as normal message in background worker
+        # This prevents blocking the UI event loop
+        self.run_worker(self._process_message(text), exit_on_error=False)
     
     async def _process_message(self, text: str):
         """Process a user message."""
-        import sys
-        print(f"\n[PROC] _process_message started: {text[:30]}...", flush=True, file=sys.stderr)
-        
         if not self.controller or not self.message_list:
-            print(f"[PROC] ERROR: Missing controller or message_list", flush=True, file=sys.stderr)
             return
         
         self._processing = True
@@ -210,12 +207,7 @@ class SessionScreen(Screen):
             self.status_bar.set_processing(True)
         
         try:
-            print(f"[PROC] Starting controller.submit_message...", flush=True, file=sys.stderr)
-            msg_count = 0
             async for msg in self.controller.submit_message(text):
-                msg_count += 1
-                print(f"[PROC] Got message {msg_count}: type={msg.type}", flush=True, file=sys.stderr)
-                
                 # Skip user messages as they're already displayed
                 if msg.type == MessageType.USER:
                     continue
@@ -226,13 +218,8 @@ class SessionScreen(Screen):
                 if self.status_bar:
                     tokens = self.controller.get_token_count()
                     self.status_bar.set_token_count(tokens)
-            
-            print(f"[PROC] Message stream ended, total: {msg_count}", flush=True, file=sys.stderr)
         
         except Exception as e:
-            print(f"[PROC] ERROR: {e}", flush=True, file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
             error_msg = UIMessage(
                 type=MessageType.ERROR,
                 content=f"Error: {str(e)}"
@@ -240,7 +227,6 @@ class SessionScreen(Screen):
             self.message_list.add_message(error_msg)
         
         finally:
-            print(f"[PROC] Finished", flush=True, file=sys.stderr)
             self._processing = False
             if self.status_bar:
                 self.status_bar.set_processing(False)
@@ -300,41 +286,22 @@ class SessionScreen(Screen):
     
     async def _request_permission(self, tool_name: str, params: dict) -> PermissionResult:
         """Request permission for tool execution using inline component."""
-        import sys
-        print(f"\n[PERM] Starting permission request for {tool_name}", flush=True, file=sys.stderr)
-        
         if not self.message_list:
-            print(f"[PERM] ERROR: No message list!", flush=True, file=sys.stderr)
             return PermissionResult(PermissionAction.DENY, tool_name)
         
-        print(f"[PERM] Creating widget...", flush=True, file=sys.stderr)
         # Create inline permission request
         permission_widget = InlinePermissionRequest(tool_name, params)
-        
-        # Store reference to wait for response
         self._pending_permission = permission_widget
         
-        print(f"[PERM] Mounting widget...", flush=True, file=sys.stderr)
-        # Mount the widget
-        await_mount = self.message_list.mount(permission_widget)
-        if await_mount is not None:
-            print(f"[PERM] Awaiting mount...", flush=True, file=sys.stderr)
-            await await_mount
-        
-        print(f"[PERM] Focusing and scrolling...", flush=True, file=sys.stderr)
-        # Focus and scroll
+        # Mount and display
+        await self.message_list.mount(permission_widget)
         permission_widget.focus()
         self.message_list.scroll_end(animate=False)
         
-        print(f"[PERM] Waiting for user response...", flush=True, file=sys.stderr)
-        # Wait for response
+        # Wait for user response (this yields control back to event loop)
         result = await permission_widget.wait_for_response()
         
-        print(f"[PERM] Got response: {result.allowed}", flush=True, file=sys.stderr)
-        
-        # Clean up reference
         self._pending_permission = None
-        
         return result
     
     def on_permission_responded(self, event: PermissionResponded) -> None:
