@@ -3,6 +3,8 @@
 import os
 import tempfile
 import shutil
+import time
+import hashlib
 from pathlib import Path
 from typing import Any
 from datetime import datetime
@@ -143,6 +145,14 @@ async def file_write_call(
         input_data.content,
         append=input_data.append
     )
+    
+    # Add file to read_file_state so it can be edited immediately
+    # This allows the AI to edit files it just created
+    if not result.error and context.read_file_state is not None:
+        context.read_file_state[file_path] = {
+            'timestamp': time.time(),
+            'hash': hashlib.md5(input_data.content.encode()).hexdigest()[:8]
+        }
     
     return ToolResult(data=result)
 
