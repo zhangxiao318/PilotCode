@@ -15,7 +15,7 @@ import signal
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal
-from textual.widgets import Static, RichLog
+from textual.widgets import Static, RichLog, Input
 from .unicode_input import UnicodeInput
 from textual.reactive import reactive
 from textual.binding import Binding
@@ -175,7 +175,7 @@ class SimpleTUI(App):
         self._show_welcome()
         
         # Focus input
-        self.query_one("#user-input", Input).focus()
+        self.query_one("#user-input", UnicodeInput).focus()
     
     def _show_welcome(self) -> None:
         """Show welcome message."""
@@ -301,7 +301,7 @@ class SimpleTUI(App):
     
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle user input."""
-        input_widget = self.query_one("#user-input", Input)
+        input_widget = self.query_one("#user-input", UnicodeInput)
         text = event.value.strip()
         
         if not text:
