@@ -15,7 +15,8 @@ import signal
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal
-from textual.widgets import Input, Static, RichLog
+from textual.widgets import Static, RichLog
+from .unicode_input import UnicodeInput
 from textual.reactive import reactive
 from textual.binding import Binding
 from rich.text import Text
@@ -131,7 +132,7 @@ class SimpleTUI(App):
             
             # Input area
             with Horizontal(id="input-area"):
-                yield Input(placeholder="Type a message...", id="user-input")
+                yield UnicodeInput(placeholder="Type a message...", id="user-input")
             
             # Status bar
             yield Static("Ready — Type /help for commands", id="status-bar")

@@ -14,10 +14,10 @@ from typing import Any
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal, Container
 from textual.widgets import (
-    Input, Static, Button, Label, 
+    Static, Button, Label, 
     RichLog, Markdown, ProgressBar,
-    TextArea
 )
+from .unicode_input import UnicodeTextArea
 from textual.reactive import reactive
 from textual.binding import Binding
 from rich.text import Text
@@ -181,7 +181,7 @@ class InputArea(Container):
     def compose(self) -> ComposeResult:
         with Horizontal():
             # Multi-line input
-            yield TextArea(
+            yield UnicodeTextArea(
                 placeholder="Type your message here...\nShift+Enter for new line",
                 id="input-textarea",
                 show_line_numbers=False,
@@ -198,7 +198,7 @@ class InputArea(Container):
             yield Label("Shift+Enter: newline | Enter: send")
     
     def on_mount(self) -> None:
-        textarea = self.query_one("#input-textarea", TextArea)
+        textarea = self.query_one("#input-textarea", UnicodeTextArea)
         textarea.focus()
     
     def watch_is_generating(self, generating: bool) -> None:
@@ -230,7 +230,7 @@ class InputArea(Container):
     
     def _submit_input(self) -> None:
         """Submit input."""
-        textarea = self.query_one("#input-textarea", TextArea)
+        textarea = self.query_one("#input-textarea", UnicodeTextArea)
         text = textarea.text.strip()
         if text and self._on_submit:
             self._on_submit(text)

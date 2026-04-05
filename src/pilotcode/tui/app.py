@@ -3,7 +3,8 @@
 import asyncio
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal
-from textual.widgets import Input, Static, Button, Label
+from textual.widgets import Static, Button, Label
+from .unicode_input import UnicodeInput
 
 from ..tools.registry import get_all_tools, get_tool
 from ..tools.base import ToolUseContext
@@ -68,7 +69,7 @@ class PilotCodeApp(App):
         with Vertical(id="main-scroll"):
             pass
         with Horizontal(id="input-row"):
-            yield Input(placeholder="Type /help for commands or ask a question...", id="user-input")
+            yield UnicodeInput(placeholder="Type /help for commands or ask a question...", id="user-input")
         yield Static("Ready", id="footer")
 
     async def on_mount(self) -> None:
@@ -176,7 +177,7 @@ class PilotCodeApp(App):
         self.append_message(self.renderer.render(msg))
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        input_widget = self.query_one("#user-input", Input)
+        input_widget = self.query_one("#user-input", UnicodeInput)
         text = event.value.strip()
         if not text:
             return
