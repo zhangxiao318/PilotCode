@@ -5,7 +5,7 @@ from typing import Optional, Callable
 from pathlib import Path
 
 from textual.widgets import Static, TextArea
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.message import Message
 from rich.text import Text
@@ -206,7 +206,7 @@ class PromptInput(TextArea):
         return None
 
 
-class PromptWithMode(Horizontal):
+class PromptWithMode(Vertical):
     """Prompt input with > indicator and syntax highlighting status."""
     
     DEFAULT_CSS = """
@@ -214,7 +214,9 @@ class PromptWithMode(Horizontal):
         height: auto;
         min-height: 3;
         background: $surface;
-        border-top: solid $border;
+    }
+    PromptWithMode Horizontal {
+        height: 3;
     }
     PromptWithMode Static.prompt-indicator {
         width: 2;

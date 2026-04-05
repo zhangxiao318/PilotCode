@@ -29,8 +29,6 @@ class SessionScreen(Screen):
     DEFAULT_CSS = """
     SessionScreen {
         layout: vertical;
-        background: $background;
-        color: $text;
     }
     SessionScreen Header {
         dock: top;
@@ -48,14 +46,11 @@ class SessionScreen(Screen):
     SessionScreen #main-container {
         width: 100%;
         height: 1fr;
-        background: $background;
     }
     SessionScreen #message-area {
         width: 100%;
         height: 1fr;
         overflow: auto;
-        background: $background;
-        color: $text;
     }
     SessionScreen #sidebar {
         width: 0;
@@ -69,8 +64,6 @@ class SessionScreen(Screen):
     }
     SessionScreen #sidebar-content {
         padding: 1;
-        background: $surface;
-        color: $text;
     }
     SessionScreen #input-area {
         height: auto;
@@ -342,40 +335,15 @@ class SessionScreen(Screen):
         """Show help."""
         self._handle_command('/help')
     
-    def _copy_to_clipboard(self, text: str) -> bool:
-        """Copy text to clipboard using system tools."""
-        import subprocess
-        import platform
+    def _copy_to_clipboard(self, text: str) -> tuple[bool, bool]:
+        """Copy text to clipboard.
         
-        system = platform.system()
-        try:
-            if system == "Linux":
-                subprocess.run(
-                    ['xclip', '-selection', 'clipboard'],
-                    input=text.encode(),
-                    check=True,
-                    capture_output=True
-                )
-                return True
-            elif system == "Darwin":  # macOS
-                subprocess.run(
-                    ['pbcopy'],
-                    input=text.encode(),
-                    check=True,
-                    capture_output=True
-                )
-                return True
-            elif system == "Windows":
-                subprocess.run(
-                    ['clip.exe'],
-                    input=text.encode(),
-                    check=True,
-                    capture_output=True
-                )
-                return True
-        except Exception:
-            pass
-        return False
+        Returns:
+            (system_success, used_internal): Whether system clipboard succeeded,
+                                              and whether internal buffer was used.
+        """
+        from pilotcode.tui_v2.components.message.display import copy_to_clipboard
+        return copy_to_clipboard(text)
     
     def action_copy_last_assistant(self):
         """Copy the last assistant message to clipboard."""
@@ -387,10 +355,13 @@ class SessionScreen(Screen):
         for display in reversed(self.message_list._messages_list):
             if display.message and display.message.type == MessageType.ASSISTANT:
                 content = display.message.content or ""
-                if self._copy_to_clipboard(content):
+                system_ok, used_internal = self._copy_to_clipboard(content)
+                if system_ok:
                     self.notify("📋 Last assistant message copied!", severity="information", timeout=2)
+                elif used_internal:
+                    self.notify("⚠️ Copied to internal buffer (clipboard unavailable)", severity="warning", timeout=3)
                 else:
-                    self.notify("⚠️ Failed to copy to clipboard", severity="error")
+                    self.notify("❌ Failed to copy", severity="error")
                 return
         
         self.notify("No assistant message found", severity="warning")
@@ -411,10 +382,13 @@ class SessionScreen(Screen):
                 code_blocks = re.findall(r'```(?:\w+)?\n(.*?)\n```', content, re.DOTALL)
                 if code_blocks:
                     code = code_blocks[-1]  # Get last code block
-                    if self._copy_to_clipboard(code):
+                    system_ok, used_internal = self._copy_to_clipboard(code)
+                    if system_ok:
                         self.notify("📋 Last code block copied!", severity="information", timeout=2)
+                    elif used_internal:
+                        self.notify("⚠️ Copied to internal buffer (clipboard unavailable)", severity="warning", timeout=3)
                     else:
-                        self.notify("⚠️ Failed to copy to clipboard", severity="error")
+                        self.notify("❌ Failed to copy", severity="error")
                     return
         
         self.notify("No code block found", severity="warning")

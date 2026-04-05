@@ -2,8 +2,9 @@
 
 import asyncio
 from typing import Optional
-from textual.widgets import Static
+from textual.widgets import Static, Button, TextArea
 from textual.containers import Vertical, ScrollableContainer, Horizontal
+from textual.screen import Screen
 from textual.reactive import reactive
 from textual.message import Message
 from rich.console import RenderableType
@@ -13,6 +14,122 @@ from rich.text import Text
 from rich.align import Align
 
 from pilotcode.tui_v2.controller.controller import UIMessage, MessageType
+
+# Internal clipboard buffer (fallback when system clipboard is unavailable)
+_internal_clipboard: str = ""
+
+
+def _copy_to_clipboard_impl(text: str) -> bool:
+    """Copy text to system clipboard.
+    
+    Tries multiple methods in order:
+    1. pyperclip (cross-platform)
+    2. OSC 52 (terminal clipboard - works over SSH)
+    3. xclip (Linux)
+    4. pbcopy (macOS)
+    5. clip.exe (Windows)
+    """
+    try:
+        import subprocess
+        import platform
+        
+        # Try pyperclip first (most reliable)
+        try:
+            import pyperclip
+            pyperclip.copy(text)
+            return True
+        except ImportError:
+            pass
+        
+        # Try OSC 52 (works over SSH if terminal supports it)
+        try:
+            _osc52_copy(text)
+            return True
+        except Exception:
+            pass
+        
+        # Platform-specific fallbacks
+        system = platform.system()
+        try:
+            if system == "Linux":
+                subprocess.run(
+                    ['xclip', '-selection', 'clipboard'],
+                    input=text.encode(),
+                    check=True,
+                    capture_output=True
+                )
+                return True
+            elif system == "Darwin":  # macOS
+                subprocess.run(
+                    ['pbcopy'],
+                    input=text.encode(),
+                    check=True,
+                    capture_output=True
+                )
+                return True
+            elif system == "Windows":
+                subprocess.run(
+                    ['clip.exe'],
+                    input=text.encode(),
+                    check=True,
+                    capture_output=True
+                )
+                return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+            
+    except Exception:
+        pass
+    
+    return False
+
+
+def _osc52_copy(text: str) -> None:
+    """Copy text using OSC 52 escape sequence.
+    
+    This works over SSH if the terminal emulator supports it.
+    Most modern terminals (iTerm2, Windows Terminal, foot, etc.) support this.
+    Xshell may support it with proper configuration.
+    """
+    import base64
+    import sys
+    
+    # Encode text to base64
+    encoded = base64.b64encode(text.encode('utf-8')).decode('ascii')
+    
+    # OSC 52 sequence: ESC ] 52 ; c ; <base64> BEL
+    # c = clipboard selection
+    # Using ST (ESC \) as terminator for better compatibility
+    osc52 = f"\x1b]52;c;{encoded}\x1b\\"
+    
+    # Write to stdout
+    sys.stdout.write(osc52)
+    sys.stdout.flush()
+
+
+def copy_to_clipboard(text: str, use_internal: bool = True) -> tuple[bool, bool]:
+    """Copy text to clipboard.
+    
+    Returns:
+        (system_success, used_internal): Whether system clipboard succeeded,
+                                          and whether internal buffer was used.
+    """
+    global _internal_clipboard
+    
+    # Always update internal buffer as fallback
+    if use_internal:
+        _internal_clipboard = text
+    
+    # Try system clipboard
+    if _copy_to_clipboard_impl(text):
+        return True, False
+    
+    return False, use_internal
+
+
+def get_internal_clipboard() -> str:
+    """Get the internal clipboard content."""
+    return _internal_clipboard
 
 
 class MessageAction(Message):
@@ -37,7 +154,7 @@ class MessageDisplay(Static):
     }
     
     MessageDisplay:hover {
-        background: $surface-darken-1;
+        background: $surface-lighten-1;
     }
     
     /* User messages - left aligned with smiley */
@@ -50,7 +167,7 @@ class MessageDisplay(Static):
     }
     
     MessageDisplay.user:hover {
-        background: $surface-darken-1;
+        background: $surface-lighten-1;
     }
     
     /* Assistant messages - left aligned with white dot */
@@ -62,7 +179,7 @@ class MessageDisplay(Static):
     }
     
     MessageDisplay.assistant:hover {
-        background: $surface-darken-1;
+        background: $surface-lighten-1;
     }
     
     /* Tool messages - left aligned with green dot */
@@ -236,50 +353,20 @@ class MessageDisplay(Static):
         self._update_classes()
         self.refresh()
     
-    def _copy_to_clipboard(self, text: str) -> bool:
-        """Copy text to clipboard."""
-        try:
-            import subprocess
-            # Try to use system clipboard
-            subprocess.run(
-                ['xclip', '-selection', 'clipboard'],
-                input=text.encode(),
-                check=True,
-                capture_output=True
-            )
-            return True
-        except Exception:
-            try:
-                subprocess.run(
-                    ['pbcopy'],
-                    input=text.encode(),
-                    check=True,
-                    capture_output=True
-                )
-                return True
-            except Exception:
-                try:
-                    subprocess.run(
-                        ['clip.exe'],
-                        input=text.encode(),
-                        check=True,
-                        capture_output=True
-                    )
-                    return True
-                except Exception:
-                    return False
-    
     def action_copy(self):
         """Copy message content to clipboard."""
         if not self.message:
             return
         
         content = self.message.content or ""
-        if self._copy_to_clipboard(content):
+        system_ok, used_internal = copy_to_clipboard(content)
+        
+        if system_ok:
             self.app.notify("📋 Copied to clipboard", severity="information", timeout=2)
+        elif used_internal:
+            self.app.notify("⚠️ Copied to internal buffer (clipboard unavailable)", severity="warning", timeout=3)
         else:
-            # Store in internal buffer as fallback
-            self.app.notify("⚠️ Clipboard not available (content stored internally)", severity="warning", timeout=3)
+            self.app.notify("❌ Failed to copy", severity="error")
     
     def action_yank(self):
         """Yank (copy) message - vim style alias."""
@@ -287,8 +374,28 @@ class MessageDisplay(Static):
     
     def on_click(self, event):
         """Handle click events."""
-        # Focus the message on click
-        self.focus()
+        import time
+        current_time = time.time()
+        
+        # Check for double click (within 500ms)
+        if hasattr(self, '_last_click_time') and (current_time - self._last_click_time) < 0.5:
+            # Double click - open text viewer
+            self._open_text_viewer()
+            self._last_click_time = 0  # Reset to prevent triple-click
+        else:
+            # Single click - focus
+            self.focus()
+            self._last_click_time = current_time
+    
+    def _open_text_viewer(self):
+        """Open text viewer dialog for mouse selection and copying."""
+        if not self.message:
+            return
+        
+        content = self.message.content or ""
+        title = f"Message ({self.message.type.value}) - Double-click to select, Ctrl+C to copy"
+        
+        self.app.push_screen(TextViewerDialog(content, title))
 
 
 class CompactToolDisplay(Static):
@@ -403,3 +510,134 @@ class MessageList(ScrollableContainer):
         self._messages.clear()
         self._streaming_message = None
         self._pending_tool = None
+        self._streaming_message = None
+        self._pending_tool = None
+
+
+class TextViewerDialog(Screen):
+    """Modal dialog for viewing and copying message text.
+    
+    For SSH/Xshell users:
+    - Click "📋 Copy All" to copy (uses OSC 52 if terminal supports it)
+    - Click "💾 Save" to save to /tmp/ for downloading via scp
+    - Use terminal's own selection if mouse reporting is disabled
+    """
+    
+    DEFAULT_CSS = """
+    TextViewerDialog {
+        align: center middle;
+    }
+    TextViewerDialog > Vertical {
+        width: 80;
+        height: 80%;
+        background: $surface;
+        border: solid $primary;
+        padding: 1;
+    }
+    TextViewerDialog #title {
+        height: 2;
+        content-align: center middle;
+        text-style: bold;
+        background: $primary;
+        color: $text;
+    }
+    TextViewerDialog #hint {
+        height: 1;
+        content-align: center middle;
+        text-style: dim;
+        color: $text-muted;
+    }
+    TextViewerDialog TextArea {
+        height: 1fr;
+        border: solid $border;
+        background: $background;
+        color: $text;
+    }
+    TextViewerDialog #buttons {
+        height: 3;
+        dock: bottom;
+    }
+    TextViewerDialog Button {
+        width: 1fr;
+    }
+    """
+    
+    BINDINGS = [
+        ("escape", "close", "Close"),
+        ("ctrl+c", "copy_close", "Copy & Close"),
+    ]
+    
+    def __init__(self, content: str, title: str = "Message Content", **kwargs):
+        super().__init__(**kwargs)
+        self.content = content
+        self.title_text = title
+        self._saved_file_path: str | None = None
+    
+    def compose(self):
+        """Compose the dialog."""
+        with Vertical():
+            yield Static(self.title_text, id="title")
+            yield Static("Press 'Copy All' to copy, or 'Save' to download via scp", id="hint")
+            text_area = TextArea(text=self.content, read_only=True, show_line_numbers=False)
+            text_area.cursor_blink = False
+            yield text_area
+            with Horizontal(id="buttons"):
+                yield Button("📋 Copy All", id="copy", variant="primary")
+                yield Button("💾 Save", id="save")
+                yield Button("Close (Esc)", id="close")
+    
+    def on_mount(self):
+        """Focus the text area on mount."""
+        text_area = self.query_one(TextArea)
+        text_area.focus()
+    
+    def action_close(self):
+        """Close the dialog."""
+        self.app.pop_screen()
+    
+    def action_copy_close(self):
+        """Copy content and close."""
+        self._copy_content()
+        self.app.pop_screen()
+    
+    def _copy_content(self):
+        """Copy content to clipboard."""
+        system_ok, used_internal = copy_to_clipboard(self.content)
+        if system_ok:
+            self.app.notify("📋 Copied to clipboard (OSC 52)", severity="information", timeout=2)
+        elif used_internal:
+            self.app.notify("⚠️ Copied to internal buffer", severity="warning", timeout=2)
+        else:
+            self.app.notify("❌ Failed to copy", severity="error")
+    
+    def _save_to_file(self):
+        """Save content to a file in /tmp for downloading."""
+        import tempfile
+        import os
+        from pathlib import Path
+        
+        try:
+            # Create a temp file with meaningful name
+            timestamp = __import__('time').time()
+            filename = f"/tmp/pilotcode_message_{int(timestamp)}.txt"
+            
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(self.content)
+            
+            self._saved_file_path = filename
+            self.app.notify(
+                f"💾 Saved to: {filename}\nDownload: scp user@host:{filename} .",
+                severity="information",
+                timeout=5
+            )
+        except Exception as e:
+            self.app.notify(f"❌ Failed to save: {e}", severity="error")
+    
+    def on_button_pressed(self, event: Button.Pressed):
+        """Handle button presses."""
+        if event.button.id == "copy":
+            self._copy_content()
+        elif event.button.id == "save":
+            self._save_to_file()
+        elif event.button.id == "close":
+            self.app.pop_screen()
