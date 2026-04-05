@@ -1,147 +1,98 @@
-"""Pytest configuration and fixtures for pilotcode tests."""
-
-import asyncio
-import os
-import sys
-import tempfile
-from pathlib import Path
-from typing import Generator
+"""Pytest configuration and shared fixtures."""
 
 import pytest
+import asyncio
+import tempfile
+import shutil
+from pathlib import Path
+from unittest.mock import MagicMock
 
-# Ensure src is on path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+import sys
+sys.path.insert(0, 'src')
 
-from pilotcode.permissions.permission_manager import (
-    PermissionManager,
-    PermissionLevel,
-    ToolPermission,
-    get_permission_manager,
-)
+from pilotcode.state.app_state import get_default_app_state
+from pilotcode.state.store import Store, set_global_store
 from pilotcode.tools.base import ToolUseContext
-from pilotcode.tools.registry import get_all_tools
-from pilotcode.utils.model_client import get_model_client
-from tests.mock_llm import MockModelClient
 
 
-# ---------------------------------------------------------------------------
-# Event loop policy for asyncio tests
-# ---------------------------------------------------------------------------
 @pytest.fixture(scope="session")
-def event_loop_policy():
-    return asyncio.DefaultEventLoopPolicy()
-
-
-# ---------------------------------------------------------------------------
-# Basic fixtures
-# ---------------------------------------------------------------------------
-@pytest.fixture
-def temp_dir() -> Generator[str, None, None]:
-    """Provide a temporary directory."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        yield tmpdir
+def event_loop():
+    """Create an instance of the default event loop for the test session."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
 
 @pytest.fixture
-def tool_context(temp_dir: str) -> ToolUseContext:
-    """Provide a default ToolUseContext pointing at a temp directory."""
-    return ToolUseContext(options={"cwd": temp_dir})
+def temp_dir():
+    """Create a temporary directory for test files."""
+    tmp = tempfile.mkdtemp(prefix="pilotcode_test_")
+    yield Path(tmp)
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 @pytest.fixture
-def allow_all_callback():
-    """Permission callback that always allows."""
-    async def _callback(*args, **kwargs):
+def app_state():
+    """Create a fresh app state for each test."""
+    store = Store(get_default_app_state())
+    set_global_store(store)
+    return store
+
+
+@pytest.fixture
+def tool_context(app_state):
+    """Create a tool execution context."""
+    return ToolUseContext(
+        get_app_state=app_state.get_state,
+        set_app_state=lambda f: app_state.set_state(f)
+    )
+
+
+@pytest.fixture
+def allow_callback():
+    """Mock permission callback that allows all operations."""
+    async def callback(*args, **kwargs):
         return {"behavior": "allow"}
-    return _callback
-
-
-# ---------------------------------------------------------------------------
-# Permission fixtures
-# ---------------------------------------------------------------------------
-@pytest.fixture
-def fresh_permission_manager(monkeypatch):
-    """Provide a fresh permission manager and monkeypatch the global getter."""
-    pm = PermissionManager()
-    monkeypatch.setattr(
-        "pilotcode.permissions.permission_manager._permission_manager", pm
-    )
-    # Also patch get_permission_manager to return this instance
-    monkeypatch.setattr(
-        "pilotcode.permissions.permission_manager.get_permission_manager",
-        lambda: pm,
-    )
-    # Patch tool_executor to use this pm
-    from pilotcode.permissions import tool_executor as te_mod
-    original_get = te_mod.get_tool_executor
-
-    def _patched_get(console=None):
-        exe = te_mod.ToolExecutor(console)
-        exe.permission_manager = pm
-        return exe
-
-    monkeypatch.setattr(te_mod, "get_tool_executor", _patched_get)
-    return pm
+    return callback
 
 
 @pytest.fixture
-def auto_allow_permissions(fresh_permission_manager):
-    """Set up permissions so all tools are auto-allowed."""
-    pm = fresh_permission_manager
-    tools = get_all_tools()
-    for tool in tools:
-        pm._permissions[tool.name] = ToolPermission(
-            tool_name=tool.name,
-            level=PermissionLevel.ALWAYS_ALLOW,
-        )
-    return pm
-
-
-# ---------------------------------------------------------------------------
-# Mock LLM fixtures
-# ---------------------------------------------------------------------------
-@pytest.fixture
-def mock_model_client(monkeypatch) -> MockModelClient:
-    """Replace the global model client with a MockModelClient."""
-    client = MockModelClient()
-    monkeypatch.setattr(
-        "pilotcode.utils.model_client._client", client
-    )
-    # Also patch get_model_client
-    monkeypatch.setattr(
-        "pilotcode.utils.model_client.get_model_client", lambda *a, **k: client
-    )
-    # Patch query_engine's import path as well
-    monkeypatch.setattr(
-        "pilotcode.query_engine.get_model_client", lambda *a, **k: client
-    )
-    return client
+def deny_callback():
+    """Mock permission callback that denies all operations."""
+    async def callback(*args, **kwargs):
+        return {"behavior": "deny"}
+    return callback
 
 
 @pytest.fixture
-def query_engine_factory(mock_model_client):
-    """Factory fixture to create QueryEngines wired to the mock client."""
-    from pilotcode.query_engine import QueryEngine, QueryEngineConfig
+def sample_python_file(temp_dir):
+    """Create a sample Python file for testing."""
+    file_path = temp_dir / "sample.py"
+    content = '''#!/usr/bin/env python3
+"""Sample file for testing."""
 
-    def _make(tools=None, cwd=".", custom_system_prompt=None):
-        config = QueryEngineConfig(
-            cwd=cwd,
-            tools=tools or [],
-            custom_system_prompt=custom_system_prompt,
-        )
-        engine = QueryEngine(config)
-        # Start fresh
-        engine.messages.clear()
-        return engine
+def hello():
+    """Say hello."""
+    return "Hello, World!"
 
-    return _make
+if __name__ == "__main__":
+    print(hello())
+'''
+    file_path.write_text(content)
+    return file_path
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-def create_test_file(directory: str, filename: str, content: str) -> str:
-    """Helper to create a test file."""
-    path = Path(directory) / filename
-    path.write_text(content, encoding="utf-8")
-    return str(path)
+@pytest.fixture
+def empty_file(temp_dir):
+    """Create an empty file."""
+    file_path = temp_dir / "empty.txt"
+    file_path.touch()
+    return file_path
+
+
+@pytest.fixture(autouse=True)
+def reset_global_state():
+    """Reset global state before each test."""
+    # Cleanup code here if needed
+    yield
+    # Post-test cleanup
