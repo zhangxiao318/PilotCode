@@ -15,15 +15,15 @@ class PromptInput(TextArea):
     DEFAULT_CSS = """
     PromptInput {
         height: auto;
-        min-height: 3;
+        min-height: 1;
         max-height: 10;
-        border: solid $primary;
+        border: none;
         padding: 0 1;
         background: $surface;
         color: $text;
     }
     PromptInput:focus {
-        border: solid $primary-lighten-2;
+        border: none;
     }
     PromptInput .text-area--placeholder {
         color: $text-muted;
@@ -35,6 +35,7 @@ class PromptInput(TextArea):
     PromptInput .text-area--gutter {
         background: $surface;
         color: $text-muted;
+        width: 2;
     }
     PromptInput .text-area--content {
         color: $text;
@@ -50,7 +51,7 @@ class PromptInput(TextArea):
     
     def __init__(self, **kwargs):
         super().__init__(
-            placeholder="Type your message... (Enter to send, Ctrl+Enter for new line)",
+            placeholder="Type message...",
             show_line_numbers=False,
             soft_wrap=True,
             **kwargs
@@ -193,25 +194,26 @@ class PromptInput(TextArea):
 
 
 class PromptWithMode(Horizontal):
-    """Prompt input with mode indicator."""
+    """Prompt input with > indicator."""
     
     DEFAULT_CSS = """
     PromptWithMode {
         height: auto;
-        min-height: 3;
+        min-height: 1;
         background: $surface;
+        border-top: solid $border;
     }
     PromptWithMode Static {
-        width: auto;
-        min-width: 3;
-        padding: 0 1;
-        content-align: center middle;
+        width: 2;
+        padding: 0 0 0 1;
+        content-align: left middle;
         background: $surface;
-        color: $text-muted;
+        color: $primary;
+        text-style: bold;
     }
     PromptWithMode PromptInput {
         width: 1fr;
-        min-height: 3;
+        min-height: 1;
     }
     """
     
@@ -228,7 +230,7 @@ class PromptWithMode(Horizontal):
     
     def compose(self):
         """Compose the widget."""
-        yield Static("◇")  # Mode indicator
+        yield Static(">")  # Prompt indicator
         yield self.input
     
     def on_prompt_input_submitted(self, event: PromptInput.Submitted):

@@ -71,12 +71,12 @@ class MessageDisplay(Static):
         margin: 1 0;
     }
     
-    /* System - visible but subtle */
+    /* System - boxed welcome message, left aligned */
     MessageDisplay.system {
         background: $surface;
-        color: $text-muted;
-        text-align: center;
-        padding: 1;
+        color: $text;
+        text-align: left;
+        padding: 0;
         margin: 1 0;
     }
     """

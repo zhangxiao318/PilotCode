@@ -151,23 +151,22 @@ class SessionScreen(Screen):
         self.controller.set_permission_callback(self._request_permission)
     
     def _show_welcome(self):
-        """Show welcome message."""
+        """Show welcome message in a boxed layout with two columns."""
+        welcome_text = """╔══════════════════════════════════════════════════════════╗
+║  Welcome to PilotCode v0.2.0! 🚀                         ║
+║                                                          ║
+║  Commands              Tips                              ║
+║  ────────────────────────────────────────────────────────║
+║  /help  - Show cmds    • @filename to reference files   ║
+║  /save  - Save session • Shift+Enter for new line       ║
+║  /load  - Load session • Up/Down arrows for history     ║
+║  /clear - Clear history                                  ║
+║  /quit  - Exit                                           ║
+╚══════════════════════════════════════════════════════════╝"""
+        
         welcome_msg = UIMessage(
             type=MessageType.SYSTEM,
-            content="""Welcome to PilotCode v0.2.0! 🚀
-
-Commands:
-  /help     - Show available commands
-  /save     - Save session to file
-  /load     - Load session from file
-  /clear    - Clear conversation history
-  /quit     - Exit application
-
-Tips:
-  • Use @filename to reference files
-  • Press Shift+Enter for new lines
-  • Up/Down arrows for history
-"""
+            content=welcome_text
         )
         if self.message_list:
             self.message_list.add_message(welcome_msg)
