@@ -141,6 +141,10 @@ class SessionScreen(Screen):
     
     def _init_controller(self):
         """Initialize the controller."""
+        # Only create controller once
+        if self.controller is not None:
+            return
+            
         store = get_store()
         
         self.controller = TUIController(
