@@ -219,8 +219,11 @@ class TUIController:
         is_safe = self._is_safe_tool(tool_name, params)
         
         # Check session-level permission cache
+        import sys
+        print(f"[PERM_CACHE] Tool={tool_name}, Cache={self._session_permissions}", flush=True, file=sys.stderr)
         if tool_name in self._session_permissions:
             allowed = self._session_permissions[tool_name]
+            print(f"[PERM_CACHE] Found! allowed={allowed}", flush=True, file=sys.stderr)
             if not allowed:
                 self.query_engine.add_tool_result(
                     tool_msg.tool_use_id,
@@ -242,15 +245,18 @@ class TUIController:
         # 3. Tool is not safe (destructive operation) AND
         # 4. No session-level permission set
         elif self._permission_callback and not self.auto_allow and not is_safe:
+            print(f"[PERM_CACHE] Not in cache, requesting permission...", flush=True, file=sys.stderr)
             # Import here to avoid circular dependency
             from pilotcode.tui_v2.components.permission_inline import PermissionResult
             
             result = await self._permission_callback(tool_name, params)
+            print(f"[PERM_CACHE] Result: action={result.action}, for_session={result.for_session}", flush=True, file=sys.stderr)
             
             # Handle PermissionResult
             if isinstance(result, PermissionResult):
                 # Update session cache if requested
                 if result.for_session:
+                    print(f"[PERM_CACHE] Setting cache: {tool_name}={result.allowed}", flush=True, file=sys.stderr)
                     self._session_permissions[tool_name] = result.allowed
                 
                 if not result.allowed:
