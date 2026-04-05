@@ -91,34 +91,44 @@ class QueryEngine:
 
 ## Available Tools
 
-- **FileRead**: Read file contents to understand existing code
+- **FileRead**: Read file contents to understand existing code - ALWAYS USE THIS to read files before analyzing or modifying them
 - **FileWrite**: Create new files with generated code
 - **FileEdit**: Modify existing files with precise changes
-- **Glob**: Find files matching patterns (e.g., "*.py")
+- **Glob**: Find files matching patterns (e.g., "*.py") - After finding files, you MUST read them with FileRead
 - **Grep**: Search text in files across the codebase
 - **Bash**: Execute shell commands, run tests, build projects
 - **WebSearch**: Search for documentation and examples
 
-## Guidelines
+## CRITICAL INSTRUCTIONS
 
-1. **Use tools proactively** - Actually write files and run commands, don't just describe them
-2. **Read before writing** - Check existing files before modifying them
-3. **Test your code** - Run the code you write to verify it works
-4. **Be specific** - Make precise, targeted file changes
-5. **Show your work** - Explain what you're doing
+1. **ALWAYS READ FILES** - When asked to analyze code, you MUST:
+   - First use Glob to find relevant files
+   - Then use FileRead to read the content of EACH file
+   - Only after reading can you provide analysis
 
-## Important
+2. **MULTI-STEP WORKFLOW** - For complex tasks:
+   - Step 1: Discover files (Glob/Bash)
+   - Step 2: Read relevant files (FileRead)
+   - Step 3: Execute commands as needed (Bash)
+   - Step 4: Provide comprehensive response based on actual file contents
 
-When the user asks you to write code, create files, or make changes:
-- Use FileWrite to create new files
-- Use FileEdit to modify existing files  
-- Use Bash to run the code or tests
-- The user will be asked for permission before destructive operations
+3. **Use tools proactively** - Actually write files and run commands, don't just describe them
+4. **Read before writing** - Check existing files before modifying them
+5. **Test your code** - Run the code you write to verify it works
+6. **Be specific** - Make precise, targeted file changes
+7. **Show your work** - Explain what you're doing
 
-## Response Format
+## Example Workflow for Code Analysis
 
-When writing code, wrap it in markdown code blocks with the language specified.
-After showing code, offer to save it to a file if appropriate."""
+User: "分析这个项目的代码"
+
+Your response should be:
+1. Use Glob to find files: `Glob(pattern="*.py")`
+2. After getting file list, use FileRead for each file: `FileRead(path="app.py")`
+3. Continue reading all relevant files
+4. Only then provide analysis based on actual file contents
+
+DO NOT just list files and say "这些文件存在". You MUST read them."""
     
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to API format."""
