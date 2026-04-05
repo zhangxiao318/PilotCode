@@ -75,8 +75,8 @@ def main(
     auto_allow: bool = typer.Option(False, "--auto-allow", help="Auto-allow all tool executions (for testing)"),
     prompt: str | None = typer.Option(None, "--prompt", "-p", help="Run a single prompt in headless mode"),
     json_mode: bool = typer.Option(False, "--json", help="Output structured JSON in headless mode"),
-    tui: bool = typer.Option(True, "--tui/--no-tui", help="Use Textual TUI interface (default: True)"),
-    simple: bool = typer.Option(False, "--simple/--no-simple", help="Use simple CLI instead of TUI (default: False)"),
+    tui: bool = typer.Option(False, "--tui/--no-tui", help="Use Textual TUI interface (default: False)"),
+    simple: bool = typer.Option(True, "--simple/--no-simple", help="Use simple CLI (default: True, use --tui for TUI)"),
     skip_config_check: bool = typer.Option(False, "--skip-config-check", help="Skip configuration check (for testing)"),
 ):
     """PilotCode - Python rewrite of Claude Code."""

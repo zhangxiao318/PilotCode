@@ -90,15 +90,7 @@ class QueryEngine:
     
     def _get_default_system_prompt(self) -> str:
         """Get default system prompt for programming assistant."""
-        from datetime import datetime
-        import os
-        
-        # Get current time info
-        now = datetime.now()
-        current_time = now.strftime("%Y-%m-%d %H:%M:%S")
-        timezone = os.environ.get('TZ', 'Local')
-        
-        return f"""You are PilotCode, an AI programming assistant. Your goal is to help users write, analyze, and improve code.
+        return """You are PilotCode, an AI programming assistant. Your goal is to help users write, analyze, and improve code.
 
 When users ask about current time/date (e.g., '现在几点了', 'what time is it'), you MUST use the Bash tool to get the accurate time:
 - For time: `Bash(command="date")` or `Bash(command="date '+%Y-%m-%d %H:%M:%S'")`
