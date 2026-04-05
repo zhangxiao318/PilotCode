@@ -82,9 +82,9 @@
 - [ ] `/export_memory` - Export memory
 
 ### Testing (4)
-- [ ] `/test` - Run tests
-- [ ] `/coverage` - Show coverage
-- [ ] `/benchmark` - Run benchmarks
+- [x] `/test` - Run tests (pytest, jest, cargo, go)
+- [x] `/coverage` - Show coverage report
+- [x] `/benchmark` - Run benchmarks
 - [ ] `/profile` - Profile performance
 
 ### Documentation (4)

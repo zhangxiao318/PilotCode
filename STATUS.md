@@ -265,6 +265,7 @@ pilotcode_py/
 - [x] FileSelector Tool (glob, regex, size/date filters, preview, gitignore)
 - [x] Code Intelligence Commands (symbols, references, definitions, hover, implementations)
 - [x] Context Manager (token budget, compaction strategies, prioritization)
+- [x] Testing Commands (/test, /coverage, /benchmark for pytest, jest, cargo, go)
 
 ### Planned
 - [ ] MCP (Model Context Protocol) integration
