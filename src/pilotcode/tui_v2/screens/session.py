@@ -294,14 +294,17 @@ class SessionScreen(Screen):
         # Store reference to wait for response
         self._pending_permission = permission_widget
         
-        # Add to message list (mount is async in Textual)
-        await self.message_list.mount(permission_widget)
+        # Use call_after_refresh to ensure proper mounting
+        mount_event = asyncio.Event()
         
-        # Focus the widget so it can receive keyboard events
-        permission_widget.focus()
+        def do_mount():
+            self.message_list.mount(permission_widget)
+            permission_widget.focus()
+            self.message_list.scroll_end(animate=False)
+            mount_event.set()
         
-        # Scroll to make it visible
-        self.message_list.scroll_end(animate=False)
+        self.call_after_refresh(do_mount)
+        await mount_event.wait()
         
         # Wait for response
         result = await permission_widget.wait_for_response()
