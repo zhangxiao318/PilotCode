@@ -114,7 +114,10 @@ class QueryEngine:
 
 3. **Use tools proactively** - Actually write files and run commands, don't just describe them
 4. **Read before writing** - Check existing files before modifying them
-5. **Test your code** - Run the code you write to verify it works
+5. **TEST YOUR CODE** - When asked to "测试" (test), you MUST use Bash to run the code:
+   - For Python: `python filename.py` or `python -m pytest`
+   - For tests: Run the actual test command
+   - Do NOT just read the code and say "看起来可以运行" - actually run it!
 6. **Be specific** - Make precise, targeted file changes
 7. **Show your work** - Explain what you're doing
 
@@ -141,7 +144,20 @@ User: "查看 blog_app 目录有哪些 Python 文件并读取 app.py"
 
 Your response should be (make both calls at once):
 - Glob(pattern="blog_app/*.py")  
-- FileRead(path="blog_app/app.py")"""
+- FileRead(path="blog_app/app.py")
+
+## Example: Testing Code (CRITICAL)
+
+User: "测试这个代码" or "analyze and test"
+
+Your response MUST include:
+1. Read the code files first
+2. **RUN THE CODE** using Bash to actually test it:
+   - `Bash(command="python app.py")` 
+   - `Bash(command="python -m pytest")`
+   - Or run the appropriate test command
+
+DON'T STOP after reading files. You MUST execute the code to test it!"""
     
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to API format."""
