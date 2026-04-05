@@ -218,14 +218,9 @@ class TUIController:
         # Check if tool is safe (read-only) - skip permission for safe operations
         is_safe = self._is_safe_tool(tool_name, params)
         
-        # Debug: print session permissions state
-        import sys
-        print(f"\n[DEBUG] Tool: {tool_name}, Session perms: {self._session_permissions}, is_safe: {is_safe}\n", flush=True, file=sys.stderr)
-        
         # Check session-level permission cache
         if tool_name in self._session_permissions:
             allowed = self._session_permissions[tool_name]
-            print(f"\n[DEBUG] Found in session cache: allowed={allowed}\n", flush=True, file=sys.stderr)
             if not allowed:
                 self.query_engine.add_tool_result(
                     tool_msg.tool_use_id,
@@ -252,13 +247,10 @@ class TUIController:
             
             result = await self._permission_callback(tool_name, params)
             
-            print(f"\n[DEBUG] Permission result: action={result.action}, allowed={result.allowed}, for_session={result.for_session}\n", flush=True, file=sys.stderr)
-            
             # Handle PermissionResult
             if isinstance(result, PermissionResult):
                 # Update session cache if requested
                 if result.for_session:
-                    print(f"\n[DEBUG] Setting session permission: {tool_name} = {result.allowed}\n", flush=True, file=sys.stderr)
                     self._session_permissions[tool_name] = result.allowed
                 
                 if not result.allowed:
