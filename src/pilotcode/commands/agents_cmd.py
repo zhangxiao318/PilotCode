@@ -6,7 +6,6 @@ from rich import box
 
 from .base import CommandHandler, register_command, CommandContext
 from ..agent import get_agent_manager, AgentStatus, ENHANCED_AGENT_DEFINITIONS
-from ..tui import get_message_renderer, MessageType, Message
 
 
 async def agents_command(args: list[str], context: CommandContext) -> str:

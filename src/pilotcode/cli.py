@@ -75,9 +75,8 @@ def main(
     auto_allow: bool = typer.Option(False, "--auto-allow", help="Auto-allow all tool executions (for testing)"),
     prompt: str | None = typer.Option(None, "--prompt", "-p", help="Run a single prompt in headless mode"),
     json_mode: bool = typer.Option(False, "--json", help="Output structured JSON in headless mode"),
-    tui: bool = typer.Option(False, "--tui/--no-tui", help="Use legacy Textual TUI interface"),
-    tui_v2: bool = typer.Option(True, "--tui-v2/--no-tui-v2", help="Use enhanced TUI v2 interface (default: True)"),
-    simple: bool = typer.Option(False, "--simple/--no-simple", help="Use simple CLI (default: False)"),
+    tui_v2: bool = typer.Option(True, "--tui-v2/--no-tui-v2", help="Use TUI v2 interface (default: True)"),
+    simple: bool = typer.Option(False, "--simple/--no-simple", help="Use simple CLI without TUI (default: False)"),
     skip_config_check: bool = typer.Option(False, "--skip-config-check", help="Skip configuration check (for testing)"),
 ):
     """PilotCode - Python rewrite of Claude Code."""
@@ -101,7 +100,7 @@ def main(
         raise typer.Exit()
     
     if simple:
-        # Launch Simple CLI
+        # Launch Simple CLI (non-TUI)
         import asyncio
         from .tui.simple_cli import SimpleCLI
         
@@ -110,19 +109,6 @@ def main(
             asyncio.run(cli.run())
         except KeyboardInterrupt:
             print("\nGoodbye! 👋")
-    elif tui:
-        # Launch legacy Textual TUI
-        from .tui.simple_app import SimpleTUI
-        from .state.app_state import get_default_app_state
-        from .state.store import Store, set_global_store
-        from .tools.registry import get_all_tools
-        
-        store = Store(get_default_app_state())
-        set_global_store(store)
-        tools = get_all_tools()
-        
-        app_tui = SimpleTUI(store=store, tools=tools, auto_allow=auto_allow)
-        app_tui.run()
     elif tui_v2:
         # Launch Enhanced TUI v2 (default)
         from .tui_v2.app import EnhancedApp
