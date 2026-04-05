@@ -8,10 +8,12 @@ from textual.widgets import Static, Header, Footer
 from textual.reactive import reactive
 
 from pilotcode.tui_v2.controller.controller import TUIController, UIMessage, MessageType
-from pilotcode.tui_v2.components.message.display import MessageList, MessageDisplay
+from pilotcode.tui_v2.components.message.display import MessageDisplay
+from pilotcode.tui_v2.components.message.virtual_list import HybridMessageList
 from pilotcode.tui_v2.components.prompt.input import PromptWithMode
 from pilotcode.tui_v2.components.status.bar import StatusBar
 from pilotcode.tui_v2.components.dialog.permission import PermissionDialog, PermissionResult, PermissionAction
+from pilotcode.tui_v2.components.search_bar import SearchBar, SearchMode, SearchNavigate
 from pilotcode.tui_v2.providers.session import get_session_provider
 from pilotcode.state.store import Store, get_store
 from pilotcode.commands.base import process_user_input, get_command_registry
@@ -90,6 +92,11 @@ class SessionScreen(Screen):
         ("ctrl+l", "clear", "Clear"),
         ("f1", "help", "Help"),
         ("ctrl+b", "toggle_sidebar", "Toggle Sidebar"),
+        ("ctrl+y", "copy_last_assistant", "Copy Last Assistant"),
+        ("ctrl+o", "copy_last_code", "Copy Last Code Block"),
+        ("/", "toggle_search", "Search"),
+        ("n", "next_match", "Next Match"),
+        ("N", "previous_match", "Previous Match"),
     ]
     
     sidebar_visible: reactive[bool] = reactive(False)
@@ -98,10 +105,13 @@ class SessionScreen(Screen):
         super().__init__(**kwargs)
         self.auto_allow = auto_allow
         self.controller: TUIController | None = None
-        self.message_list: MessageList | None = None
+        self.message_list: HybridMessageList | None = None
         self.prompt: PromptWithMode | None = None
         self.status_bar: StatusBar | None = None
+        self.search_bar: SearchBar | None = None
         self._processing = False
+        self._search_active = False
+        self._search_results: list[tuple[int, int, int]] = []  # (msg_idx, start, end)
     
     def compose(self):
         """Compose the screen."""
@@ -114,8 +124,12 @@ class SessionScreen(Screen):
             
             # Main message area
             with Vertical(id="message-area"):
-                self.message_list = MessageList()
+                self.message_list = HybridMessageList()
                 yield self.message_list
+        
+        # Search bar (hidden by default)
+        self.search_bar = SearchBar()
+        yield self.search_bar
         
         # Input area
         with Vertical(id="input-area"):
@@ -334,3 +348,174 @@ class SessionScreen(Screen):
     def action_help(self):
         """Show help."""
         self._handle_command('/help')
+    
+    def _copy_to_clipboard(self, text: str) -> bool:
+        """Copy text to clipboard using system tools."""
+        import subprocess
+        import platform
+        
+        system = platform.system()
+        try:
+            if system == "Linux":
+                subprocess.run(
+                    ['xclip', '-selection', 'clipboard'],
+                    input=text.encode(),
+                    check=True,
+                    capture_output=True
+                )
+                return True
+            elif system == "Darwin":  # macOS
+                subprocess.run(
+                    ['pbcopy'],
+                    input=text.encode(),
+                    check=True,
+                    capture_output=True
+                )
+                return True
+            elif system == "Windows":
+                subprocess.run(
+                    ['clip.exe'],
+                    input=text.encode(),
+                    check=True,
+                    capture_output=True
+                )
+                return True
+        except Exception:
+            pass
+        return False
+    
+    def action_copy_last_assistant(self):
+        """Copy the last assistant message to clipboard."""
+        if not self.message_list or not self.message_list._messages:
+            self.notify("No messages to copy", severity="warning")
+            return
+        
+        # Find last assistant message
+        for display in reversed(self.message_list._messages):
+            if display.message and display.message.type == MessageType.ASSISTANT:
+                content = display.message.content or ""
+                if self._copy_to_clipboard(content):
+                    self.notify("📋 Last assistant message copied!", severity="information", timeout=2)
+                else:
+                    self.notify("⚠️ Failed to copy to clipboard", severity="error")
+                return
+        
+        self.notify("No assistant message found", severity="warning")
+    
+    def action_copy_last_code(self):
+        """Copy the last code block from assistant messages."""
+        if not self.message_list or not self.message_list._messages:
+            self.notify("No messages to copy", severity="warning")
+            return
+        
+        import re
+        
+        # Find last code block in assistant messages
+        for display in reversed(self.message_list._messages):
+            if display.message and display.message.type == MessageType.ASSISTANT:
+                content = display.message.content or ""
+                # Match code blocks: ```language\ncode\n```
+                code_blocks = re.findall(r'```(?:\w+)?\n(.*?)\n```', content, re.DOTALL)
+                if code_blocks:
+                    code = code_blocks[-1]  # Get last code block
+                    if self._copy_to_clipboard(code):
+                        self.notify("📋 Last code block copied!", severity="information", timeout=2)
+                    else:
+                        self.notify("⚠️ Failed to copy to clipboard", severity="error")
+                    return
+        
+        self.notify("No code block found", severity="warning")
+    def action_copy_last_code(self):
+        """Copy the last code block from assistant messages."""
+        if not self.message_list or not self.message_list._messages:
+            self.notify("No messages to copy", severity="warning")
+            return
+        
+        import re
+        
+        # Find last code block in assistant messages
+        for display in reversed(self.message_list._messages):
+            if display.message and display.message.type == MessageType.ASSISTANT:
+                content = display.message.content or ""
+                # Match code blocks: ```language\ncode\n```
+                code_blocks = re.findall(r'```(?:\w+)?\n(.*?)\n```', content, re.DOTALL)
+                if code_blocks:
+                    code = code_blocks[-1]  # Get last code block
+                    if self._copy_to_clipboard(code):
+                        self.notify("📋 Last code block copied!", severity="information", timeout=2)
+                    else:
+                        self.notify("⚠️ Failed to copy to clipboard", severity="error")
+                    return
+        
+        self.notify("No code block found", severity="warning")
+    
+    def action_toggle_search(self):
+        """Toggle search bar."""
+        if self.search_bar:
+            self.search_bar.toggle()
+    
+    def action_next_match(self):
+        """Go to next search match."""
+        if self.search_bar and self._search_active:
+            self.search_bar.action_next()
+    
+    def action_previous_match(self):
+        """Go to previous search match."""
+        if self.search_bar and self._search_active:
+            self.search_bar.action_previous()
+    
+    def on_search_mode(self, event: SearchMode):
+        """Handle search mode toggle."""
+        self._search_active = event.active
+        if event.active:
+            # Set up search callbacks
+            if self.search_bar:
+                self.search_bar.set_search_callback(self._perform_search)
+                self.search_bar.set_navigate_callback(self._navigate_to_match)
+        else:
+            # Clear search
+            self._search_results = []
+    
+    def on_search_navigate(self, event: SearchNavigate):
+        """Handle search navigation."""
+        pass  # Navigation handled by search bar callback
+    
+    def _perform_search(self, query: str) -> list[tuple[int, int, int]]:
+        """Perform search across messages.
+        
+        Returns list of (message_index, start_offset, end_offset) tuples.
+        """
+        if not query or not self.message_list:
+            return []
+        
+        import re
+        results = []
+        
+        for idx, display in enumerate(self.message_list._messages):
+            if not display.message:
+                continue
+            
+            content = display.message.content or ""
+            # Simple case-insensitive search
+            pattern = re.compile(re.escape(query), re.IGNORECASE)
+            
+            for match in pattern.finditer(content):
+                results.append((idx, match.start(), match.end()))
+        
+        self._search_results = results
+        return results
+    
+    def _navigate_to_match(self, match_index: int):
+        """Navigate to a specific search match."""
+        if not self._search_results or match_index >= len(self._search_results):
+            return
+        
+        msg_idx, _, _ = self._search_results[match_index]
+        
+        # Scroll to message
+        if self.message_list and hasattr(self.message_list, '_messages'):
+            if msg_idx < len(self.message_list._messages):
+                # In a real implementation, you'd scroll to the specific message
+                # For now, just scroll to bottom if it's the last message
+                if msg_idx == len(self.message_list._messages) - 1:
+                    self.message_list.scroll_to_bottom()

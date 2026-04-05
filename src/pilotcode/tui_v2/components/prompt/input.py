@@ -1,5 +1,6 @@
-"""Enhanced prompt input with history and autocomplete."""
+"""Enhanced prompt input with history, autocomplete and syntax highlighting."""
 
+import re
 from typing import Optional, Callable
 from pathlib import Path
 
@@ -7,10 +8,12 @@ from textual.widgets import Static, TextArea
 from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.message import Message
+from rich.text import Text
+from rich.syntax import Syntax
 
 
 class PromptInput(TextArea):
-    """Enhanced input with history and @file support."""
+    """Enhanced input with history, @file support and syntax highlighting."""
     
     DEFAULT_CSS = """
     PromptInput {
@@ -43,6 +46,24 @@ class PromptInput(TextArea):
     PromptInput .text-area--line {
         color: $text;
     }
+    
+    /* Syntax highlighting overlays */
+    PromptInput .syntax-file-ref {
+        color: #4FC1FF;
+        text-style: bold;
+    }
+    PromptInput .syntax-command {
+        color: #FF79C6;
+        text-style: bold;
+    }
+    PromptInput .syntax-mention {
+        color: #50FA7B;
+        text-style: bold;
+    }
+    PromptInput .syntax-keyword {
+        color: #F1FA8C;
+        text-style: bold;
+    }
     """
     
     class Submitted(Message):
@@ -54,7 +75,7 @@ class PromptInput(TextArea):
     
     def __init__(self, **kwargs):
         super().__init__(
-            placeholder="Type message...",
+            placeholder="Type message... (@file, /command)",
             show_line_numbers=False,
             soft_wrap=True,
             **kwargs
@@ -62,6 +83,19 @@ class PromptInput(TextArea):
         self._input_history: list[str] = []
         self._input_history_index = -1
         self._current_input = ""
+        
+        # Syntax highlight patterns
+        self._patterns = [
+            # File references: @filename or @"file with spaces"
+            (r'(@"[^"]*")', 'syntax-file-ref'),
+            (r'(@\S+)', 'syntax-file-ref'),
+            # Commands: /command
+            (r'(/\w+)', 'syntax-command'),
+            # User mentions: @username
+            (r'(@@\w+)', 'syntax-mention'),
+            # Keywords: #high, #brief, etc.
+            (r'(#[\w-]+)', 'syntax-keyword'),
+        ]
     
     def on_mount(self):
         """Called when widget is mounted."""
@@ -180,31 +214,68 @@ class PromptInput(TextArea):
         Returns:
             (cleaned_text, list_of_file_paths)
         """
-        import re
-        
         # Pattern to match @file or @"file with spaces"
-        pattern = r'@("([^"]*)"|(\S+))'
+        pattern = r'(@"([^"]*)"|@(\S+))'
         
         files = []
         def replace_match(match):
             # Get the file path (group 2 for quoted, group 3 for unquoted)
             path = match.group(2) or match.group(3)
-            files.append(path)
+            if path:
+                files.append(path)
             return f"[File: {path}]"  # Replace with readable format
         
         cleaned = re.sub(pattern, replace_match, text)
         return cleaned, files
+    
+    def get_highlighted_text(self, text: str) -> Text:
+        """Get syntax highlighted text for display.
+        
+        This is used for rendering the input with colors.
+        """
+        # Create base text
+        result = Text(text)
+        
+        # Apply syntax highlighting
+        for pattern, style in self._patterns:
+            for match in re.finditer(pattern, text):
+                start, end = match.span()
+                result.stylize(style, start, end)
+        
+        return result
+    
+    def get_file_references(self, text: str) -> list[str]:
+        """Extract file references from text."""
+        _, files = self.parse_file_references(text)
+        return files
+    
+    def get_command(self, text: str) -> Optional[str]:
+        """Extract command from text if it starts with /."""
+        text = text.strip()
+        if text.startswith('/'):
+            parts = text.split()
+            if parts:
+                return parts[0][1:]  # Remove leading /
+        return None
+    
+    def has_syntax_highlighting(self, text: str) -> bool:
+        """Check if text contains any syntax highlightable elements."""
+        for pattern, _ in self._patterns:
+            if re.search(pattern, text):
+                return True
+        return False
 
 
 class PromptWithMode(Horizontal):
-    """Prompt input with > indicator."""
+    """Prompt input with > indicator and syntax highlighting status."""
     
     DEFAULT_CSS = """
     PromptWithMode {
-        height: 4;
+        height: auto;
+        min-height: 4;
         background: $surface;
     }
-    PromptWithMode Static {
+    PromptWithMode Static.prompt-indicator {
         width: 2;
         height: 100%;
         padding: 0 0 0 1;
@@ -215,7 +286,19 @@ class PromptWithMode(Horizontal):
     }
     PromptWithMode PromptInput {
         width: 1fr;
-        height: 100%;
+        height: auto;
+        min-height: 3;
+    }
+    PromptWithMode Static.syntax-status {
+        width: 100%;
+        height: 1;
+        background: $surface;
+        color: $text-muted;
+        text-style: dim;
+        padding: 0 1;
+    }
+    PromptWithMode Static.syntax-status.has-refs {
+        color: $success;
     }
     """
     
@@ -229,18 +312,72 @@ class PromptWithMode(Horizontal):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.input = PromptInput()
+        self._syntax_status: Optional[Static] = None
     
     def compose(self):
         """Compose the widget."""
-        yield Static(">")  # Prompt indicator
-        yield self.input
+        with Horizontal():
+            yield Static(">", classes="prompt-indicator")  # Prompt indicator
+            yield self.input
+        self._syntax_status = Static("", classes="syntax-status")
+        yield self._syntax_status
+    
+    def on_mount(self):
+        """Called when widget is mounted."""
+        self.input.focus()
     
     def on_prompt_input_submitted(self, event: PromptInput.Submitted):
         """Forward input submission to parent."""
+        # Clear syntax status on submit
+        if self._syntax_status:
+            self._syntax_status.update("")
+            self._syntax_status.remove_class("has-refs")
         # Forward the event
         self.post_message(self.Submitted(event.text))
+    
+    def watch_input_text(self, text: str):
+        """Watch input text changes to update syntax status."""
+        self._update_syntax_status(text)
+    
+    def _update_syntax_status(self, text: str):
+        """Update syntax highlighting status display."""
+        if not self._syntax_status:
+            return
+        
+        # Parse file references
+        files = self.input.get_file_references(text)
+        command = self.input.get_command(text)
+        
+        status_parts = []
+        if command:
+            status_parts.append(f"📋 /{command}")
+        if files:
+            status_parts.append(f"📎 {len(files)} file(s)")
+        
+        if status_parts:
+            self._syntax_status.update(" | ".join(status_parts))
+            self._syntax_status.add_class("has-refs")
+        else:
+            self._syntax_status.update("")
+            self._syntax_status.remove_class("has-refs")
+    
+    def on_key(self, event):
+        """Handle key events to update syntax status."""
+        # Update status on any key
+        self._update_syntax_status(self.input.text)
     
     @property
     def prompt_input(self) -> PromptInput:
         """Get the prompt input widget."""
         return self.input
+    
+    @property
+    def text(self) -> str:
+        """Get input text."""
+        return self.input.text
+    
+    @text.setter
+    def text(self, value: str):
+        """Set input text."""
+        self.input.text = value
+        self._update_syntax_status(value)

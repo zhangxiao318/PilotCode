@@ -1,9 +1,11 @@
 """Message display components for chat interface."""
 
+import asyncio
 from typing import Optional
 from textual.widgets import Static
-from textual.containers import Vertical, ScrollableContainer
+from textual.containers import Vertical, ScrollableContainer, Horizontal
 from textual.reactive import reactive
+from textual.message import Message
 from rich.console import RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -13,8 +15,17 @@ from rich.align import Align
 from pilotcode.tui_v2.controller.controller import UIMessage, MessageType
 
 
+class MessageAction(Message):
+    """Message action event."""
+    
+    def __init__(self, action: str, message: UIMessage):
+        self.action = action
+        self.message = message
+        super().__init__()
+
+
 class MessageDisplay(Static):
-    """Display a single message with compact styling."""
+    """Display a single message with compact styling and actions."""
     
     DEFAULT_CSS = """
     MessageDisplay {
@@ -23,6 +34,10 @@ class MessageDisplay(Static):
         padding: 0 1;
         background: transparent;
         color: $text;
+    }
+    
+    MessageDisplay:hover {
+        background: $surface-darken-1;
     }
     
     /* User messages - left aligned with smiley */
@@ -34,12 +49,20 @@ class MessageDisplay(Static):
         margin: 0 0 1 0;
     }
     
+    MessageDisplay.user:hover {
+        background: $surface-darken-1;
+    }
+    
     /* Assistant messages - left aligned with white dot */
     MessageDisplay.assistant {
         background: transparent;
         color: $text;
         padding: 0 1;
         margin: 0 0 1 0;
+    }
+    
+    MessageDisplay.assistant:hover {
+        background: $surface-darken-1;
     }
     
     /* Tool messages - left aligned with green dot */
@@ -75,14 +98,44 @@ class MessageDisplay(Static):
         padding: 0;
         margin: 1 0;
     }
+    
+    /* Action bar - shown on hover/focus */
+    MessageDisplay .action-bar {
+        display: none;
+        height: 1;
+        dock: top;
+        layer: overlay;
+    }
+    
+    MessageDisplay:hover .action-bar,
+    MessageDisplay:focus-within .action-bar {
+        display: block;
+    }
+    
+    MessageDisplay .action-bar Static {
+        color: $text-muted;
+        text-style: dim;
+    }
+    
+    MessageDisplay .action-bar Static:hover {
+        color: $primary;
+        text-style: bold;
+    }
     """
+    
+    BINDINGS = [
+        ("c", "copy", "Copy"),
+        ("y", "yank", "Yank"),
+    ]
     
     message: reactive[Optional[UIMessage]] = reactive(None)
     
-    def __init__(self, message: UIMessage, **kwargs):
+    def __init__(self, message: UIMessage, show_actions: bool = True, **kwargs):
         super().__init__(**kwargs)
         self.message = message
+        self.show_actions = show_actions
         self._update_classes()
+        self.can_focus = True
     
     def _update_classes(self):
         """Update CSS classes based on message type."""
@@ -182,6 +235,60 @@ class MessageDisplay(Static):
         """React to message changes."""
         self._update_classes()
         self.refresh()
+    
+    def _copy_to_clipboard(self, text: str) -> bool:
+        """Copy text to clipboard."""
+        try:
+            import subprocess
+            # Try to use system clipboard
+            subprocess.run(
+                ['xclip', '-selection', 'clipboard'],
+                input=text.encode(),
+                check=True,
+                capture_output=True
+            )
+            return True
+        except Exception:
+            try:
+                subprocess.run(
+                    ['pbcopy'],
+                    input=text.encode(),
+                    check=True,
+                    capture_output=True
+                )
+                return True
+            except Exception:
+                try:
+                    subprocess.run(
+                        ['clip.exe'],
+                        input=text.encode(),
+                        check=True,
+                        capture_output=True
+                    )
+                    return True
+                except Exception:
+                    return False
+    
+    def action_copy(self):
+        """Copy message content to clipboard."""
+        if not self.message:
+            return
+        
+        content = self.message.content or ""
+        if self._copy_to_clipboard(content):
+            self.app.notify("📋 Copied to clipboard", severity="information", timeout=2)
+        else:
+            # Store in internal buffer as fallback
+            self.app.notify("⚠️ Clipboard not available (content stored internally)", severity="warning", timeout=3)
+    
+    def action_yank(self):
+        """Yank (copy) message - vim style alias."""
+        self.action_copy()
+    
+    def on_click(self, event):
+        """Handle click events."""
+        # Focus the message on click
+        self.focus()
 
 
 class CompactToolDisplay(Static):
