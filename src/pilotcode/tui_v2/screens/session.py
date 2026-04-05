@@ -294,17 +294,14 @@ class SessionScreen(Screen):
         # Store reference to wait for response
         self._pending_permission = permission_widget
         
-        # Use call_after_refresh to ensure proper mounting
-        mount_event = asyncio.Event()
+        # Mount the widget
+        await_mount = self.message_list.mount(permission_widget)
+        if await_mount is not None:
+            await await_mount
         
-        def do_mount():
-            self.message_list.mount(permission_widget)
-            permission_widget.focus()
-            self.message_list.scroll_end(animate=False)
-            mount_event.set()
-        
-        self.call_after_refresh(do_mount)
-        await mount_event.wait()
+        # Focus and scroll
+        permission_widget.focus()
+        self.message_list.scroll_end(animate=False)
         
         # Wait for response
         result = await permission_widget.wait_for_response()
