@@ -223,7 +223,11 @@ class InlinePermissionRequest(Vertical):
     
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
+        import sys
+        print(f"\n[PERM_BTN] Button pressed: {event.button.id}, answered={self.answered}\n", flush=True, file=sys.stderr)
+        
         if self.answered:
+            print(f"[PERM_BTN] Already answered, ignoring\n", flush=True, file=sys.stderr)
             return
         
         button_id = event.button.id
@@ -238,6 +242,7 @@ class InlinePermissionRequest(Vertical):
         else:
             action = PermissionAction.DENY
         
+        print(f"[PERM_BTN] Responding with action: {action}\n", flush=True, file=sys.stderr)
         self._respond(action)
     
     def on_key(self, event) -> None:
@@ -257,9 +262,13 @@ class InlinePermissionRequest(Vertical):
     
     def _respond(self, action: PermissionAction) -> None:
         """Respond to permission request."""
+        import sys
+        print(f"\n[PERM_RESP] _respond called with action: {action}\n", flush=True, file=sys.stderr)
+        
         self.answered = True
         self._result = PermissionResult(action, self.tool_name)
         
+        print(f"[PERM_RESP] Updating UI...\n", flush=True, file=sys.stderr)
         # Update UI to show answered state
         self.remove_children()
         action_names = {
@@ -270,11 +279,14 @@ class InlinePermissionRequest(Vertical):
         }
         self.mount(Static(action_names[action], classes="answered"))
         
+        print(f"[PERM_RESP] Setting event...\n", flush=True, file=sys.stderr)
         # Signal the waiting coroutine
         self._response_event.set()
         
+        print(f"[PERM_RESP] Posting message...\n", flush=True, file=sys.stderr)
         # Post message to parent (for any additional handling)
         self.post_message(PermissionResponded(self._result))
+        print(f"[PERM_RESP] Done!\n", flush=True, file=sys.stderr)
     
     def get_result(self) -> Optional[PermissionResult]:
         """Get the permission result."""
