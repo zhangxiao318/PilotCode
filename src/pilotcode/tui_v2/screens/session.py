@@ -76,9 +76,10 @@ class SessionScreen(Screen):
     SessionScreen PromptInput {
         background: $surface;
         color: $text;
+        border: none;
     }
     SessionScreen PromptInput:focus {
-        border: solid $primary;
+        border: none;
     }
     SessionScreen PromptInput .text-area--cursor {
         background: $primary;
@@ -152,17 +153,17 @@ class SessionScreen(Screen):
     
     def _show_welcome(self):
         """Show welcome message in a boxed layout with two columns."""
-        welcome_text = """╔══════════════════════════════════════════════════════════╗
-║  Welcome to PilotCode v0.2.0! 🚀                         ║
-║                                                          ║
-║  Commands              Tips                              ║
-║  ────────────────────────────────────────────────────────║
-║  /help  - Show cmds    • @filename to reference files   ║
-║  /save  - Save session • Shift+Enter for new line       ║
-║  /load  - Load session • Up/Down arrows for history     ║
-║  /clear - Clear history                                  ║
-║  /quit  - Exit                                           ║
-╚══════════════════════════════════════════════════════════╝"""
+        welcome_text = """┌────────────────────────────────────────────────────────┐
+│  Welcome to PilotCode v0.2.0! 🚀                       │
+│                                                        │
+│  Commands              Tips                            │
+│  ──────────────────────────────────────────────────────│
+│  /help  - Show cmds    • @filename to ref files       │
+│  /save  - Save session • Shift+Enter for new line     │
+│  /load  - Load session • Up/Down for history          │
+│  /clear - Clear history                                │
+│  /quit  - Exit                                         │
+└────────────────────────────────────────────────────────┘"""
         
         welcome_msg = UIMessage(
             type=MessageType.SYSTEM,
