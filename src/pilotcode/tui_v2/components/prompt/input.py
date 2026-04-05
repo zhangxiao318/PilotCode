@@ -14,11 +14,11 @@ class PromptInput(TextArea):
     
     DEFAULT_CSS = """
     PromptInput {
-        height: auto;
+        height: 4;
         min-height: 1;
         max-height: 10;
         border: none;
-        padding: 0;
+        padding: 0 1;
         background: $surface;
         color: $text;
     }
@@ -37,6 +37,10 @@ class PromptInput(TextArea):
         width: 2;
     }
     PromptInput .text-area--content {
+        color: $text;
+    }
+    /* Ensure text is visible */
+    PromptInput .text-area--line {
         color: $text;
     }
     """
@@ -197,22 +201,22 @@ class PromptWithMode(Horizontal):
     
     DEFAULT_CSS = """
     PromptWithMode {
-        height: auto;
-        min-height: 1;
+        height: 4;
         background: $surface;
         border-top: solid $border;
     }
     PromptWithMode Static {
         width: 2;
+        height: 100%;
         padding: 0 0 0 1;
-        content-align: left middle;
+        content-align: left top;
         background: $surface;
         color: $primary;
         text-style: bold;
     }
     PromptWithMode PromptInput {
         width: 1fr;
-        min-height: 1;
+        height: 100%;
     }
     """
     

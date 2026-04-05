@@ -66,9 +66,7 @@ class SessionScreen(Screen):
         padding: 1;
     }
     SessionScreen #input-area {
-        height: auto;
-        min-height: 3;
-        max-height: 10;
+        height: 4;
         dock: bottom;
         background: $surface;
         border-top: solid $border;
