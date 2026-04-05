@@ -19,8 +19,8 @@ class MessageDisplay(Static):
     DEFAULT_CSS = """
     MessageDisplay {
         height: auto;
-        margin: 0 0 1 0;
-        padding: 0 2;
+        margin: 0;
+        padding: 0 1;
         background: transparent;
         color: $text;
     }
@@ -30,6 +30,7 @@ class MessageDisplay(Static):
         text-align: right;
         background: transparent;
         color: $text;
+        margin: 1 0;
     }
     MessageDisplay.user Static {
         background: $primary 20%;
@@ -41,41 +42,42 @@ class MessageDisplay(Static):
     MessageDisplay.assistant {
         background: transparent;
         color: $text;
-        padding: 0 2;
+        padding: 0 1;
+        margin: 0 0 1 0;
     }
     
-    /* Tool messages - compact, dim */
+    /* Tool messages - compact, visible */
     MessageDisplay.tool {
         background: transparent;
-        color: $text-muted;
-        text-style: dim;
-        padding: 0 2;
+        color: $warning;
+        padding: 0 1;
+        margin: 0;
     }
     
     /* Tool result - inline with tool */
     MessageDisplay.tool-result {
         background: transparent;
-        color: $text-muted;
-        text-style: dim;
-        padding: 0 2;
+        color: $success;
+        padding: 0 1;
+        margin: 0 0 1 0;
     }
     
-    /* Error - subtle red background */
+    /* Error - visible red */
     MessageDisplay.error {
-        background: $error 10%;
+        background: $error 20%;
         border-left: solid $error;
         color: $text;
         padding: 1 2;
         margin: 1 0;
     }
     
-    /* System - very subtle */
+    /* System - visible but subtle */
     MessageDisplay.system {
-        background: transparent;
+        background: $surface;
         color: $text-muted;
         text-align: center;
-        text-style: dim italic;
-        padding: 1 0;
+        padding: 1;
+        margin: 1 0;
     }
     """
     
@@ -225,9 +227,12 @@ class MessageList(ScrollableContainer):
         width: 100%;
         height: 1fr;
         border: none;
-        padding: 0;
+        padding: 0 0 1 0;
         background: $background;
         color: $text;
+    }
+    MessageList > * {
+        margin: 0 0 0 0;
     }
     """
     
