@@ -1,151 +1,144 @@
-# ClaudeDecode Test Framework
+# PilotCode Test Suite
 
-This directory contains an automated test framework for `PilotCode`. It uses **pytest** and includes a **Mock LLM client** so you can test full conversation + tool execution flows without hitting real APIs.
+This directory contains the comprehensive test suite for PilotCode.
 
-## Quick Start
+## Structure
+
+```
+tests/
+├── conftest.py              # Shared pytest fixtures and configuration
+├── README.md                # This file
+├── unit/                    # Unit tests
+│   ├── tools/               # Tool-specific tests
+│   │   ├── test_bash.py
+│   │   ├── test_file_tools.py
+│   │   ├── test_git.py
+│   │   └── ...
+│   ├── core/                # Core functionality tests
+│   │   ├── test_query_engine.py
+│   │   └── ...
+│   └── services/            # Service tests
+│       ├── test_permissions.py
+│       └── ...
+├── integration/             # Integration tests
+│   └── ...
+├── e2e/                     # End-to-end tests
+│   └── ...
+└── fixtures/                # Test fixtures
+    ├── files/               # Sample files
+    └── repos/               # Sample git repos
+```
+
+## Running Tests
+
+### Run all tests
+```bash
+make test
+# or
+pytest tests/
+```
+
+### Run specific test categories
 
 ```bash
-# Run all tests
-python run_tests.py
+# Unit tests only (fast)
+make test-unit
+pytest tests/unit -v
 
-# Run with verbose output
-python run_tests.py -v
+# Integration tests
+make test-integration
+pytest tests/integration -v
 
-# Run only fast tests (skip slow/network)
-python run_tests.py --quick
+# Tool tests
+make test-tools
+pytest tests/unit/tools -v
 
-# Run specific categories
-python run_tests.py --tools
-python run_tests.py --integration
-python run_tests.py --commands
-python run_tests.py --permissions
-
-# Run with coverage
-python run_tests.py --cov
-
-# Run matching test names
-python run_tests.py -k test_bash
+# E2E tests
+make test-e2e
+pytest tests/e2e -v
 ```
 
-## Test Structure
+### Run tests with markers
 
-| File | Purpose |
-|------|---------|
-| `conftest.py` | Shared pytest fixtures (mock client, auto-allow permissions, temp dirs) |
-| `mock_llm.py` | `MockModelClient` — simulates LLM responses and tool calls |
-| `test_tools_comprehensive.py` | Unit tests for all tools (Bash, File*, Glob, Grep, Git, etc.) |
-| `test_integration.py` | End-to-end conversation flows with mocked LLM |
-| `test_commands.py` | Slash command parsing and execution tests |
-| `test_permissions.py` | Permission manager and tool executor tests |
+```bash
+# Exclude slow tests
+pytest tests/ -m "not slow"
 
-## Key Fixtures
+# Run only network tests
+pytest tests/ -m "network"
 
-### `mock_model_client`
-Replaces the real HTTP LLM client with `MockModelClient`. All `QueryEngine` instances will automatically use it.
-
-```python
-async def test_hello(mock_model_client, query_engine_factory):
-    mock_model_client.set_responses([
-        MockLLMResponse.with_text("Hello!"),
-    ])
-    engine = query_engine_factory()
-    ...
+# Run only tests that don't require network
+pytest tests/ -m "not network"
 ```
 
-### `auto_allow_permissions`
-Automatically grants all tool permissions, so tool execution never prompts.
+### Run tests with coverage
 
-### `query_engine_factory`
-Creates fresh `QueryEngine` instances wired to the mock client.
-
-## Mock LLM Patterns
-
-### Simple text response
-```python
-mock_model_client.set_responses([
-    MockLLMResponse.with_text("The answer is 42."),
-])
+```bash
+make test-cov
+# Generates HTML report at htmlcov/index.html
 ```
 
-### Single tool call
-```python
-mock_model_client.set_responses([
-    MockLLMResponse.with_tool_call("Bash", {"command": "ls"}),
-    MockLLMResponse.with_text("Here are the files."),
-])
-```
+## Test Categories
 
-### Multiple tools in one turn
-```python
-mock_model_client.set_responses([
-    MockLLMResponse(
-        content="I'll help.",
-        tool_calls=[
-            {"id": "c1", "type": "function", "function": {"name": "Bash", "arguments": '{"command":"echo 1"}'}},
-            {"id": "c2", "type": "function", "function": {"name": "Bash", "arguments": '{"command":"echo 2"}'}},
-        ],
-        finish_reason="tool_calls",
-    ),
-    MockLLMResponse.with_text("Done!"),
-])
-```
+### Markers
 
-### Inspecting history
-```python
-# After the test runs
-messages = mock_model_client.get_last_messages()
-assert mock_model_client.call_count == 2
-```
+- `@pytest.mark.unit` - Unit tests (fast, isolated)
+- `@pytest.mark.integration` - Integration tests (may use real services)
+- `@pytest.mark.e2e` - End-to-end tests (full workflows)
+- `@pytest.mark.network` - Tests requiring network access
+- `@pytest.mark.slow` - Slow tests (> 1 second)
+- `@pytest.mark.tui` - Tests requiring TUI/display
 
-## Writing a New Integration Test
+## Writing Tests
+
+### Basic Test Structure
 
 ```python
 import pytest
-from tests.mock_llm import MockLLMResponse
+from tests.conftest import run_tool_test
 
-class TestMyFeature:
+class TestMyTool:
+    """Tests for MyTool."""
+    
     @pytest.mark.asyncio
-    async def test_feature(self, mock_model_client, query_engine_factory, auto_allow_permissions):
-        mock_model_client.set_responses([
-            MockLLMResponse.with_tool_call("FileWrite", {"file_path": "/tmp/x.txt", "content": "hi"}),
-            MockLLMResponse.with_text("File written."),
-        ])
-
-        engine = query_engine_factory(tools=get_all_tools())
-
-        # First turn: capture tool call
-        tool_msgs = []
-        async for result in engine.submit_message("Write a file"):
-            if isinstance(result.message, ToolUseMessage):
-                tool_msgs.append(result.message)
-
-        assert len(tool_msgs) == 1
-        assert tool_msgs[0].name == "FileWrite"
-
-        # Execute tool manually (or let REPL do it in higher-level tests)
-        from pilotcode.permissions.tool_executor import ToolExecutor
-        executor = ToolExecutor()
-        res = await executor.execute_tool_by_name(tool_msgs[0].name, tool_msgs[0].input, ToolUseContext())
-        assert res.success
-
-        # Feed result back to engine
-        engine.add_tool_result(tool_msgs[0].tool_use_id, str(res.result.data))
-
-        # Second turn: LLM final response
-        async for result in engine.submit_message("Continue"):
-            if isinstance(result.message, AssistantMessage) and result.is_complete:
-                assert "written" in result.message.content.lower()
+    async def test_basic_functionality(self, tool_context, allow_callback):
+        """Test basic tool functionality."""
+        result = await run_tool_test(
+            "MyTool",
+            {"param": "value"},
+            tool_context,
+            allow_callback
+        )
+        
+        assert not result.is_error
+        assert result.data.expected_field == "expected_value"
 ```
 
-## Running Tests Directly with pytest
+### Available Fixtures
 
-```bash
-PYTHONPATH=src python -m pytest tests/ -v
-PYTHONPATH=src python -m pytest tests/test_integration.py -v
-PYTHONPATH=src python -m pytest tests/ -k "test_bash" -v
-```
+- `temp_dir` - Temporary directory (auto-cleaned)
+- `temp_git_repo` - Temporary git repository
+- `app_store` - Fresh app store instance
+- `tool_context` - Tool execution context
+- `allow_callback` - Permission callback that allows all
+- `deny_callback` - Permission callback that denies all
+- `sample_python_file` - Sample Python file
+- `sample_json_file` - Sample JSON file
 
-## Notes
+### Best Practices
 
-- Web tests (`test_web_search`, `test_web_fetch`) are skipped by default because they require network. Run them explicitly with `python run_tests.py --run-web-tests` or remove the `@pytest.mark.skip` decorator.
-- The legacy `src/tests/test_tools.py` is preserved but not run by default due to a module naming conflict with the root `tests/` directory.
+1. **Use fixtures** - Don't create test data manually
+2. **Test one thing** - Each test should verify one concept
+3. **Clear naming** - Test names should describe what's being tested
+4. **Async tests** - Use `@pytest.mark.asyncio` for async tests
+5. **Clean up** - Use `temp_dir` for file operations
+6. **Mock external** - Mock LLM calls and network requests
+
+## CI/CD
+
+Tests are run automatically on:
+- Every push to main/master/develop branches
+- Every pull request
+- Tagged releases
+
+See `.github/workflows/test.yml` for details.
