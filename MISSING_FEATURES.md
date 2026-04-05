@@ -225,12 +225,12 @@
 
 ## Missing Advanced Features
 
-### 1. Context Management
-- [ ] Context window management
-- [ ] Auto-compact strategies
-- [ ] Smart truncation
-- [ ] Token budget management
-- [ ] Message prioritization
+### 1. Context Management ✅
+- [x] Context window management
+- [x] Auto-compact strategies (FIFO, LRU, Priority, Token Count, Summarization)
+- [x] Smart truncation
+- [x] Token budget management
+- [x] Message prioritization
 
 ### 2. Permission System
 - [ ] Permission dialogs UI

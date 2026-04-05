@@ -264,6 +264,7 @@ pilotcode_py/
 - [x] Git Advanced Commands (merge, rebase, stash, tag, fetch, pull, push, pr, issue)
 - [x] FileSelector Tool (glob, regex, size/date filters, preview, gitignore)
 - [x] Code Intelligence Commands (symbols, references, definitions, hover, implementations)
+- [x] Context Manager (token budget, compaction strategies, prioritization)
 
 ### Planned
 - [ ] MCP (Model Context Protocol) integration
