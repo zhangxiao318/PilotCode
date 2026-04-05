@@ -54,6 +54,9 @@ class InlinePermissionRequest(Vertical):
         background: $surface;
         border: solid $warning;
     }
+    InlinePermissionRequest:focus {
+        border: solid $primary;
+    }
     InlinePermissionRequest .header {
         height: 1;
         text-style: bold;
@@ -127,6 +130,7 @@ class InlinePermissionRequest(Vertical):
         self.tool_name = tool_name
         self.params = params
         self._result: Optional[PermissionResult] = None
+        self._response_event = asyncio.Event()
     
     def compose(self):
         """Compose the permission request."""
@@ -266,7 +270,10 @@ class InlinePermissionRequest(Vertical):
         }
         self.mount(Static(action_names[action], classes="answered"))
         
-        # Post message to parent
+        # Signal the waiting coroutine
+        self._response_event.set()
+        
+        # Post message to parent (for any additional handling)
         self.post_message(PermissionResponded(self._result))
     
     def get_result(self) -> Optional[PermissionResult]:
@@ -275,6 +282,5 @@ class InlinePermissionRequest(Vertical):
     
     async def wait_for_response(self) -> PermissionResult:
         """Wait for user response."""
-        while not self.answered:
-            await asyncio.sleep(0.1)
+        await self._response_event.wait()
         return self._result
