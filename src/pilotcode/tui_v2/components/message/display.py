@@ -19,7 +19,7 @@ class MessageDisplay(Static):
     DEFAULT_CSS = """
     MessageDisplay {
         height: auto;
-        margin: 0;
+        margin: 0 0 1 0;
         padding: 0 1;
         background: transparent;
         color: $text;
@@ -170,16 +170,20 @@ class MessageDisplay(Static):
     def render(self) -> RenderableType:
         """Render the message."""
         if not self.message:
-            return ""
+            return Text("")
         
-        content = self._format_content()
-        
-        # User messages - right align the container
-        if self.message.type == MessageType.USER:
-            return Align.right(content)
-        
-        # All other messages - left align
-        return content
+        try:
+            content = self._format_content()
+            
+            # User messages - right align the container
+            if self.message.type == MessageType.USER:
+                return Align.right(content)
+            
+            # All other messages - left align
+            return content
+        except Exception as e:
+            # Fallback to plain text on any error
+            return Text(f"[Render Error: {str(e)}]")
     
     def watch_message(self, message: UIMessage):
         """React to message changes."""
