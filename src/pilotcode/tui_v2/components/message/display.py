@@ -8,47 +8,77 @@ from rich.console import RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
+from rich.align import Align
 
 from pilotcode.tui_v2.controller.controller import UIMessage, MessageType
 
 
 class MessageDisplay(Static):
-    """Display a single message."""
+    """Display a single message with compact styling."""
     
     DEFAULT_CSS = """
     MessageDisplay {
         height: auto;
         margin: 0 0 1 0;
-        padding: 0;
+        padding: 0 1;
     }
+    
+    /* User messages - right aligned, minimal */
     MessageDisplay.user {
-        background: $primary 10%;
-        border-left: solid $primary;
+        text-align: right;
     }
+    MessageDisplay.user .message-content {
+        background: $primary 20%;
+        color: $text;
+        padding: 1 2;
+    }
+    
+    /* Assistant messages - clean, no box */
     MessageDisplay.assistant {
-        background: $surface;
-        border-left: solid $secondary;
+        padding: 0 2;
     }
+    MessageDisplay.assistant .message-content {
+        color: $text;
+    }
+    
+    /* Tool messages - compact, dim */
     MessageDisplay.tool {
-        background: $warning 10%;
-        border-left: solid $warning;
+        height: auto;
+        padding: 0 2;
+        color: $text-muted;
+        text-style: dim;
     }
+    
+    /* Tool result - inline with tool */
+    MessageDisplay.tool-result {
+        height: auto;
+        padding: 0 2;
+        color: $text-muted;
+        text-style: dim;
+    }
+    
+    /* Error - subtle red background */
     MessageDisplay.error {
         background: $error 10%;
         border-left: solid $error;
+        padding: 1 2;
+        margin: 1 0;
     }
+    
+    /* System - very subtle */
     MessageDisplay.system {
-        background: $surface-darken-1;
-        border-left: solid #888888;
-        color: #888888;
-    }
-    MessageDisplay .message-header {
         color: $text-muted;
-        text-style: bold;
-        margin-bottom: 1;
+        text-align: center;
+        text-style: dim italic;
+        padding: 1 0;
     }
-    MessageDisplay .message-content {
-        padding: 0 1;
+    
+    /* Hide headers for cleaner look */
+    MessageDisplay.user .message-header,
+    MessageDisplay.assistant .message-header,
+    MessageDisplay.tool .message-header,
+    MessageDisplay.tool-result .message-header {
+        display: none;
     }
     """
     
@@ -65,7 +95,7 @@ class MessageDisplay(Static):
             return
         
         # Remove old type classes
-        for cls in ["user", "assistant", "tool", "error", "system"]:
+        for cls in ["user", "assistant", "tool", "tool-result", "error", "system"]:
             self.remove_class(cls)
         
         # Add new type class
@@ -79,73 +109,78 @@ class MessageDisplay(Static):
             MessageType.USER: "user",
             MessageType.ASSISTANT: "assistant",
             MessageType.TOOL_USE: "tool",
-            MessageType.TOOL_RESULT: "tool",
+            MessageType.TOOL_RESULT: "tool-result",
             MessageType.ERROR: "error",
             MessageType.SYSTEM: "system",
         }
         return mapping.get(msg_type, "")
     
     def _get_header(self) -> str:
-        """Get message header."""
+        """Get message header (used for non-compact modes)."""
         if not self.message:
             return ""
         
         headers = {
             MessageType.USER: "You",
-            MessageType.ASSISTANT: "🤖 Assistant",
-            MessageType.TOOL_USE: "🔧 Tool",
-            MessageType.TOOL_RESULT: "📤 Result",
-            MessageType.ERROR: "❌ Error",
-            MessageType.SYSTEM: "ℹ️  System",
+            MessageType.ASSISTANT: "🤖",
+            MessageType.TOOL_USE: "🔧",
+            MessageType.TOOL_RESULT: "📤",
+            MessageType.ERROR: "❌",
+            MessageType.SYSTEM: "ℹ️",
         }
         
-        header = headers.get(self.message.type, "Unknown")
+        return headers.get(self.message.type, "")
+    
+    def _format_content(self) -> RenderableType:
+        """Format content based on message type."""
+        if not self.message:
+            return ""
         
-        # Add tool name if available
-        if self.message.type in (MessageType.TOOL_USE, MessageType.TOOL_RESULT):
-            tool_name = self.message.metadata.get("tool_name", "")
-            if tool_name:
-                header += f": {tool_name}"
-            
-            # Add safety indicator for tool use
-            if self.message.type == MessageType.TOOL_USE:
-                is_safe = self.message.metadata.get("is_safe", False)
-                if is_safe:
-                    header += " ✓ (safe)"
-                else:
-                    header += " ⚠ (confirm)"
+        content = self.message.content or ""
         
-        return header
+        # Tool messages - compact format
+        if self.message.type == MessageType.TOOL_USE:
+            tool_name = self.message.metadata.get("tool_name", "Tool")
+            is_safe = self.message.metadata.get("is_safe", False)
+            safe_marker = "✓" if is_safe else "⚠"
+            return Text(f"{safe_marker} {tool_name}", style="dim")
+        
+        # Tool result - show output preview
+        if self.message.type == MessageType.TOOL_RESULT:
+            # Truncate long output
+            lines = content.strip().split('\n')
+            preview = lines[0][:80] if lines else ""
+            if len(lines) > 1 or len(content) > 80:
+                preview += " ..."
+            return Text(f"→ {preview}", style="dim")
+        
+        # User messages - plain text
+        if self.message.type == MessageType.USER:
+            return Text(content)
+        
+        # Assistant messages - markdown
+        if self.message.type == MessageType.ASSISTANT:
+            try:
+                return Markdown(content)
+            except Exception:
+                return Text(content)
+        
+        # System/Error - plain text
+        return Text(content)
     
     def render(self) -> RenderableType:
         """Render the message."""
         if not self.message:
             return ""
         
-        header = self._get_header()
-        content = self.message.content
+        content = self._format_content()
         
-        # Format content based on type
-        if self.message.type == MessageType.ASSISTANT:
-            # Render markdown for assistant messages
-            try:
-                content_obj = Markdown(content)
-            except Exception:
-                content_obj = Text(content)
-        else:
-            content_obj = Text(content)
+        # User messages - right align the container
+        if self.message.type == MessageType.USER:
+            return Align.right(content)
         
-        # Show streaming indicator
-        if self.message.is_streaming:
-            header += " ▌"  # Blinking cursor
-        
-        return Panel(
-            content_obj,
-            title=header,
-            title_align="left",
-            border_style="none",
-            padding=(0, 1)
-        )
+        # All other messages - left align
+        return content
     
     def watch_message(self, message: UIMessage):
         """React to message changes."""
@@ -153,15 +188,47 @@ class MessageDisplay(Static):
         self.refresh()
 
 
+class CompactToolDisplay(Static):
+    """Compact display for tool execution (combines TOOL_USE and TOOL_RESULT)."""
+    
+    DEFAULT_CSS = """
+    CompactToolDisplay {
+        height: auto;
+        padding: 0 2;
+        margin: 0;
+        color: $text-muted;
+        text-style: dim;
+    }
+    """
+    
+    def __init__(self, tool_name: str, command: str, result: str, **kwargs):
+        super().__init__(**kwargs)
+        self.tool_name = tool_name
+        self.command = command
+        self.result = result
+    
+    def render(self) -> RenderableType:
+        """Render compact tool info."""
+        text = Text()
+        text.append(f"$ {self.command}", style="yellow dim")
+        text.append(" → ", style="dim")
+        # Show result preview
+        result_preview = self.result.strip().split('\n')[0][:60]
+        if len(self.result) > 60 or '\n' in self.result:
+            result_preview += "..."
+        text.append(result_preview, style="green dim")
+        return text
+
+
 class MessageList(ScrollableContainer):
-    """Scrollable list of messages."""
+    """Scrollable list of messages with compact styling."""
     
     DEFAULT_CSS = """
     MessageList {
         width: 100%;
         height: 1fr;
         border: none;
-        padding: 0 1;
+        padding: 0;
     }
     """
     
@@ -169,29 +236,34 @@ class MessageList(ScrollableContainer):
         super().__init__(**kwargs)
         self._messages: list[MessageDisplay] = []
         self._streaming_message: Optional[MessageDisplay] = None
+        self._pending_tool: Optional[UIMessage] = None
     
     def add_message(self, message: UIMessage) -> MessageDisplay:
-        """Add a message to the list.
-        
-        If the message is streaming, it will be updated in place.
-        """
-        # Check if we're updating an existing streaming message
+        """Add a message to the list."""
+        # Handle streaming updates
         if message.is_streaming and self._streaming_message:
             if (self._streaming_message.message and 
                 self._streaming_message.message.type == message.type):
-                # Update existing
                 self._streaming_message.message = message
                 return self._streaming_message
         
-        # Check if a streaming message is now complete
+        # Handle streaming completion
         if not message.is_streaming and self._streaming_message:
             if (self._streaming_message.message and 
                 self._streaming_message.message.type == message.type):
-                # Complete the streaming message
                 self._streaming_message.message = message
                 self._streaming_message = None
                 self.scroll_end()
                 return self._messages[-1]
+        
+        # Store TOOL_USE to potentially combine with result
+        if message.type == MessageType.TOOL_USE:
+            self._pending_tool = message
+        
+        # TOOL_RESULT - check if we can combine with pending tool
+        if message.type == MessageType.TOOL_RESULT and self._pending_tool:
+            # For now, just show both separately with compact styling
+            self._pending_tool = None
         
         # Create new message display
         display = MessageDisplay(message)
@@ -201,7 +273,7 @@ class MessageList(ScrollableContainer):
         if message.is_streaming:
             self._streaming_message = display
         
-        # Scroll to bottom after message is mounted
+        # Scroll to bottom
         def scroll_to_bottom():
             self.scroll_end(animate=False)
         self.call_after_refresh(scroll_to_bottom)
@@ -215,17 +287,11 @@ class MessageList(ScrollableContainer):
         self._messages[-1].message = message
         return True
     
-    def clear_messages(self):
-        """Clear all messages."""
+    def clear_messages(self) -> None:
+        """Clear all messages from the list."""
+        # Remove all message displays
         for display in self._messages:
             display.remove()
         self._messages.clear()
         self._streaming_message = None
-    
-    def get_message_count(self) -> int:
-        """Get total message count."""
-        return len(self._messages)
-    
-    def scroll_to_bottom(self):
-        """Scroll to the bottom of the list."""
-        self.scroll_end()
+        self._pending_tool = None
