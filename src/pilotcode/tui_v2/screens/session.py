@@ -12,7 +12,9 @@ from pilotcode.tui_v2.components.message.display import MessageDisplay
 from pilotcode.tui_v2.components.message.virtual_list import HybridMessageList
 from pilotcode.tui_v2.components.prompt.input import PromptWithMode
 from pilotcode.tui_v2.components.status.bar import StatusBar
-from pilotcode.tui_v2.components.dialog.permission import PermissionDialog, PermissionResult, PermissionAction
+from pilotcode.tui_v2.components.permission_inline import (
+    InlinePermissionRequest, PermissionResult, PermissionAction, PermissionResponded
+)
 from pilotcode.tui_v2.components.search_bar import SearchBar, SearchMode, SearchNavigate
 from pilotcode.tui_v2.providers.session import get_session_provider
 from pilotcode.state.store import Store, get_store
@@ -98,6 +100,7 @@ class SessionScreen(Screen):
         self._processing = False
         self._search_active = False
         self._search_results: list[tuple[int, int, int]] = []  # (msg_idx, start, end)
+        self._pending_permission: InlinePermissionRequest | None = None
     
     def compose(self):
         """Compose the screen."""
@@ -281,25 +284,34 @@ class SessionScreen(Screen):
                 self.message_list.add_message(msg)
     
     async def _request_permission(self, tool_name: str, params: dict) -> PermissionResult:
-        """Request permission for tool execution."""
-        # Create an event to wait for the result
-        permission_event = asyncio.Event()
-        permission_result: list[PermissionResult | None] = [None]
+        """Request permission for tool execution using inline component."""
+        if not self.message_list:
+            return PermissionResult(PermissionAction.DENY, tool_name)
         
-        def on_dismiss(result: PermissionResult) -> None:
-            permission_result[0] = result
-            permission_event.set()
+        # Create inline permission request
+        permission_widget = InlinePermissionRequest(tool_name, params)
         
-        # Show permission dialog
-        dialog = PermissionDialog(tool_name, params)
-        dialog.set_on_dismiss(on_dismiss)
-        self.app.push_screen(dialog)
+        # Store reference to wait for response
+        self._pending_permission = permission_widget
         
-        # Wait for the dialog to be dismissed
-        await permission_event.wait()
-        return permission_result[0] if permission_result[0] is not None else PermissionResult(
-            PermissionAction.DENY, tool_name
-        )
+        # Add to message list
+        self.message_list.mount(permission_widget)
+        
+        # Scroll to make it visible
+        self.message_list.scroll_end(animate=False)
+        
+        # Wait for response
+        result = await permission_widget.wait_for_response()
+        
+        # Clean up reference
+        self._pending_permission = None
+        
+        return result
+    
+    def on_permission_responded(self, event: PermissionResponded) -> None:
+        """Handle permission response."""
+        # The inline component will update its own UI
+        pass
     
     def watch_sidebar_visible(self, visible: bool):
         """React to sidebar visibility changes."""
