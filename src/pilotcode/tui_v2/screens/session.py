@@ -294,8 +294,11 @@ class SessionScreen(Screen):
         # Store reference to wait for response
         self._pending_permission = permission_widget
         
-        # Add to message list
-        self.message_list.mount(permission_widget)
+        # Add to message list (mount is async in Textual)
+        await self.message_list.mount(permission_widget)
+        
+        # Focus the widget so it can receive keyboard events
+        permission_widget.focus()
         
         # Scroll to make it visible
         self.message_list.scroll_end(animate=False)
