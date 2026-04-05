@@ -90,6 +90,48 @@ from .task_queue import (
     get_task_queue,
     run_in_background,
 )
+from .session_persistence import (
+    SessionPersistence,
+    SessionMetadata,
+    get_session_persistence,
+    save_session,
+    load_session,
+    list_sessions,
+)
+from .team_manager import (
+    TeamManager,
+    Team,
+    Agent,
+    AgentStatus,
+    get_team_manager,
+    create_team,
+    spawn_agent,
+)
+from .error_recovery import (
+    RetryHandler,
+    RetryConfig,
+    RetryResult,
+    CircuitBreaker,
+    ErrorClassifier,
+    ErrorCategory,
+    get_retry_handler,
+    with_retry,
+)
+from .intelligent_compact import (
+    IntelligentContextCompactor,
+    CompactionResult,
+    CompactConfig,
+    ToolResultSummary,
+    get_intelligent_compactor,
+)
+from .risk_assessment import (
+    ToolRiskAnalyzer,
+    CommandRiskAnalyzer,
+    RiskLevel,
+    RiskAssessment,
+    get_risk_analyzer,
+)
+
 
 __all__ = [
     # MCP
@@ -181,4 +223,41 @@ __all__ = [
     "TaskStatus",
     "get_task_queue",
     "run_in_background",
+    # Session persistence
+    "SessionPersistence",
+    "SessionMetadata",
+    "get_session_persistence",
+    "save_session",
+    "load_session",
+    "list_sessions",
+    # Team management
+    "TeamManager",
+    "Team",
+    "Agent",
+    "AgentStatus",
+    "get_team_manager",
+    "create_team",
+    "spawn_agent",
+    # Error recovery
+    "RetryHandler",
+    "RetryConfig",
+    "RetryResult",
+    "CircuitBreaker",
+    "ErrorClassifier",
+    "ErrorCategory",
+    "get_retry_handler",
+    "with_retry",
+    # Intelligent compaction
+    "IntelligentContextCompactor",
+    "CompactionResult",
+    "CompactConfig",
+    "ToolResultSummary",
+    "get_intelligent_compactor",
+    # Risk assessment
+    "ToolRiskAnalyzer",
+    "CommandRiskAnalyzer",
+    "RiskLevel",
+    "RiskAssessment",
+    "get_risk_analyzer",
+
 ]

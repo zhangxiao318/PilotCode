@@ -1,241 +1,286 @@
-"""Team management tools for agent teams."""
+"""Team management tools - Multi-agent system support."""
 
-import uuid
-from typing import Any
-from dataclasses import dataclass, field
-from pydantic import BaseModel, Field
-
-from .base import Tool, ToolResult, ToolUseContext, build_tool
-from .registry import register_tool
+from pydantic import Field
+from pilotcode.tools.base import Tool, ToolResult
+from pilotcode.services.team_manager import get_team_manager, AgentStatus
 
 
-@dataclass
-class Team:
-    """Agent team."""
-    team_id: str
-    name: str
-    description: str
-    members: list[str] = field(default_factory=list)
-    created_at: str = ""
-
-
-# In-memory team storage
-_teams: dict[str, Team] = {}
-
-
-class TeamCreateInput(BaseModel):
-    """Input for TeamCreate tool."""
-    name: str = Field(description="Team name")
-    description: str | None = Field(default=None, description="Team description")
-    members: list[str] = Field(default_factory=list, description="Initial member IDs")
-
-
-class TeamCreateOutput(BaseModel):
-    """Output from TeamCreate tool."""
-    team_id: str
-    name: str
-    member_count: int
-    message: str
-
-
-async def team_create_call(
-    input_data: TeamCreateInput,
-    context: ToolUseContext,
-    can_use_tool: Any,
-    parent_message: Any,
-    on_progress: Any
-) -> ToolResult[TeamCreateOutput]:
-    """Create a new agent team."""
-    from datetime import datetime
+class TeamCreate(Tool):
+    """Create a new team of agents to work on a complex task.
     
-    team_id = f"team_{uuid.uuid4().hex[:8]}"
+    Teams allow you to spawn multiple agents that can work in parallel on
+    different aspects of a problem. Each agent in the team can have a specific
+    role and task.
+    """
     
-    team = Team(
-        team_id=team_id,
-        name=input_data.name,
-        description=input_data.description or "",
-        members=input_data.members,
-        created_at=datetime.now().isoformat()
+    name: str = Field(
+        ...,
+        description="Name of the team (e.g., 'CodeReviewTeam', 'BugHunters')"
+    )
+    description: str = Field(
+        default="",
+        description="Description of what this team will accomplish"
     )
     
-    _teams[team_id] = team
+    async def execute(self) -> ToolResult:
+        try:
+            manager = get_team_manager()
+            team = manager.create_team(self.name, self.description)
+            
+            return ToolResult(
+                success=True,
+                message=f"Team '{self.name}' created successfully",
+                data={
+                    "team_id": team.id,
+                    "name": team.name,
+                    "description": team.description,
+                    "created_at": team.created_at.isoformat()
+                }
+            )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                message=f"Failed to create team: {str(e)}"
+            )
+
+
+class TeamDelete(Tool):
+    """Delete a team and all its agents.
     
-    return ToolResult(data=TeamCreateOutput(
-        team_id=team_id,
-        name=input_data.name,
-        member_count=len(input_data.members),
-        message=f"Created team '{input_data.name}' with {len(input_data.members)} members"
-    ))
-
-
-class TeamDeleteInput(BaseModel):
-    """Input for TeamDelete tool."""
-    team_id: str = Field(description="Team ID to delete")
-
-
-class TeamDeleteOutput(BaseModel):
-    """Output from TeamDelete tool."""
-    team_id: str
-    name: str
-    message: str
-
-
-async def team_delete_call(
-    input_data: TeamDeleteInput,
-    context: ToolUseContext,
-    can_use_tool: Any,
-    parent_message: Any,
-    on_progress: Any
-) -> ToolResult[TeamDeleteOutput]:
-    """Delete an agent team."""
-    if input_data.team_id not in _teams:
-        return ToolResult(
-            data=TeamDeleteOutput(team_id=input_data.team_id, name="", message=""),
-            error=f"Team not found: {input_data.team_id}"
-        )
+    This permanently removes the team and cancels any running agents.
+    """
     
-    team = _teams.pop(input_data.team_id)
+    team_id: str = Field(
+        ...,
+        description="ID of the team to delete"
+    )
     
-    return ToolResult(data=TeamDeleteOutput(
-        team_id=input_data.team_id,
-        name=team.name,
-        message=f"Deleted team: {team.name}"
-    ))
+    async def execute(self) -> ToolResult:
+        try:
+            manager = get_team_manager()
+            if manager.delete_team(self.team_id):
+                return ToolResult(
+                    success=True,
+                    message=f"Team '{self.team_id}' deleted successfully"
+                )
+            else:
+                return ToolResult(
+                    success=False,
+                    message=f"Team '{self.team_id}' not found"
+                )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                message=f"Failed to delete team: {str(e)}"
+            )
 
 
-class TeamAddMemberInput(BaseModel):
-    """Input for TeamAddMember tool."""
-    team_id: str = Field(description="Team ID")
-    member_id: str = Field(description="Member ID to add")
-
-
-class TeamAddMemberOutput(BaseModel):
-    """Output from TeamAddMember tool."""
-    team_id: str
-    member_id: str
-    message: str
-
-
-async def team_add_member_call(
-    input_data: TeamAddMemberInput,
-    context: ToolUseContext,
-    can_use_tool: Any,
-    parent_message: Any,
-    on_progress: Any
-) -> ToolResult[TeamAddMemberOutput]:
-    """Add member to team."""
-    if input_data.team_id not in _teams:
-        return ToolResult(
-            data=TeamAddMemberOutput(team_id=input_data.team_id, member_id=input_data.member_id, message=""),
-            error=f"Team not found: {input_data.team_id}"
-        )
+class AgentSpawn(Tool):
+    """Spawn a new agent in a team.
     
-    team = _teams[input_data.team_id]
+    Use this to create specialized agents for specific tasks. Agents can work
+    in parallel on different aspects of a problem.
     
-    if input_data.member_id in team.members:
-        return ToolResult(
-            data=TeamAddMemberOutput(team_id=input_data.team_id, member_id=input_data.member_id, message=""),
-            error=f"Member already in team: {input_data.member_id}"
-        )
+    Example roles:
+    - "code_analyzer": Analyze code quality and structure
+    - "test_writer": Write unit tests for code
+    - "doc_writer": Write documentation
+    - "bug_hunter": Find bugs in code
+    - "refactorer": Suggest code improvements
+    """
     
-    team.members.append(input_data.member_id)
+    team_id: str = Field(
+        ...,
+        description="ID of the team to add the agent to"
+    )
+    name: str = Field(
+        ...,
+        description="Name of the agent (e.g., 'TestBot', 'DocWriter')"
+    )
+    role: str = Field(
+        ...,
+        description="Role of the agent (e.g., 'code_analyzer', 'test_writer')"
+    )
+    description: str = Field(
+        ...,
+        description="What this agent does and its expertise"
+    )
+    task: str = Field(
+        ...,
+        description="Specific task for this agent to complete"
+    )
     
-    return ToolResult(data=TeamAddMemberOutput(
-        team_id=input_data.team_id,
-        member_id=input_data.member_id,
-        message=f"Added {input_data.member_id} to team {team.name}"
-    ))
+    async def execute(self) -> ToolResult:
+        try:
+            manager = get_team_manager()
+            agent = manager.spawn_agent(
+                self.team_id,
+                self.name,
+                self.role,
+                self.description,
+                self.task
+            )
+            
+            if agent:
+                return ToolResult(
+                    success=True,
+                    message=f"Agent '{self.name}' spawned successfully",
+                    data={
+                        "agent_id": agent.id,
+                        "team_id": self.team_id,
+                        "name": agent.name,
+                        "role": agent.role,
+                        "status": agent.status.value
+                    }
+                )
+            else:
+                return ToolResult(
+                    success=False,
+                    message=f"Failed to spawn agent - team '{self.team_id}' not found"
+                )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                message=f"Failed to spawn agent: {str(e)}"
+            )
 
 
-class TeamListInput(BaseModel):
-    """Input for TeamList tool."""
-    pass
-
-
-class TeamInfo(BaseModel):
-    """Team information."""
-    team_id: str
-    name: str
-    description: str
-    member_count: int
-
-
-class TeamListOutput(BaseModel):
-    """Output from TeamList tool."""
-    teams: list[TeamInfo]
-    total: int
-
-
-async def team_list_call(
-    input_data: TeamListInput,
-    context: ToolUseContext,
-    can_use_tool: Any,
-    parent_message: Any,
-    on_progress: Any
-) -> ToolResult[TeamListOutput]:
-    """List all teams."""
-    teams = [
-        TeamInfo(
-            team_id=t.team_id,
-            name=t.name,
-            description=t.description,
-            member_count=len(t.members)
-        )
-        for t in _teams.values()
-    ]
+class TeamList(Tool):
+    """List all teams and their status."""
     
-    return ToolResult(data=TeamListOutput(
-        teams=teams,
-        total=len(teams)
-    ))
+    async def execute(self) -> ToolResult:
+        try:
+            manager = get_team_manager()
+            teams = manager.list_teams()
+            
+            if not teams:
+                return ToolResult(
+                    success=True,
+                    message="No teams found",
+                    data={"teams": []}
+                )
+            
+            team_data = [t.to_dict() for t in teams]
+            
+            return ToolResult(
+                success=True,
+                message=f"Found {len(teams)} team(s)",
+                data={"teams": team_data}
+            )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                message=f"Failed to list teams: {str(e)}"
+            )
 
 
-# Register team tools
-TeamCreateTool = build_tool(
-    name="TeamCreate",
-    description=lambda x, o: f"Create team: {x.name}",
-    input_schema=TeamCreateInput,
-    output_schema=TeamCreateOutput,
-    call=team_create_call,
-    aliases=["team_create"],
-    is_read_only=lambda _: False,
-    is_concurrency_safe=lambda _: True,
-)
+class TeamStatus(Tool):
+    """Get detailed status of a team and its agents."""
+    
+    team_id: str = Field(
+        ...,
+        description="ID of the team to check status for"
+    )
+    
+    async def execute(self) -> ToolResult:
+        try:
+            manager = get_team_manager()
+            summary = manager.get_team_summary(self.team_id)
+            
+            if summary:
+                return ToolResult(
+                    success=True,
+                    message=f"Team '{self.team_id}' status retrieved",
+                    data=summary
+                )
+            else:
+                return ToolResult(
+                    success=False,
+                    message=f"Team '{self.team_id}' not found"
+                )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                message=f"Failed to get team status: {str(e)}"
+            )
 
-TeamDeleteTool = build_tool(
-    name="TeamDelete",
-    description=lambda x, o: f"Delete team: {x.team_id}",
-    input_schema=TeamDeleteInput,
-    output_schema=TeamDeleteOutput,
-    call=team_delete_call,
-    aliases=["team_delete"],
-    is_read_only=lambda _: False,
-    is_concurrency_safe=lambda _: True,
-)
 
-TeamAddMemberTool = build_tool(
-    name="TeamAddMember",
-    description=lambda x, o: f"Add {x.member_id} to team {x.team_id}",
-    input_schema=TeamAddMemberInput,
-    output_schema=TeamAddMemberOutput,
-    call=team_add_member_call,
-    aliases=["team_add", "add_to_team"],
-    is_read_only=lambda _: False,
-    is_concurrency_safe=lambda _: False,
-)
+class AgentCancel(Tool):
+    """Cancel a running agent."""
+    
+    agent_id: str = Field(
+        ...,
+        description="ID of the agent to cancel"
+    )
+    
+    async def execute(self) -> ToolResult:
+        try:
+            manager = get_team_manager()
+            if manager.cancel_agent(self.agent_id):
+                return ToolResult(
+                    success=True,
+                    message=f"Agent '{self.agent_id}' cancelled"
+                )
+            else:
+                return ToolResult(
+                    success=False,
+                    message=f"Agent '{self.agent_id}' not found or not running"
+                )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                message=f"Failed to cancel agent: {str(e)}"
+            )
 
-TeamListTool = build_tool(
-    name="TeamList",
-    description=lambda x, o: "List all teams",
-    input_schema=TeamListInput,
-    output_schema=TeamListOutput,
-    call=team_list_call,
-    aliases=["teams", "list_teams"],
-    is_read_only=lambda _: True,
-    is_concurrency_safe=lambda _: True,
-)
 
-register_tool(TeamCreateTool)
-register_tool(TeamDeleteTool)
-register_tool(TeamAddMemberTool)
-register_tool(TeamListTool)
+class ShareContext(Tool):
+    """Share context or data across all agents in a team.
+    
+    This allows agents to share intermediate results, configuration,
+    or any other data that multiple agents need access to.
+    """
+    
+    team_id: str = Field(
+        ...,
+        description="ID of the team"
+    )
+    key: str = Field(
+        ...,
+        description="Key for the shared data"
+    )
+    value: str = Field(
+        ...,
+        description="Value to share (use JSON for complex data)"
+    )
+    
+    async def execute(self) -> ToolResult:
+        try:
+            manager = get_team_manager()
+            if manager.share_context(self.team_id, self.key, self.value):
+                return ToolResult(
+                    success=True,
+                    message=f"Context shared in team '{self.team_id}'",
+                    data={"key": self.key, "team_id": self.team_id}
+                )
+            else:
+                return ToolResult(
+                    success=False,
+                    message=f"Team '{self.team_id}' not found"
+                )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                message=f"Failed to share context: {str(e)}"
+            )
+
+
+# Tool registry for team tools
+TEAM_TOOLS = [
+    TeamCreate,
+    TeamDelete,
+    AgentSpawn,
+    TeamList,
+    TeamStatus,
+    AgentCancel,
+    ShareContext,
+]

@@ -44,8 +44,12 @@ from .brief_tool import BriefTool
 from .cron_tools import CronCreateTool, CronDeleteTool, CronListTool, CronUpdateTool
 from .worktree_tools import EnterWorktreeTool, ExitWorktreeTool, ListWorktreesTool
 from .sleep_tool import SleepTool
-from .team_tools import TeamCreateTool, TeamDeleteTool, TeamAddMemberTool, TeamListTool
+from .team_tools import (
+    TeamCreate, TeamDelete, AgentSpawn, TeamList,
+    TeamStatus, AgentCancel, ShareContext
+)
 from .skill_tool import SkillTool
+from .web_browser_tool import WebBrowserTool
 from .send_message_tool import SendMessageTool, ReceiveMessageTool
 from .repl_tool import REPLTool
 from .task_output_tool import TaskOutputTool

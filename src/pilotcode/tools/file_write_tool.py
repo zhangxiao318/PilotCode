@@ -27,6 +27,7 @@ class FileWriteOutput(BaseModel):
     bytes_written: int
     created: bool = False
     previous_size: int | None = None
+    error: str | None = None
 
 
 async def write_file_atomic(

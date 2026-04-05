@@ -40,5 +40,8 @@ loguru>=0.7.0
 # MCP
 mcp>=1.0.0
 
+# Web browser automation (optional)
+# playwright>=1.40.0  # Install with: pip install playwright && playwright install chromium
+
 # Validation (optional, for input validation)
 # zod  # Not available on PyPI, uses type hints instead

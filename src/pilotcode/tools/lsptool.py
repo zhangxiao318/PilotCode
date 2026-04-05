@@ -108,9 +108,46 @@ class LSPClient:
         return await self._read_response()
     
     async def _read_response(self) -> dict:
-        """Read LSP response."""
-        # Simplified - real implementation needs proper header parsing
-        return {}
+        """Read LSP response with proper header parsing."""
+        if not self.process or not self.process.stdout:
+            return {}
+        
+        try:
+            # Read header lines until empty line
+            content_length = None
+            while True:
+                line = await self.process.stdout.readline()
+                if not line:
+                    return {}
+                
+                line_str = line.decode('utf-8').strip()
+                
+                # Empty line indicates end of headers
+                if not line_str:
+                    break
+                
+                # Parse Content-Length header
+                if line_str.startswith('Content-Length:'):
+                    try:
+                        content_length = int(line_str.split(':', 1)[1].strip())
+                    except ValueError:
+                        pass
+            
+            if content_length is None:
+                return {}
+            
+            # Read the exact number of bytes for the content
+            content_bytes = await self.process.stdout.readexactly(content_length)
+            content = content_bytes.decode('utf-8')
+            
+            return json.loads(content)
+            
+        except asyncio.IncompleteReadError:
+            return {}
+        except json.JSONDecodeError:
+            return {}
+        except Exception:
+            return {}
     
     async def goto_definition(self, file_path: str, line: int, character: int) -> list[dict]:
         """Go to definition."""
