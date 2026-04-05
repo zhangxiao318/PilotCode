@@ -14,9 +14,9 @@
 ## Missing Tools (~14)
 
 ### File & Code Tools (4)
-- [ ] **FileSelector** - Interactive file picker with UI
+- [x] **FileSelector** - Interactive file picker with filtering, preview, gitignore support
 - [ ] **DirectoryTree** - Show directory structure as tree
-- [ ] **CodeNavigate** - Jump to definition/references
+- [ ] **CodeNavigate** - Jump to definition/references (can use LSP)
 - [ ] **RefactorTool** - Automated refactoring
 
 ### Advanced Shell (2)

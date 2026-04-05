@@ -262,6 +262,7 @@ pilotcode_py/
 - [x] Event Bus for decoupled architecture
 - [x] GitHub Integration (Repositories, Issues, PRs, Actions, Releases)
 - [x] Git Advanced Commands (merge, rebase, stash, tag, fetch, pull, push, pr, issue)
+- [x] FileSelector Tool (glob, regex, size/date filters, preview, gitignore)
 
 ### Planned
 - [ ] MCP (Model Context Protocol) integration
