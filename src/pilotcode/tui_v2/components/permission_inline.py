@@ -50,30 +50,24 @@ class InlinePermissionRequest(Vertical):
     InlinePermissionRequest {
         height: auto;
         margin: 0;
-        padding: 1;
-        background: $surface;
-        border: solid $warning;
-    }
-    InlinePermissionRequest:focus {
-        border: solid $primary;
+        padding: 0 1;
+        background: transparent;
     }
     InlinePermissionRequest .header {
         height: 1;
         text-style: bold;
         color: $warning;
-        margin-bottom: 1;
     }
     InlinePermissionRequest .description {
         height: auto;
-        color: $text;
-        margin-bottom: 1;
+        color: $text-muted;
+        text-style: dim;
     }
     InlinePermissionRequest .risk-box {
         height: auto;
-        background: $background;
-        border-left: solid $warning;
+        background: $surface;
         padding: 0 1;
-        margin-bottom: 1;
+        margin: 1 0;
     }
     InlinePermissionRequest .risk-title {
         text-style: bold;
@@ -86,36 +80,16 @@ class InlinePermissionRequest(Vertical):
     InlinePermissionRequest .params {
         height: auto;
         color: $text-muted;
-        margin: 1 0;
         padding-left: 2;
     }
     InlinePermissionRequest .options {
-        height: auto;
-        margin-top: 1;
-    }
-    InlinePermissionRequest Button {
-        width: 1fr;
-        margin: 0;
-    }
-    InlinePermissionRequest Button.success {
-        background: $success;
-    }
-    InlinePermissionRequest Button.error {
-        background: $error;
-    }
-    InlinePermissionRequest Button.primary {
-        background: $primary;
-    }
-    InlinePermissionRequest Button.warning {
-        background: $warning;
+        height: 1;
         color: $text;
-    }
-    InlinePermissionRequest Button:focus {
-        text-style: bold reverse;
+        text-style: bold;
+        margin-top: 1;
     }
     InlinePermissionRequest .answered {
         height: 1;
-        text-align: center;
         color: $success;
         text-style: bold;
     }
@@ -133,34 +107,21 @@ class InlinePermissionRequest(Vertical):
         self._response_event = asyncio.Event()
     
     def compose(self):
-        """Compose the permission request."""
-        # Header
-        yield Static(f"🔒 Permission Required: {self.tool_name}", classes="header")
+        """Compose the permission request - compact inline style."""
+        # Compact header line
+        yield Static(f"⚠️  {self.tool_name}: requires permission", classes="header")
         
-        # Description
-        description = self._get_tool_description(self.tool_name)
-        yield Static(description, classes="description")
+        # Risk info (one line)
+        risk_text = self._get_risk_text(self.tool_name, self.params)
+        yield Static(risk_text, classes="risk-text")
         
-        # Risk box
-        with Vertical(classes="risk-box"):
-            yield Static("⚠️  Risk Assessment", classes="risk-title")
-            risk_text = self._get_risk_text(self.tool_name, self.params)
-            yield Static(risk_text, classes="risk-text")
-        
-        # Parameters
+        # Parameters (if any)
         params_text = self._format_params()
         if params_text:
-            yield Static(f"Parameters:\n{params_text}", classes="params")
+            yield Static(params_text, classes="params")
         
-        # Options
-        with Vertical(classes="options"):
-            yield Static("Select an option:")
-            with Horizontal():
-                yield Button("[1] Approve once", variant="success", id="allow")
-                yield Button("[2] Approve for this session", variant="primary", id="allow_session")
-            with Horizontal():
-                yield Button("[3] Reject", variant="error", id="deny")
-                yield Button("[4] Reject & tell model", variant="warning", id="deny_session")
+        # Options - keyboard only
+        yield Static("[1] Allow  [2] Allow all  [3] Deny  [4] Deny all", classes="options")
     
     def _get_tool_description(self, tool_name: str) -> str:
         """Get description for tool."""
@@ -177,18 +138,18 @@ class InlinePermissionRequest(Vertical):
         return descriptions.get(tool_name, f"This tool ({tool_name}) will perform an operation on your system.")
     
     def _get_risk_text(self, tool_name: str, params: dict) -> str:
-        """Get risk assessment text."""
+        """Get compact risk assessment text."""
         risk_levels = {
-            "bash": "HIGH - Can execute arbitrary commands, modify/delete files",
-            "write_file": "HIGH - Can create or overwrite files",
-            "edit_file": "MEDIUM - Can modify file contents",
-            "delete_file": "HIGH - Can permanently delete files",
-            "read_file": "LOW - Read-only access to files",
-            "search": "LOW - Read-only filesystem search",
-            "web_search": "LOW - External API call, no local changes",
-            "web_fetch": "LOW - External data fetch, no local changes",
+            "bash": "Risk: HIGH - Can execute arbitrary commands",
+            "write_file": "Risk: HIGH - Can create/overwrite files",
+            "edit_file": "Risk: MEDIUM - Can modify file contents",
+            "delete_file": "Risk: HIGH - Can delete files",
+            "read_file": "Risk: LOW - Read-only access",
+            "search": "Risk: LOW - Filesystem search",
+            "web_search": "Risk: LOW - External API call",
+            "web_fetch": "Risk: LOW - External data fetch",
         }
-        return risk_levels.get(tool_name, "MEDIUM - Unknown tool, review carefully")
+        return risk_levels.get(tool_name, "Risk: MEDIUM - Review carefully")
     
     def _format_params(self) -> str:
         """Format parameters for display."""
