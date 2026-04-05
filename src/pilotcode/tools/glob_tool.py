@@ -124,21 +124,42 @@ async def glob_call(
     """Execute glob search."""
     # Determine search path
     search_path = input_data.path
+    
+    # Get base path (cwd or specified path)
     if search_path is None:
         if context.get_app_state:
             app_state = context.get_app_state()
-            search_path = getattr(app_state, 'cwd', os.getcwd())
+            base_path = getattr(app_state, 'cwd', os.getcwd())
         else:
-            search_path = os.getcwd()
+            base_path = os.getcwd()
     elif not os.path.isabs(search_path):
         if context.get_app_state:
             app_state = context.get_app_state()
             cwd = getattr(app_state, 'cwd', os.getcwd())
-            search_path = os.path.join(cwd, search_path)
+            base_path = os.path.join(cwd, search_path)
+        else:
+            base_path = os.path.join(os.getcwd(), search_path)
+    else:
+        base_path = search_path
+    
+    # Handle pattern that may contain directory components
+    # e.g., "blog_app/*.py" should search in "blog_app/" with pattern "*.py"
+    pattern = input_data.pattern
+    if '/' in pattern and '**' not in pattern:
+        # Split pattern into directory and file pattern
+        parts = pattern.rsplit('/', 1)
+        dir_part = parts[0]
+        file_pattern = parts[1] if len(parts) > 1 else '*'
+        
+        # Update search path to include directory part
+        search_path = os.path.join(base_path, dir_part)
+        pattern = file_pattern
+    else:
+        search_path = base_path
     
     # Search
     result = await glob_files(
-        input_data.pattern,
+        pattern,
         search_path,
         limit=input_data.limit,
         offset=input_data.offset
