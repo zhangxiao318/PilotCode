@@ -121,7 +121,7 @@ class InlinePermissionRequest(Vertical):
             yield Static(params_text, classes="params")
         
         # Options - keyboard only
-        yield Static("[1] Allow  [2] Allow all  [3] Deny  [4] Deny all", classes="options")
+        yield Static("[1] Allow once  [2] Allow for this session  [3] Reject  [4] Reject, tell the model what to do instead", classes="options")
     
     def _get_tool_description(self, tool_name: str) -> str:
         """Get description for tool."""
@@ -225,10 +225,10 @@ class InlinePermissionRequest(Vertical):
         # Update UI to show answered state
         self.remove_children()
         action_names = {
-            PermissionAction.ALLOW: "✓ Approved (once)",
-            PermissionAction.ALLOW_SESSION: "✓ Approved (session)",
+            PermissionAction.ALLOW: "✓ Allowed (once)",
+            PermissionAction.ALLOW_SESSION: "✓ Allowed for this session",
             PermissionAction.DENY: "✗ Rejected",
-            PermissionAction.DENY_SESSION: "✗ Rejected (session)",
+            PermissionAction.DENY_SESSION: "✗ Rejected, telling model...",
         }
         self.mount(Static(action_names[action], classes="answered"))
         
