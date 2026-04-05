@@ -260,6 +260,7 @@ pilotcode_py/
 - [x] Embedding Service for semantic search
 - [x] LSP Manager for multi-language code intelligence
 - [x] Event Bus for decoupled architecture
+- [x] GitHub Integration (Repositories, Issues, PRs, Actions, Releases)
 
 ### Planned
 - [ ] MCP (Model Context Protocol) integration
