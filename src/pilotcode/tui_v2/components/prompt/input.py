@@ -96,12 +96,14 @@ class PromptInput(TextArea):
                 self._show_next_history()
             return
         
-        # Submit on Enter (Shift+Enter for newline is handled by TextArea)
-        if key == "enter" and "shift" not in event.modifiers:
+        # Submit on Enter (but not Shift+Enter which adds newline)
+        if key == "enter":
             event.prevent_default()
             event.stop()
             self._submit()
             return
+        
+        # Let Shift+Enter pass through for newline (handled by TextArea)
     
     def _submit(self) -> None:
         """Submit the current input."""
