@@ -68,21 +68,11 @@ class SessionScreen(Screen):
         padding: 1;
     }
     SessionScreen #input-area {
-        height: 4;
+        height: auto;
+        min-height: 3;
         dock: bottom;
         background: $surface;
         border-top: solid $border;
-    }
-    SessionScreen PromptInput {
-        background: $surface;
-        color: $text;
-        border: none;
-    }
-    SessionScreen PromptInput:focus {
-        border: none;
-    }
-    SessionScreen PromptInput .text-area--cursor {
-        background: $primary;
     }
     """
     

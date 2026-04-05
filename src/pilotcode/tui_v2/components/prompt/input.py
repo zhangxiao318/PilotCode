@@ -17,9 +17,7 @@ class PromptInput(TextArea):
     
     DEFAULT_CSS = """
     PromptInput {
-        height: auto;
-        min-height: 3;
-        max-height: 10;
+        height: 3;
         border: none;
         padding: 0 1;
         background: $surface;
@@ -33,7 +31,6 @@ class PromptInput(TextArea):
     }
     PromptInput .text-area--cursor {
         background: $primary;
-        color: $text;
     }
     PromptInput .text-area--gutter {
         background: $surface;
@@ -41,19 +38,6 @@ class PromptInput(TextArea):
         width: 2;
     }
     PromptInput .text-area--content {
-        color: $text;
-        background: $surface;
-    }
-    /* Ensure text is visible - TextArea specific selectors */
-    PromptInput .text-area--line {
-        color: $text;
-        background: transparent;
-    }
-    PromptInput .text-area--line .text-area--text {
-        color: $text;
-    }
-    /* Override any Rich text colors */
-    PromptInput .rich-text {
         color: $text;
     }
     """
@@ -113,7 +97,7 @@ class PromptInput(TextArea):
             return
         
         # Submit on Enter (Shift+Enter for newline is handled by TextArea)
-        if key == "enter" and not event.shift:
+        if key == "enter" and "shift" not in event.modifiers:
             event.prevent_default()
             event.stop()
             self._submit()
@@ -276,9 +260,7 @@ class PromptWithMode(Horizontal):
     }
     PromptWithMode PromptInput {
         width: 1fr;
-        height: auto;
-        min-height: 3;
-        max-height: 10;
+        height: 3;
     }
     PromptWithMode Static.syntax-status {
         width: 100%;
@@ -290,11 +272,6 @@ class PromptWithMode(Horizontal):
     }
     PromptWithMode Static.syntax-status.has-refs {
         color: $success;
-    }
-    /* Input row container */
-    PromptWithMode Horizontal {
-        height: auto;
-        min-height: 3;
     }
     """
     
