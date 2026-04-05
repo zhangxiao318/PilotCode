@@ -379,7 +379,7 @@ class SessionScreen(Screen):
             return
         
         # Find last assistant message
-        for display in reversed(self.message_list._messages):
+        for display in reversed(self.message_list._messages_list):
             if display.message and display.message.type == MessageType.ASSISTANT:
                 content = display.message.content or ""
                 if self._copy_to_clipboard(content):
@@ -399,7 +399,7 @@ class SessionScreen(Screen):
         import re
         
         # Find last code block in assistant messages
-        for display in reversed(self.message_list._messages):
+        for display in reversed(self.message_list._messages_list):
             if display.message and display.message.type == MessageType.ASSISTANT:
                 content = display.message.content or ""
                 # Match code blocks: ```language\ncode\n```
@@ -413,27 +413,6 @@ class SessionScreen(Screen):
                     return
         
         self.notify("No code block found", severity="warning")
-    def action_copy_last_code(self):
-        """Copy the last code block from assistant messages."""
-        if not self.message_list or not self.message_list._messages:
-            self.notify("No messages to copy", severity="warning")
-            return
-        
-        import re
-        
-        # Find last code block in assistant messages
-        for display in reversed(self.message_list._messages):
-            if display.message and display.message.type == MessageType.ASSISTANT:
-                content = display.message.content or ""
-                # Match code blocks: ```language\ncode\n```
-                code_blocks = re.findall(r'```(?:\w+)?\n(.*?)\n```', content, re.DOTALL)
-                if code_blocks:
-                    code = code_blocks[-1]  # Get last code block
-                    if self._copy_to_clipboard(code):
-                        self.notify("📋 Last code block copied!", severity="information", timeout=2)
-                    else:
-                        self.notify("⚠️ Failed to copy to clipboard", severity="error")
-                    return
         
         self.notify("No code block found", severity="warning")
     
@@ -479,7 +458,7 @@ class SessionScreen(Screen):
         import re
         results = []
         
-        for idx, display in enumerate(self.message_list._messages):
+        for idx, display in enumerate(self.message_list._messages_list):
             if not display.message:
                 continue
             
@@ -501,8 +480,8 @@ class SessionScreen(Screen):
         msg_idx, _, _ = self._search_results[match_index]
         
         # Scroll to message
-        if self.message_list and hasattr(self.message_list, '_messages'):
-            if msg_idx < len(self.message_list._messages):
+        if self.message_list and hasattr(self.message_list, '_messages_list'):
+            if msg_idx < len(self.message_list._messages_list):
                 # In a real implementation, you'd scroll to the specific message
                 # For now, just scroll to bottom if it's the last message
                 if msg_idx == len(self.message_list._messages) - 1:

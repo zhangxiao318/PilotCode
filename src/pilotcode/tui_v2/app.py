@@ -15,11 +15,14 @@ from pilotcode.tui_v2.providers.theme import get_theme_provider
 class EnhancedApp(App):
     """Enhanced PilotCode TUI Application."""
     
+    # Enable dark mode for proper $background, $text, etc. variables
+    dark = True
+    
     CSS = """
-    /* Base styles */
+    /* Base styles - use explicit colors to ensure visibility */
     Screen {
-        background: $background;
-        color: $text;
+        background: #1e1e1e;
+        color: #ffffff;
     }
     
     /* Theme variables - will be overridden by theme provider */

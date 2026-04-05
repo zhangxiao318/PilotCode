@@ -2,7 +2,7 @@
 
 from .prompt.input import PromptInput, PromptWithMode
 from .message.display import MessageDisplay, MessageList
-from .message.virtual_list import VirtualMessageList, HybridMessageList
+from .message.virtual_list import HybridMessageList
 from .status.bar import StatusBar
 from .search_bar import SearchBar, SearchMode, SearchNavigate
 from .diff_view import DiffView, DiffSummary, create_diff
@@ -24,7 +24,7 @@ __all__ = [
     "PromptWithMode",
     "MessageDisplay",
     "MessageList",
-    "VirtualMessageList",
+
     "HybridMessageList",
     "StatusBar",
     # Search
