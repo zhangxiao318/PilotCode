@@ -203,7 +203,6 @@ class PromptWithMode(Horizontal):
     PromptWithMode {
         height: 4;
         background: $surface;
-        border-top: solid $border;
     }
     PromptWithMode Static {
         width: 2;
