@@ -118,6 +118,11 @@ class QueryEngine:
 6. **Be specific** - Make precise, targeted file changes
 7. **Show your work** - Explain what you're doing
 
+8. **PARALLEL TOOL CALLS** - When a user asks for multiple things in one sentence, make ALL necessary tool calls at once:
+   - "查看目录并读取代码" -> Call Glob AND FileRead together
+   - "查找并测试代码" -> Call Grep AND Bash together
+   - "分析项目结构" -> Call Glob AND multiple FileRead together
+
 ## Example Workflow for Code Analysis
 
 User: "分析这个项目的代码"
@@ -128,7 +133,15 @@ Your response should be:
 3. Continue reading all relevant files
 4. Only then provide analysis based on actual file contents
 
-DO NOT just list files and say "这些文件存在". You MUST read them."""
+DO NOT just list files and say "这些文件存在". You MUST read them.
+
+## Example: Multiple Tasks in One Sentence
+
+User: "查看 blog_app 目录有哪些 Python 文件并读取 app.py"
+
+Your response should be (make both calls at once):
+- Glob(pattern="blog_app/*.py")  
+- FileRead(path="blog_app/app.py")"""
     
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to API format."""
