@@ -273,6 +273,5 @@ async def run_tool_test(
     return result
 
 
-@pytest.helpers = type('obj', (object,), {
-    'run_tool_test': run_tool_test,
-})()
+# Make run_tool_test available as a helper
+pytest.run_tool_test = run_tool_test
