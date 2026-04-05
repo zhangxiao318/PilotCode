@@ -159,6 +159,18 @@ from .embedding_service import (
     get_embedding_service,
     clear_embedding_service,
 )
+from .lsp_manager import (
+    LSPManager,
+    LSPServer,
+    LSPServerConfig,
+    Language,
+    LSPRequest,
+    LSPResponse,
+    Location,
+    Position,
+    Diagnostic,
+    get_lsp_manager,
+)
 
 
 __all__ = [
@@ -312,4 +324,15 @@ __all__ = [
     "VectorStore",
     "get_embedding_service",
     "clear_embedding_service",
+    # LSP Manager
+    "LSPManager",
+    "LSPServer",
+    "LSPServerConfig",
+    "Language",
+    "LSPRequest",
+    "LSPResponse",
+    "Location",
+    "Position",
+    "Diagnostic",
+    "get_lsp_manager",
 ]
