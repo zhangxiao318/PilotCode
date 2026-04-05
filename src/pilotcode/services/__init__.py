@@ -149,6 +149,16 @@ from .tool_sandbox import (
     analyze_command_safety,
     is_command_safe,
 )
+from .embedding_service import (
+    EmbeddingService,
+    EmbeddingVector,
+    SearchResult,
+    EmbeddingStats,
+    SimpleEmbeddingProvider,
+    VectorStore,
+    get_embedding_service,
+    clear_embedding_service,
+)
 
 
 __all__ = [
@@ -293,4 +303,13 @@ __all__ = [
     "get_tool_sandbox",
     "analyze_command_safety",
     "is_command_safe",
+    # Embedding service
+    "EmbeddingService",
+    "EmbeddingVector",
+    "SearchResult",
+    "EmbeddingStats",
+    "SimpleEmbeddingProvider",
+    "VectorStore",
+    "get_embedding_service",
+    "clear_embedding_service",
 ]
