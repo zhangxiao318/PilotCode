@@ -20,41 +20,37 @@ class MessageDisplay(Static):
     MessageDisplay {
         height: auto;
         margin: 0 0 1 0;
-        padding: 0 1;
+        padding: 0 2;
     }
     
-    /* User messages - right aligned, minimal */
+    /* User messages - right aligned, bubble style */
     MessageDisplay.user {
         text-align: right;
-    }
-    MessageDisplay.user .message-content {
-        background: $primary 20%;
         color: $text;
+    }
+    MessageDisplay.user Static {
+        background: $primary 20%;
         padding: 1 2;
     }
     
-    /* Assistant messages - clean, no box */
+    /* Assistant messages - clean text */
     MessageDisplay.assistant {
-        padding: 0 2;
-    }
-    MessageDisplay.assistant .message-content {
         color: $text;
+        padding: 0 2;
     }
     
     /* Tool messages - compact, dim */
     MessageDisplay.tool {
-        height: auto;
-        padding: 0 2;
         color: $text-muted;
         text-style: dim;
+        padding: 0 2;
     }
     
     /* Tool result - inline with tool */
     MessageDisplay.tool-result {
-        height: auto;
-        padding: 0 2;
         color: $text-muted;
         text-style: dim;
+        padding: 0 2;
     }
     
     /* Error - subtle red background */
@@ -71,14 +67,6 @@ class MessageDisplay(Static):
         text-align: center;
         text-style: dim italic;
         padding: 1 0;
-    }
-    
-    /* Hide headers for cleaner look */
-    MessageDisplay.user .message-header,
-    MessageDisplay.assistant .message-header,
-    MessageDisplay.tool .message-header,
-    MessageDisplay.tool-result .message-header {
-        display: none;
     }
     """
     
