@@ -78,8 +78,8 @@ class UnicodeInput(Input):
             self._delete_word_left()
             return
         
-        # Let other keys pass through to parent class
-        super().on_key(event)
+        # Let other keys pass through (parent class handles them)
+        # Note: Input class doesn't have on_key method, events bubble up automatically
 
 
 class UnicodeTextArea(TextArea):
@@ -180,5 +180,5 @@ class UnicodeTextArea(TextArea):
             self._delete_word_left()
             return
         
-        # Let other keys pass through to parent class
-        super().on_key(event)
+        # Let other keys pass through (parent class handles them)
+        # Note: TextArea class doesn't have on_key method, events bubble up automatically
