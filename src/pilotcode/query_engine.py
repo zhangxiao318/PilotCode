@@ -90,7 +90,17 @@ class QueryEngine:
     
     def _get_default_system_prompt(self) -> str:
         """Get default system prompt for programming assistant."""
-        return """You are PilotCode, an AI programming assistant. Your goal is to help users write, analyze, and improve code.
+        from datetime import datetime
+        import os
+        
+        # Get current time info
+        now = datetime.now()
+        current_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        timezone = os.environ.get('TZ', 'Local')
+        
+        return f"""You are PilotCode, an AI programming assistant. Your goal is to help users write, analyze, and improve code.
+
+Current Time: {current_time} (Timezone: {timezone})
 
 ## Core Capabilities
 
