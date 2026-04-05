@@ -261,6 +261,7 @@ pilotcode_py/
 - [x] LSP Manager for multi-language code intelligence
 - [x] Event Bus for decoupled architecture
 - [x] GitHub Integration (Repositories, Issues, PRs, Actions, Releases)
+- [x] Git Advanced Commands (merge, rebase, stash, tag, fetch, pull, push, pr, issue)
 
 ### Planned
 - [ ] MCP (Model Context Protocol) integration

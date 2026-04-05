@@ -51,17 +51,17 @@
 - [ ] `/bookmark` - Bookmark location
 - [ ] `/goto` - Go to bookmark
 
-### Git Advanced (8)
-- [ ] `/merge` - Merge branches
-- [ ] `/rebase` - Rebase branch
-- [ ] `/stash` - Stash changes
-- [ ] `/tag` - Manage tags
+### Git Advanced (10)
+- [x] `/merge` - Merge branches (with strategies: default, no-ff, ff-only, squash)
+- [x] `/rebase` - Rebase branch (with interactive, onto, abort, continue, skip)
+- [x] `/stash` - Stash changes (save, list, show, pop, apply, drop, clear)
+- [x] `/tag` - Manage tags (list, create, delete, push, push-all)
 - [ ] `/remote` - Remote management
-- [ ] `/fetch` - Fetch from remote
-- [ ] `/pull` - Pull changes
-- [ ] `/push` - Push changes
-- [ ] `/pr` - Pull request operations
-- [ ] `/issue` - Issue management
+- [x] `/fetch` - Fetch from remote (with --all, --prune)
+- [x] `/pull` - Pull changes (with --rebase)
+- [x] `/push` - Push changes (with --force, --set-upstream)
+- [x] `/pr` - Pull request operations (list, create, view, checkout, merge)
+- [x] `/issue` - Issue management (list, create, view, close, reopen)
 
 ### Code Intelligence (6)
 - [ ] `/symbols` - List code symbols
