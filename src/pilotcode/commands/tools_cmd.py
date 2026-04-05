@@ -14,8 +14,15 @@ async def tools_command(args: list[str], context: CommandContext) -> str:
         
         for tool in sorted(tools, key=lambda t: t.name):
             aliases = f" ({', '.join(tool.aliases)})" if tool.aliases else ""
-            readonly = " [RO]" if tool.is_read_only(None) else ""
-            concurrent = " [C]" if tool.is_concurrency_safe(None) else ""
+            # Safely check read_only and concurrency status
+            try:
+                readonly = " [RO]" if tool.is_read_only(None) else ""
+            except (AttributeError, TypeError):
+                readonly = ""
+            try:
+                concurrent = " [C]" if tool.is_concurrency_safe(None) else ""
+            except (AttributeError, TypeError):
+                concurrent = ""
             
             desc = tool.description
             if callable(desc):
