@@ -17,6 +17,11 @@ from .state.app_state import AppState
 from .utils.model_client import ModelClient, Message as APIMessage, ToolCall, get_model_client
 from .services.token_estimation import get_token_estimator, TokenEstimator
 from .services.context_compression import get_context_compressor, CompressionResult
+from .services.intelligent_compact import (
+    get_intelligent_compactor,
+    IntelligentContextCompactor,
+    CompactConfig
+)
 from .services.tool_orchestrator import get_tool_orchestrator, ToolOrchestrator
 
 
@@ -64,10 +69,15 @@ class QueryEngine:
         # Initialize services
         self._token_estimator = get_token_estimator()
         self._context_compressor = get_context_compressor()
+        self._intelligent_compactor = get_intelligent_compactor()
         if config.cache_tool_results:
             self._tool_orchestrator = get_tool_orchestrator()
         else:
             self._tool_orchestrator = None
+        
+        # Compaction tracking
+        self._last_compaction_message_count = 0
+        self._compaction_count = 0
     
     def _build_system_message(self) -> SystemMessage:
         """Build system message."""
@@ -471,6 +481,71 @@ DON'T STOP after reading files. You MUST execute the code to test it!"""
             self.messages = compressed
             return True
         return False
+    
+    def intelligent_compact(self) -> dict[str, Any]:
+        """Intelligently compact conversation using ClaudeCode-style compaction.
+        
+        This method:
+        1. Clears old tool results but keeps markers
+        2. Summarizes conversation context
+        3. Preserves recent message history
+        
+        Returns:
+            Compaction statistics
+        """
+        from .types.message import SystemMessage
+        
+        token_count = self.count_tokens()
+        
+        # Check if compaction is needed
+        if not self._intelligent_compactor.should_compact(self.messages, token_count):
+            return {
+                "compacted": False,
+                "reason": "Compaction not needed",
+                "token_count": token_count
+            }
+        
+        # Generate summary before compaction
+        summary = self._intelligent_compactor.generate_structured_summary(
+            self.messages,
+            include_files=True,
+            include_errors=True
+        )
+        
+        # Perform compaction
+        result = self._intelligent_compactor.compact_messages(
+            self.messages,
+            token_count
+        )
+        
+        # Update messages
+        self.messages = result.messages if hasattr(result, 'messages') else self.messages
+        
+        # Add summary as system message if we cleared content
+        if result.tool_results_cleared > 0:
+            summary_text = f"""[Conversation Context Summary]
+Project: {summary.get('primary_request', 'N/A')[:100]}
+Files examined: {', '.join(summary.get('files_examined', []))}
+Files modified: {', '.join(summary.get('files_modified', []))}
+Errors: {len(summary.get('errors_encountered', []))}
+"""
+            # Insert after system message or at beginning
+            if self.messages and isinstance(self.messages[0], SystemMessage):
+                self.messages.insert(1, SystemMessage(content=summary_text))
+            else:
+                self.messages.insert(0, SystemMessage(content=summary_text))
+        
+        self._compaction_count += 1
+        
+        return {
+            "compacted": True,
+            "original_messages": result.original_messages,
+            "compacted_messages": result.compacted_messages,
+            "original_tokens": result.original_tokens,
+            "compacted_tokens": result.compacted_tokens,
+            "tool_results_cleared": result.tool_results_cleared,
+            "compaction_count": self._compaction_count
+        }
     
     def clear_history(self) -> None:
         """Clear conversation history."""

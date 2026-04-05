@@ -1,4 +1,4 @@
-"""Permission management for tool execution."""
+"""Permission management for tool execution with risk assessment."""
 
 from enum import Enum, auto
 from dataclasses import dataclass, field
@@ -6,6 +6,12 @@ from typing import Callable, Awaitable
 from datetime import datetime
 import hashlib
 import json
+
+from ..services.risk_assessment import (
+    get_risk_analyzer,
+    RiskLevel,
+    RiskAssessment
+)
 
 
 class PermissionLevel(Enum):
@@ -92,57 +98,35 @@ class PermissionManager:
         self._permission_callback = callback
     
     def get_tool_risk_level(self, tool_name: str, tool_input: dict | None = None) -> str:
-        """Determine risk level for a tool execution."""
-        if tool_name in {"FileRead", "Glob", "Grep", "WebSearch", "WebFetch"}:
-            return "low"
-        
-        tool_input = tool_input or {}
-        
-        if tool_name == "FileEdit":
-            # Check if it's a large edit
-            if len(tool_input.get("new_string", "")) > 1000:
-                return "medium"
-            return "low"
-        
-        if tool_name == "FileWrite":
-            path = tool_input.get("path", "")
-            # Check if overwriting existing file
-            import os
-            if os.path.exists(path):
-                return "medium"
-            return "low"
-        
-        if tool_name == "Bash":
-            command = tool_input.get("command", "")
-            # Check for dangerous commands
-            dangerous = ["rm -rf", ">/dev/null", "sudo", "curl | sh", "wget |", "> "]
-            for d in dangerous:
-                if d in command:
-                    return "critical"
-            # Check for file modifications
-            if any(cmd in command for cmd in ["rm ", "mv ", "cp -r"]):
-                return "high"
-            return "medium"
-        
-        return "medium"
+        """Determine risk level for a tool execution using advanced risk analysis."""
+        risk_analyzer = get_risk_analyzer()
+        assessment = risk_analyzer.assess_tool(tool_name, tool_input or {})
+        return assessment.level.value
+    
+    def get_risk_assessment(self, tool_name: str, tool_input: dict) -> RiskAssessment:
+        """Get full risk assessment for a tool execution."""
+        risk_analyzer = get_risk_analyzer()
+        return risk_analyzer.assess_tool(tool_name, tool_input)
     
     def check_permission(self, tool_name: str, tool_input: dict) -> tuple[bool, str]:
-        """Check if tool execution is permitted.
+        """Check if tool execution is permitted with risk-based auto-allow.
         
         Returns:
             (is_permitted, reason)
         """
-        # Always allow read-only tools
-        if tool_name in self.READONLY_TOOLS:
-            return True, "Read-only tool"
+        # Get risk assessment
+        assessment = self.get_risk_assessment(tool_name, tool_input)
+        
+        # Auto-allow read-only operations (NONE risk level)
+        if assessment.auto_allow and assessment.read_only:
+            return True, f"Auto-allowed: {assessment.reason}"
         
         # Create permission request
-        risk = self.get_tool_risk_level(tool_name, tool_input)
         request = PermissionRequest(
             tool_name=tool_name,
             tool_input=tool_input,
             description=f"Execute {tool_name}",
-            risk_level=risk
+            risk_level=assessment.level.value
         )
         fingerprint = request.get_fingerprint()
         
@@ -167,7 +151,7 @@ class PermissionManager:
                 return False, "Denied this session"
         
         # Need to ask
-        return False, "Permission required"
+        return False, f"Permission required: {assessment.reason}"
     
     async def request_permission(self, tool_name: str, tool_input: dict) -> tuple[bool, PermissionLevel]:
         """Request permission interactively.
