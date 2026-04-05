@@ -139,6 +139,16 @@ from .prompt_cache import (
     get_prompt_cache,
     clear_prompt_cache,
 )
+from .tool_sandbox import (
+    ToolSandbox,
+    SandboxConfig,
+    SandboxLevel,
+    SandboxResult,
+    CommandAnalyzer,
+    get_tool_sandbox,
+    analyze_command_safety,
+    is_command_safe,
+)
 
 
 __all__ = [
@@ -274,4 +284,13 @@ __all__ = [
     "CacheAwareMessageBuilder",
     "get_prompt_cache",
     "clear_prompt_cache",
+    # Tool sandbox
+    "ToolSandbox",
+    "SandboxConfig",
+    "SandboxLevel",
+    "SandboxResult",
+    "CommandAnalyzer",
+    "get_tool_sandbox",
+    "analyze_command_safety",
+    "is_command_safe",
 ]
