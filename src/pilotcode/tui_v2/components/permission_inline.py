@@ -104,7 +104,7 @@ class InlinePermissionRequest(Vertical):
         self.tool_name = tool_name
         self.params = params
         self._result: Optional[PermissionResult] = None
-        self._response_event = asyncio.Event()
+        self._answered_flag = False  # Simple flag for cross-loop detection
     
     def compose(self):
         """Compose the permission request - compact inline style."""
@@ -218,10 +218,8 @@ class InlinePermissionRequest(Vertical):
     
     def _respond(self, action: PermissionAction) -> None:
         """Respond to permission request."""
-        import sys
-        print(f"\n[PERM_RESPOND] action={action}, tool={self.tool_name}\n", flush=True, file=sys.stderr)
-        
         self.answered = True
+        self._answered_flag = True
         self._result = PermissionResult(action, self.tool_name)
         
         # Update UI to show answered state
@@ -234,22 +232,15 @@ class InlinePermissionRequest(Vertical):
         }
         self.mount(Static(action_names[action], classes="answered"))
         
-        print(f"\n[PERM_RESPOND] Setting event...\n", flush=True, file=sys.stderr)
-        # Signal the waiting coroutine
-        self._response_event.set()
-        
         # Post message to parent (for any additional handling)
         self.post_message(PermissionResponded(self._result))
-        print(f"\n[PERM_RESPOND] Done\n", flush=True, file=sys.stderr)
     
     def get_result(self) -> Optional[PermissionResult]:
         """Get the permission result."""
         return self._result
     
     async def wait_for_response(self) -> PermissionResult:
-        """Wait for user response."""
-        import sys
-        print(f"\n[PERM_WAIT] Waiting for response...\n", flush=True, file=sys.stderr)
-        await self._response_event.wait()
-        print(f"\n[PERM_WAIT] Got response: action={self._result.action if self._result else None}\n", flush=True, file=sys.stderr)
+        """Wait for user response using polling for cross-loop compatibility."""
+        while not self._answered_flag:
+            await asyncio.sleep(0.05)  # Short sleep to yield control
         return self._result
