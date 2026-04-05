@@ -171,6 +171,23 @@ from .lsp_manager import (
     Diagnostic,
     get_lsp_manager,
 )
+from .event_bus import (
+    EventBus,
+    Event,
+    EventPriority,
+    EventHandler,
+    HandlerInfo,
+    EventBusStats,
+    TypedEventBus,
+    PilotCodeEvents,
+    get_event_bus,
+    on,
+    emit,
+    emit_tool_called,
+    emit_tool_completed,
+    emit_file_modified,
+    emit_error,
+)
 
 
 __all__ = [
@@ -335,4 +352,20 @@ __all__ = [
     "Position",
     "Diagnostic",
     "get_lsp_manager",
+    # Event Bus
+    "EventBus",
+    "Event",
+    "EventPriority",
+    "EventHandler",
+    "HandlerInfo",
+    "EventBusStats",
+    "TypedEventBus",
+    "PilotCodeEvents",
+    "get_event_bus",
+    "on",
+    "emit",
+    "emit_tool_called",
+    "emit_tool_completed",
+    "emit_file_modified",
+    "emit_error",
 ]
