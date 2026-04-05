@@ -17,8 +17,8 @@ class PromptInput(TextArea):
     
     DEFAULT_CSS = """
     PromptInput {
-        height: 4;
-        min-height: 1;
+        height: auto;
+        min-height: 3;
         max-height: 10;
         border: none;
         padding: 0 1;
@@ -33,6 +33,7 @@ class PromptInput(TextArea):
     }
     PromptInput .text-area--cursor {
         background: $primary;
+        color: $text;
     }
     PromptInput .text-area--gutter {
         background: $surface;
@@ -41,28 +42,19 @@ class PromptInput(TextArea):
     }
     PromptInput .text-area--content {
         color: $text;
+        background: $surface;
     }
-    /* Ensure text is visible */
+    /* Ensure text is visible - TextArea specific selectors */
     PromptInput .text-area--line {
         color: $text;
+        background: transparent;
     }
-    
-    /* Syntax highlighting overlays */
-    PromptInput .syntax-file-ref {
-        color: #4FC1FF;
-        text-style: bold;
+    PromptInput .text-area--line .text-area--text {
+        color: $text;
     }
-    PromptInput .syntax-command {
-        color: #FF79C6;
-        text-style: bold;
-    }
-    PromptInput .syntax-mention {
-        color: #50FA7B;
-        text-style: bold;
-    }
-    PromptInput .syntax-keyword {
-        color: #F1FA8C;
-        text-style: bold;
+    /* Override any Rich text colors */
+    PromptInput .rich-text {
+        color: $text;
     }
     """
     
@@ -105,30 +97,27 @@ class PromptInput(TextArea):
         """Handle key events."""
         key = event.key
         
-        # History navigation with Up/Down (when at start of input)
+        # History navigation with Up/Down (when at start/end of input)
         if key == "up":
             if self.cursor_at_start_of_text:
                 event.prevent_default()
+                event.stop()
                 self._show_previous_history()
             return
         
         if key == "down":
             if self.cursor_at_end_of_text:
                 event.prevent_default()
+                event.stop()
                 self._show_next_history()
             return
         
-        # Submit on Enter (Ctrl+Enter for newline is handled by TextArea)
-        if key == "enter":
+        # Submit on Enter (Shift+Enter for newline is handled by TextArea)
+        if key == "enter" and not event.shift:
             event.prevent_default()
             event.stop()
             self._submit()
             return
-        
-        # Handle @ for file references
-        if key == "@":
-            # Could trigger file autocomplete popup here
-            pass
     
     def _submit(self) -> None:
         """Submit the current input."""
@@ -272,14 +261,15 @@ class PromptWithMode(Horizontal):
     DEFAULT_CSS = """
     PromptWithMode {
         height: auto;
-        min-height: 4;
+        min-height: 3;
         background: $surface;
+        border-top: solid $border;
     }
     PromptWithMode Static.prompt-indicator {
         width: 2;
-        height: 100%;
+        height: 3;
         padding: 0 0 0 1;
-        content-align: left top;
+        content-align: center middle;
         background: $surface;
         color: $primary;
         text-style: bold;
@@ -288,10 +278,11 @@ class PromptWithMode(Horizontal):
         width: 1fr;
         height: auto;
         min-height: 3;
+        max-height: 10;
     }
     PromptWithMode Static.syntax-status {
         width: 100%;
-        height: 1;
+        height: auto;
         background: $surface;
         color: $text-muted;
         text-style: dim;
@@ -299,6 +290,11 @@ class PromptWithMode(Horizontal):
     }
     PromptWithMode Static.syntax-status.has-refs {
         color: $success;
+    }
+    /* Input row container */
+    PromptWithMode Horizontal {
+        height: auto;
+        min-height: 3;
     }
     """
     
@@ -335,9 +331,10 @@ class PromptWithMode(Horizontal):
         # Forward the event
         self.post_message(self.Submitted(event.text))
     
-    def watch_input_text(self, text: str):
-        """Watch input text changes to update syntax status."""
-        self._update_syntax_status(text)
+    def on_input_changed(self, event) -> None:
+        """Handle input changes from child TextArea."""
+        # Update syntax status
+        self._update_syntax_status(self.input.text)
     
     def _update_syntax_status(self, text: str):
         """Update syntax highlighting status display."""
@@ -360,11 +357,6 @@ class PromptWithMode(Horizontal):
         else:
             self._syntax_status.update("")
             self._syntax_status.remove_class("has-refs")
-    
-    def on_key(self, event):
-        """Handle key events to update syntax status."""
-        # Update status on any key
-        self._update_syntax_status(self.input.text)
     
     @property
     def prompt_input(self) -> PromptInput:

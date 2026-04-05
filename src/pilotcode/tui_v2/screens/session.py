@@ -94,9 +94,7 @@ class SessionScreen(Screen):
         ("ctrl+b", "toggle_sidebar", "Toggle Sidebar"),
         ("ctrl+y", "copy_last_assistant", "Copy Last Assistant"),
         ("ctrl+o", "copy_last_code", "Copy Last Code Block"),
-        ("/", "toggle_search", "Search"),
-        ("n", "next_match", "Next Match"),
-        ("N", "previous_match", "Previous Match"),
+        ("ctrl+f", "toggle_search", "Search"),
     ]
     
     sidebar_visible: reactive[bool] = reactive(False)
