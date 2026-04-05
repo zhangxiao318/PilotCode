@@ -40,6 +40,9 @@ class PromptInput(TextArea):
     PromptInput .text-area--content {
         color: $text;
     }
+    PromptInput .text-area--line {
+        color: $text;
+    }
     """
     
     class Submitted(Message):
@@ -59,19 +62,6 @@ class PromptInput(TextArea):
         self._input_history: list[str] = []
         self._input_history_index = -1
         self._current_input = ""
-        
-        # Syntax highlight patterns
-        self._patterns = [
-            # File references: @filename or @"file with spaces"
-            (r'(@"[^"]*")', 'syntax-file-ref'),
-            (r'(@\S+)', 'syntax-file-ref'),
-            # Commands: /command
-            (r'(/\w+)', 'syntax-command'),
-            # User mentions: @username
-            (r'(@@\w+)', 'syntax-mention'),
-            # Keywords: #high, #brief, etc.
-            (r'(#[\w-]+)', 'syntax-keyword'),
-        ]
     
     def on_mount(self):
         """Called when widget is mounted."""
@@ -96,14 +86,12 @@ class PromptInput(TextArea):
                 self._show_next_history()
             return
         
-        # Submit on Enter (but not Shift+Enter which adds newline)
+        # Submit on Enter
         if key == "enter":
             event.prevent_default()
             event.stop()
             self._submit()
             return
-        
-        # Let Shift+Enter pass through for newline (handled by TextArea)
     
     def _submit(self) -> None:
         """Submit the current input."""
@@ -203,22 +191,6 @@ class PromptInput(TextArea):
         cleaned = re.sub(pattern, replace_match, text)
         return cleaned, files
     
-    def get_highlighted_text(self, text: str) -> Text:
-        """Get syntax highlighted text for display.
-        
-        This is used for rendering the input with colors.
-        """
-        # Create base text
-        result = Text(text)
-        
-        # Apply syntax highlighting
-        for pattern, style in self._patterns:
-            for match in re.finditer(pattern, text):
-                start, end = match.span()
-                result.stylize(style, start, end)
-        
-        return result
-    
     def get_file_references(self, text: str) -> list[str]:
         """Extract file references from text."""
         _, files = self.parse_file_references(text)
@@ -232,13 +204,6 @@ class PromptInput(TextArea):
             if parts:
                 return parts[0][1:]  # Remove leading /
         return None
-    
-    def has_syntax_highlighting(self, text: str) -> bool:
-        """Check if text contains any syntax highlightable elements."""
-        for pattern, _ in self._patterns:
-            if re.search(pattern, text):
-                return True
-        return False
 
 
 class PromptWithMode(Horizontal):
@@ -263,6 +228,8 @@ class PromptWithMode(Horizontal):
     PromptWithMode PromptInput {
         width: 1fr;
         height: 3;
+        background: $surface;
+        color: $text;
     }
     PromptWithMode Static.syntax-status {
         width: 100%;

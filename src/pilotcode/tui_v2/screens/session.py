@@ -29,6 +29,8 @@ class SessionScreen(Screen):
     DEFAULT_CSS = """
     SessionScreen {
         layout: vertical;
+        background: $background;
+        color: $text;
     }
     SessionScreen Header {
         dock: top;
@@ -46,6 +48,7 @@ class SessionScreen(Screen):
     SessionScreen #main-container {
         width: 100%;
         height: 1fr;
+        background: $background;
     }
     SessionScreen #message-area {
         width: 100%;
@@ -66,6 +69,8 @@ class SessionScreen(Screen):
     }
     SessionScreen #sidebar-content {
         padding: 1;
+        background: $surface;
+        color: $text;
     }
     SessionScreen #input-area {
         height: auto;
@@ -374,7 +379,7 @@ class SessionScreen(Screen):
     
     def action_copy_last_assistant(self):
         """Copy the last assistant message to clipboard."""
-        if not self.message_list or not self.message_list._messages:
+        if not self.message_list or not self.message_list._messages_list:
             self.notify("No messages to copy", severity="warning")
             return
         
@@ -392,7 +397,7 @@ class SessionScreen(Screen):
     
     def action_copy_last_code(self):
         """Copy the last code block from assistant messages."""
-        if not self.message_list or not self.message_list._messages:
+        if not self.message_list or not self.message_list._messages_list:
             self.notify("No messages to copy", severity="warning")
             return
         
@@ -411,8 +416,6 @@ class SessionScreen(Screen):
                     else:
                         self.notify("⚠️ Failed to copy to clipboard", severity="error")
                     return
-        
-        self.notify("No code block found", severity="warning")
         
         self.notify("No code block found", severity="warning")
     
@@ -484,5 +487,5 @@ class SessionScreen(Screen):
             if msg_idx < len(self.message_list._messages_list):
                 # In a real implementation, you'd scroll to the specific message
                 # For now, just scroll to bottom if it's the last message
-                if msg_idx == len(self.message_list._messages) - 1:
+                if msg_idx == len(self.message_list._messages_list) - 1:
                     self.message_list.scroll_to_bottom()
