@@ -131,6 +131,14 @@ from .risk_assessment import (
     RiskAssessment,
     get_risk_analyzer,
 )
+from .prompt_cache import (
+    PromptCache,
+    CacheEntry,
+    CacheStats,
+    CacheAwareMessageBuilder,
+    get_prompt_cache,
+    clear_prompt_cache,
+)
 
 
 __all__ = [
@@ -259,5 +267,11 @@ __all__ = [
     "RiskLevel",
     "RiskAssessment",
     "get_risk_analyzer",
-
+    # Prompt cache
+    "PromptCache",
+    "CacheEntry",
+    "CacheStats",
+    "CacheAwareMessageBuilder",
+    "get_prompt_cache",
+    "clear_prompt_cache",
 ]
