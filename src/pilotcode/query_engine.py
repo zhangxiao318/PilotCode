@@ -133,10 +133,44 @@ DO NOT just list files and say "这些文件存在". You MUST read them."""
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to API format."""
         result = []
+        
+        # Static descriptions for built-in tools
+        static_descriptions = {
+            "Bash": "Execute bash commands in the working directory. Use for running code, tests, git commands, etc.",
+            "FileRead": "Read the contents of a file. ALWAYS use this to read files before analyzing or modifying them.",
+            "FileWrite": "Create a new file with the specified content. Will fail if file already exists (read first).",
+            "FileEdit": "Edit an existing file by replacing specific content. Use for precise changes.",
+            "Glob": "Find files matching a pattern (e.g., '*.py', 'src/**/*.js'). After finding files, you MUST read them with FileRead.",
+            "Grep": "Search for text patterns in files across the codebase. Useful for finding specific code.",
+            "AskUser": "Ask the user a question when you need clarification or additional information.",
+            "TodoWrite": "Manage a todo list. Use to track tasks and progress.",
+            "WebSearch": "Search the web for documentation, examples, or current information.",
+            "WebFetch": "Fetch the content of a specific webpage.",
+            "Agent": "Spawn a sub-agent to handle a specific task independently.",
+            "TaskCreate": "Create a background task for long-running operations.",
+            "TaskList": "List all background tasks and their status.",
+            "TaskGet": "Get details about a specific background task.",
+            "TaskStop": "Stop a running background task.",
+            "TaskUpdate": "Update task progress or status.",
+            "Config": "Read or write configuration settings.",
+            "LSP": "Use Language Server Protocol for code intelligence (go to definition, find references, etc.)",
+            "NotebookEdit": "Edit Jupyter notebook files (.ipynb).",
+            "PowerShell": "Execute PowerShell commands (cross-platform support).",
+        }
+        
         for tool in tools:
+            # Use static description if available, otherwise try to get from tool
+            if tool.name in static_descriptions:
+                description = static_descriptions[tool.name]
+            elif isinstance(tool.description, str):
+                description = tool.description
+            else:
+                # Fallback for callable descriptions
+                description = f"{tool.name} tool for file operations and code assistance"
+            
             tool_def = {
                 "name": tool.name,
-                "description": tool.description if isinstance(tool.description, str) else tool.name,
+                "description": description,
                 "input_schema": tool.input_schema.model_json_schema() if hasattr(tool.input_schema, 'model_json_schema') else {"type": "object"}
             }
             result.append(tool_def)
