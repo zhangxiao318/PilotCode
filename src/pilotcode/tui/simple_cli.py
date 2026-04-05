@@ -436,7 +436,17 @@ class SimpleCLI:
                     elif isinstance(msg, ToolUseMessage):
                         # Collect tool use requests
                         pending_tools.append(msg)
-                        print(f"🔧 Tool requested: {msg.name}")
+                        # Show tool request with key param
+                        tool_input = msg.input if isinstance(msg.input, dict) else {}
+                        if msg.name == 'Bash':
+                            preview = tool_input.get('command', '')[:40]
+                        elif msg.name in ('FileRead', 'FileWrite', 'FileEdit'):
+                            preview = tool_input.get('path', '')
+                        elif msg.name == 'Glob':
+                            preview = tool_input.get('pattern', '')
+                        else:
+                            preview = str(list(tool_input.values())[0])[:40] if tool_input else ''
+                        print(f"🔧 Tool requested: {msg.name}({preview})")
                 
                 # If no tools to execute, we're done
                 if not pending_tools:
@@ -503,7 +513,19 @@ class SimpleCLI:
                         else:
                             output = result.message or "Tool execution failed"
                         
-                        print(f"  Output: {output[:80]}...")
+                        # Display output with smart truncation
+                        output_display = output.strip()
+                        if len(output_display) > 500:
+                            # For long outputs, show first 300 and last 100 chars
+                            print(f"  Output ({len(output_display)} chars):")
+                            print(f"    {output_display[:300]}...")
+                            print(f"    ... [truncated] ...")
+                            print(f"    ...{output_display[-100:]}")
+                        elif len(output_display) > 100:
+                            print(f"  Output: {output_display[:200]}...")
+                        else:
+                            print(f"  Output: {output_display}")
+                        
                         self.query_engine.add_tool_result(tool_msg.tool_use_id, output, is_error=False)
                     except Exception as e:
                         self.query_engine.add_tool_result(tool_msg.tool_use_id, str(e), is_error=True)
