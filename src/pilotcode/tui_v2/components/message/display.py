@@ -25,20 +25,16 @@ class MessageDisplay(Static):
         color: $text;
     }
     
-    /* User messages - right aligned, bubble style */
+    /* User messages - left aligned with smiley */
     MessageDisplay.user {
-        text-align: right;
+        text-align: left;
         background: transparent;
         color: $text;
-        margin: 1 0;
-    }
-    MessageDisplay.user Static {
-        background: $primary 20%;
-        color: $text;
-        padding: 1 2;
+        padding: 0 1;
+        margin: 0 0 1 0;
     }
     
-    /* Assistant messages - clean text */
+    /* Assistant messages - left aligned with white dot */
     MessageDisplay.assistant {
         background: transparent;
         color: $text;
@@ -46,7 +42,7 @@ class MessageDisplay(Static):
         margin: 0 0 1 0;
     }
     
-    /* Tool messages - compact, visible */
+    /* Tool messages - left aligned with green dot */
     MessageDisplay.tool {
         background: transparent;
         color: $warning;
@@ -54,7 +50,7 @@ class MessageDisplay(Static):
         margin: 0;
     }
     
-    /* Tool result - inline with tool */
+    /* Tool result - left aligned */
     MessageDisplay.tool-result {
         background: transparent;
         color: $success;
@@ -137,12 +133,12 @@ class MessageDisplay(Static):
         
         content = self.message.content or ""
         
-        # Tool messages - compact format
+        # Tool messages - green dot prefix
         if self.message.type == MessageType.TOOL_USE:
             tool_name = self.message.metadata.get("tool_name", "Tool")
             is_safe = self.message.metadata.get("is_safe", False)
             safe_marker = "✓" if is_safe else "⚠"
-            return Text(f"{safe_marker} {tool_name}", style="dim")
+            return Text(f"● {safe_marker} {tool_name}", style="green")
         
         # Tool result - show output preview
         if self.message.type == MessageType.TOOL_RESULT:
@@ -153,16 +149,18 @@ class MessageDisplay(Static):
                 preview += " ..."
             return Text(f"→ {preview}", style="dim")
         
-        # User messages - plain text
+        # User messages - smiley prefix
         if self.message.type == MessageType.USER:
-            return Text(content)
+            return Text(f"☺ {content}")
         
-        # Assistant messages - markdown
+        # Assistant messages - white dot prefix + markdown
         if self.message.type == MessageType.ASSISTANT:
             try:
-                return Markdown(content)
+                # Prepend white dot to content
+                marked_content = f"● {content}"
+                return Markdown(marked_content)
             except Exception:
-                return Text(content)
+                return Text(f"● {content}")
         
         # System/Error - plain text
         return Text(content)
@@ -174,12 +172,7 @@ class MessageDisplay(Static):
         
         try:
             content = self._format_content()
-            
-            # User messages - right align the container
-            if self.message.type == MessageType.USER:
-                return Align.right(content)
-            
-            # All other messages - left align
+            # All messages left aligned
             return content
         except Exception as e:
             # Fallback to plain text on any error
