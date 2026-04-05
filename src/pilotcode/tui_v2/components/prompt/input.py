@@ -18,34 +18,26 @@ class PromptInput(TextArea):
         min-height: 1;
         max-height: 10;
         border: none;
-        padding: 0 1;
+        padding: 0;
         background: $surface;
         color: $text;
     }
     PromptInput:focus {
         border: none;
-        outline: none;
     }
     PromptInput .text-area--placeholder {
         color: $text-muted;
     }
     PromptInput .text-area--cursor {
         background: $primary;
-        color: $text;
     }
     PromptInput .text-area--gutter {
         background: $surface;
         color: $text-muted;
         width: 2;
-        border: none;
     }
     PromptInput .text-area--content {
         color: $text;
-        background: $surface;
-    }
-    /* Remove any border from text area components */
-    PromptInput .text-area--selection {
-        background: $primary 30%;
     }
     """
     
