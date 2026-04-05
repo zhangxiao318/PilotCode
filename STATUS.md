@@ -263,6 +263,7 @@ pilotcode_py/
 - [x] GitHub Integration (Repositories, Issues, PRs, Actions, Releases)
 - [x] Git Advanced Commands (merge, rebase, stash, tag, fetch, pull, push, pr, issue)
 - [x] FileSelector Tool (glob, regex, size/date filters, preview, gitignore)
+- [x] Code Intelligence Commands (symbols, references, definitions, hover, implementations)
 
 ### Planned
 - [ ] MCP (Model Context Protocol) integration

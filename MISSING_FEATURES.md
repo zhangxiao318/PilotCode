@@ -64,12 +64,14 @@
 - [x] `/issue` - Issue management (list, create, view, close, reopen)
 
 ### Code Intelligence (6)
-- [ ] `/symbols` - List code symbols
-- [ ] `/references` - Find references
-- [ ] `/implementations` - Find implementations
-- [ ] `/type` - Show type info
-- [ ] `/callers` - Find callers
-- [ ] `/callees` - Find callees
+- [x] `/symbols` - List code symbols (classes, functions, variables with tree view)
+- [x] `/references` - Find references to symbol
+- [x] `/definitions` - Go to symbol definition
+- [x] `/hover` - Show type and documentation info
+- [x] `/implementations` - Find interface/method implementations
+- [x] `/workspace_symbol` - Search symbols across workspace
+- [ ] `/callers` - Find callers (pending)
+- [ ] `/callees` - Find callees (pending)
 
 ### Context & Memory (6)
 - [ ] `/context` - Show current context
