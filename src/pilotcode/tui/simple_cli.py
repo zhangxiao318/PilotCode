@@ -454,8 +454,27 @@ class SimpleCLI:
                         continue
                     
                     # Execute tool
-                    cmd = params.get('command', 'N/A')
-                    print(f"🔧 Executing {tool_name}: {cmd[:50]}...")
+                    # Format tool description based on tool type
+                    if tool_name == 'Bash':
+                        desc = params.get('command', 'N/A')
+                    elif tool_name == 'FileRead':
+                        desc = f"reading {params.get('path', 'N/A')}"
+                    elif tool_name == 'FileWrite':
+                        desc = f"writing {params.get('path', 'N/A')}"
+                    elif tool_name == 'FileEdit':
+                        desc = f"editing {params.get('path', 'N/A')}"
+                    elif tool_name == 'Glob':
+                        desc = f"pattern={params.get('pattern', 'N/A')}"
+                    elif tool_name == 'Grep':
+                        desc = f"searching '{params.get('pattern', 'N/A')}'"
+                    elif tool_name == 'AskUser':
+                        desc = f"asking: {params.get('question', 'N/A')[:40]}"
+                    else:
+                        # Generic: show first param value
+                        first_param = list(params.values())[0] if params else 'N/A'
+                        desc = str(first_param)[:50]
+                    
+                    print(f"🔧 Executing {tool_name}: {desc[:50]}...")
                     
                     try:
                         from pilotcode.tools.base import ToolUseContext
