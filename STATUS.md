@@ -266,6 +266,7 @@ pilotcode_py/
 - [x] Code Intelligence Commands (symbols, references, definitions, hover, implementations)
 - [x] Context Manager (token budget, compaction strategies, prioritization)
 - [x] Testing Commands (/test, /coverage, /benchmark for pytest, jest, cargo, go)
+- [x] Analytics Service (usage tracking, cost analysis, performance metrics)
 
 ### Planned
 - [ ] MCP (Model Context Protocol) integration
