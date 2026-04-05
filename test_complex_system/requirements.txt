@@ -1,0 +1,14 @@
+# Distributed Task Scheduler Dependencies
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-benchmark>=4.0.0
+
+# Performance monitoring
+memory-profiler>=0.60.0
+line-profiler>=4.0.0
+
+# Type checking
+mypy>=1.0.0
+
+# Linting
+ruff>=0.1.0
