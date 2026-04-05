@@ -147,7 +147,9 @@ async def task_get_call(
                 status="not_found",
                 result=None,
                 error=None,
-                created_at=""
+                created_at="",
+                started_at=None,
+                completed_at=None
             ),
             error=f"Task {input_data.task_id} not found"
         )
