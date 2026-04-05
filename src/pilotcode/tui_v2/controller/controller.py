@@ -210,20 +210,61 @@ class TUIController:
         
         return False
     
+    def _debug_log(self, msg: str):
+        """Write debug log to file."""
+        import os
+        from datetime import datetime
+        if os.environ.get('PILOTCODE_DEBUG'):
+            with open('/tmp/pilotcode_debug.log', 'a') as f:
+                f.write(f"{datetime.now().isoformat()} {msg}\n")
+    
+    def _normalize_tool_name(self, name: str) -> str:
+        """Normalize tool name to ensure consistent cache keys.
+        
+        LLM may return tool names as 'bash', 'Bash', or aliases like 'shell'.
+        This normalizes them to the canonical tool name.
+        """
+        from pilotcode.tools.registry import get_all_tools
+        
+        # Direct match
+        for tool in get_all_tools():
+            if tool.name == name:
+                return tool.name
+            if name in tool.aliases:
+                return tool.name
+        
+        # Case-insensitive match
+        name_lower = name.lower()
+        for tool in get_all_tools():
+            if tool.name.lower() == name_lower:
+                return tool.name
+            for alias in tool.aliases:
+                if alias.lower() == name_lower:
+                    return tool.name
+        
+        # Return original if no match found
+        return name
+    
     async def _execute_tool(self, tool_msg: ToolUseMessage) -> AsyncIterator[UIMessage]:
         """Execute a tool and yield UI messages."""
-        tool_name = tool_msg.name
+        # Normalize tool name for consistent cache keys
+        tool_name = self._normalize_tool_name(tool_msg.name)
         params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
+        
+        # DEBUG
+        if tool_msg.name != tool_name:
+            self._debug_log(f"[_execute_tool] normalized '{tool_msg.name}' -> '{tool_name}'")
+        self._debug_log(f"[_execute_tool] tool_name={tool_name}, params={params}")
+        self._debug_log(f"[_execute_tool] cache={dict(self._session_permissions)}")
+        self._debug_log(f"[_execute_tool] id(self)={id(self)}")
         
         # Check if tool is safe (read-only) - skip permission for safe operations
         is_safe = self._is_safe_tool(tool_name, params)
         
         # Check session-level permission cache
-        import sys
-        print(f"[PERM_CACHE] Tool={tool_name}, Cache={self._session_permissions}", flush=True, file=sys.stderr)
         if tool_name in self._session_permissions:
+            self._debug_log(f"[_execute_tool] Cache HIT for {tool_name}")
             allowed = self._session_permissions[tool_name]
-            print(f"[PERM_CACHE] Found! allowed={allowed}", flush=True, file=sys.stderr)
             if not allowed:
                 self.query_engine.add_tool_result(
                     tool_msg.tool_use_id,
@@ -245,48 +286,14 @@ class TUIController:
         # 3. Tool is not safe (destructive operation) AND
         # 4. No session-level permission set
         elif self._permission_callback and not self.auto_allow and not is_safe:
-            print(f"[PERM_CACHE] Not in cache, requesting permission...", flush=True, file=sys.stderr)
             # Import here to avoid circular dependency
             from pilotcode.tui_v2.components.permission_inline import PermissionResult
             
             result = await self._permission_callback(tool_name, params)
-            print(f"[PERM_CACHE] Result: action={result.action}, for_session={result.for_session}", flush=True, file=sys.stderr)
             
-            # Handle PermissionResult
-            if isinstance(result, PermissionResult):
-                # Update session cache if requested
-                if result.for_session:
-                    print(f"[PERM_CACHE] Setting cache: {tool_name}={result.allowed}", flush=True, file=sys.stderr)
-                    self._session_permissions[tool_name] = result.allowed
-                
-                if not result.allowed:
-                    self.query_engine.add_tool_result(
-                        tool_msg.tool_use_id,
-                        "Tool execution denied by user",
-                        is_error=True
-                    )
-                    yield UIMessage(
-                        type=MessageType.TOOL_RESULT,
-                        content="Denied",
-                        metadata={"tool_name": tool_name, "error": True},
-                        is_complete=True
-                    )
-                    return
-            else:
-                # Backward compatibility: handle bool result
-                if not result:
-                    self.query_engine.add_tool_result(
-                        tool_msg.tool_use_id,
-                        "Tool execution denied by user",
-                        is_error=True
-                    )
-                    yield UIMessage(
-                        type=MessageType.TOOL_RESULT,
-                        content="Denied",
-                        metadata={"tool_name": tool_name, "error": True},
-                        is_complete=True
-                    )
-                    return
+            # Update session cache if user chose "Allow for this session"
+            if isinstance(result, PermissionResult) and result.for_session:
+                self._session_permissions[tool_name] = result.allowed
         
         # Execute the tool
         try:
@@ -295,11 +302,25 @@ class TUIController:
                 set_app_state=self.set_app_state
             )
             
-            result = await self.tool_executor.execute_tool_by_name(
-                tool_name,
-                params,
-                ctx
-            )
+            # Permission already granted by TUI - set permission_manager callback
+            # to always allow to avoid double permission prompt from tool_executor
+            from pilotcode.permissions.permission_manager import PermissionLevel
+            original_callback = self.tool_executor.permission_manager._permission_callback
+            
+            async def _always_allow(*args, **kwargs):
+                return PermissionLevel.ALLOW
+            
+            self.tool_executor.permission_manager.set_permission_callback(_always_allow)
+            
+            try:
+                result = await self.tool_executor.execute_tool_by_name(
+                    tool_name,
+                    params,
+                    ctx
+                )
+            finally:
+                # Restore original callback
+                self.tool_executor.permission_manager.set_permission_callback(original_callback)
             
             # Extract output
             if result.success and result.result:

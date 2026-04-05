@@ -46,12 +46,20 @@ class PermissionResponded(Message):
 class InlinePermissionRequest(Vertical):
     """Inline permission request displayed in message list."""
     
+    # Ensure this widget can receive focus
+    can_focus = True
+    can_focus_children = False  # We want key events on this widget, not children
+    
     DEFAULT_CSS = """
     InlinePermissionRequest {
         height: auto;
         margin: 0;
         padding: 0 1;
         background: transparent;
+        border: solid $warning;
+    }
+    InlinePermissionRequest:focus {
+        border: solid $success;
     }
     InlinePermissionRequest .header {
         height: 1;
@@ -206,7 +214,7 @@ class InlinePermissionRequest(Vertical):
         if self.answered:
             return
         
-        key = event.key
+        key = str(event.key)
         if key == "1":
             self._respond(PermissionAction.ALLOW)
         elif key == "2":
@@ -223,14 +231,17 @@ class InlinePermissionRequest(Vertical):
         self._result = PermissionResult(action, self.tool_name)
         
         # Update UI to show answered state
-        self.remove_children()
-        action_names = {
-            PermissionAction.ALLOW: "✓ Allowed (once)",
-            PermissionAction.ALLOW_SESSION: "✓ Allowed for this session",
-            PermissionAction.DENY: "✗ Rejected",
-            PermissionAction.DENY_SESSION: "✗ Rejected, telling model...",
-        }
-        self.mount(Static(action_names[action], classes="answered"))
+        try:
+            self.remove_children()
+            action_names = {
+                PermissionAction.ALLOW: "✓ Allowed (once)",
+                PermissionAction.ALLOW_SESSION: "✓ Allowed for this session",
+                PermissionAction.DENY: "✗ Rejected",
+                PermissionAction.DENY_SESSION: "✗ Rejected, telling model...",
+            }
+            self.mount(Static(action_names[action], classes="answered"))
+        except Exception:
+            pass  # Widget might be detached
         
         # Post message to parent (for any additional handling)
         self.post_message(PermissionResponded(self._result))

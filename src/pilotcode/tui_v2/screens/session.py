@@ -290,16 +290,34 @@ class SessionScreen(Screen):
     
     async def _request_permission(self, tool_name: str, params: dict) -> PermissionResult:
         """Request permission for tool execution using inline component."""
+        import os
+        if os.environ.get('PILOTCODE_DEBUG'):
+            with open('/tmp/pilotcode_debug.log', 'a') as f:
+                f.write(f"[_request_permission] START tool_name={tool_name}\n")
+        
         if not self.message_list:
+            if os.environ.get('PILOTCODE_DEBUG'):
+                with open('/tmp/pilotcode_debug.log', 'a') as f:
+                    f.write(f"[_request_permission] message_list is None, returning DENY\n")
             return PermissionResult(PermissionAction.DENY, tool_name)
         
         # Create inline permission request
         permission_widget = InlinePermissionRequest(tool_name, params)
         self._pending_permission = permission_widget
         
+        if os.environ.get('PILOTCODE_DEBUG'):
+            with open('/tmp/pilotcode_debug.log', 'a') as f:
+                f.write(f"[_request_permission] Widget created, mounting...\n")
+        
         # Mount and display
         await self.message_list.mount(permission_widget)
-        permission_widget.focus()
+        
+        # Focus the widget and ensure it can receive keyboard events
+        # Use call_after_refresh to ensure focus is set after DOM update
+        def set_focus():
+            permission_widget.focus()
+        
+        self.app.call_after_refresh(set_focus)
         self.message_list.scroll_end(animate=False)
         
         # Wait for user response (this yields control back to event loop)
