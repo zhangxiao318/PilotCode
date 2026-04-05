@@ -56,7 +56,7 @@ class UnicodeInput(Input):
         self.value = new_text_before + self.value[self.cursor_position:]
         self.cursor_position = len(new_text_before)
     
-    async def on_key(self, event: Key) -> None:
+    def on_key(self, event: Key) -> None:
         """Handle key events with proper Unicode support."""
         key = event.key
         
@@ -78,8 +78,8 @@ class UnicodeInput(Input):
             self._delete_word_left()
             return
         
-        # Let other keys pass through
-        await super().on_key(event)
+        # Let other keys pass through to parent class
+        super().on_key(event)
 
 
 class UnicodeTextArea(TextArea):
@@ -158,7 +158,7 @@ class UnicodeTextArea(TextArea):
             self.text = '\n'.join(lines)
             self.cursor_location = (row - 1, prev_line_len)
     
-    async def on_key(self, event: Key) -> None:
+    def on_key(self, event: Key) -> None:
         """Handle key events with proper Unicode support."""
         key = event.key
         
@@ -180,5 +180,5 @@ class UnicodeTextArea(TextArea):
             self._delete_word_left()
             return
         
-        # Let other keys pass through
-        await super().on_key(event)
+        # Let other keys pass through to parent class
+        super().on_key(event)
