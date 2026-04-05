@@ -49,6 +49,8 @@ class SessionScreen(Screen):
         width: 100%;
         height: 1fr;
         overflow: auto;
+        background: $background;
+        color: $text;
     }
     SessionScreen #sidebar {
         width: 0;

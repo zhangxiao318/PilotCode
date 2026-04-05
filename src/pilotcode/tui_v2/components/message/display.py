@@ -21,26 +21,32 @@ class MessageDisplay(Static):
         height: auto;
         margin: 0 0 1 0;
         padding: 0 2;
+        background: transparent;
+        color: $text;
     }
     
     /* User messages - right aligned, bubble style */
     MessageDisplay.user {
         text-align: right;
+        background: transparent;
         color: $text;
     }
     MessageDisplay.user Static {
         background: $primary 20%;
+        color: $text;
         padding: 1 2;
     }
     
     /* Assistant messages - clean text */
     MessageDisplay.assistant {
+        background: transparent;
         color: $text;
         padding: 0 2;
     }
     
     /* Tool messages - compact, dim */
     MessageDisplay.tool {
+        background: transparent;
         color: $text-muted;
         text-style: dim;
         padding: 0 2;
@@ -48,6 +54,7 @@ class MessageDisplay(Static):
     
     /* Tool result - inline with tool */
     MessageDisplay.tool-result {
+        background: transparent;
         color: $text-muted;
         text-style: dim;
         padding: 0 2;
@@ -57,12 +64,14 @@ class MessageDisplay(Static):
     MessageDisplay.error {
         background: $error 10%;
         border-left: solid $error;
+        color: $text;
         padding: 1 2;
         margin: 1 0;
     }
     
     /* System - very subtle */
     MessageDisplay.system {
+        background: transparent;
         color: $text-muted;
         text-align: center;
         text-style: dim italic;
@@ -217,6 +226,8 @@ class MessageList(ScrollableContainer):
         height: 1fr;
         border: none;
         padding: 0;
+        background: $background;
+        color: $text;
     }
     """
     
