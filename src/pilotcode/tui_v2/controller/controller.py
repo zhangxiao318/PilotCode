@@ -243,7 +243,7 @@ class TUIController:
         # 4. No session-level permission set
         elif self._permission_callback and not self.auto_allow and not is_safe:
             # Import here to avoid circular dependency
-            from pilotcode.tui_v2.components.dialog.permission import PermissionResult
+            from pilotcode.tui_v2.components.permission_inline import PermissionResult
             
             result = await self._permission_callback(tool_name, params)
             
