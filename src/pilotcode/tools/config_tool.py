@@ -161,8 +161,8 @@ ConfigTool = build_tool(
     call=config_call,
     aliases=["config", "cfg", "setting"],
     search_hint="Manage configuration settings",
-    is_read_only=lambda x: x.action in ("get", "list"),
-    is_concurrency_safe=lambda x: x.action in ("get", "list"),
+    is_read_only=lambda x: x.action in ("get", "list") if x else True,
+    is_concurrency_safe=lambda x: x.action in ("get", "list") if x else True,
 )
 
 register_tool(ConfigTool)

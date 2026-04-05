@@ -176,8 +176,8 @@ BashTool = build_tool(
     aliases=["bash", "shell"],
     search_hint="Execute bash shell commands",
     max_result_size_chars=50000,
-    is_read_only=lambda x: is_read_only_command(x.command),
-    is_concurrency_safe=lambda x: is_read_only_command(x.command),
+    is_read_only=lambda x: is_read_only_command(x.command) if x else False,
+    is_concurrency_safe=lambda x: is_read_only_command(x.command) if x else False,
     user_facing_name=bash_user_facing_name,
 )
 

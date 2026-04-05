@@ -126,8 +126,8 @@ PowerShellTool = build_tool(
     call=powershell_call,
     aliases=["powershell", "ps", "pwsh"],
     search_hint="Execute PowerShell commands",
-    is_read_only=lambda x: is_read_only_command(x.command),
-    is_concurrency_safe=lambda x: is_read_only_command(x.command),
+    is_read_only=lambda x: is_read_only_command(x.command) if x else False,
+    is_concurrency_safe=lambda x: is_read_only_command(x.command) if x else False,
 )
 
 register_tool(PowerShellTool)

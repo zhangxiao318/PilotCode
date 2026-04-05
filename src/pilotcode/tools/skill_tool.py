@@ -138,8 +138,8 @@ SkillTool = build_tool(
     output_schema=SkillOutput,
     call=skill_call,
     aliases=["skill", "run_skill"],
-    is_read_only=lambda x: x.action in ["list", "info"],
-    is_concurrency_safe=lambda x: x.action in ["list", "info"],
+    is_read_only=lambda x: x.action in ["list", "info"] if x else True,
+    is_concurrency_safe=lambda x: x.action in ["list", "info"] if x else True,
 )
 
 register_tool(SkillTool)

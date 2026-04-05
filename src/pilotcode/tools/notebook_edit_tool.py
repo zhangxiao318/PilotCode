@@ -191,8 +191,8 @@ NotebookEditTool = build_tool(
     call=notebook_edit_call,
     aliases=["notebook", "jupyter", "ipynb"],
     search_hint="Edit Jupyter notebook files",
-    is_read_only=lambda x: x.action == "read",
-    is_concurrency_safe=lambda x: x.action == "read",
+    is_read_only=lambda x: x.action == "read" if x else True,
+    is_concurrency_safe=lambda x: x.action == "read" if x else True,
 )
 
 register_tool(NotebookEditTool)

@@ -408,7 +408,7 @@ WebBrowserTool = build_tool(
     call=web_browser_call,
     aliases=["browser", "web_automation", "playwright"],
     search_hint="Automate web browser for interactive websites",
-    is_read_only=lambda x: x.action in ["get_text", "get_html", "screenshot", "evaluate"],
+    is_read_only=lambda x: x.action in ["get_text", "get_html", "screenshot", "evaluate"] if x else True,
     is_concurrency_safe=lambda _: False,
 )
 

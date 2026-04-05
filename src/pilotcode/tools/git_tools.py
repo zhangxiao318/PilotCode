@@ -348,8 +348,8 @@ GitBranchTool = build_tool(
     output_schema=GitBranchOutput,
     call=git_branch_call,
     aliases=["git_branch", "gb"],
-    is_read_only=lambda x: x.action == "list",
-    is_concurrency_safe=lambda x: x.action == "list",
+    is_read_only=lambda x: x.action == "list" if x else True,
+    is_concurrency_safe=lambda x: x.action == "list" if x else True,
 )
 
 register_tool(GitStatusTool)
