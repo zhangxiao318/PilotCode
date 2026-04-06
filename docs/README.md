@@ -51,6 +51,7 @@
 | 文档 | 说明 |
 |------|------|
 | [QUICKSTART.md](guides/QUICKSTART.md) | **快速开始指南** - 5分钟上手 |
+| [QUICKSTART_EN.md](guides/QUICKSTART_EN.md) | **Quick Start Guide** (English) |
 | [SETUP_QWEN_API.md](guides/SETUP_QWEN_API.md) | Qwen API设置指南 |
 
 ### 📈 [progress/](progress/) - 进度文档
@@ -71,6 +72,9 @@
 根目录保留了最常用的核心文档：
 
 - [**README.md**](../README.md) - 项目简介、快速开始
+- [**README_EN.md**](../README_EN.md) - English Version
+- [**QUICKSTART.md**](../QUICKSTART.md) - 快速开始指南
+- [**QUICKSTART_EN.md**](../QUICKSTART_EN.md) - Quick Start Guide (English)
 - [**STARTUP_GUIDE.md**](../STARTUP_GUIDE.md) - 启动指南
 - [**STATUS.md**](../STATUS.md) - 项目状态
 

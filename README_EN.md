@@ -10,39 +10,39 @@ This is a Python reimplementation of the Claude Code CLI tool, maintaining archi
 
 ## About
 
-**PilotCode** 是一款由西北工业大学计算机学院张晓开发的 AI 辅助编程工具。该工具参考 Claude Code 的实现，采用纯 Python 实现，旨在为开发者提供智能化的编程辅助体验。
+**PilotCode** is an AI-powered coding assistant developed by Zhang Xiao from the School of Computer Science, Northwestern Polytechnical University (NWPU). This tool references Claude Code's implementation and is built with pure Python, aiming to provide developers with an intelligent programming assistance experience.
 
-### 主要特点
+### Key Features
 
-- **纯 Python 实现**：代码简洁，易于理解和二次开发
-- **跨平台支持**：已在 Ubuntu 和 Windows 系统上完成测试，确保稳定运行
-- **多模型兼容**：支持国内外主流大模型 API，已测试接入通义千问（Qwen）API
+- **Pure Python Implementation**: Clean code, easy to understand and extend
+- **Cross-Platform Support**: Tested on Ubuntu and Windows systems for stable operation
+- **Multi-Model Compatibility**: Supports mainstream LLM APIs both domestically and internationally, with tested integration of Qwen (Tongyi Qianwen) API
 
-### 获取与反馈
+### Contact
 
-欢迎广大开发者下载试用，体验 AI 辅助编程带来的效率提升。如有任何建议或问题，欢迎通过邮件联系开发者：**zhangxiao@nwpu.edu.cn**
+We welcome developers to download and try PilotCode to experience the efficiency boost of AI-assisted programming. For any suggestions or questions, please contact the developer via email: **zhangxiao@nwpu.edu.cn**
 
 ## Quick Start
 
-📖 **详细指南请查看 [QUICKSTART.md](QUICKSTART.md)**
+📖 **For detailed guide, see [QUICKSTART_EN.md](QUICKSTART_EN.md)**
 
 ```bash
-# 1. 安装
+# 1. Install
 pip3 install -e .
 
-# 2. 配置 LLM（交互式向导）
+# 2. Configure LLM (interactive wizard)
 python3 -m pilotcode configure
 
-# 3. 运行
+# 3. Run
 python3 -m pilotcode
 ```
 
-更多启动方式：
+More ways to start:
 ```bash
-# 运行演示
+# Run demo
 python3 full_demo.py
 
-# 或使用启动脚本
+# Or use the launch script
 ./pilotcode
 ```
 
@@ -282,9 +282,9 @@ python3 -m pilotcode configure
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Architecture details
-- [FEATURE_LIST.md](FEATURE_LIST.md) - Complete feature list
-- [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) - Current status
+- [Architecture](docs/architecture/ARCHITECTURE.md) - Architecture details
+- [Feature List](docs/features/FEATURE_LIST.md) - Complete feature list
+- [Implementation Status](docs/implementation/IMPLEMENTATION_STATUS.md) - Current status
 
 ## Missing Features
 
@@ -301,7 +301,7 @@ Major features not yet implemented:
 - Analytics/telemetry
 - Cost tracking
 
-See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for full details.
+See [Implementation Status](docs/implementation/IMPLEMENTATION_STATUS.md) for full details.
 
 ## Comparison with Original
 

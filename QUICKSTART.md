@@ -1,5 +1,7 @@
 # PilotCode 快速开始指南
 
+[中文](QUICKSTART.md) | [English](QUICKSTART_EN.md)
+
 在 5 分钟内启动 PilotCode AI 编程助手。
 
 ---
