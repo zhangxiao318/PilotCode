@@ -6,6 +6,20 @@ Python rewrite of Claude Code - an AI-powered coding assistant.
 
 This is a Python reimplementation of the Claude Code CLI tool, maintaining architectural parity with the original TypeScript version while leveraging Python's strengths.
 
+## About
+
+**PilotCode** 是一款由西北工业大学计算机学院张晓开发的 AI 辅助编程工具。该工具参考 Claude Code 的实现，采用纯 Python 实现，旨在为开发者提供智能化的编程辅助体验。
+
+### 主要特点
+
+- **纯 Python 实现**：代码简洁，易于理解和二次开发
+- **跨平台支持**：已在 Ubuntu 和 Windows 系统上完成测试，确保稳定运行
+- **多模型兼容**：支持国内外主流大模型 API，已测试接入通义千问（Qwen）API
+
+### 获取与反馈
+
+欢迎广大开发者下载试用，体验 AI 辅助编程带来的效率提升。如有任何建议或问题，欢迎通过邮件联系开发者：**zhangxiao@nwpu.edu.cn**
+
 ## Quick Start
 
 📖 **详细指南请查看 [QUICKSTART.md](QUICKSTART.md)**
