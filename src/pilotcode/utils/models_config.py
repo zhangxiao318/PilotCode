@@ -10,6 +10,7 @@ from enum import Enum
 
 class ModelProvider(Enum):
     """Model provider types."""
+
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     AZURE = "azure"
@@ -25,6 +26,7 @@ class ModelProvider(Enum):
 @dataclass
 class ModelInfo:
     """Information about a supported model."""
+
     name: str
     display_name: str
     provider: ModelProvider
@@ -35,7 +37,7 @@ class ModelInfo:
     supports_vision: bool = False
     max_tokens: int = 4096
     env_key: str = ""
-    
+
     def get_env_key(self) -> str:
         """Get environment variable key for API key."""
         if self.env_key:
@@ -56,7 +58,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
-        env_key="OPENAI_API_KEY"
+        env_key="OPENAI_API_KEY",
     ),
     "openai-gpt4": ModelInfo(
         name="openai-gpt4",
@@ -68,7 +70,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
-        env_key="OPENAI_API_KEY"
+        env_key="OPENAI_API_KEY",
     ),
     "anthropic": ModelInfo(
         name="anthropic",
@@ -80,7 +82,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
-        env_key="ANTHROPIC_API_KEY"
+        env_key="ANTHROPIC_API_KEY",
     ),
     "azure": ModelInfo(
         name="azure",
@@ -92,9 +94,8 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
-        env_key="AZURE_OPENAI_API_KEY"
+        env_key="AZURE_OPENAI_API_KEY",
     ),
-    
     # Domestic (China) Models
     "deepseek": ModelInfo(
         name="deepseek",
@@ -106,7 +107,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
-        env_key="DEEPSEEK_API_KEY"
+        env_key="DEEPSEEK_API_KEY",
     ),
     "qwen": ModelInfo(
         name="qwen",
@@ -118,7 +119,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
-        env_key="DASHSCOPE_API_KEY"
+        env_key="DASHSCOPE_API_KEY",
     ),
     "qwen-plus": ModelInfo(
         name="qwen-plus",
@@ -130,7 +131,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
-        env_key="DASHSCOPE_API_KEY"
+        env_key="DASHSCOPE_API_KEY",
     ),
     "zhipu": ModelInfo(
         name="zhipu",
@@ -142,7 +143,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
-        env_key="ZHIPU_API_KEY"
+        env_key="ZHIPU_API_KEY",
     ),
     "moonshot": ModelInfo(
         name="moonshot",
@@ -154,7 +155,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
-        env_key="MOONSHOT_API_KEY"
+        env_key="MOONSHOT_API_KEY",
     ),
     "baichuan": ModelInfo(
         name="baichuan",
@@ -166,7 +167,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
-        env_key="BAICHUAN_API_KEY"
+        env_key="BAICHUAN_API_KEY",
     ),
     "doubao": ModelInfo(
         name="doubao",
@@ -178,9 +179,8 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
-        env_key="ARK_API_KEY"
+        env_key="ARK_API_KEY",
     ),
-    
     # Custom/Local
     "custom": ModelInfo(
         name="custom",
@@ -192,7 +192,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
-        env_key="OPENAI_API_KEY"
+        env_key="OPENAI_API_KEY",
     ),
     "ollama": ModelInfo(
         name="ollama",
@@ -204,7 +204,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
-        env_key=""
+        env_key="",
     ),
 }
 
@@ -221,30 +221,33 @@ def get_all_models() -> dict[str, ModelInfo]:
 
 def get_models_by_provider(provider: ModelProvider) -> dict[str, ModelInfo]:
     """Get models for a specific provider."""
-    return {
-        k: v for k, v in SUPPORTED_MODELS.items()
-        if v.provider == provider
-    }
+    return {k: v for k, v in SUPPORTED_MODELS.items() if v.provider == provider}
 
 
 def get_international_models() -> dict[str, ModelInfo]:
     """Get international (non-China) models."""
-    domestic = {ModelProvider.DEEPSEEK, ModelProvider.QWEN, ModelProvider.ZHIPU, 
-                ModelProvider.MOONSHOT, ModelProvider.BAICHUAN, ModelProvider.DOUBAO}
-    return {
-        k: v for k, v in SUPPORTED_MODELS.items()
-        if v.provider not in domestic
+    domestic = {
+        ModelProvider.DEEPSEEK,
+        ModelProvider.QWEN,
+        ModelProvider.ZHIPU,
+        ModelProvider.MOONSHOT,
+        ModelProvider.BAICHUAN,
+        ModelProvider.DOUBAO,
     }
+    return {k: v for k, v in SUPPORTED_MODELS.items() if v.provider not in domestic}
 
 
 def get_domestic_models() -> dict[str, ModelInfo]:
     """Get domestic (China) models."""
-    domestic = {ModelProvider.DEEPSEEK, ModelProvider.QWEN, ModelProvider.ZHIPU,
-                ModelProvider.MOONSHOT, ModelProvider.BAICHUAN, ModelProvider.DOUBAO}
-    return {
-        k: v for k, v in SUPPORTED_MODELS.items()
-        if v.provider in domestic
+    domestic = {
+        ModelProvider.DEEPSEEK,
+        ModelProvider.QWEN,
+        ModelProvider.ZHIPU,
+        ModelProvider.MOONSHOT,
+        ModelProvider.BAICHUAN,
+        ModelProvider.DOUBAO,
     }
+    return {k: v for k, v in SUPPORTED_MODELS.items() if v.provider in domestic}
 
 
 def get_default_model() -> str:
@@ -255,33 +258,43 @@ def get_default_model() -> str:
 def check_api_key_configured(model_name: str) -> bool:
     """Check if API key is configured for a model."""
     import os
-    
+
     model_info = get_model_info(model_name)
-    if not model_info:
-        return False
     
+    # For custom/unknown models, consider configured if model name is provided
+    # (local models like Ollama don't need API keys)
+    if not model_info:
+        # Check if it looks like a local model (has file extension or specific patterns)
+        if ".gguf" in model_name or ":" in model_name:
+            return True
+        return False
+
+    # For Ollama/local models, no API key needed
+    if model_info.provider == ModelProvider.CUSTOM and not model_info.env_key:
+        return True
+
     # Check environment variable
     env_key = model_info.get_env_key()
     if env_key and os.environ.get(env_key):
         return True
-    
+
     # Check generic env vars
     if os.environ.get("PILOTCODE_API_KEY"):
         return True
     if os.environ.get("OPENAI_API_KEY"):
         return True
-    
+
     return False
 
 
 def get_model_from_env() -> tuple[str, str] | None:
     """Get model configuration from environment variables.
-    
+
     Returns:
         Tuple of (model_name, api_key) or None
     """
     import os
-    
+
     # Check for specific provider env vars first
     env_mappings = {
         "OPENAI_API_KEY": "openai",
@@ -294,42 +307,42 @@ def get_model_from_env() -> tuple[str, str] | None:
         "BAICHUAN_API_KEY": "baichuan",
         "ARK_API_KEY": "doubao",
     }
-    
+
     for env_var, model_name in env_mappings.items():
         api_key = os.environ.get(env_var)
         if api_key:
             return (model_name, api_key)
-    
+
     # Check for generic PILOTCODE env vars
     pilotcode_model = os.environ.get("PILOTCODE_MODEL")
     pilotcode_key = os.environ.get("PILOTCODE_API_KEY")
-    
+
     if pilotcode_key:
         return (pilotcode_model or "custom", pilotcode_key)
-    
+
     return None
 
 
 def format_model_list() -> str:
     """Format model list for display."""
     lines = []
-    
+
     lines.append("\n[bold cyan]International Models:[/bold cyan]")
     for key, info in get_international_models().items():
         if not info.base_url:  # Skip custom with no URL
             continue
         lines.append(f"  [green]{key:<15}[/green] - {info.display_name}")
         lines.append(f"    {info.description}")
-    
+
     lines.append("\n[bold cyan]Domestic (China) Models:[/bold cyan]")
     for key, info in get_domestic_models().items():
         lines.append(f"  [green]{key:<15}[/green] - {info.display_name}")
         lines.append(f"    {info.description}")
-    
+
     lines.append("\n[bold cyan]Local/Custom:[/bold cyan]")
     lines.append(f"  [green]{'ollama':<15}[/green] - Ollama (Local)")
     lines.append("    Local Ollama instance")
     lines.append(f"  [green]{'custom':<15}[/green] - Custom endpoint")
     lines.append("    Custom OpenAI-compatible API")
-    
+
     return "\n".join(lines)
