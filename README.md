@@ -8,14 +8,25 @@ This is a Python reimplementation of the Claude Code CLI tool, maintaining archi
 
 ## Quick Start
 
+📖 **详细指南请查看 [QUICKSTART.md](QUICKSTART.md)**
+
 ```bash
-# Run the demo
+# 1. 安装
+pip3 install -e .
+
+# 2. 配置 LLM（交互式向导）
+python3 -m pilotcode configure
+
+# 3. 运行
+python3 -m pilotcode
+```
+
+更多启动方式：
+```bash
+# 运行演示
 python3 full_demo.py
 
-# Run the CLI
-python3 -m pilotcode
-
-# Or use the run script
+# 或使用脚本
 ./run.sh
 ```
 

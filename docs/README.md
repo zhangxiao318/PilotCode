@@ -50,6 +50,7 @@
 
 | 文档 | 说明 |
 |------|------|
+| [QUICKSTART.md](guides/QUICKSTART.md) | **快速开始指南** - 5分钟上手 |
 | [SETUP_QWEN_API.md](guides/SETUP_QWEN_API.md) | Qwen API设置指南 |
 
 ### 📈 [progress/](progress/) - 进度文档
@@ -75,7 +76,7 @@
 
 ## 🔍 快速导航
 
-**新用户？** 从根目录的 [README.md](../README.md) 和 [STARTUP_GUIDE.md](../STARTUP_GUIDE.md) 开始。
+**新用户？** 从 [QUICKSTART.md](../QUICKSTART.md) 开始，5分钟快速上手。
 
 **开发者？** 查看 [architecture/](architecture/) 了解系统设计，[implementation/](implementation/) 了解实现细节。
 
