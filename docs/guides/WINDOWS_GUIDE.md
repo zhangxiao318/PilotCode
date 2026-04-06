@@ -67,7 +67,22 @@ uv run python -m pilotcode
 
 ## 运行方式
 
-### 方式一：使用 uv run（推荐）
+### 方式一：使用 pilotcode.cmd（Windows 推荐）
+
+项目根目录提供了 `pilotcode.cmd` 批处理脚本，自动处理虚拟环境和编码：
+
+```cmd
+# 直接双击运行，或在 CMD/PowerShell 中执行
+pilotcode
+
+# 启动 TUI 模式
+pilotcode --tui
+
+# 运行配置向导
+pilotcode configure
+```
+
+### 方式二：使用 uv run（开发推荐）
 
 ```powershell
 # 启动交互式 CLI
@@ -77,7 +92,7 @@ uv run python -m pilotcode
 uv run pilotcode
 ```
 
-### 方式二：使用 pip 安装后运行
+### 方式三：使用 pip 安装后运行
 
 ```powershell
 # 安装后直接使用
@@ -85,14 +100,11 @@ pip install -e .
 pilotcode
 ```
 
-### 方式三：使用提供的脚本
+### 方式四：使用 pilotcode.sh（Git Bash/WSL）
 
-```powershell
+```bash
 # 使用 pilotcode.sh 脚本（需安装 Git Bash 或使用 WSL）
 ./pilotcode.sh
-
-# 或者使用 full_demo.py 演示
-uv run python full_demo.py
 ```
 
 ## 支持的模型
