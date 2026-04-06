@@ -1,6 +1,7 @@
 """Bash tool for executing shell commands."""
 
 import asyncio
+import re
 import shlex
 import os
 from typing import Any
@@ -9,6 +10,57 @@ from pydantic import BaseModel, Field
 
 from .base import Tool, ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
+
+
+# Dangerous command patterns (inspired by NanoCoder)
+# These patterns could wreck the filesystem or leak secrets
+DANGEROUS_PATTERNS = [
+    # rm -rf on root directory specifically (not /tmp, /home, etc.)
+    (r"\brm\s+(-\w*)?-r\w*\s+/$", "recursive delete on root directory"),
+    (r"\brm\s+(-\w*)?-r\w*\s+~\s*$", "recursive delete on home directory"),
+    (r"\brm\s+(-\w*)?-r\w*\s+\$HOME", "recursive delete on home directory"),
+    # rm -rf / at the start or standalone
+    (r"\brm\s+(-\w*)?-rf\s+/(?:\s|$)", "force recursive delete on system directory"),
+    # Filesystem formatting
+    (r"\bmkfs\b", "format filesystem"),
+    # Raw disk writes
+    (r"\bdd\s+.*of=/dev/", "raw disk write"),
+    (r">\s*/dev/sd[a-z]", "overwrite block device"),
+    (r">\s*/dev/nvme", "overwrite block device"),
+    (r">\s*/dev/hd[a-z]", "overwrite block device"),
+    # Dangerous chmod (only root directory)
+    (r"\bchmod\s+(-R\s+)?777\s+/$", "chmod 777 on root"),
+    (r"\bchmod\s+(-R\s+)?777\s*/\s*$", "chmod 777 on root"),
+    # Fork bomb
+    (r":\(\)\s*\{.*:\|:.*\}", "fork bomb"),
+    # Piping downloads to bash
+    (r"\bcurl\b.*\|\s*(sudo\s+)?bash", "pipe curl to bash"),
+    (r"\bwget\b.*\|\s*(sudo\s+)?bash", "pipe wget to bash"),
+    # Home directory deletion variations
+    (r"\brm\s+(-\w*)?-rf\s+~\s*$", "force recursive delete on home directory"),
+    (r"\brm\s+(-\w*)?-rf\s+~/\s*$", "force recursive delete on home directory"),
+    # System config overwrite
+    (r">\s*/etc/(?:passwd|shadow|fstab|hosts)\s*$", "overwrite critical system file"),
+    # Format device
+    (r"\bformat\s+/dev/", "format device"),
+    # Remove all files in root
+    (r"\brm\s+(-\w*)?-rf\s+/\s*\*", "recursive delete all files in root"),
+]
+
+
+def check_dangerous_command(command: str) -> str | None:
+    """Check if a command is dangerous.
+    
+    Args:
+        command: The command to check
+        
+    Returns:
+        Warning message if dangerous, None if safe
+    """
+    for pattern, reason in DANGEROUS_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return f"Dangerous command blocked: {reason}"
+    return None
 
 
 class BashProgress(BaseModel):
@@ -32,6 +84,10 @@ class BashInput(BaseModel):
     run_in_background: bool = Field(
         default=False,
         description="Run command in background"
+    )
+    force: bool = Field(
+        default=False,
+        description="Force execution even if command appears dangerous (use with caution)"
     )
 
 
@@ -107,6 +163,20 @@ async def bash_call(
     on_progress: Any
 ) -> ToolResult[BashOutput]:
     """Execute bash command."""
+    # Check for dangerous commands (unless force flag is set)
+    if not input_data.force:
+        danger_warning = check_dangerous_command(input_data.command)
+        if danger_warning:
+            return ToolResult(
+                data=BashOutput(
+                    stdout="",
+                    stderr=f"⚠️  Blocked: {danger_warning}\n\nCommand: {input_data.command}\n\nIf you are certain this is intentional, you can modify the command to be more specific, or use the force parameter (not recommended).",
+                    exit_code=-1,
+                    command=input_data.command
+                ),
+                error=f"Dangerous command blocked: {danger_warning}"
+            )
+    
     # Check permissions
     permission = await can_use_tool("BashTool", input_data)
     if isinstance(permission, dict):
