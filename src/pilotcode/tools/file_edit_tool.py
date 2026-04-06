@@ -1,5 +1,6 @@
 """File edit tool for editing file contents with search/replace."""
 
+import difflib
 import os
 import re
 from pathlib import Path
@@ -27,6 +28,53 @@ class FileEditOutput(BaseModel):
     replacements_made: int
     original_content: str | None = None
     new_content: str | None = None
+    diff: str | None = None  # Unified diff format
+    error: str | None = None
+
+
+def _generate_unified_diff(
+    old_content: str,
+    new_content: str,
+    filename: str,
+    context_lines: int = 3,
+    max_diff_size: int = 3000
+) -> str:
+    """Generate a unified diff between old and new content.
+    
+    Args:
+        old_content: Original file content
+        new_content: Modified file content
+        filename: Name of the file for diff headers
+        context_lines: Number of context lines around changes
+        max_diff_size: Maximum diff size before truncation
+        
+    Returns:
+        Unified diff string (possibly truncated)
+    """
+    old_lines = old_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+    
+    # Ensure lines end with newline for proper diff
+    if old_lines and not old_lines[-1].endswith('\n'):
+        old_lines[-1] += '\n'
+    if new_lines and not new_lines[-1].endswith('\n'):
+        new_lines[-1] += '\n'
+    
+    diff = difflib.unified_diff(
+        old_lines,
+        new_lines,
+        fromfile=f"a/{filename}",
+        tofile=f"b/{filename}",
+        n=context_lines
+    )
+    
+    result = ''.join(diff)
+    
+    # Truncate enormous diffs
+    if len(result) > max_diff_size:
+        result = result[:max_diff_size - 50] + "\n... (diff truncated)\n"
+    
+    return result
 
 
 async def edit_file_content(
@@ -73,6 +121,14 @@ async def edit_file_content(
         new_content = original_content.replace(old_string, new_string)
         replacements_made = occurrences
         
+        # Generate unified diff
+        filename = path.name
+        diff = _generate_unified_diff(
+            original_content,
+            new_content,
+            filename
+        )
+        
         # Write back
         path.write_text(new_content, encoding='utf-8')
         
@@ -80,7 +136,8 @@ async def edit_file_content(
             file_path=str(path),
             replacements_made=replacements_made,
             original_content=original_content if replacements_made == 1 else None,
-            new_content=new_content if replacements_made == 1 else None
+            new_content=new_content if replacements_made == 1 else None,
+            diff=diff
         )
     except Exception as e:
         return FileEditOutput(
@@ -158,6 +215,24 @@ def render_file_edit_use(input_data: FileEditInput, options: dict[str, Any]) -> 
     return f"✏️  Editing {path.name}: '{old_preview}...' → '{new_preview}...'"
 
 
+def render_file_edit_result(
+    result: FileEditOutput,
+    messages: list[Any],
+    options: dict[str, Any]
+) -> str:
+    """Render file edit result for display.
+    
+    Shows the unified diff if available, otherwise a simple success message.
+    """
+    if result.error:
+        return f"❌ Error editing {Path(result.file_path).name}: {result.error}"
+    
+    if result.diff:
+        return f"✅ Edited {Path(result.file_path).name} ({result.replacements_made} replacement(s))\n\n{result.diff}"
+    
+    return f"✅ Edited {Path(result.file_path).name} ({result.replacements_made} replacement(s))"
+
+
 # Create the FileEdit tool
 FileEditTool = build_tool(
     name="FileEdit",
@@ -168,10 +243,12 @@ FileEditTool = build_tool(
     validate_input=file_edit_validate,
     aliases=["edit", "replace"],
     search_hint="Edit file with search/replace",
+    max_result_size_chars=50000,
     is_read_only=lambda _: False,
     is_destructive=lambda _: True,
     is_concurrency_safe=lambda _: False,
     render_tool_use_message=render_file_edit_use,
+    render_tool_result_message=render_file_edit_result,
 )
 
 # Register the tool
