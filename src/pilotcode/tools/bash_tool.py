@@ -4,12 +4,63 @@ import asyncio
 import re
 import shlex
 import os
+import sys
 from typing import Any
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
 from .base import Tool, ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
+
+
+def is_windows() -> bool:
+    """Check if running on Windows."""
+    return sys.platform == "win32"
+
+
+def translate_command_for_windows(command: str) -> str:
+    """Translate common Unix commands to Windows equivalents."""
+    if not is_windows():
+        return command
+
+    # Handle simple command translations
+    cmd_stripped = command.strip()
+
+    # pwd -> cd (Windows equivalent to print working directory)
+    if cmd_stripped == "pwd":
+        return "cd"
+
+    # seq N -> PowerShell equivalent
+    if re.match(r"^seq\s+\d+$", cmd_stripped):
+        n = cmd_stripped.split()[1]
+        return f"powershell -Command " + f'"for ($i = 1; $i -le {n}; $i++) {{ Write-Output $i }}"'
+
+    # seq START END -> PowerShell equivalent
+    if re.match(r"^seq\s+\d+\s+\d+$", cmd_stripped):
+        parts = cmd_stripped.split()
+        start, end = parts[1], parts[2]
+        return (
+            f"powershell -Command "
+            + f'"for ($i = {start}; $i -le {end}; $i++) {{ Write-Output $i }}"'
+        )
+
+    # sleep N -> PowerShell equivalent
+    if re.match(r"^sleep\s+\d+$", cmd_stripped):
+        n = cmd_stripped.split()[1]
+        return f"powershell -Command Start-Sleep -Seconds {n}"
+
+    # Handle pipe commands with tr (e.g., "echo 'hello world' | tr ' ' '-'")
+    if "|" in cmd_stripped and "tr" in cmd_stripped:
+        # Try to convert simple tr commands to PowerShell
+        # echo 'hello world' | tr ' ' '-' -> echo 'hello world' | ForEach-Object { $_ -replace ' ', '-' }
+        match = re.match(
+            r"echo\s+['\"](.+)['\"]\s*\|\s*tr\s+['\"](.)['\"]\s+['\"](.)['\"]", cmd_stripped
+        )
+        if match:
+            text, old_char, new_char = match.groups()
+            return f"powershell -Command \"echo '{text}' | ForEach-Object {{ $_ -replace '{old_char}', '{new_char}' }}\""
+
+    return command
 
 
 # Dangerous command patterns (inspired by NanoCoder)
@@ -50,10 +101,10 @@ DANGEROUS_PATTERNS = [
 
 def check_dangerous_command(command: str) -> str | None:
     """Check if a command is dangerous.
-    
+
     Args:
         command: The command to check
-        
+
     Returns:
         Warning message if dangerous, None if safe
     """
@@ -65,34 +116,30 @@ def check_dangerous_command(command: str) -> str | None:
 
 class BashProgress(BaseModel):
     """Progress for bash command execution."""
+
     stdout: str = ""
     stderr: str = ""
 
 
 class BashInput(BaseModel):
     """Input for Bash tool."""
+
     command: str = Field(description="The bash command to execute")
     timeout: int = Field(default=600, description="Timeout in seconds")
     description: str | None = Field(
-        default=None, 
-        description="Description of what the command does (for clarity)"
+        default=None, description="Description of what the command does (for clarity)"
     )
-    working_dir: str | None = Field(
-        default=None,
-        description="Working directory for the command"
-    )
-    run_in_background: bool = Field(
-        default=False,
-        description="Run command in background"
-    )
+    working_dir: str | None = Field(default=None, description="Working directory for the command")
+    run_in_background: bool = Field(default=False, description="Run command in background")
     force: bool = Field(
         default=False,
-        description="Force execution even if command appears dangerous (use with caution)"
+        description="Force execution even if command appears dangerous (use with caution)",
     )
 
 
 class BashOutput(BaseModel):
     """Output from Bash tool."""
+
     stdout: str
     stderr: str
     exit_code: int
@@ -100,17 +147,17 @@ class BashOutput(BaseModel):
 
 
 async def execute_bash(
-    command: str,
-    cwd: str | None = None,
-    timeout: int = 600,
-    env: dict[str, str] | None = None
+    command: str, cwd: str | None = None, timeout: int = 600, env: dict[str, str] | None = None
 ) -> BashOutput:
     """Execute a bash command."""
+    # Translate command for Windows compatibility
+    command = translate_command_for_windows(command)
+
     # Get current environment
     process_env = os.environ.copy()
     if env:
         process_env.update(env)
-    
+
     try:
         # Create subprocess
         process = await asyncio.create_subprocess_shell(
@@ -118,20 +165,17 @@ async def execute_bash(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
-            env=process_env
+            env=process_env,
         )
-        
+
         # Wait for completion with timeout
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(),
-            timeout=timeout
-        )
-        
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+
         return BashOutput(
-            stdout=stdout.decode('utf-8', errors='replace'),
-            stderr=stderr.decode('utf-8', errors='replace'),
+            stdout=stdout.decode("utf-8", errors="replace"),
+            stderr=stderr.decode("utf-8", errors="replace"),
             exit_code=process.returncode or 0,
-            command=command
+            command=command,
         )
     except asyncio.TimeoutError:
         # Kill the process if timeout
@@ -144,15 +188,10 @@ async def execute_bash(
             stdout="",
             stderr=f"Command timed out after {timeout} seconds",
             exit_code=-1,
-            command=command
+            command=command,
         )
     except Exception as e:
-        return BashOutput(
-            stdout="",
-            stderr=str(e),
-            exit_code=-1,
-            command=command
-        )
+        return BashOutput(stdout="", stderr=str(e), exit_code=-1, command=command)
 
 
 async def bash_call(
@@ -160,7 +199,7 @@ async def bash_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[BashOutput]:
     """Execute bash command."""
     # Check for dangerous commands (unless force flag is set)
@@ -172,38 +211,38 @@ async def bash_call(
                     stdout="",
                     stderr=f"⚠️  Blocked: {danger_warning}\n\nCommand: {input_data.command}\n\nIf you are certain this is intentional, you can modify the command to be more specific, or use the force parameter (not recommended).",
                     exit_code=-1,
-                    command=input_data.command
+                    command=input_data.command,
                 ),
-                error=f"Dangerous command blocked: {danger_warning}"
+                error=f"Dangerous command blocked: {danger_warning}",
             )
-    
+
     # Check permissions
     permission = await can_use_tool("BashTool", input_data)
     if isinstance(permission, dict):
         if permission.get("behavior") == "deny":
             return ToolResult(
-                data=BashOutput(stdout="", stderr="Permission denied", exit_code=-1, command=input_data.command),
-                error="Permission denied"
+                data=BashOutput(
+                    stdout="", stderr="Permission denied", exit_code=-1, command=input_data.command
+                ),
+                error="Permission denied",
             )
     elif hasattr(permission, "behavior") and permission.behavior == "deny":
         return ToolResult(
-            data=BashOutput(stdout="", stderr="Permission denied", exit_code=-1, command=input_data.command),
-            error="Permission denied"
+            data=BashOutput(
+                stdout="", stderr="Permission denied", exit_code=-1, command=input_data.command
+            ),
+            error="Permission denied",
         )
-    
+
     # Determine working directory
     cwd = input_data.working_dir
     if cwd is None and context.get_app_state:
         app_state = context.get_app_state()
-        cwd = getattr(app_state, 'cwd', os.getcwd())
-    
+        cwd = getattr(app_state, "cwd", os.getcwd())
+
     # Execute command
-    result = await execute_bash(
-        input_data.command,
-        cwd=cwd,
-        timeout=input_data.timeout
-    )
-    
+    result = await execute_bash(input_data.command, cwd=cwd, timeout=input_data.timeout)
+
     return ToolResult(data=result)
 
 
@@ -221,14 +260,42 @@ def is_read_only_command(command: str) -> bool:
     """Check if command is read-only (doesn't modify files)."""
     # List of read-only commands/patterns
     read_only_patterns = [
-        'ls', 'cat', 'echo', 'pwd', 'whoami', 'id', 'uname', 'date',
-        'head', 'tail', 'less', 'more', 'grep', 'find', 'which',
-        'ps', 'top', 'htop', 'df', 'du', 'free', 'uptime', 'env',
-        'git status', 'git log', 'git diff', 'git show', 'git branch',
-        'python --version', 'node --version', 'npm --version',
-        'curl -I', 'curl --head', 'wget --spider',
+        "ls",
+        "cat",
+        "echo",
+        "pwd",
+        "whoami",
+        "id",
+        "uname",
+        "date",
+        "head",
+        "tail",
+        "less",
+        "more",
+        "grep",
+        "find",
+        "which",
+        "ps",
+        "top",
+        "htop",
+        "df",
+        "du",
+        "free",
+        "uptime",
+        "env",
+        "git status",
+        "git log",
+        "git diff",
+        "git show",
+        "git branch",
+        "python --version",
+        "node --version",
+        "npm --version",
+        "curl -I",
+        "curl --head",
+        "wget --spider",
     ]
-    
+
     cmd_lower = command.strip().lower()
     for pattern in read_only_patterns:
         if cmd_lower.startswith(pattern.lower()):
