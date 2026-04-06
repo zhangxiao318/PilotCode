@@ -2,7 +2,7 @@
 
 This module provides package management commands:
 - /install - Install packages
-- /upgrade - Upgrade packages  
+- /upgrade - Upgrade packages
 - /uninstall - Uninstall packages
 - /list_packages - List installed packages
 
@@ -36,6 +36,7 @@ console = Console()
 
 class PackageManager(str, Enum):
     """Supported package managers."""
+
     PIP = "pip"
     NPM = "npm"
     YARN = "yarn"
@@ -48,6 +49,7 @@ class PackageManager(str, Enum):
 @dataclass
 class PackageInfo:
     """Information about a package."""
+
     name: str
     version: str
     latest_version: Optional[str] = None
@@ -66,21 +68,21 @@ def detect_package_manager(cwd: str) -> PackageManager:
         return PackageManager.PIP
     if os.path.exists(os.path.join(cwd, "Pipfile")):
         return PackageManager.PIP
-    
+
     # Check for Node.js
     if os.path.exists(os.path.join(cwd, "package.json")):
         if os.path.exists(os.path.join(cwd, "yarn.lock")):
             return PackageManager.YARN
         return PackageManager.NPM
-    
+
     # Check for Rust
     if os.path.exists(os.path.join(cwd, "Cargo.toml")):
         return PackageManager.CARGO
-    
+
     # Check for Go
     if os.path.exists(os.path.join(cwd, "go.mod")):
         return PackageManager.GO
-    
+
     return PackageManager.UNKNOWN
 
 
@@ -92,13 +94,13 @@ def run_pip_command(
 ) -> tuple[bool, str]:
     """Run pip command."""
     cmd = ["python", "-m", "pip", command]
-    
+
     if options:
         cmd.extend(options)
-    
+
     if packages:
         cmd.extend(packages)
-    
+
     try:
         result = subprocess.run(
             cmd,
@@ -107,13 +109,13 @@ def run_pip_command(
             text=True,
             timeout=300,
         )
-        
+
         output = result.stdout
         if result.stderr and "WARNING" not in result.stderr:
             output += "\n" + result.stderr
-        
+
         return result.returncode == 0, output
-    
+
     except subprocess.TimeoutExpired:
         return False, "Command timed out after 5 minutes"
     except Exception as e:
@@ -128,13 +130,13 @@ def run_npm_command(
 ) -> tuple[bool, str]:
     """Run npm command."""
     cmd = ["npm", command]
-    
+
     if options:
         cmd.extend(options)
-    
+
     if packages:
         cmd.extend(packages)
-    
+
     try:
         result = subprocess.run(
             cmd,
@@ -143,13 +145,13 @@ def run_npm_command(
             text=True,
             timeout=300,
         )
-        
+
         output = result.stdout
         if result.stderr:
             output += "\n" + result.stderr
-        
+
         return result.returncode == 0, output
-    
+
     except subprocess.TimeoutExpired:
         return False, "Command timed out after 5 minutes"
     except Exception as e:
@@ -164,13 +166,13 @@ def run_yarn_command(
 ) -> tuple[bool, str]:
     """Run yarn command."""
     cmd = ["yarn", command]
-    
+
     if options:
         cmd.extend(options)
-    
+
     if packages:
         cmd.extend(packages)
-    
+
     try:
         result = subprocess.run(
             cmd,
@@ -179,13 +181,13 @@ def run_yarn_command(
             text=True,
             timeout=300,
         )
-        
+
         output = result.stdout
         if result.stderr:
             output += "\n" + result.stderr
-        
+
         return result.returncode == 0, output
-    
+
     except subprocess.TimeoutExpired:
         return False, "Command timed out after 5 minutes"
     except Exception as e:
@@ -200,13 +202,13 @@ def run_cargo_command(
 ) -> tuple[bool, str]:
     """Run cargo command."""
     cmd = ["cargo", command]
-    
+
     if options:
         cmd.extend(options)
-    
+
     if packages:
         cmd.extend(packages)
-    
+
     try:
         result = subprocess.run(
             cmd,
@@ -215,13 +217,13 @@ def run_cargo_command(
             text=True,
             timeout=300,
         )
-        
+
         output = result.stdout
         if result.stderr:
             output += "\n" + result.stderr
-        
+
         return result.returncode == 0, output
-    
+
     except subprocess.TimeoutExpired:
         return False, "Command timed out after 5 minutes"
     except Exception as e:
@@ -236,13 +238,13 @@ def run_go_command(
 ) -> tuple[bool, str]:
     """Run go command."""
     cmd = ["go", command]
-    
+
     if options:
         cmd.extend(options)
-    
+
     if packages:
         cmd.extend(packages)
-    
+
     try:
         result = subprocess.run(
             cmd,
@@ -251,13 +253,13 @@ def run_go_command(
             text=True,
             timeout=300,
         )
-        
+
         output = result.stdout
         if result.stderr:
             output += "\n" + result.stderr
-        
+
         return result.returncode == 0, output
-    
+
     except subprocess.TimeoutExpired:
         return False, "Command timed out after 5 minutes"
     except Exception as e:
@@ -274,7 +276,7 @@ def get_installed_pip_packages(cwd: str) -> list[PackageInfo]:
             text=True,
             timeout=30,
         )
-        
+
         if result.returncode == 0:
             data = json.loads(result.stdout)
             return [
@@ -287,7 +289,7 @@ def get_installed_pip_packages(cwd: str) -> list[PackageInfo]:
             ]
     except Exception:
         pass
-    
+
     return []
 
 
@@ -301,7 +303,7 @@ def get_installed_npm_packages(cwd: str) -> list[PackageInfo]:
             text=True,
             timeout=30,
         )
-        
+
         if result.returncode == 0:
             data = json.loads(result.stdout)
             dependencies = data.get("dependencies", {})
@@ -315,17 +317,17 @@ def get_installed_npm_packages(cwd: str) -> list[PackageInfo]:
             ]
     except Exception:
         pass
-    
+
     return []
 
 
 async def install_command(args: list[str], context: CommandContext) -> str:
     """Install packages.
-    
+
     Usage: /install <package1> [package2] ... [--dev] [--global]
-    
+
     Automatically detects package manager based on project.
-    
+
     Examples:
       /install requests
       /install requests beautifulsoup4
@@ -347,13 +349,13 @@ Examples:
   /install lodash --dev
   /install --global typescript
 """
-    
+
     # Parse options
     packages = []
     options = []
     dev = False
     global_install = False
-    
+
     for arg in args:
         if arg == "--dev" or arg == "-D":
             dev = True
@@ -361,16 +363,16 @@ Examples:
             global_install = True
         elif not arg.startswith("-"):
             packages.append(arg)
-    
+
     if not packages:
         return "[red]No packages specified[/red]"
-    
+
     # Detect package manager
     manager = detect_package_manager(context.cwd)
-    
+
     if manager == PackageManager.UNKNOWN:
         return "[yellow]Could not detect package manager.[/yellow]\nSupported: pip, npm, yarn, cargo, go"
-    
+
     # Build options based on package manager
     if manager == PackageManager.PIP:
         if dev:
@@ -382,7 +384,7 @@ Examples:
             options.append("--save-dev")
         if global_install:
             options.append("--global")
-    
+
     # Run install
     with Progress(
         SpinnerColumn(),
@@ -390,7 +392,7 @@ Examples:
         console=console,
     ) as progress:
         task = progress.add_task(f"Installing {', '.join(packages)}...", total=None)
-        
+
         if manager == PackageManager.PIP:
             success, output = run_pip_command("install", packages, context.cwd, options)
         elif manager == PackageManager.NPM:
@@ -403,38 +405,43 @@ Examples:
             success, output = run_go_command("get", packages, context.cwd, options)
         else:
             return "[red]Unsupported package manager[/red]"
-        
+
         progress.update(task, completed=True)
-    
+
     # Display results
     if success:
         console.print(f"[green]✓ Successfully installed {len(packages)} package(s)[/green]")
         if output:
             # Show last few lines
-            lines = output.strip().split('\n')[-10:]
-            console.print(Panel('\n'.join(lines), title="Output", border_style="blue"))
+            lines = output.strip().split("\n")[-10:]
+            console.print(Panel("\n".join(lines), title="Output", border_style="blue"))
         return ""
     else:
         console.print(f"[red]✗ Installation failed[/red]")
         if output:
-            console.print(Panel(output[-2000:] if len(output) > 2000 else output, 
-                              title="Error", border_style="red"))
+            console.print(
+                Panel(
+                    output[-2000:] if len(output) > 2000 else output,
+                    title="Error",
+                    border_style="red",
+                )
+            )
         return ""
 
 
 async def upgrade_command(args: list[str], context: CommandContext) -> str:
     """Upgrade packages.
-    
+
     Usage: /upgrade [package1] [package2] ... [--all]
-    
+
     If no packages specified, shows outdated packages.
     Use --all to upgrade all packages.
-    
+
     Examples:
       /upgrade requests
       /upgrade requests beautifulsoup4
       /upgrade --all
-"""
+    """
     if args and args[0] in ["--help", "-h"]:
         return """[bold]Upgrade Command[/bold]
 
@@ -448,27 +455,27 @@ Examples:
   /upgrade requests beautifulsoup4
   /upgrade --all
 """
-    
+
     # Parse options
     packages = []
     upgrade_all = False
-    
+
     for arg in args:
         if arg == "--all" or arg == "-a":
             upgrade_all = True
         elif not arg.startswith("-"):
             packages.append(arg)
-    
+
     # Detect package manager
     manager = detect_package_manager(context.cwd)
-    
+
     if manager == PackageManager.UNKNOWN:
         return "[yellow]Could not detect package manager[/yellow]"
-    
+
     # If no packages and not --all, show outdated
     if not packages and not upgrade_all:
         return await _show_outdated_packages(manager, context.cwd)
-    
+
     # Run upgrade
     with Progress(
         SpinnerColumn(),
@@ -479,10 +486,12 @@ Examples:
             task = progress.add_task("Upgrading all packages...", total=None)
         else:
             task = progress.add_task(f"Upgrading {', '.join(packages)}...", total=None)
-        
+
         if manager == PackageManager.PIP:
             if upgrade_all:
-                success, output = run_pip_command("install", ["--upgrade"], context.cwd, ["-r", "requirements.txt"])
+                success, output = run_pip_command(
+                    "install", ["--upgrade"], context.cwd, ["-r", "requirements.txt"]
+                )
             else:
                 success, output = run_pip_command("install", packages, context.cwd, ["--upgrade"])
         elif manager == PackageManager.NPM:
@@ -507,9 +516,9 @@ Examples:
                 success, output = run_go_command("get", ["-u"] + packages, context.cwd)
         else:
             return "[red]Unsupported package manager[/red]"
-        
+
         progress.update(task, completed=True)
-    
+
     # Display results
     if success:
         if upgrade_all:
@@ -517,14 +526,19 @@ Examples:
         else:
             console.print(f"[green]✓ Successfully upgraded {len(packages)} package(s)[/green]")
         if output:
-            lines = output.strip().split('\n')[-10:]
-            console.print(Panel('\n'.join(lines), title="Output", border_style="blue"))
+            lines = output.strip().split("\n")[-10:]
+            console.print(Panel("\n".join(lines), title="Output", border_style="blue"))
         return ""
     else:
         console.print("[red]✗ Upgrade failed[/red]")
         if output:
-            console.print(Panel(output[-2000:] if len(output) > 2000 else output,
-                              title="Error", border_style="red"))
+            console.print(
+                Panel(
+                    output[-2000:] if len(output) > 2000 else output,
+                    title="Error",
+                    border_style="red",
+                )
+            )
         return ""
 
 
@@ -536,7 +550,7 @@ async def _show_outdated_packages(manager: PackageManager, cwd: str) -> str:
         console=console,
     ) as progress:
         task = progress.add_task("Checking for outdated packages...", total=None)
-        
+
         if manager == PackageManager.PIP:
             success, output = run_pip_command("list", None, cwd, ["--outdated"])
         elif manager == PackageManager.NPM:
@@ -544,13 +558,15 @@ async def _show_outdated_packages(manager: PackageManager, cwd: str) -> str:
         elif manager == PackageManager.YARN:
             success, output = run_yarn_command("outdated", None, cwd)
         elif manager == PackageManager.CARGO:
-            success, output = run_cargo_command("search", ["--limit", "0"], cwd)  # cargo doesn't have direct outdated
+            success, output = run_cargo_command(
+                "search", ["--limit", "0"], cwd
+            )  # cargo doesn't have direct outdated
             output = "Use 'cargo update --dry-run' to see updates"
         else:
             return "[yellow]Outdated check not supported for this package manager[/yellow]"
-        
+
         progress.update(task, completed=True)
-    
+
     if success:
         if output.strip():
             console.print(Panel(output, title="Outdated Packages", border_style="yellow"))
@@ -563,13 +579,13 @@ async def _show_outdated_packages(manager: PackageManager, cwd: str) -> str:
 
 async def uninstall_command(args: list[str], context: CommandContext) -> str:
     """Uninstall packages.
-    
+
     Usage: /uninstall <package1> [package2] ...
-    
+
     Examples:
       /uninstall requests
       /uninstall requests beautifulsoup4
-"""
+    """
     if not args or args[0] in ["--help", "-h"]:
         return """[bold]Uninstall Command[/bold]
 
@@ -579,23 +595,23 @@ Examples:
   /uninstall requests
   /uninstall requests beautifulsoup4
 """
-    
+
     packages = [arg for arg in args if not arg.startswith("-")]
-    
+
     if not packages:
         return "[red]No packages specified[/red]"
-    
+
     # Detect package manager
     manager = detect_package_manager(context.cwd)
-    
+
     if manager == PackageManager.UNKNOWN:
         return "[yellow]Could not detect package manager[/yellow]"
-    
+
     # Confirm uninstall
     console.print(f"[yellow]The following packages will be uninstalled:[/yellow]")
     for pkg in packages:
         console.print(f"  - {pkg}")
-    
+
     # Run uninstall
     with Progress(
         SpinnerColumn(),
@@ -603,7 +619,7 @@ Examples:
         console=console,
     ) as progress:
         task = progress.add_task(f"Uninstalling {', '.join(packages)}...", total=None)
-        
+
         if manager == PackageManager.PIP:
             success, output = run_pip_command("uninstall", packages, context.cwd, ["-y"])
         elif manager == PackageManager.NPM:
@@ -614,18 +630,21 @@ Examples:
             success, output = run_cargo_command("remove", packages, context.cwd)
         elif manager == PackageManager.GO:
             # Go doesn't have a direct uninstall, use mod tidy after removing import
-            success, output = False, "Go doesn't support direct package uninstall. Remove the import and run 'go mod tidy'"
+            success, output = (
+                False,
+                "Go doesn't support direct package uninstall. Remove the import and run 'go mod tidy'",
+            )
         else:
             return "[red]Unsupported package manager[/red]"
-        
+
         progress.update(task, completed=True)
-    
+
     # Display results
     if success:
         console.print(f"[green]✓ Successfully uninstalled {len(packages)} package(s)[/green]")
         if output:
-            lines = output.strip().split('\n')[-10:]
-            console.print(Panel('\n'.join(lines), title="Output", border_style="blue"))
+            lines = output.strip().split("\n")[-10:]
+            console.print(Panel("\n".join(lines), title="Output", border_style="blue"))
         return ""
     else:
         console.print("[red]✗ Uninstall failed[/red]")
@@ -636,13 +655,13 @@ Examples:
 
 async def list_packages_command(args: list[str], context: CommandContext) -> str:
     """List installed packages.
-    
+
     Usage: /list_packages [--outdated]
-    
+
     Examples:
       /list_packages
       /list_packages --outdated
-"""
+    """
     if args and args[0] in ["--help", "-h"]:
         return """[bold]List Packages Command[/bold]
 
@@ -655,22 +674,22 @@ Examples:
   /list_packages
   /list_packages --outdated
 """
-    
+
     show_outdated = "--outdated" in args or "-o" in args
-    
+
     # Detect package manager
     manager = detect_package_manager(context.cwd)
-    
+
     if manager == PackageManager.UNKNOWN:
         return "[yellow]Could not detect package manager[/yellow]"
-    
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         task = progress.add_task("Listing packages...", total=None)
-        
+
         # Get packages
         if manager == PackageManager.PIP:
             packages = get_installed_pip_packages(context.cwd)
@@ -678,51 +697,59 @@ Examples:
             packages = get_installed_npm_packages(context.cwd)
         else:
             packages = []
-        
+
         progress.update(task, completed=True)
-    
+
     # Display results
     if not packages:
         return "[dim]No packages found or listing not supported for this package manager[/dim]"
-    
+
     table = Table(title=f"Installed Packages ({manager.value})")
     table.add_column("Package", style="cyan")
     table.add_column("Version", style="green")
-    
+
     for pkg in sorted(packages, key=lambda p: p.name.lower()):
         table.add_row(pkg.name, pkg.version)
-    
+
     console.print(table)
     console.print(f"\n[dim]Total: {len(packages)} packages[/dim]")
-    
+
     return ""
 
 
 # Register commands
-register_command(CommandHandler(
-    name="install",
-    description="Install packages",
-    handler=install_command,
-    aliases=["i", "add"],
-))
+register_command(
+    CommandHandler(
+        name="install",
+        description="Install packages",
+        handler=install_command,
+        aliases=["i", "add"],
+    )
+)
 
-register_command(CommandHandler(
-    name="upgrade",
-    description="Upgrade packages",
-    handler=upgrade_command,
-    aliases=["up", "update"],
-))
+register_command(
+    CommandHandler(
+        name="upgrade",
+        description="Upgrade packages",
+        handler=upgrade_command,
+        aliases=["up", "update"],
+    )
+)
 
-register_command(CommandHandler(
-    name="uninstall",
-    description="Uninstall packages",
-    handler=uninstall_command,
-    aliases=["remove", "rm"],
-))
+register_command(
+    CommandHandler(
+        name="uninstall",
+        description="Uninstall packages",
+        handler=uninstall_command,
+        aliases=["remove", "rm"],
+    )
+)
 
-register_command(CommandHandler(
-    name="list_packages",
-    description="List installed packages",
-    handler=list_packages_command,
-    aliases=["packages", "list"],
-))
+register_command(
+    CommandHandler(
+        name="list_packages",
+        description="List installed packages",
+        handler=list_packages_command,
+        aliases=["packages", "list"],
+    )
+)

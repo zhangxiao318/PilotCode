@@ -22,6 +22,7 @@ from collections import defaultdict
 @dataclass
 class FunctionInfo:
     """Detailed function information."""
+
     name: str
     line_number: int
     args: list[str] = field(default_factory=list)
@@ -37,6 +38,7 @@ class FunctionInfo:
 @dataclass
 class ClassInfo:
     """Detailed class information."""
+
     name: str
     line_number: int
     docstring: str | None = None
@@ -49,6 +51,7 @@ class ClassInfo:
 @dataclass
 class ModuleInfo:
     """Module-level information."""
+
     file_path: str
     imports: list[dict] = field(default_factory=list)
     classes: list[ClassInfo] = field(default_factory=list)
@@ -60,6 +63,7 @@ class ModuleInfo:
 @dataclass
 class ProjectArchitecture:
     """High-level project architecture."""
+
     total_files: int
     total_classes: int
     total_functions: int
@@ -78,12 +82,12 @@ class ASTCodeAnalyzer:
     def analyze_file(self, file_path: str | Path) -> ModuleInfo | None:
         """Analyze a single Python file using AST."""
         path = Path(file_path)
-        
-        if not path.exists() or path.suffix != '.py':
+
+        if not path.exists() or path.suffix != ".py":
             return None
 
         try:
-            content = path.read_text(encoding='utf-8', errors='replace')
+            content = path.read_text(encoding="utf-8", errors="replace")
             tree = ast.parse(content)
         except SyntaxError:
             return None
@@ -91,7 +95,7 @@ class ASTCodeAnalyzer:
             return None
 
         module_info = ModuleInfo(file_path=str(path))
-        
+
         # Extract module docstring
         if ast.get_docstring(tree):
             module_info.docstring = ast.get_docstring(tree)
@@ -116,29 +120,24 @@ class ASTCodeAnalyzer:
         """Analyze import statements."""
         imports = []
         for alias in node.names:
-            imports.append({
-                'type': 'import',
-                'module': alias.name,
-                'as': alias.asname,
-                'line': node.lineno
-            })
+            imports.append(
+                {"type": "import", "module": alias.name, "as": alias.asname, "line": node.lineno}
+            )
         return imports
 
     def _analyze_import_from(self, node: ast.ImportFrom) -> dict:
         """Analyze from ... import statements."""
         return {
-            'type': 'from_import',
-            'module': node.module,
-            'names': [{'name': a.name, 'as': a.asname} for a in node.names],
-            'line': node.lineno
+            "type": "from_import",
+            "module": node.module,
+            "names": [{"name": a.name, "as": a.asname} for a in node.names],
+            "line": node.lineno,
         }
 
     def _analyze_class(self, node: ast.ClassDef) -> ClassInfo:
         """Analyze a class definition."""
         class_info = ClassInfo(
-            name=node.name,
-            line_number=node.lineno,
-            docstring=ast.get_docstring(node)
+            name=node.name, line_number=node.lineno, docstring=ast.get_docstring(node)
         )
 
         # Extract base classes
@@ -162,14 +161,16 @@ class ASTCodeAnalyzer:
 
         return class_info
 
-    def _analyze_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef, is_method: bool = False) -> FunctionInfo:
+    def _analyze_function(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, is_method: bool = False
+    ) -> FunctionInfo:
         """Analyze a function definition."""
         func_info = FunctionInfo(
             name=node.name,
             line_number=node.lineno,
             docstring=ast.get_docstring(node),
             is_async=isinstance(node, ast.AsyncFunctionDef),
-            is_method=is_method
+            is_method=is_method,
         )
 
         # Extract arguments
@@ -180,14 +181,16 @@ class ASTCodeAnalyzer:
             if arg.annotation:
                 arg_str += f": {self._get_annotation_name(arg.annotation)}"
             func_info.args.append(arg_str)
-        
+
         # Default values
-        defaults = [None] * (len(args.args) - len(args.defaults)) + [ast.dump(d) for d in args.defaults]
-        
+        defaults = [None] * (len(args.args) - len(args.defaults)) + [
+            ast.dump(d) for d in args.defaults
+        ]
+
         # *args
         if args.vararg:
             func_info.args.append(f"*{args.vararg.arg}")
-        
+
         # **kwargs
         if args.kwarg:
             func_info.args.append(f"**{args.kwarg.arg}")
@@ -231,7 +234,9 @@ class ASTCodeAnalyzer:
         elif isinstance(node, ast.Attribute):
             return f"{self._get_annotation_name(node.value)}.{node.attr}"
         elif isinstance(node, ast.Subscript):
-            return f"{self._get_annotation_name(node.value)}[{self._get_annotation_name(node.slice)}]"
+            return (
+                f"{self._get_annotation_name(node.value)}[{self._get_annotation_name(node.slice)}]"
+            )
         elif isinstance(node, ast.Constant):
             return repr(node.value)
         return "<unknown>"
@@ -260,10 +265,14 @@ class ASTCodeAnalyzer:
     def analyze_project(self, root_path: str | Path) -> ProjectArchitecture:
         """Analyze entire project structure."""
         root = Path(root_path)
-        
+
         # Find all Python files
         py_files = list(root.rglob("*.py"))
-        py_files = [f for f in py_files if not any(part.startswith('.') or part == '__pycache__' for part in f.parts)]
+        py_files = [
+            f
+            for f in py_files
+            if not any(part.startswith(".") or part == "__pycache__" for part in f.parts)
+        ]
 
         # Analyze each file
         for file_path in py_files:
@@ -276,16 +285,16 @@ class ASTCodeAnalyzer:
         # Find entry points (files with if __name__ == "__main__")
         entry_points = []
         for path, module in self._cache.items():
-            content = Path(path).read_text(encoding='utf-8', errors='replace')
-            if '__main__' in content:
+            content = Path(path).read_text(encoding="utf-8", errors="replace")
+            if "__main__" in content:
                 entry_points.append(path)
 
         # Identify core modules (most imported)
         import_count = defaultdict(int)
         for module in self._cache.values():
             for imp in module.imports:
-                if 'module' in imp:
-                    import_count[imp['module']] += 1
+                if "module" in imp:
+                    import_count[imp["module"]] += 1
 
         core_modules = sorted(import_count.keys(), key=lambda x: import_count[x], reverse=True)[:10]
 
@@ -294,29 +303,23 @@ class ASTCodeAnalyzer:
         for path, module in self._cache.items():
             module_name = Path(path).stem
             for imp in module.imports:
-                if 'module' in imp:
-                    dependency_graph[module_name].append(imp['module'])
+                if "module" in imp:
+                    dependency_graph[module_name].append(imp["module"])
 
         # Layer structure analysis
-        layer_structure = {
-            'commands': [],
-            'services': [],
-            'tools': [],
-            'models': [],
-            'utils': []
-        }
+        layer_structure = {"commands": [], "services": [], "tools": [], "models": [], "utils": []}
         for path in self._cache.keys():
             rel_path = str(Path(path).relative_to(root))
-            if 'command' in rel_path:
-                layer_structure['commands'].append(rel_path)
-            elif 'service' in rel_path:
-                layer_structure['services'].append(rel_path)
-            elif 'tool' in rel_path:
-                layer_structure['tools'].append(rel_path)
-            elif 'model' in rel_path or 'type' in rel_path:
-                layer_structure['models'].append(rel_path)
-            elif 'util' in rel_path:
-                layer_structure['utils'].append(rel_path)
+            if "command" in rel_path:
+                layer_structure["commands"].append(rel_path)
+            elif "service" in rel_path:
+                layer_structure["services"].append(rel_path)
+            elif "tool" in rel_path:
+                layer_structure["tools"].append(rel_path)
+            elif "model" in rel_path or "type" in rel_path:
+                layer_structure["models"].append(rel_path)
+            elif "util" in rel_path:
+                layer_structure["utils"].append(rel_path)
 
         return ProjectArchitecture(
             total_files=len(py_files),
@@ -325,13 +328,13 @@ class ASTCodeAnalyzer:
             entry_points=entry_points,
             core_modules=core_modules,
             dependency_graph=dict(dependency_graph),
-            layer_structure=layer_structure
+            layer_structure=layer_structure,
         )
 
     def generate_architecture_report(self, root_path: str | Path) -> str:
         """Generate a comprehensive architecture report."""
         arch = self.analyze_project(root_path)
-        
+
         report = f"""# Project Architecture Analysis
 
 ## Statistics
@@ -347,7 +350,9 @@ class ASTCodeAnalyzer:
 
         report += "\n## Core Modules (Most Imported)\n"
         for module in arch.core_modules[:10]:
-            count = sum(1 for m in self._cache.values() for imp in m.imports if imp.get('module') == module)
+            count = sum(
+                1 for m in self._cache.values() for imp in m.imports if imp.get("module") == module
+            )
             report += f"- `{module}` (imported {count} times)\n"
 
         report += "\n## Layer Structure\n"
@@ -365,7 +370,7 @@ class ASTCodeAnalyzer:
             report += f"\n### {path}\n"
             if module.docstring:
                 report += f"> {module.docstring[:100]}...\n\n"
-            
+
             if module.classes:
                 report += "**Classes**:\n"
                 for cls in module.classes:
@@ -376,7 +381,7 @@ class ASTCodeAnalyzer:
                     if cls.bases:
                         report += f" (extends: {', '.join(cls.bases)})"
                     report += f": {methods_str}\n"
-            
+
             if module.functions:
                 report += "**Functions**:\n"
                 for func in module.functions[:5]:

@@ -8,17 +8,20 @@ from pydantic import BaseModel, Field
 
 class ContentBlock(BaseModel):
     """Base class for content blocks."""
+
     pass
 
 
 class TextBlock(ContentBlock):
     """Text content block."""
+
     type: Literal["text"] = "text"
     text: str
 
 
 class ToolUseBlock(ContentBlock):
     """Tool use block (model requests tool execution)."""
+
     type: Literal["tool_use"] = "tool_use"
     id: str
     name: str
@@ -27,6 +30,7 @@ class ToolUseBlock(ContentBlock):
 
 class ToolResultBlock(ContentBlock):
     """Tool result block (tool execution result)."""
+
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
     content: str | list[ContentBlock]
@@ -35,36 +39,42 @@ class ToolResultBlock(ContentBlock):
 
 class ImageBlock(ContentBlock):
     """Image content block."""
+
     type: Literal["image"] = "image"
     source: dict[str, Any]  # {type: "base64", media_type: str, data: str}
 
 
 class Message(BaseModel):
     """Base message class."""
+
     uuid: UUID = Field(default_factory=uuid4)
     timestamp: datetime = Field(default_factory=datetime.now)
 
 
 class UserMessage(Message):
     """User message."""
+
     type: Literal["user"] = "user"
     content: str | list[ContentBlock]
 
 
 class AssistantMessage(Message):
     """Assistant message."""
+
     type: Literal["assistant"] = "assistant"
     content: str | list[ContentBlock]
 
 
 class SystemMessage(Message):
     """System message."""
+
     type: Literal["system"] = "system"
     content: str
 
 
 class ToolUseMessage(Message):
     """Tool use message."""
+
     type: Literal["tool_use"] = "tool_use"
     tool_use_id: str
     name: str
@@ -73,6 +83,7 @@ class ToolUseMessage(Message):
 
 class ToolResultMessage(Message):
     """Tool result message."""
+
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
     content: str | dict[str, Any]
@@ -81,6 +92,7 @@ class ToolResultMessage(Message):
 
 class ProgressMessage(Message):
     """Progress message for long-running operations."""
+
     type: Literal["progress"] = "progress"
     message: str
     progress: float | None = None  # 0.0 to 1.0
@@ -88,13 +100,22 @@ class ProgressMessage(Message):
 
 class AttachmentMessage(Message):
     """File attachment message."""
+
     type: Literal["attachment"] = "attachment"
     file_path: str
     content: str
 
 
 # Union type for all messages
-MessageType = UserMessage | AssistantMessage | SystemMessage | ToolUseMessage | ToolResultMessage | ProgressMessage | AttachmentMessage
+MessageType = (
+    UserMessage
+    | AssistantMessage
+    | SystemMessage
+    | ToolUseMessage
+    | ToolResultMessage
+    | ProgressMessage
+    | AttachmentMessage
+)
 
 
 _MESSAGE_TYPE_MAP: dict[str, type[Message]] = {

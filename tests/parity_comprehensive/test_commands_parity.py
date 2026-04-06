@@ -4,7 +4,6 @@ import pytest
 
 from pilotcode.commands.base import CommandContext, get_all_commands, process_user_input
 
-
 ALL_COMMANDS = get_all_commands()
 COMMAND_NAMES = sorted([c.name for c in ALL_COMMANDS])
 
@@ -19,13 +18,47 @@ class TestCommandDiscovery:
 
     def test_core_commands_present(self):
         core = {
-            "help", "clear", "quit", "config", "compact", "cost",
-            "diff", "doctor", "export", "history", "model",
-            "plan", "session", "status", "theme", "memory",
-            "branch", "commit", "git", "agents", "workflow",
-            "tasks", "skills", "tools", "lint", "format", "test",
-            "cat", "ls", "cd", "pwd", "edit", "mkdir", "rm",
-            "cp", "mv", "touch", "head", "tail", "wc", "find",
+            "help",
+            "clear",
+            "quit",
+            "config",
+            "compact",
+            "cost",
+            "diff",
+            "doctor",
+            "export",
+            "history",
+            "model",
+            "plan",
+            "session",
+            "status",
+            "theme",
+            "memory",
+            "branch",
+            "commit",
+            "git",
+            "agents",
+            "workflow",
+            "tasks",
+            "skills",
+            "tools",
+            "lint",
+            "format",
+            "test",
+            "cat",
+            "ls",
+            "cd",
+            "pwd",
+            "edit",
+            "mkdir",
+            "rm",
+            "cp",
+            "mv",
+            "touch",
+            "head",
+            "tail",
+            "wc",
+            "find",
         }
         missing = core - {c.name for c in ALL_COMMANDS}
         assert not missing, f"Missing core commands: {missing}"
@@ -73,4 +106,9 @@ class TestCommandExecution:
         except Exception as e:
             # Some commands may intentionally error on missing args;
             # we only fail on unexpected internal errors.
-            assert "usage" in str(e).lower() or "required" in str(e).lower() or "invalid" in str(e).lower() or str(e)
+            assert (
+                "usage" in str(e).lower()
+                or "required" in str(e).lower()
+                or "invalid" in str(e).lower()
+                or str(e)
+            )

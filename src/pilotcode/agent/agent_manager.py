@@ -11,6 +11,7 @@ from pathlib import Path
 
 class AgentStatus(Enum):
     """Agent execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     PAUSED = "paused"
@@ -22,6 +23,7 @@ class AgentStatus(Enum):
 @dataclass
 class AgentDefinition:
     """Agent definition/configuration."""
+
     name: str
     description: str
     system_prompt: str
@@ -30,7 +32,7 @@ class AgentDefinition:
     max_turns: int = 10
     color: str = "blue"
     icon: str = "🤖"
-    
+
     # Advanced settings
     temperature: float = 0.7
     auto_execute_tools: bool = True
@@ -40,6 +42,7 @@ class AgentDefinition:
 @dataclass
 class AgentMessage:
     """Message in agent conversation."""
+
     role: str  # system, user, assistant, tool
     content: str
     tool_calls: list[dict] | None = None
@@ -50,6 +53,7 @@ class AgentMessage:
 @dataclass
 class SubAgent:
     """Sub-agent instance with full state."""
+
     agent_id: str
     definition: AgentDefinition
     status: AgentStatus = field(default_factory=lambda: AgentStatus.PENDING)
@@ -65,7 +69,7 @@ class SubAgent:
     parent_id: str | None = None
     child_ids: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
@@ -85,7 +89,7 @@ class SubAgent:
             "child_ids": self.child_ids,
             "metadata": self.metadata,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "SubAgent":
         """Create from dictionary."""
@@ -113,6 +117,7 @@ class SubAgent:
 @dataclass
 class AgentWorkflow:
     """Multi-agent workflow definition."""
+
     workflow_id: str
     name: str
     description: str
@@ -120,7 +125,7 @@ class AgentWorkflow:
     steps: list[dict] = field(default_factory=list)
     status: AgentStatus = field(default_factory=lambda: AgentStatus.PENDING)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    
+
     def to_dict(self) -> dict:
         return {
             "workflow_id": self.workflow_id,
@@ -245,59 +250,60 @@ Use <complete> when you have a good understanding.""",
 
 class AgentManager:
     """Enhanced manager for sub-agents with persistence."""
-    
+
     def __init__(self, storage_dir: str | None = None):
         self.agents: dict[str, SubAgent] = {}
         self.workflows: dict[str, AgentWorkflow] = {}
         self._callbacks: list[Callable[[str, SubAgent], None]] = []
-        
+
         # Set up storage
         if storage_dir:
             self.storage_dir = Path(storage_dir)
         else:
             from platformdirs import user_data_dir
+
             app_dir = Path(user_data_dir("pilotcode"))
             self.storage_dir = app_dir / "agents"
-        
+
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Load persisted agents
         self._load_all()
-    
+
     def _agent_path(self, agent_id: str) -> Path:
         """Get storage path for agent."""
         return self.storage_dir / f"{agent_id}.json"
-    
+
     def _workflow_path(self, workflow_id: str) -> Path:
         """Get storage path for workflow."""
         return self.storage_dir / f"workflow_{workflow_id}.json"
-    
+
     def _save_agent(self, agent: SubAgent):
         """Save agent to disk."""
         path = self._agent_path(agent.agent_id)
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(agent.to_dict(), f, indent=2)
-    
+
     def _load_all(self):
         """Load all persisted agents."""
         if not self.storage_dir.exists():
             return
-        
+
         for path in self.storage_dir.glob("*.json"):
             if path.name.startswith("workflow_"):
                 continue
             try:
-                with open(path, 'r') as f:
+                with open(path, "r") as f:
                     data = json.load(f)
                 agent = SubAgent.from_dict(data)
                 self.agents[agent.agent_id] = agent
             except Exception:
                 pass
-    
+
     def register_callback(self, callback: Callable[[str, SubAgent], None]):
         """Register status change callback."""
         self._callbacks.append(callback)
-    
+
     def _notify(self, event: str, agent: SubAgent):
         """Notify callbacks."""
         for callback in self._callbacks:
@@ -305,7 +311,7 @@ class AgentManager:
                 callback(event, agent)
             except Exception:
                 pass
-    
+
     def create_agent(
         self,
         agent_type: str | None = None,
@@ -314,12 +320,12 @@ class AgentManager:
     ) -> SubAgent:
         """Create a new sub-agent."""
         agent_id = str(uuid.uuid4())[:8]
-        
+
         if agent_type and agent_type in ENHANCED_AGENT_DEFINITIONS:
             definition = ENHANCED_AGENT_DEFINITIONS[agent_type]
         else:
             definition = ENHANCED_AGENT_DEFINITIONS["coder"]
-        
+
         # Override name if provided
         if name:
             definition = AgentDefinition(
@@ -330,29 +336,29 @@ class AgentManager:
                 color=definition.color,
                 icon=definition.icon,
             )
-        
+
         agent = SubAgent(
             agent_id=agent_id,
             definition=definition,
             max_turns=definition.max_turns,
             parent_id=parent_id,
         )
-        
+
         self.agents[agent_id] = agent
         self._save_agent(agent)
-        
+
         # Register with parent
         if parent_id and parent_id in self.agents:
             self.agents[parent_id].child_ids.append(agent_id)
             self._save_agent(self.agents[parent_id])
-        
+
         self._notify("created", agent)
         return agent
-    
+
     def get_agent(self, agent_id: str) -> SubAgent | None:
         """Get agent by ID."""
         return self.agents.get(agent_id)
-    
+
     def list_agents(
         self,
         status: AgentStatus | None = None,
@@ -360,101 +366,101 @@ class AgentManager:
     ) -> list[SubAgent]:
         """List agents with optional filtering."""
         agents = list(self.agents.values())
-        
+
         if status:
             agents = [a for a in agents if a.status == status]
-        
+
         if agent_type:
             agents = [a for a in agents if a.definition.name == agent_type]
-        
+
         return agents
-    
+
     def update_agent(self, agent: SubAgent):
         """Update agent state."""
         self.agents[agent.agent_id] = agent
         self._save_agent(agent)
         self._notify("updated", agent)
-    
+
     def set_agent_status(self, agent_id: str, status: AgentStatus):
         """Set agent status."""
         if agent_id in self.agents:
             agent = self.agents[agent_id]
             agent.status = status
-            
+
             if status == AgentStatus.RUNNING and not agent.started_at:
                 agent.started_at = datetime.now().isoformat()
-            
+
             if status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
                 agent.completed_at = datetime.now().isoformat()
-            
+
             self._save_agent(agent)
             self._notify(f"status:{status.value}", agent)
-    
+
     def delete_agent(self, agent_id: str) -> bool:
         """Delete an agent."""
         if agent_id not in self.agents:
             return False
-        
+
         agent = self.agents.pop(agent_id)
-        
+
         # Delete storage
         path = self._agent_path(agent_id)
         if path.exists():
             path.unlink()
-        
+
         # Remove from parent's children
         if agent.parent_id and agent.parent_id in self.agents:
             parent = self.agents[agent.parent_id]
             if agent_id in parent.child_ids:
                 parent.child_ids.remove(agent_id)
                 self._save_agent(parent)
-        
+
         self._notify("deleted", agent)
         return True
-    
+
     def create_workflow(self, name: str, description: str) -> AgentWorkflow:
         """Create a new workflow."""
         workflow_id = str(uuid.uuid4())[:8]
-        
+
         workflow = AgentWorkflow(
             workflow_id=workflow_id,
             name=name,
             description=description,
         )
-        
+
         self.workflows[workflow_id] = workflow
         self._save_workflow(workflow)
-        
+
         return workflow
-    
+
     def _save_workflow(self, workflow: AgentWorkflow):
         """Save workflow to disk."""
         path = self._workflow_path(workflow.workflow_id)
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(workflow.to_dict(), f, indent=2)
-    
+
     def get_workflow(self, workflow_id: str) -> AgentWorkflow | None:
         """Get workflow by ID."""
         return self.workflows.get(workflow_id)
-    
+
     def add_agent_to_workflow(self, workflow_id: str, agent_id: str):
         """Add agent to workflow."""
         if workflow_id not in self.workflows:
             return False
-        
+
         workflow = self.workflows[workflow_id]
         if agent_id not in workflow.agent_ids:
             workflow.agent_ids.append(agent_id)
             self._save_workflow(workflow)
-        
+
         return True
-    
+
     def get_agent_tree(self, agent_id: str) -> dict:
         """Get agent tree structure."""
         agent = self.agents.get(agent_id)
         if not agent:
             return {}
-        
+
         return {
             "agent": agent.to_dict(),
             "children": [self.get_agent_tree(cid) for cid in agent.child_ids],

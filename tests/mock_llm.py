@@ -11,6 +11,7 @@ from pilotcode.utils.model_client import ModelClient, Message as APIMessage
 @dataclass
 class MockLLMResponse:
     """A single response from the mock LLM."""
+
     content: str = ""
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     finish_reason: str | None = "stop"

@@ -39,7 +39,7 @@ MAX_PER_PAGE = 100
 
 class GitHubError(Exception):
     """Base GitHub API error."""
-    
+
     def __init__(self, message: str, status_code: int = 0, response_body: Optional[dict] = None):
         super().__init__(message)
         self.status_code = status_code
@@ -48,12 +48,13 @@ class GitHubError(Exception):
 
 class GitHubAuthError(GitHubError):
     """Authentication error."""
+
     pass
 
 
 class GitHubRateLimitError(GitHubError):
     """Rate limit exceeded."""
-    
+
     def __init__(self, message: str, reset_at: datetime, **kwargs):
         super().__init__(message, **kwargs)
         self.reset_at = reset_at
@@ -61,17 +62,20 @@ class GitHubRateLimitError(GitHubError):
 
 class GitHubNotFoundError(GitHubError):
     """Resource not found."""
+
     pass
 
 
 class GitHubValidationError(GitHubError):
     """Validation failed."""
+
     pass
 
 
 # Enums
 class IssueState(str, Enum):
     """Issue/PR state."""
+
     OPEN = "open"
     CLOSED = "closed"
     ALL = "all"
@@ -79,6 +83,7 @@ class IssueState(str, Enum):
 
 class MergeMethod(str, Enum):
     """PR merge method."""
+
     MERGE = "merge"
     SQUASH = "squash"
     REBASE = "rebase"
@@ -86,6 +91,7 @@ class MergeMethod(str, Enum):
 
 class CheckStatus(str, Enum):
     """CI check status."""
+
     QUEUED = "queued"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -93,6 +99,7 @@ class CheckStatus(str, Enum):
 
 class CheckConclusion(str, Enum):
     """CI check conclusion."""
+
     SUCCESS = "success"
     FAILURE = "failure"
     NEUTRAL = "neutral"
@@ -104,6 +111,7 @@ class CheckConclusion(str, Enum):
 # Pydantic Models
 class User(BaseModel):
     """GitHub user."""
+
     login: str
     id: int
     avatar_url: str = ""
@@ -113,6 +121,7 @@ class User(BaseModel):
 
 class Label(BaseModel):
     """Issue/PR label."""
+
     name: str
     color: str = ""
     description: Optional[str] = None
@@ -120,6 +129,7 @@ class Label(BaseModel):
 
 class Milestone(BaseModel):
     """Issue/PR milestone."""
+
     number: int
     title: str
     state: str = "open"
@@ -128,6 +138,7 @@ class Milestone(BaseModel):
 
 class Repository(BaseModel):
     """GitHub repository."""
+
     id: int
     name: str
     full_name: str
@@ -155,6 +166,7 @@ class Repository(BaseModel):
 
 class Issue(BaseModel):
     """GitHub issue."""
+
     number: int
     title: str
     state: IssueState = IssueState.OPEN
@@ -172,6 +184,7 @@ class Issue(BaseModel):
 
 class PullRequest(BaseModel):
     """GitHub pull request."""
+
     number: int
     title: str
     state: IssueState = IssueState.OPEN
@@ -201,6 +214,7 @@ class PullRequest(BaseModel):
 
 class Comment(BaseModel):
     """Issue/PR comment."""
+
     id: int
     html_url: str = ""
     body: str = ""
@@ -211,6 +225,7 @@ class Comment(BaseModel):
 
 class Review(BaseModel):
     """Pull request review."""
+
     id: int
     html_url: str = ""
     state: str = ""  # APPROVED, CHANGES_REQUESTED, COMMENTED
@@ -221,6 +236,7 @@ class Review(BaseModel):
 
 class CheckRun(BaseModel):
     """GitHub Actions check run."""
+
     id: int
     name: str
     head_sha: str = ""
@@ -234,6 +250,7 @@ class CheckRun(BaseModel):
 
 class WorkflowRun(BaseModel):
     """GitHub Actions workflow run."""
+
     id: int
     name: str
     head_branch: str = ""
@@ -241,7 +258,9 @@ class WorkflowRun(BaseModel):
     run_number: int = 0
     event: str = ""
     status: str = ""  # queued, in_progress, completed
-    conclusion: Optional[str] = None  # success, failure, neutral, cancelled, skipped, timed_out, action_required
+    conclusion: Optional[str] = (
+        None  # success, failure, neutral, cancelled, skipped, timed_out, action_required
+    )
     workflow_id: int = 0
     html_url: str = ""
     created_at: Optional[datetime] = None
@@ -252,6 +271,7 @@ class WorkflowRun(BaseModel):
 
 class Release(BaseModel):
     """GitHub release."""
+
     id: int
     tag_name: str
     name: Optional[str] = None
@@ -267,15 +287,16 @@ class Release(BaseModel):
 
 class RateLimit(BaseModel):
     """GitHub API rate limit status."""
+
     limit: int = 0
     remaining: int = 0
     reset_timestamp: int = 0
     used: int = 0
-    
+
     @property
     def reset_at(self) -> datetime:
         return datetime.fromtimestamp(self.reset_timestamp)
-    
+
     @property
     def is_exceeded(self) -> bool:
         return self.remaining <= 0
@@ -283,6 +304,7 @@ class RateLimit(BaseModel):
 
 class FileChange(BaseModel):
     """File change in a PR."""
+
     filename: str
     status: str = ""  # added, removed, modified, renamed
     additions: int = 0
@@ -294,6 +316,7 @@ class FileChange(BaseModel):
 
 class CreateIssueRequest(BaseModel):
     """Request to create an issue."""
+
     title: str
     body: Optional[str] = None
     labels: Optional[list[str]] = None
@@ -303,6 +326,7 @@ class CreateIssueRequest(BaseModel):
 
 class CreatePullRequestRequest(BaseModel):
     """Request to create a PR."""
+
     title: str
     head: str  # Branch name
     base: str  # Branch name
@@ -313,6 +337,7 @@ class CreatePullRequestRequest(BaseModel):
 
 class CreateReviewRequest(BaseModel):
     """Request to create a review."""
+
     body: Optional[str] = None
     event: Optional[str] = None  # APPROVE, REQUEST_CHANGES, COMMENT
     comments: Optional[list[dict]] = None
@@ -320,6 +345,7 @@ class CreateReviewRequest(BaseModel):
 
 class MergePullRequestRequest(BaseModel):
     """Request to merge a PR."""
+
     commit_title: Optional[str] = None
     commit_message: Optional[str] = None
     sha: Optional[str] = None  # Expected head SHA
@@ -330,6 +356,7 @@ class MergePullRequestRequest(BaseModel):
 @dataclass
 class GitHubConfig:
     """GitHub service configuration."""
+
     token: Optional[str] = None
     base_url: str = GITHUB_API_BASE
     timeout: float = DEFAULT_TIMEOUT
@@ -343,17 +370,18 @@ class GitHubConfig:
 @dataclass
 class CacheEntry:
     """Cache entry with TTL."""
+
     data: Any
     expires_at: float
 
 
 class GitHubCache:
     """Simple in-memory cache for GitHub API responses."""
-    
+
     def __init__(self, default_ttl: float = 60.0):
         self._cache: dict[str, CacheEntry] = {}
         self._default_ttl = default_ttl
-    
+
     def get(self, key: str) -> Optional[Any]:
         """Get cached value if not expired."""
         entry = self._cache.get(key)
@@ -363,16 +391,16 @@ class GitHubCache:
             else:
                 del self._cache[key]
         return None
-    
+
     def set(self, key: str, data: Any, ttl: Optional[float] = None) -> None:
         """Cache data with TTL."""
         expires_at = time.time() + (ttl or self._default_ttl)
         self._cache[key] = CacheEntry(data=data, expires_at=expires_at)
-    
+
     def clear(self) -> None:
         """Clear all cached data."""
         self._cache.clear()
-    
+
     def delete(self, key: str) -> bool:
         """Delete a cache entry."""
         if key in self._cache:
@@ -383,69 +411,69 @@ class GitHubCache:
 
 class GitHubService:
     """GitHub API service client.
-    
+
     Usage:
         service = GitHubService(token="ghp_xxx")
-        
+
         # Get repository
         repo = await service.get_repository("owner", "repo")
-        
+
         # List issues
         async for issue in service.list_issues("owner", "repo"):
             print(issue.title)
-        
+
         # Create issue
         issue = await service.create_issue(
             "owner", "repo",
             CreateIssueRequest(title="Bug", body="Description")
         )
     """
-    
+
     def __init__(self, config: Optional[GitHubConfig] = None):
         self.config = config or GitHubConfig()
         self._client: Optional[httpx.AsyncClient] = None
         self._cache = GitHubCache(default_ttl=self.config.cache_ttl)
         self._rate_limit: Optional[RateLimit] = None
-        
+
         # Use token from config or environment
         self._token = self.config.token or os.getenv("GITHUB_TOKEN")
-    
+
     async def __aenter__(self) -> GitHubService:
         await self.connect()
         return self
-    
+
     async def __aexit__(self, *args) -> None:
         await self.close()
-    
+
     async def connect(self) -> None:
         """Initialize HTTP client."""
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        
+
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
-        
+
         self._client = httpx.AsyncClient(
             base_url=self.config.base_url,
             headers=headers,
             timeout=self.config.timeout,
             follow_redirects=True,
         )
-    
+
     async def close(self) -> None:
         """Close HTTP client."""
         if self._client:
             await self._client.aclose()
             self._client = None
-    
+
     def _ensure_client(self) -> httpx.AsyncClient:
         """Ensure client is connected."""
         if not self._client:
             raise GitHubError("GitHub service not connected. Use 'async with' or call connect()")
         return self._client
-    
+
     async def _request(
         self,
         method: str,
@@ -456,14 +484,14 @@ class GitHubService:
     ) -> Any:
         """Make API request with error handling and rate limit tracking."""
         client = self._ensure_client()
-        
+
         # Check cache for GET requests
         cache_key = f"{method}:{path}:{hash(str(params))}"
         if use_cache and method == "GET":
             cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
-        
+
         # Make request with retries
         last_error = None
         for attempt in range(self.config.max_retries):
@@ -474,10 +502,10 @@ class GitHubService:
                     json=json_data,
                     params=params,
                 )
-                
+
                 # Update rate limit info
                 self._update_rate_limit(response.headers)
-                
+
                 # Handle errors
                 if response.status_code == 401:
                     raise GitHubAuthError("Invalid or missing authentication")
@@ -500,7 +528,9 @@ class GitHubService:
                     )
                 elif response.status_code >= 500:
                     # Server error, retry
-                    last_error = GitHubError(f"Server error: {response.status_code}", status_code=response.status_code)
+                    last_error = GitHubError(
+                        f"Server error: {response.status_code}", status_code=response.status_code
+                    )
                     await asyncio.sleep(self.config.retry_delay * (attempt + 1))
                     continue
                 elif response.status_code >= 400:
@@ -509,28 +539,28 @@ class GitHubService:
                         status_code=response.status_code,
                         response_body=response.json() if response.text else None,
                     )
-                
+
                 # Success
                 if response.status_code == 204:  # No content
                     return None
-                
+
                 data = response.json() if response.text else None
-                
+
                 # Cache successful GET requests
                 if use_cache and method == "GET" and data is not None:
                     self._cache.set(cache_key, data)
-                
+
                 return data
-                
+
             except httpx.RequestError as e:
                 last_error = GitHubError(f"Request failed: {e}")
                 if attempt < self.config.max_retries - 1:
                     await asyncio.sleep(self.config.retry_delay * (attempt + 1))
                 continue
-        
+
         # All retries failed
         raise last_error or GitHubError("Max retries exceeded")
-    
+
     def _update_rate_limit(self, headers: httpx.Headers) -> None:
         """Update rate limit info from response headers."""
         if "x-ratelimit-limit" in headers:
@@ -540,7 +570,7 @@ class GitHubService:
                 reset_timestamp=int(headers.get("x-ratelimit-reset", 0)),
                 used=int(headers.get("x-ratelimit-used", 0)),
             )
-    
+
     async def _paginate(
         self,
         path: str,
@@ -551,24 +581,24 @@ class GitHubService:
         params = params or {}
         params["per_page"] = per_page or self.config.per_page
         page = 1
-        
+
         while True:
             params["page"] = page
             data = await self._request("GET", path, params=params)
-            
+
             if not data or not isinstance(data, list):
                 break
-            
+
             for item in data:
                 yield item
-            
+
             if len(data) < params["per_page"]:
                 break
-            
+
             page += 1
-    
+
     # Rate Limit
-    
+
     async def get_rate_limit(self) -> RateLimit:
         """Get current rate limit status."""
         data = await self._request("GET", "/rate_limit")
@@ -580,18 +610,18 @@ class GitHubService:
             used=core.get("used", 0),
         )
         return self._rate_limit
-    
+
     def get_cached_rate_limit(self) -> Optional[RateLimit]:
         """Get cached rate limit info."""
         return self._rate_limit
-    
+
     # Repository Operations
-    
+
     async def get_repository(self, owner: str, repo: str) -> Repository:
         """Get repository information."""
         data = await self._request("GET", f"/repos/{owner}/{repo}", use_cache=True)
         return Repository.model_validate(data)
-    
+
     async def list_repositories(
         self,
         username: Optional[str] = None,
@@ -604,16 +634,16 @@ class GitHubService:
             path = f"/users/{username}/repos"
         else:
             path = "/user/repos"
-        
+
         params = {
             "type": type_filter,
             "sort": sort,
             "direction": direction,
         }
-        
+
         async for data in self._paginate(path, params):
             yield Repository.model_validate(data)
-    
+
     async def list_org_repositories(
         self,
         org: str,
@@ -621,17 +651,19 @@ class GitHubService:
     ) -> AsyncIterator[Repository]:
         """List organization repositories."""
         params = {"type": type_filter}
-        
+
         async for data in self._paginate(f"/orgs/{org}/repos", params):
             yield Repository.model_validate(data)
-    
+
     # Issue Operations
-    
+
     async def get_issue(self, owner: str, repo: str, issue_number: int) -> Issue:
         """Get a specific issue."""
-        data = await self._request("GET", f"/repos/{owner}/{repo}/issues/{issue_number}", use_cache=True)
+        data = await self._request(
+            "GET", f"/repos/{owner}/{repo}/issues/{issue_number}", use_cache=True
+        )
         return Issue.model_validate(data)
-    
+
     async def list_issues(
         self,
         owner: str,
@@ -649,19 +681,19 @@ class GitHubService:
             "sort": sort,
             "direction": direction,
         }
-        
+
         if labels:
             params["labels"] = ",".join(labels)
         if assignee:
             params["assignee"] = assignee
         if creator:
             params["creator"] = creator
-        
+
         async for data in self._paginate(f"/repos/{owner}/{repo}/issues", params):
             # Skip pull requests (they're also returned in issues endpoint)
             if "pull_request" not in data:
                 yield Issue.model_validate(data)
-    
+
     async def create_issue(
         self,
         owner: str,
@@ -677,7 +709,7 @@ class GitHubService:
         # Invalidate cache
         self._cache.delete(f"GET:/repos/{owner}/{repo}/issues:*")
         return Issue.model_validate(data)
-    
+
     async def update_issue(
         self,
         owner: str,
@@ -701,7 +733,7 @@ class GitHubService:
             json_data["labels"] = labels
         if assignees is not None:
             json_data["assignees"] = assignees
-        
+
         data = await self._request(
             "PATCH",
             f"/repos/{owner}/{repo}/issues/{issue_number}",
@@ -710,7 +742,7 @@ class GitHubService:
         # Invalidate cache
         self._cache.delete(f"GET:/repos/{owner}/{repo}/issues/{issue_number}:*")
         return Issue.model_validate(data)
-    
+
     async def list_issue_comments(
         self,
         owner: str,
@@ -718,11 +750,9 @@ class GitHubService:
         issue_number: int,
     ) -> AsyncIterator[Comment]:
         """List comments on an issue."""
-        async for data in self._paginate(
-            f"/repos/{owner}/{repo}/issues/{issue_number}/comments"
-        ):
+        async for data in self._paginate(f"/repos/{owner}/{repo}/issues/{issue_number}/comments"):
             yield Comment.model_validate(data)
-    
+
     async def create_issue_comment(
         self,
         owner: str,
@@ -737,9 +767,9 @@ class GitHubService:
             json_data={"body": body},
         )
         return Comment.model_validate(data)
-    
+
     # Pull Request Operations
-    
+
     async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> PullRequest:
         """Get a specific pull request."""
         data = await self._request(
@@ -748,7 +778,7 @@ class GitHubService:
             use_cache=True,
         )
         return PullRequest.model_validate(data)
-    
+
     async def list_pull_requests(
         self,
         owner: str,
@@ -763,10 +793,10 @@ class GitHubService:
             "sort": sort,
             "direction": direction,
         }
-        
+
         async for data in self._paginate(f"/repos/{owner}/{repo}/pulls", params):
             yield PullRequest.model_validate(data)
-    
+
     async def create_pull_request(
         self,
         owner: str,
@@ -780,7 +810,7 @@ class GitHubService:
             json_data=request.model_dump(exclude_none=True),
         )
         return PullRequest.model_validate(data)
-    
+
     async def update_pull_request(
         self,
         owner: str,
@@ -804,7 +834,7 @@ class GitHubService:
             json_data["base"] = base
         if maintainer_can_modify is not None:
             json_data["maintainer_can_modify"] = maintainer_can_modify
-        
+
         data = await self._request(
             "PATCH",
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
@@ -812,7 +842,7 @@ class GitHubService:
         )
         self._cache.delete(f"GET:/repos/{owner}/{repo}/pulls/{pr_number}:*")
         return PullRequest.model_validate(data)
-    
+
     async def merge_pull_request(
         self,
         owner: str,
@@ -829,7 +859,7 @@ class GitHubService:
         )
         self._cache.delete(f"GET:/repos/{owner}/{repo}/pulls/{pr_number}:*")
         return data
-    
+
     async def list_pull_request_files(
         self,
         owner: str,
@@ -837,11 +867,9 @@ class GitHubService:
         pr_number: int,
     ) -> AsyncIterator[FileChange]:
         """List files changed in a pull request."""
-        async for data in self._paginate(
-            f"/repos/{owner}/{repo}/pulls/{pr_number}/files"
-        ):
+        async for data in self._paginate(f"/repos/{owner}/{repo}/pulls/{pr_number}/files"):
             yield FileChange.model_validate(data)
-    
+
     async def list_reviews(
         self,
         owner: str,
@@ -849,11 +877,9 @@ class GitHubService:
         pr_number: int,
     ) -> AsyncIterator[Review]:
         """List reviews on a pull request."""
-        async for data in self._paginate(
-            f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
-        ):
+        async for data in self._paginate(f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews"):
             yield Review.model_validate(data)
-    
+
     async def create_review(
         self,
         owner: str,
@@ -868,9 +894,9 @@ class GitHubService:
             json_data=request.model_dump(exclude_none=True),
         )
         return Review.model_validate(data)
-    
+
     # Actions/CI Operations
-    
+
     async def list_workflow_runs(
         self,
         owner: str,
@@ -888,15 +914,15 @@ class GitHubService:
             params["event"] = event
         if status:
             params["status"] = status
-        
+
         if workflow_id:
             path = f"/repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs"
         else:
             path = f"/repos/{owner}/{repo}/actions/runs"
-        
+
         async for data in self._paginate(path, params):
             yield WorkflowRun.model_validate(data)
-    
+
     async def get_workflow_run(self, owner: str, repo: str, run_id: int) -> WorkflowRun:
         """Get a specific workflow run."""
         data = await self._request(
@@ -905,21 +931,21 @@ class GitHubService:
             use_cache=True,
         )
         return WorkflowRun.model_validate(data)
-    
+
     async def rerun_workflow(self, owner: str, repo: str, run_id: int) -> None:
         """Rerun a workflow."""
         await self._request(
             "POST",
             f"/repos/{owner}/{repo}/actions/runs/{run_id}/rerun",
         )
-    
+
     async def cancel_workflow(self, owner: str, repo: str, run_id: int) -> None:
         """Cancel a workflow run."""
         await self._request(
             "POST",
             f"/repos/{owner}/{repo}/actions/runs/{run_id}/cancel",
         )
-    
+
     async def list_check_runs(
         self,
         owner: str,
@@ -928,15 +954,15 @@ class GitHubService:
     ) -> AsyncIterator[CheckRun]:
         """List check runs for a ref."""
         params = {"ref": ref}
-        
+
         async for data in self._paginate(
             f"/repos/{owner}/{repo}/commits/{ref}/check-runs",
             params,
         ):
             yield CheckRun.model_validate(data)
-    
+
     # Release Operations
-    
+
     async def list_releases(
         self,
         owner: str,
@@ -945,7 +971,7 @@ class GitHubService:
         """List repository releases."""
         async for data in self._paginate(f"/repos/{owner}/{repo}/releases"):
             yield Release.model_validate(data)
-    
+
     async def get_release(self, owner: str, repo: str, release_id: int) -> Release:
         """Get a specific release."""
         data = await self._request(
@@ -954,7 +980,7 @@ class GitHubService:
             use_cache=True,
         )
         return Release.model_validate(data)
-    
+
     async def get_release_by_tag(self, owner: str, repo: str, tag: str) -> Release:
         """Get release by tag name."""
         data = await self._request(
@@ -963,7 +989,7 @@ class GitHubService:
             use_cache=True,
         )
         return Release.model_validate(data)
-    
+
     async def create_release(
         self,
         owner: str,
@@ -987,16 +1013,16 @@ class GitHubService:
             json_data["body"] = body
         if target_commitish:
             json_data["target_commitish"] = target_commitish
-        
+
         data = await self._request(
             "POST",
             f"/repos/{owner}/{repo}/releases",
             json_data=json_data,
         )
         return Release.model_validate(data)
-    
+
     # Search Operations
-    
+
     async def search_repositories(
         self,
         query: str,
@@ -1009,24 +1035,24 @@ class GitHubService:
             "sort": sort,
             "order": order,
         }
-        
+
         page = 1
         while True:
             params["page"] = page
             data = await self._request("GET", "/search/repositories", params=params)
-            
+
             items = data.get("items", [])
             if not items:
                 break
-            
+
             for item in items:
                 yield Repository.model_validate(item)
-            
+
             if len(items) < self.config.per_page:
                 break
-            
+
             page += 1
-    
+
     async def search_issues(
         self,
         query: str,
@@ -1039,30 +1065,30 @@ class GitHubService:
             "sort": sort,
             "order": order,
         }
-        
+
         page = 1
         while True:
             params["page"] = page
             data = await self._request("GET", "/search/issues", params=params)
-            
+
             items = data.get("items", [])
             if not items:
                 break
-            
+
             for item in items:
                 yield Issue.model_validate(item)
-            
+
             if len(items) < self.config.per_page:
                 break
-            
+
             page += 1
-    
+
     # Utility Methods
-    
+
     def clear_cache(self) -> None:
         """Clear the response cache."""
         self._cache.clear()
-    
+
     async def is_authenticated(self) -> bool:
         """Check if authenticated with GitHub."""
         if not self._token:

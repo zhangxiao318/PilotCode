@@ -9,20 +9,18 @@ from dataclasses import dataclass
 @dataclass
 class Theme:
     """Theme definition."""
+
     name: str
     colors: Dict[str, str]
-    
+
     @classmethod
     def from_dict(cls, name: str, data: Dict[str, Any]) -> "Theme":
-        return cls(
-            name=name,
-            colors=data.get("colors", {})
-        )
+        return cls(name=name, colors=data.get("colors", {}))
 
 
 class ThemeProvider:
     """Provides theme management for TUI."""
-    
+
     # Default themes embedded in code (MVP)
     DEFAULT_THEMES = {
         "default": {
@@ -60,39 +58,39 @@ class ThemeProvider:
                 "assistant-message": "#ffffff",
                 "tool-message": "#fff3cd",
             }
-        }
+        },
     }
-    
+
     def __init__(self):
         self._themes: Dict[str, Theme] = {}
         self._current_theme: str = "default"
         self._load_default_themes()
-    
+
     def _load_default_themes(self):
         """Load built-in themes."""
         for name, data in self.DEFAULT_THEMES.items():
             self._themes[name] = Theme.from_dict(name, data)
-    
+
     def get_theme(self, name: Optional[str] = None) -> Theme:
         """Get theme by name (or current theme)."""
         theme_name = name or self._current_theme
         return self._themes.get(theme_name, self._themes["default"])
-    
+
     def set_theme(self, name: str) -> bool:
         """Set current theme."""
         if name in self._themes:
             self._current_theme = name
             return True
         return False
-    
+
     def get_current_theme_name(self) -> str:
         """Get current theme name."""
         return self._current_theme
-    
+
     def list_themes(self) -> list[str]:
         """List available themes."""
         return list(self._themes.keys())
-    
+
     def get_css_variables(self) -> str:
         """Get Textual CSS for current theme."""
         theme = self.get_theme()

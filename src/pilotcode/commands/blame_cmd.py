@@ -8,17 +8,14 @@ async def blame_command(args: list[str], context: CommandContext) -> str:
     """Handle /blame command."""
     if not args:
         return "Usage: /blame <file>"
-    
+
     file_path = args[0]
-    
+
     try:
         result = subprocess.run(
-            ["git", "blame", file_path],
-            capture_output=True,
-            text=True,
-            cwd=context.cwd
+            ["git", "blame", file_path], capture_output=True, text=True, cwd=context.cwd
         )
-        
+
         if result.returncode == 0:
             if result.stdout:
                 lines = result.stdout.strip().split("\n")
@@ -34,13 +31,9 @@ async def blame_command(args: list[str], context: CommandContext) -> str:
                 return f"No blame info for {file_path}"
         else:
             return f"Error: {result.stderr}"
-    
+
     except Exception as e:
         return f"Error: {e}"
 
 
-register_command(CommandHandler(
-    name="blame",
-    description="Git blame file",
-    handler=blame_command
-))
+register_command(CommandHandler(name="blame", description="Git blame file", handler=blame_command))

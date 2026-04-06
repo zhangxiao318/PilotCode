@@ -16,9 +16,11 @@ from tests.mock_llm import MockLLMResponse
 class TestQueryEngineParity:
     @pytest.mark.asyncio
     async def test_streaming_text_response(self, mock_model_client, query_engine_factory):
-        mock_model_client.set_responses([
-            MockLLMResponse.with_text("Parity check passed."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_text("Parity check passed."),
+            ]
+        )
         engine = query_engine_factory()
         chunks = []
         async for result in engine.submit_message("Test"):
@@ -27,12 +29,16 @@ class TestQueryEngineParity:
         assert "Parity" in "".join(chunks)
 
     @pytest.mark.asyncio
-    async def test_tool_call_then_continue(self, mock_model_client, query_engine_factory, auto_allow_permissions):
+    async def test_tool_call_then_continue(
+        self, mock_model_client, query_engine_factory, auto_allow_permissions
+    ):
         tools = get_all_tools()
-        mock_model_client.set_responses([
-            MockLLMResponse.with_tool_call("Bash", {"command": "echo parity"}),
-            MockLLMResponse.with_text("Done."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_tool_call("Bash", {"command": "echo parity"}),
+                MockLLMResponse.with_text("Done."),
+            ]
+        )
         engine = query_engine_factory(tools=tools)
         tool_msgs = []
         async for result in engine.submit_message("Run bash"):
@@ -45,21 +51,31 @@ class TestQueryEngineParity:
                 assert "Done." in result.message.content
 
     @pytest.mark.asyncio
-    async def test_multiple_tool_calls_in_one_turn(self, mock_model_client, query_engine_factory, auto_allow_permissions):
+    async def test_multiple_tool_calls_in_one_turn(
+        self, mock_model_client, query_engine_factory, auto_allow_permissions
+    ):
         tools = get_all_tools()
-        mock_model_client.set_responses([
-            MockLLMResponse(
-                content="Running two commands.",
-                tool_calls=[
-                    {"id": "call_1", "type": "function",
-                     "function": {"name": "Bash", "arguments": '{"command": "echo a"}'}},
-                    {"id": "call_2", "type": "function",
-                     "function": {"name": "Bash", "arguments": '{"command": "echo b"}'}},
-                ],
-                finish_reason="tool_calls",
-            ),
-            MockLLMResponse.with_text("Finished both."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse(
+                    content="Running two commands.",
+                    tool_calls=[
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "Bash", "arguments": '{"command": "echo a"}'},
+                        },
+                        {
+                            "id": "call_2",
+                            "type": "function",
+                            "function": {"name": "Bash", "arguments": '{"command": "echo b"}'},
+                        },
+                    ],
+                    finish_reason="tool_calls",
+                ),
+                MockLLMResponse.with_text("Finished both."),
+            ]
+        )
         engine = query_engine_factory(tools=tools)
         tool_msgs = []
         async for result in engine.submit_message("Run two"):
@@ -69,10 +85,12 @@ class TestQueryEngineParity:
 
     @pytest.mark.asyncio
     async def test_message_history_accumulates(self, mock_model_client, query_engine_factory):
-        mock_model_client.set_responses([
-            MockLLMResponse.with_text("First."),
-            MockLLMResponse.with_text("Second."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_text("First."),
+                MockLLMResponse.with_text("Second."),
+            ]
+        )
         engine = query_engine_factory()
         async for _ in engine.submit_message("A"):
             pass
@@ -88,6 +106,7 @@ class TestToolOrchestrationParity:
     @pytest.mark.asyncio
     async def test_read_only_tools_are_concurrency_safe(self, auto_allow_permissions):
         from pilotcode.tools.registry import get_tool_by_name
+
         file_read = get_tool_by_name("FileRead")
         glob_tool = get_tool_by_name("Glob")
         # These should report concurrency-safe
@@ -97,6 +116,7 @@ class TestToolOrchestrationParity:
     @pytest.mark.asyncio
     async def test_write_tools_are_not_concurrency_safe(self, auto_allow_permissions):
         from pilotcode.tools.registry import get_tool_by_name
+
         file_write = get_tool_by_name("FileWrite")
         bash = get_tool_by_name("Bash")
         # Use dummy valid inputs where possible; None safety is also tested
@@ -112,17 +132,26 @@ class TestToolOrchestrationParity:
 class TestPermissionParity:
     def test_permission_levels_exist(self):
         from pilotcode.permissions.permission_manager import PermissionLevel
-        levels = {PermissionLevel.ASK, PermissionLevel.ALLOW, PermissionLevel.ALWAYS_ALLOW, PermissionLevel.DENY, PermissionLevel.NEVER_ALLOW}
+
+        levels = {
+            PermissionLevel.ASK,
+            PermissionLevel.ALLOW,
+            PermissionLevel.ALWAYS_ALLOW,
+            PermissionLevel.DENY,
+            PermissionLevel.NEVER_ALLOW,
+        }
         assert len(levels) >= 4
 
     def test_session_grant_persists(self):
         from pilotcode.permissions.permission_manager import PermissionManager, PermissionLevel
+
         pm = PermissionManager()
         pm.grant_session_permission("Bash")
         assert pm.check_permission("Bash", {})[0] is True
 
     def test_risk_levels_exist(self):
         from pilotcode.permissions.permission_manager import PermissionManager
+
         pm = PermissionManager()
         # Verify risk classification exists for known tools
         assert pm.get_tool_risk_level("FileRead") is not None
@@ -136,6 +165,7 @@ class TestPermissionParity:
 class TestHookParity:
     def test_hook_types_exist(self):
         from pilotcode.hooks.hook_manager import HookType
+
         expected = {
             HookType.PRE_TOOL_USE,
             HookType.POST_TOOL_USE,
@@ -149,10 +179,13 @@ class TestHookParity:
     @pytest.mark.asyncio
     async def test_hook_registration_and_execution(self):
         from pilotcode.hooks.hook_manager import HookManager, HookType
+
         hm = HookManager()
         called = []
+
         async def my_hook(ctx):
             called.append(ctx)
+
         hm.register(HookType.PRE_TOOL_USE, my_hook)
         await hm.execute_hooks(HookType.PRE_TOOL_USE, "dummy")
         assert len(called) == 1
@@ -160,9 +193,12 @@ class TestHookParity:
     @pytest.mark.asyncio
     async def test_pre_tool_use_can_deny(self):
         from pilotcode.hooks.hook_manager import HookManager, HookType
+
         hm = HookManager()
+
         async def deny_hook(ctx):
             return {"action": "deny", "reason": "test"}
+
         hm.register(HookType.PRE_TOOL_USE, deny_hook)
         result = await hm.execute_hooks(HookType.PRE_TOOL_USE, "dummy")
         # HookManager returns a HookResult aggregate; individual hooks may
@@ -176,12 +212,14 @@ class TestHookParity:
 class TestAgentParity:
     def test_all_builtin_agent_types_exist(self):
         from pilotcode.agent.agent_manager import ENHANCED_AGENT_DEFINITIONS
+
         expected = {"coder", "debugger", "explainer", "tester", "reviewer", "planner", "explorer"}
         assert set(ENHANCED_AGENT_DEFINITIONS.keys()) == expected
 
     def test_agent_persistence(self):
         import tempfile
         from pilotcode.agent.agent_manager import AgentManager, AgentStatus
+
         with tempfile.TemporaryDirectory() as tmp:
             mgr = AgentManager(storage_dir=tmp)
             agent = mgr.create_agent(agent_type="tester")
@@ -192,6 +230,7 @@ class TestAgentParity:
 
     def test_agent_parent_child_tree(self):
         from pilotcode.agent.agent_manager import AgentManager
+
         mgr = AgentManager()
         p = mgr.create_agent()
         c = mgr.create_agent(parent_id=p.agent_id)
@@ -207,29 +246,36 @@ class TestServiceGaps:
 
     def test_session_persistence_exists(self):
         from pilotcode.query_engine import QueryEngine
+
         assert hasattr(QueryEngine, "save_session") and hasattr(QueryEngine, "load_session")
 
     def test_auto_compact_exists(self):
         from pilotcode.query_engine import QueryEngineConfig
+
         assert hasattr(QueryEngineConfig, "auto_compact")
 
     def test_token_counting_exists(self):
         from pilotcode.query_engine import QueryEngine
+
         assert hasattr(QueryEngine, "count_tokens")
 
     def test_headless_mode_exists(self):
         from pilotcode.components.repl import run_headless
+
         assert callable(run_headless)
 
     def test_mcp_server_management_exists(self):
         from pilotcode.commands.base import get_all_commands
+
         names = {c.name for c in get_all_commands()}
         assert "mcp-add" in names or "mcp-remove" in names
 
     def test_cost_tracking_wired(self):
         from pilotcode.query_engine import QueryEngine
+
         assert hasattr(QueryEngine, "track_cost")
 
     def test_tool_result_caching_exists(self):
         from pilotcode.query_engine import QueryEngineConfig
+
         assert hasattr(QueryEngineConfig, "cache_tool_results")

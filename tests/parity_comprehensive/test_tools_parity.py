@@ -13,7 +13,6 @@ from pilotcode.tools.base import ToolUseContext
 from pilotcode.tools.registry import get_all_tools, get_tool_by_name
 from tests.parity_comprehensive.conftest import allow_all
 
-
 # ---------------------------------------------------------------------------
 # Discovery & metadata
 # ---------------------------------------------------------------------------
@@ -38,13 +37,32 @@ class TestToolDiscovery:
 
     def test_core_tools_present(self):
         core = {
-            "Bash", "FileRead", "FileWrite", "FileEdit",
-            "Glob", "Grep", "WebSearch", "WebFetch",
-            "AskUser", "TodoWrite", "Agent", "Brief",
-            "NotebookEdit", "EnterPlanMode", "ExitPlanMode",
-            "TaskCreate", "TaskGet", "TaskList", "TaskStop",
-            "GitStatus", "GitDiff", "GitLog", "GitBranch",
-            "Config", "PowerShell", "ToolSearch",
+            "Bash",
+            "FileRead",
+            "FileWrite",
+            "FileEdit",
+            "Glob",
+            "Grep",
+            "WebSearch",
+            "WebFetch",
+            "AskUser",
+            "TodoWrite",
+            "Agent",
+            "Brief",
+            "NotebookEdit",
+            "EnterPlanMode",
+            "ExitPlanMode",
+            "TaskCreate",
+            "TaskGet",
+            "TaskList",
+            "TaskStop",
+            "GitStatus",
+            "GitDiff",
+            "GitLog",
+            "GitBranch",
+            "Config",
+            "PowerShell",
+            "ToolSearch",
         }
         missing = core - {t.name for t in ALL_TOOLS}
         assert not missing, f"Missing core tools: {missing}"
@@ -81,11 +99,14 @@ class TestFileTools:
     async def test_file_edit_replaces_string(self, tmp_path):
         path = str(tmp_path / "edit.txt")
         Path(path).write_text("old content")
-        result = await allow_all("FileEdit", {
-            "file_path": path,
-            "old_string": "old",
-            "new_string": "new",
-        })
+        result = await allow_all(
+            "FileEdit",
+            {
+                "file_path": path,
+                "old_string": "old",
+                "new_string": "new",
+            },
+        )
         assert "new" in Path(path).read_text()
 
     @pytest.mark.asyncio
@@ -93,19 +114,28 @@ class TestFileTools:
         nb_path = str(tmp_path / "test.ipynb")
         initial = {
             "cells": [
-                {"cell_type": "code", "source": ["print(1)"], "outputs": [], "metadata": {}, "execution_count": 1}
+                {
+                    "cell_type": "code",
+                    "source": ["print(1)"],
+                    "outputs": [],
+                    "metadata": {},
+                    "execution_count": 1,
+                }
             ],
             "metadata": {},
             "nbformat": 4,
             "nbformat_minor": 4,
         }
         Path(nb_path).write_text(json.dumps(initial))
-        result = await allow_all("NotebookEdit", {
-            "notebook_path": nb_path,
-            "action": "edit_cell",
-            "cell_index": 0,
-            "new_source": "print(2)",
-        })
+        result = await allow_all(
+            "NotebookEdit",
+            {
+                "notebook_path": nb_path,
+                "action": "edit_cell",
+                "cell_index": 0,
+                "new_source": "print(2)",
+            },
+        )
         data = json.loads(Path(nb_path).read_text())
         assert len(data["cells"]) == 1
         assert "print(2)" in str(data["cells"][0]["source"])
@@ -151,11 +181,14 @@ class TestSearchTools:
     @pytest.mark.asyncio
     async def test_grep_finds_content(self, tmp_path):
         Path(tmp_path / "src.py").write_text("def parity(): pass\n")
-        result = await allow_all("Grep", {
-            "pattern": "parity",
-            "path": str(tmp_path),
-            "output_mode": "content",
-        })
+        result = await allow_all(
+            "Grep",
+            {
+                "pattern": "parity",
+                "path": str(tmp_path),
+                "output_mode": "content",
+            },
+        )
         assert result.data.num_matches >= 1
 
     @pytest.mark.asyncio
@@ -213,11 +246,14 @@ class TestGitTools:
 class TestAgentTools:
     @pytest.mark.asyncio
     async def test_agent_spawns_with_system_prompt(self):
-        result = await allow_all("Agent", {
-            "description": "Say hello",
-            "prompt": "Say hello",
-            "subagent_type": "coder",
-        })
+        result = await allow_all(
+            "Agent",
+            {
+                "description": "Say hello",
+                "prompt": "Say hello",
+                "subagent_type": "coder",
+            },
+        )
         # Agent tool returns a result object or agent info
         assert result.data is not None
 
@@ -225,6 +261,7 @@ class TestAgentTools:
     async def test_team_create_and_list(self):
         # Skip if Team tools are not available
         from pilotcode.tools.registry import get_tool_by_name
+
         if get_tool_by_name("TeamCreate") is None or get_tool_by_name("TeamList") is None:
             pytest.skip("Team tools not available")
         create = await allow_all("TeamCreate", {"name": "test_team", "members": []})
@@ -236,10 +273,13 @@ class TestAgentTools:
     @pytest.mark.asyncio
     async def test_send_and_receive_message(self):
         # Send a message
-        send = await allow_all("SendMessage", {
-            "to": "agent_123",
-            "content": "hello",
-        })
+        send = await allow_all(
+            "SendMessage",
+            {
+                "to": "agent_123",
+                "content": "hello",
+            },
+        )
         assert send.data is not None
         # Receive messages
         recv = await allow_all("ReceiveMessage", {"agent_id": "agent_123"})
@@ -264,7 +304,9 @@ class TestTaskTools:
 
     @pytest.mark.asyncio
     async def test_task_output_returns_logs(self):
-        create = await allow_all("TaskCreate", {"description": "echo output", "command": "echo output"})
+        create = await allow_all(
+            "TaskCreate", {"description": "echo output", "command": "echo output"}
+        )
         task_id = create.data.task_id
         # Wait a tiny bit for process to start
         await asyncio.sleep(0.2)
@@ -327,9 +369,9 @@ class TestUtilityTools:
 
     @pytest.mark.asyncio
     async def test_todo_write_returns_structured(self):
-        result = await allow_all("TodoWrite", {
-            "todos": [{"content": "item", "status": "in_progress"}]
-        })
+        result = await allow_all(
+            "TodoWrite", {"todos": [{"content": "item", "status": "in_progress"}]}
+        )
         assert result.data is not None
 
     @pytest.mark.asyncio

@@ -9,6 +9,7 @@ from .registry import register_tool
 
 class SyntheticOutputInput(BaseModel):
     """Input for SyntheticOutput tool."""
+
     content_type: str = Field(description="Type: code, text, json, markdown")
     description: str = Field(description="Description of what to generate")
     context: dict = Field(default_factory=dict, description="Additional context")
@@ -16,6 +17,7 @@ class SyntheticOutputInput(BaseModel):
 
 class SyntheticOutputOutput(BaseModel):
     """Output from SyntheticOutput tool."""
+
     content_type: str
     content: str
     generated: bool
@@ -26,16 +28,16 @@ async def synthetic_output_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[SyntheticOutputOutput]:
     """Generate synthetic output."""
-    
+
     # This would typically call an LLM to generate content
     # For now, return a placeholder/template
-    
+
     content_type = input_data.content_type
     description = input_data.description
-    
+
     if content_type == "code":
         content = f"""# {description}
 # TODO: Implement this functionality
@@ -70,12 +72,10 @@ Your content would be generated here based on the context and description.
 """
     else:
         content = f"Synthetic output for: {description}\n\nThis content was generated based on your request."
-    
-    return ToolResult(data=SyntheticOutputOutput(
-        content_type=content_type,
-        content=content,
-        generated=True
-    ))
+
+    return ToolResult(
+        data=SyntheticOutputOutput(content_type=content_type, content=content, generated=True)
+    )
 
 
 SyntheticOutputTool = build_tool(

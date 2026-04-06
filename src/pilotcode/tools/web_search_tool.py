@@ -9,12 +9,14 @@ from .registry import register_tool
 
 class WebSearchInput(BaseModel):
     """Input for WebSearch tool."""
+
     query: str = Field(description="Search query")
     limit: int = Field(default=5, description="Maximum number of results")
 
 
 class WebSearchResult(BaseModel):
     """Single search result."""
+
     title: str
     url: str
     snippet: str
@@ -22,6 +24,7 @@ class WebSearchResult(BaseModel):
 
 class WebSearchOutput(BaseModel):
     """Output from WebSearch tool."""
+
     results: list[WebSearchResult]
     query: str
 
@@ -31,25 +34,22 @@ async def web_search_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[WebSearchOutput]:
     """Perform web search."""
     # This is a placeholder - real implementation would use a search API
     # like Google Custom Search, Bing API, or DuckDuckGo
-    
+
     # Simulated results
     results = [
         WebSearchResult(
             title=f"Result for: {input_data.query}",
             url="https://example.com",
-            snippet="This is a simulated search result. In production, integrate with a real search API."
+            snippet="This is a simulated search result. In production, integrate with a real search API.",
         )
     ]
-    
-    return ToolResult(data=WebSearchOutput(
-        results=results,
-        query=input_data.query
-    ))
+
+    return ToolResult(data=WebSearchOutput(results=results, query=input_data.query))
 
 
 async def web_search_description(input_data: WebSearchInput, options: dict[str, Any]) -> str:

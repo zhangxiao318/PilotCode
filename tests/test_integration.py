@@ -15,9 +15,11 @@ class TestBasicConversation:
     @pytest.mark.asyncio
     async def test_simple_text_response(self, mock_model_client, query_engine_factory):
         """Engine returns a simple text response."""
-        mock_model_client.set_responses([
-            MockLLMResponse.with_text("Hello, world!"),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_text("Hello, world!"),
+            ]
+        )
 
         engine = query_engine_factory()
         chunks = []
@@ -32,10 +34,12 @@ class TestBasicConversation:
     @pytest.mark.asyncio
     async def test_multiple_turns_no_tools(self, mock_model_client, query_engine_factory):
         """Multiple user messages without tools."""
-        mock_model_client.set_responses([
-            MockLLMResponse.with_text("First reply"),
-            MockLLMResponse.with_text("Second reply"),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_text("First reply"),
+                MockLLMResponse.with_text("Second reply"),
+            ]
+        )
 
         engine = query_engine_factory()
 
@@ -53,15 +57,17 @@ class TestToolCallFlow:
     """Tests for single-tool and multi-tool execution flows."""
 
     @pytest.mark.asyncio
-    async def test_bash_tool_execution(self, mock_model_client, query_engine_factory, auto_allow_permissions):
+    async def test_bash_tool_execution(
+        self, mock_model_client, query_engine_factory, auto_allow_permissions
+    ):
         """LLM calls Bash tool, we execute it, and LLM responds to the result."""
         tools = get_all_tools()
-        mock_model_client.set_responses([
-            MockLLMResponse.with_tool_call(
-                "Bash", {"command": "echo integration_test"}
-            ),
-            MockLLMResponse.with_text("The output says integration_test"),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_tool_call("Bash", {"command": "echo integration_test"}),
+                MockLLMResponse.with_text("The output says integration_test"),
+            ]
+        )
 
         engine = query_engine_factory(tools=tools)
 
@@ -85,22 +91,29 @@ class TestToolCallFlow:
         assert mock_model_client.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_file_write_then_read(self, mock_model_client, query_engine_factory, auto_allow_permissions, temp_dir):
+    async def test_file_write_then_read(
+        self, mock_model_client, query_engine_factory, auto_allow_permissions, temp_dir
+    ):
         """LLM writes a file then reads it back."""
         tools = get_all_tools()
         test_file = str(temp_dir / "test_factorial.c")
 
-        mock_model_client.set_responses([
-            MockLLMResponse.with_tool_call(
-                "FileWrite",
-                {"file_path": test_file, "content": "int factorial(int n) { return n <= 1 ? 1 : n * factorial(n-1); }"},
-            ),
-            MockLLMResponse.with_tool_call(
-                "FileRead",
-                {"file_path": test_file},
-            ),
-            MockLLMResponse.with_text("The file contains a factorial function."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_tool_call(
+                    "FileWrite",
+                    {
+                        "file_path": test_file,
+                        "content": "int factorial(int n) { return n <= 1 ? 1 : n * factorial(n-1); }",
+                    },
+                ),
+                MockLLMResponse.with_tool_call(
+                    "FileRead",
+                    {"file_path": test_file},
+                ),
+                MockLLMResponse.with_text("The file contains a factorial function."),
+            ]
+        )
 
         engine = query_engine_factory(tools=tools, cwd=temp_dir)
 
@@ -115,8 +128,10 @@ class TestToolCallFlow:
 
         # We need to actually execute the tool to create the file
         from pilotcode.permissions.tool_executor import ToolExecutor
+
         executor = ToolExecutor()
         from pilotcode.tools.base import ToolUseContext
+
         ctx = ToolUseContext()
         exec_result = await executor.execute_tool_by_name(
             turn1_tools[0].name, turn1_tools[0].input, ctx
@@ -149,34 +164,38 @@ class TestToolCallFlow:
         assert mock_model_client.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_multi_tool_single_turn(self, mock_model_client, query_engine_factory, auto_allow_permissions):
+    async def test_multi_tool_single_turn(
+        self, mock_model_client, query_engine_factory, auto_allow_permissions
+    ):
         """LLM calls multiple tools in one turn."""
         tools = get_all_tools()
-        mock_model_client.set_responses([
-            MockLLMResponse(
-                content="I'll run two commands.",
-                tool_calls=[
-                    {
-                        "id": "call_001",
-                        "type": "function",
-                        "function": {
-                            "name": "Bash",
-                            "arguments": '{"command": "echo first"}',
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse(
+                    content="I'll run two commands.",
+                    tool_calls=[
+                        {
+                            "id": "call_001",
+                            "type": "function",
+                            "function": {
+                                "name": "Bash",
+                                "arguments": '{"command": "echo first"}',
+                            },
                         },
-                    },
-                    {
-                        "id": "call_002",
-                        "type": "function",
-                        "function": {
-                            "name": "Bash",
-                            "arguments": '{"command": "echo second"}',
+                        {
+                            "id": "call_002",
+                            "type": "function",
+                            "function": {
+                                "name": "Bash",
+                                "arguments": '{"command": "echo second"}',
+                            },
                         },
-                    },
-                ],
-                finish_reason="tool_calls",
-            ),
-            MockLLMResponse.with_text("Done with both commands."),
-        ])
+                    ],
+                    finish_reason="tool_calls",
+                ),
+                MockLLMResponse.with_text("Done with both commands."),
+            ]
+        )
 
         engine = query_engine_factory(tools=tools)
 
@@ -192,6 +211,7 @@ class TestToolCallFlow:
         # Execute both and feed back
         from pilotcode.permissions.tool_executor import ToolExecutor
         from pilotcode.tools.base import ToolUseContext
+
         executor = ToolExecutor()
         ctx = ToolUseContext()
 

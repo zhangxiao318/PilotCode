@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 from .base import Tool, ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
-
 CRON_FILE = os.path.expanduser("~/.local/share/pilotcode/cron.json")
 
 
@@ -22,7 +21,7 @@ def load_cron_jobs():
     """Load cron jobs."""
     if os.path.exists(CRON_FILE):
         try:
-            with open(CRON_FILE, 'r') as f:
+            with open(CRON_FILE, "r") as f:
                 return json.load(f)
         except:
             pass
@@ -32,12 +31,13 @@ def load_cron_jobs():
 def save_cron_jobs(jobs):
     """Save cron jobs."""
     ensure_cron_dir()
-    with open(CRON_FILE, 'w') as f:
+    with open(CRON_FILE, "w") as f:
         json.dump(jobs, f, indent=2)
 
 
 class CronCreateInput(BaseModel):
     """Input for CronCreate tool."""
+
     name: str = Field(description="Cron job name")
     command: str = Field(description="Command to execute")
     schedule: str = Field(description="Schedule expression (e.g., '0 9 * * *' for 9am daily)")
@@ -46,6 +46,7 @@ class CronCreateInput(BaseModel):
 
 class CronCreateOutput(BaseModel):
     """Output from CronCreate tool."""
+
     job_id: str
     name: str
     schedule: str
@@ -57,13 +58,13 @@ async def cron_create_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[CronCreateOutput]:
     """Create a cron job."""
     jobs = load_cron_jobs()
-    
+
     job_id = f"cron_{len(jobs) + 1}"
-    
+
     jobs[job_id] = {
         "name": input_data.name,
         "command": input_data.command,
@@ -72,26 +73,30 @@ async def cron_create_call(
         "created_at": datetime.now().isoformat(),
         "enabled": True,
         "last_run": None,
-        "run_count": 0
+        "run_count": 0,
     }
-    
+
     save_cron_jobs(jobs)
-    
-    return ToolResult(data=CronCreateOutput(
-        job_id=job_id,
-        name=input_data.name,
-        schedule=input_data.schedule,
-        message=f"Created cron job: {input_data.name} ({input_data.schedule})"
-    ))
+
+    return ToolResult(
+        data=CronCreateOutput(
+            job_id=job_id,
+            name=input_data.name,
+            schedule=input_data.schedule,
+            message=f"Created cron job: {input_data.name} ({input_data.schedule})",
+        )
+    )
 
 
 class CronDeleteInput(BaseModel):
     """Input for CronDelete tool."""
+
     job_id: str = Field(description="Job ID to delete")
 
 
 class CronDeleteOutput(BaseModel):
     """Output from CronDelete tool."""
+
     job_id: str
     success: bool
     message: str
@@ -102,36 +107,40 @@ async def cron_delete_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[CronDeleteOutput]:
     """Delete a cron job."""
     jobs = load_cron_jobs()
-    
+
     if input_data.job_id not in jobs:
-        return ToolResult(data=CronDeleteOutput(
-            job_id=input_data.job_id,
-            success=False,
-            message=f"Job not found: {input_data.job_id}"
-        ))
-    
+        return ToolResult(
+            data=CronDeleteOutput(
+                job_id=input_data.job_id,
+                success=False,
+                message=f"Job not found: {input_data.job_id}",
+            )
+        )
+
     deleted_name = jobs[input_data.job_id]["name"]
     del jobs[input_data.job_id]
     save_cron_jobs(jobs)
-    
-    return ToolResult(data=CronDeleteOutput(
-        job_id=input_data.job_id,
-        success=True,
-        message=f"Deleted cron job: {deleted_name}"
-    ))
+
+    return ToolResult(
+        data=CronDeleteOutput(
+            job_id=input_data.job_id, success=True, message=f"Deleted cron job: {deleted_name}"
+        )
+    )
 
 
 class CronListInput(BaseModel):
     """Input for CronList tool."""
+
     enabled_only: bool = Field(default=False, description="Show only enabled jobs")
 
 
 class CronJobInfo(BaseModel):
     """Cron job info."""
+
     job_id: str
     name: str
     schedule: str
@@ -142,6 +151,7 @@ class CronJobInfo(BaseModel):
 
 class CronListOutput(BaseModel):
     """Output from CronList tool."""
+
     jobs: list[CronJobInfo]
     total: int
     enabled: int
@@ -152,34 +162,39 @@ async def cron_list_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[CronListOutput]:
     """List cron jobs."""
     jobs = load_cron_jobs()
-    
+
     job_list = []
     for job_id, job in jobs.items():
         if input_data.enabled_only and not job.get("enabled", True):
             continue
-        
-        job_list.append(CronJobInfo(
-            job_id=job_id,
-            name=job["name"],
-            schedule=job["schedule"],
-            enabled=job.get("enabled", True),
-            run_count=job.get("run_count", 0),
-            last_run=job.get("last_run")
-        ))
-    
-    return ToolResult(data=CronListOutput(
-        jobs=job_list,
-        total=len(jobs),
-        enabled=sum(1 for j in jobs.values() if j.get("enabled", True))
-    ))
+
+        job_list.append(
+            CronJobInfo(
+                job_id=job_id,
+                name=job["name"],
+                schedule=job["schedule"],
+                enabled=job.get("enabled", True),
+                run_count=job.get("run_count", 0),
+                last_run=job.get("last_run"),
+            )
+        )
+
+    return ToolResult(
+        data=CronListOutput(
+            jobs=job_list,
+            total=len(jobs),
+            enabled=sum(1 for j in jobs.values() if j.get("enabled", True)),
+        )
+    )
 
 
 class CronUpdateInput(BaseModel):
     """Input for CronUpdate tool."""
+
     job_id: str = Field(description="Job ID")
     enabled: bool | None = Field(default=None, description="Enable/disable job")
     schedule: str | None = Field(default=None, description="New schedule")
@@ -188,6 +203,7 @@ class CronUpdateInput(BaseModel):
 
 class CronUpdateOutput(BaseModel):
     """Output from CronUpdate tool."""
+
     job_id: str
     changes: list[str]
     message: str
@@ -198,39 +214,39 @@ async def cron_update_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[CronUpdateOutput]:
     """Update a cron job."""
     jobs = load_cron_jobs()
-    
+
     if input_data.job_id not in jobs:
         return ToolResult(
             data=CronUpdateOutput(job_id=input_data.job_id, changes=[], message=""),
-            error=f"Job not found: {input_data.job_id}"
+            error=f"Job not found: {input_data.job_id}",
         )
-    
+
     changes = []
     job = jobs[input_data.job_id]
-    
+
     if input_data.enabled is not None:
         job["enabled"] = input_data.enabled
         changes.append(f"enabled={input_data.enabled}")
-    
+
     if input_data.schedule is not None:
         job["schedule"] = input_data.schedule
         changes.append(f"schedule={input_data.schedule}")
-    
+
     if input_data.command is not None:
         job["command"] = input_data.command
         changes.append(f"command={input_data.command[:30]}...")
-    
+
     save_cron_jobs(jobs)
-    
-    return ToolResult(data=CronUpdateOutput(
-        job_id=input_data.job_id,
-        changes=changes,
-        message=f"Updated {len(changes)} fields"
-    ))
+
+    return ToolResult(
+        data=CronUpdateOutput(
+            job_id=input_data.job_id, changes=changes, message=f"Updated {len(changes)} fields"
+        )
+    )
 
 
 # Register cron tools

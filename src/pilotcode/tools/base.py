@@ -1,9 +1,6 @@
 """Base tool definitions."""
 
-from typing import (
-    Any, Callable, Awaitable, TypeVar, Generic, 
-    AsyncGenerator, TYPE_CHECKING
-)
+from typing import Any, Callable, Awaitable, TypeVar, Generic, AsyncGenerator, TYPE_CHECKING
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pydantic import BaseModel
@@ -22,40 +19,45 @@ ProgressT = TypeVar("ProgressT", bound="ToolProgressData")
 
 class ToolProgressData(BaseModel):
     """Base class for tool progress data."""
+
     pass
 
 
 class ToolInput(BaseModel):
     """Base class for tool inputs."""
+
     pass
 
 
 class ToolOutput(BaseModel):
     """Base class for tool outputs."""
+
     pass
 
 
 @dataclass
 class ToolResult(Generic[OutputT]):
     """Result of tool execution."""
+
     data: OutputT
     error: str | None = None
     output_for_assistant: str | None = None
-    
+
     @property
     def is_error(self) -> bool:
         return self.error is not None
 
 
-@dataclass  
+@dataclass
 class ToolUseContext:
     """Context for tool execution."""
+
     options: dict[str, Any] = field(default_factory=dict)
     abort_controller: asyncio.Event = field(default_factory=asyncio.Event)
     read_file_state: dict[str, Any] = field(default_factory=dict)
     get_app_state: Callable[[], "AppState"] | None = None
     set_app_state: Callable[[Callable[["AppState"], "AppState"]], None] | None = None
-    
+
     def is_aborted(self) -> bool:
         return self.abort_controller.is_set()
 
@@ -63,13 +65,13 @@ class ToolUseContext:
 # Type for the call function
 ToolCallFn = Callable[
     [Any, ToolUseContext, Callable[..., Awaitable[Any]], Any, Callable[[Any], None]],
-    Awaitable[ToolResult[Any]]
+    Awaitable[ToolResult[Any]],
 ]
 
 
 class Tool:
     """Tool definition."""
-    
+
     def __init__(
         self,
         name: str,
@@ -90,7 +92,9 @@ class Tool:
         user_facing_name: Callable[[Any], str] | None = None,
         prompt: Callable[[dict[str, Any]], Awaitable[str]] | None = None,
         check_permissions: Callable[[Any, ToolUseContext], Awaitable[Any]] | None = None,
-        validate_input: Callable[[Any, ToolUseContext], Awaitable[tuple[bool, str | None]]] | None = None,
+        validate_input: (
+            Callable[[Any, ToolUseContext], Awaitable[tuple[bool, str | None]]] | None
+        ) = None,
         render_tool_use_message: Callable[[Any, dict[str, Any]], str] | None = None,
         render_tool_result_message: Callable[[Any, list[Any], dict[str, Any]], str] | None = None,
         render_tool_use_progress: Callable[[list[Any], dict[str, Any]], str] | None = None,
@@ -127,7 +131,7 @@ def build_tool(
     input_schema: type[BaseModel],
     call: ToolCallFn,
     output_schema: type[BaseModel] | None = None,
-    **kwargs
+    **kwargs,
 ) -> Tool:
     """Build a tool with defaults."""
     return Tool(
@@ -136,7 +140,7 @@ def build_tool(
         input_schema=input_schema,
         call=call,
         output_schema=output_schema,
-        **kwargs
+        **kwargs,
     )
 
 

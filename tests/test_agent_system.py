@@ -136,9 +136,11 @@ class TestAgentOrchestrator:
             "pilotcode.agent.agent_orchestrator.get_model_client",
             lambda: mock_model_client,
         )
-        mock_model_client.set_responses([
-            MockLLMResponse.with_text("Task complete."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_text("Task complete."),
+            ]
+        )
 
         mgr = AgentManager()
         agent = mgr.create_agent()
@@ -149,16 +151,20 @@ class TestAgentOrchestrator:
         assert agent.status == AgentStatus.COMPLETED
 
     @pytest.mark.asyncio
-    async def test_orchestrator_runs_tool_and_continues(self, mock_model_client, auto_allow_permissions, monkeypatch):
+    async def test_orchestrator_runs_tool_and_continues(
+        self, mock_model_client, auto_allow_permissions, monkeypatch
+    ):
         """Orchestrator handles a tool call inside an agent task."""
         monkeypatch.setattr(
             "pilotcode.agent.agent_orchestrator.get_model_client",
             lambda: mock_model_client,
         )
-        mock_model_client.set_responses([
-            MockLLMResponse.with_tool_call("Bash", {"command": "echo orch"}),
-            MockLLMResponse.with_text("The output was orch."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_tool_call("Bash", {"command": "echo orch"}),
+                MockLLMResponse.with_text("The output was orch."),
+            ]
+        )
 
         mgr = AgentManager()
         agent = mgr.create_agent()

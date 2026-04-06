@@ -39,41 +39,44 @@ print("=" * 70)
 from pilotcode.utils.model_client import ModelClient, Message
 import asyncio
 
+
 async def test():
     try:
         client = ModelClient()
         print(f"Client created successfully")
         print(f"  model: {client.model}")
         print(f"  base_url: {client.base_url}")
-        
+
         # Test simple completion
         messages = [Message(role="user", content="几点了")]
         print("\nSending test message...")
-        
+
         chunks = []
         async for chunk in client.chat_completion(messages, max_tokens=20, stream=True):
             chunks.append(chunk)
             if len(chunks) >= 5:  # Just get first few chunks
                 break
-        
+
         await client.close()
-        
+
         if chunks:
             print(f"SUCCESS: Received {len(chunks)} chunks")
             # Try to extract content
             for chunk in chunks[:2]:
-                if 'choices' in chunk and chunk['choices']:
-                    delta = chunk['choices'][0].get('delta', {})
-                    content = delta.get('content', '')
+                if "choices" in chunk and chunk["choices"]:
+                    delta = chunk["choices"][0].get("delta", {})
+                    content = delta.get("content", "")
                     if content:
                         print(f"  Content: {content[:50]}")
         else:
             print("ERROR: No chunks received")
-            
+
     except Exception as e:
         print(f"ERROR: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 asyncio.run(test())
 print("\n" + "=" * 70)

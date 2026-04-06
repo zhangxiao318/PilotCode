@@ -19,7 +19,7 @@ console = Console()
 
 def check_configuration() -> bool:
     """Check if application is configured, prompt user if not.
-    
+
     Performs both static configuration check and live LLM verification.
 
     Returns:
@@ -28,14 +28,14 @@ def check_configuration() -> bool:
     # Quick check: configuration exists
     if not is_configured():
         return _show_configuration_prompt()
-    
+
     # Deep check: verify LLM is actually accessible
     config_manager = get_config_manager()
-    
+
     try:
         console.print("[dim]Verifying LLM configuration...[/dim]")
         verification = asyncio.run(config_manager.verify_configuration(timeout=10.0))
-        
+
         if verification["success"]:
             console.print(f"[green]✓[/green] LLM ready: {verification['response'][:60]}...")
             return True
@@ -50,7 +50,7 @@ def check_configuration() -> bool:
                 )
             )
             return _show_configuration_prompt(skip_static_check=True)
-            
+
     except Exception as e:
         console.print(f"[yellow]Warning: Could not verify LLM: {e}[/yellow]")
         # Fall back to static check
@@ -119,6 +119,12 @@ def main(
         None, "--prompt", "-p", help="Run a single prompt in headless mode"
     ),
     json_mode: bool = typer.Option(False, "--json", help="Output structured JSON in headless mode"),
+    max_iterations: int = typer.Option(
+        25,
+        "--max-iterations",
+        "-i",
+        help="Maximum tool execution rounds per query (default: 25, env: PILOTCODE_MAX_ITERATIONS)",
+    ),
     tui_v2: bool = typer.Option(
         True, "--tui-v2/--no-tui-v2", help="Use TUI v2 interface (default: True)"
     ),
@@ -147,7 +153,11 @@ def main(
     if prompt is not None:
         import asyncio
 
-        asyncio.run(run_headless(prompt, auto_allow=auto_allow, json_mode=json_mode))
+        asyncio.run(
+            run_headless(
+                prompt, auto_allow=auto_allow, json_mode=json_mode, max_iterations=max_iterations
+            )
+        )
         raise typer.Exit()
 
     if simple:
@@ -155,7 +165,7 @@ def main(
         import asyncio
         from .tui.simple_cli import SimpleCLI
 
-        cli = SimpleCLI(auto_allow=auto_allow)
+        cli = SimpleCLI(auto_allow=auto_allow, max_iterations=max_iterations)
         try:
             asyncio.run(cli.run())
         except KeyboardInterrupt:
@@ -164,7 +174,7 @@ def main(
         # Launch Enhanced TUI v2 (default)
         from .tui_v2.app import EnhancedApp
 
-        app_tui = EnhancedApp(auto_allow=auto_allow)
+        app_tui = EnhancedApp(auto_allow=auto_allow, max_iterations=max_iterations)
         app_tui.run()
     else:
         # Show banner for REPL mode
@@ -177,7 +187,7 @@ def main(
         console.print(Panel(banner, border_style="cyan"))
 
         # Start REPL with options
-        run_repl(auto_allow=auto_allow)
+        run_repl(auto_allow=auto_allow, max_iterations=max_iterations)
 
 
 @app.command()

@@ -14,6 +14,7 @@ from .registry import register_tool
 
 class OutputMode(str, Enum):
     """Output mode for grep results."""
+
     CONTENT = "content"
     FILES_WITH_MATCHES = "files_with_matches"
     COUNT_MATCHES = "count_matches"
@@ -21,6 +22,7 @@ class OutputMode(str, Enum):
 
 class GrepInput(BaseModel):
     """Input for Grep tool."""
+
     pattern: str = Field(description="Regex pattern to search for")
     path: str = Field(default=".", description="Path to search in")
     glob: str | None = Field(default=None, description="Glob pattern to filter files")
@@ -33,6 +35,7 @@ class GrepInput(BaseModel):
 
 class GrepMatch(BaseModel):
     """A single grep match."""
+
     file: str
     line_number: int
     content: str
@@ -42,6 +45,7 @@ class GrepMatch(BaseModel):
 
 class GrepOutput(BaseModel):
     """Output from Grep tool."""
+
     content: str | None = None
     filenames: list[str] | None = None
     num_matches: int
@@ -51,12 +55,23 @@ class GrepOutput(BaseModel):
 def should_ignore_path(path: Path) -> bool:
     """Check if path should be ignored."""
     name = path.name
-    if name.startswith('.'):
+    if name.startswith("."):
         return True
     ignore_patterns = [
-        'node_modules', '__pycache__', '.git', '.svn', '.hg',
-        'venv', '.venv', 'env', 'dist', 'build', 'target',
-        '*.min.js', '*.min.css', '*.bundle.js'
+        "node_modules",
+        "__pycache__",
+        ".git",
+        ".svn",
+        ".hg",
+        "venv",
+        ".venv",
+        "env",
+        "dist",
+        "build",
+        "target",
+        "*.min.js",
+        "*.min.css",
+        "*.bundle.js",
     ]
     for pattern in ignore_patterns:
         if pattern in str(path):
@@ -72,37 +87,31 @@ async def grep_files(
     head_limit: int | None = 250,
     offset: int = 0,
     case_sensitive: bool = True,
-    multiline: bool = False
+    multiline: bool = False,
 ) -> GrepOutput:
     """Search for pattern in files."""
     path = Path(search_path).expanduser().resolve()
-    
+
     if not path.exists():
         return GrepOutput(
-            num_matches=0,
-            content=None,
-            filenames=None,
-            error=f"Path not found: {search_path}"
+            num_matches=0, content=None, filenames=None, error=f"Path not found: {search_path}"
         )
-    
+
     try:
         matches = []
         files_with_matches = set()
-        
+
         flags = 0 if case_sensitive else re.IGNORECASE
         if multiline:
             flags |= re.MULTILINE | re.DOTALL
-        
+
         try:
             regex = re.compile(pattern, flags)
         except re.error as e:
             return GrepOutput(
-                num_matches=0,
-                content=None,
-                filenames=None,
-                error=f"Invalid regex pattern: {e}"
+                num_matches=0, content=None, filenames=None, error=f"Invalid regex pattern: {e}"
             )
-        
+
         # Determine files to search
         if path.is_file():
             files = [path]
@@ -111,30 +120,32 @@ async def grep_files(
             for root, dirs, filenames in os.walk(path):
                 # Filter directories
                 dirs[:] = [d for d in dirs if not should_ignore_path(Path(root) / d)]
-                
+
                 for filename in filenames:
                     if should_ignore_path(Path(filename)):
                         continue
-                    
+
                     # Apply glob filter
                     if glob_pattern and not Path(filename).match(glob_pattern):
                         continue
-                    
+
                     file_path = Path(root) / filename
                     files.append(file_path)
-        
+
         # Search files
         for file_path in files:
             try:
                 # Skip binary files
                 if os.path.getsize(file_path) > 10 * 1024 * 1024:  # Skip files > 10MB
                     continue
-                
-                content = file_path.read_text(encoding='utf-8', errors='replace')
-                lines = content.split('\n')
-                
-                rel_path = file_path.relative_to(path) if path in file_path.parents else file_path.name
-                
+
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+                lines = content.split("\n")
+
+                rel_path = (
+                    file_path.relative_to(path) if path in file_path.parents else file_path.name
+                )
+
                 for line_num, line in enumerate(lines, 1):
                     for match in regex.finditer(line):
                         match_obj = GrepMatch(
@@ -142,63 +153,54 @@ async def grep_files(
                             line_number=line_num,
                             content=line,
                             match_start=match.start(),
-                            match_end=match.end()
+                            match_end=match.end(),
                         )
                         matches.append(match_obj)
                         files_with_matches.add(str(rel_path))
-                        
+
                         if output_mode == OutputMode.FILES_WITH_MATCHES:
                             break
-                    
-                    if output_mode == OutputMode.FILES_WITH_MATCHES and str(rel_path) in files_with_matches:
+
+                    if (
+                        output_mode == OutputMode.FILES_WITH_MATCHES
+                        and str(rel_path) in files_with_matches
+                    ):
                         break
             except Exception:
                 continue
-        
+
         # Format output
         if output_mode == OutputMode.FILES_WITH_MATCHES:
             filenames = sorted(files_with_matches)
             if offset > 0:
                 filenames = filenames[offset:]
-            return GrepOutput(
-                num_matches=len(matches),
-                filenames=filenames
-            )
-        
+            return GrepOutput(num_matches=len(matches), filenames=filenames)
+
         elif output_mode == OutputMode.COUNT_MATCHES:
-            return GrepOutput(
-                num_matches=len(matches)
-            )
-        
+            return GrepOutput(num_matches=len(matches))
+
         else:  # CONTENT mode
             # Apply offset
             if offset > 0:
                 matches = matches[offset:]
-            
+
             # Apply head limit
             truncated = False
             if head_limit is not None and len(matches) > head_limit:
                 matches = matches[:head_limit]
                 truncated = True
-            
+
             # Format content
             lines = []
             for m in matches:
                 lines.append(f"{m.file}:{m.line_number}:{m.content}")
-            
+
             return GrepOutput(
-                num_matches=len(matches),
-                content='\n'.join(lines),
-                truncated=truncated
+                num_matches=len(matches), content="\n".join(lines), truncated=truncated
             )
-    
+
     except Exception as e:
-        return GrepOutput(
-            num_matches=0,
-            content=None,
-            filenames=None,
-            error=str(e)
-        )
+        return GrepOutput(num_matches=0, content=None, filenames=None, error=str(e))
 
 
 async def grep_call(
@@ -206,16 +208,16 @@ async def grep_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[GrepOutput]:
     """Execute grep search."""
     # Resolve path
     search_path = input_data.path
     if not os.path.isabs(search_path) and context.get_app_state:
         app_state = context.get_app_state()
-        cwd = getattr(app_state, 'cwd', os.getcwd())
+        cwd = getattr(app_state, "cwd", os.getcwd())
         search_path = os.path.join(cwd, search_path)
-    
+
     # Search
     result = await grep_files(
         pattern=input_data.pattern,
@@ -225,9 +227,9 @@ async def grep_call(
         head_limit=input_data.head_limit,
         offset=input_data.offset,
         case_sensitive=input_data.case_sensitive,
-        multiline=input_data.multiline
+        multiline=input_data.multiline,
     )
-    
+
     return ToolResult(data=result)
 
 

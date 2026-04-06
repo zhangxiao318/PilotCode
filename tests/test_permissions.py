@@ -42,11 +42,11 @@ class TestPermissionManager:
         # FileRead is typically low risk
         file_read_risk = pm.get_tool_risk_level("FileRead", {})
         assert file_read_risk in ["low", "none"]
-        
+
         # Bash with simple command
         bash_simple_risk = pm.get_tool_risk_level("Bash", {"command": "echo hi"})
         assert bash_simple_risk in ["low", "medium", "none"]
-        
+
         # Bash with dangerous command
         bash_dangerous_risk = pm.get_tool_risk_level("Bash", {"command": "rm -rf /"})
         assert bash_dangerous_risk in ["critical", "high"]

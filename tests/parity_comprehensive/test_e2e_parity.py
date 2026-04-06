@@ -17,9 +17,11 @@ from tests.mock_llm import MockLLMResponse
 class TestE2EConversation:
     @pytest.mark.asyncio
     async def test_e2e_single_turn_text(self, mock_model_client, query_engine_factory):
-        mock_model_client.set_responses([
-            MockLLMResponse.with_text("Hello from parity test."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_text("Hello from parity test."),
+            ]
+        )
         engine = query_engine_factory()
         text = ""
         async for result in engine.submit_message("Hi"):
@@ -28,20 +30,24 @@ class TestE2EConversation:
         assert "Hello" in text
 
     @pytest.mark.asyncio
-    async def test_e2e_file_write_and_read(self, mock_model_client, query_engine_factory, auto_allow_permissions, tmp_path):
+    async def test_e2e_file_write_and_read(
+        self, mock_model_client, query_engine_factory, auto_allow_permissions, tmp_path
+    ):
         tools = get_all_tools()
         file_path = str(tmp_path / "parity.py")
-        mock_model_client.set_responses([
-            MockLLMResponse.with_tool_call(
-                "FileWrite",
-                {"file_path": file_path, "content": "x = 1\n"},
-            ),
-            MockLLMResponse.with_tool_call(
-                "FileRead",
-                {"file_path": file_path},
-            ),
-            MockLLMResponse.with_text("File verified."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_tool_call(
+                    "FileWrite",
+                    {"file_path": file_path, "content": "x = 1\n"},
+                ),
+                MockLLMResponse.with_tool_call(
+                    "FileRead",
+                    {"file_path": file_path},
+                ),
+                MockLLMResponse.with_text("File verified."),
+            ]
+        )
         engine = query_engine_factory(tools=tools, cwd=str(tmp_path))
         executor = ToolExecutor()
         ctx = ToolUseContext()
@@ -74,13 +80,17 @@ class TestE2EConversation:
         assert "File verified." in text
 
     @pytest.mark.asyncio
-    async def test_e2e_bash_then_git_status(self, mock_model_client, query_engine_factory, auto_allow_permissions):
+    async def test_e2e_bash_then_git_status(
+        self, mock_model_client, query_engine_factory, auto_allow_permissions
+    ):
         tools = get_all_tools()
-        mock_model_client.set_responses([
-            MockLLMResponse.with_tool_call("Bash", {"command": "git --version"}),
-            MockLLMResponse.with_tool_call("GitStatus", {"repo_path": "."}),
-            MockLLMResponse.with_text("All good."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse.with_tool_call("Bash", {"command": "git --version"}),
+                MockLLMResponse.with_tool_call("GitStatus", {"repo_path": "."}),
+                MockLLMResponse.with_text("All good."),
+            ]
+        )
         engine = query_engine_factory(tools=tools)
         executor = ToolExecutor()
         ctx = ToolUseContext()
@@ -90,7 +100,9 @@ class TestE2EConversation:
             async for result in engine.submit_message("Run command"):
                 if isinstance(result.message, ToolUseMessage):
                     t.append(result.message)
-            assert len(t) == 1 and t[0].name == expected_tool, f"Expected {expected_tool}, got {[m.name for m in t]}"
+            assert (
+                len(t) == 1 and t[0].name == expected_tool
+            ), f"Expected {expected_tool}, got {[m.name for m in t]}"
             r = await executor.execute_tool_by_name(t[0].name, t[0].input, ctx)
             assert r.success
             engine.add_tool_result(t[0].tool_use_id, str(r.result.data))
@@ -102,21 +114,31 @@ class TestE2EConversation:
         assert "All good." in text
 
     @pytest.mark.asyncio
-    async def test_e2e_multi_tool_turn(self, mock_model_client, query_engine_factory, auto_allow_permissions):
+    async def test_e2e_multi_tool_turn(
+        self, mock_model_client, query_engine_factory, auto_allow_permissions
+    ):
         tools = get_all_tools()
-        mock_model_client.set_responses([
-            MockLLMResponse(
-                content="Parallel read.",
-                tool_calls=[
-                    {"id": "c1", "type": "function",
-                     "function": {"name": "Glob", "arguments": '{"pattern": "*.py"}'}},
-                    {"id": "c2", "type": "function",
-                     "function": {"name": "GitStatus", "arguments": '{"repo_path": "."}'}},
-                ],
-                finish_reason="tool_calls",
-            ),
-            MockLLMResponse.with_text("Done."),
-        ])
+        mock_model_client.set_responses(
+            [
+                MockLLMResponse(
+                    content="Parallel read.",
+                    tool_calls=[
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {"name": "Glob", "arguments": '{"pattern": "*.py"}'},
+                        },
+                        {
+                            "id": "c2",
+                            "type": "function",
+                            "function": {"name": "GitStatus", "arguments": '{"repo_path": "."}'},
+                        },
+                    ],
+                    finish_reason="tool_calls",
+                ),
+                MockLLMResponse.with_text("Done."),
+            ]
+        )
         engine = query_engine_factory(tools=tools)
         executor = ToolExecutor()
         ctx = ToolUseContext()
@@ -144,8 +166,10 @@ class TestE2EConversation:
 class TestREPLParity:
     def test_repl_imports(self):
         from pilotcode.components.repl import REPL
+
         assert REPL is not None
 
     def test_headless_repl_exists(self):
         from pilotcode.components.repl import run_headless
+
         assert callable(run_headless)

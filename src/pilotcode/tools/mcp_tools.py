@@ -11,11 +11,13 @@ from ..services.mcp_client import get_mcp_client, MCPConfig
 
 class MCPListResourcesInput(BaseModel):
     """Input for ListMcpResources tool."""
+
     server_name: str = Field(description="MCP server name")
 
 
 class MCPListResourcesOutput(BaseModel):
     """Output from ListMcpResources tool."""
+
     server_name: str
     resources: list[dict]
     total: int
@@ -26,37 +28,37 @@ async def mcp_list_resources_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[MCPListResourcesOutput]:
     """List MCP resources."""
     client = get_mcp_client()
-    
+
     connection = client.connections.get(input_data.server_name)
     if not connection:
         return ToolResult(
-            data=MCPListResourcesOutput(
-                server_name=input_data.server_name,
-                resources=[],
-                total=0
-            ),
-            error=f"MCP server '{input_data.server_name}' not connected"
+            data=MCPListResourcesOutput(server_name=input_data.server_name, resources=[], total=0),
+            error=f"MCP server '{input_data.server_name}' not connected",
         )
-    
-    return ToolResult(data=MCPListResourcesOutput(
-        server_name=input_data.server_name,
-        resources=[],  # Would be populated from server
-        total=0
-    ))
+
+    return ToolResult(
+        data=MCPListResourcesOutput(
+            server_name=input_data.server_name,
+            resources=[],  # Would be populated from server
+            total=0,
+        )
+    )
 
 
 class MCPReadResourceInput(BaseModel):
     """Input for ReadMcpResource tool."""
+
     server_name: str = Field(description="MCP server name")
     resource_uri: str = Field(description="Resource URI")
 
 
 class MCPReadResourceOutput(BaseModel):
     """Output from ReadMcpResource tool."""
+
     server_name: str
     resource_uri: str
     content: str | None
@@ -68,19 +70,23 @@ async def mcp_read_resource_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[MCPReadResourceOutput]:
     """Read MCP resource."""
-    return ToolResult(data=MCPReadResourceOutput(
-        server_name=input_data.server_name,
-        resource_uri=input_data.resource_uri,
-        content=None,
-        mime_type=None
-    ), error="MCP resource reading not fully implemented")
+    return ToolResult(
+        data=MCPReadResourceOutput(
+            server_name=input_data.server_name,
+            resource_uri=input_data.resource_uri,
+            content=None,
+            mime_type=None,
+        ),
+        error="MCP resource reading not fully implemented",
+    )
 
 
 class MCPCallToolInput(BaseModel):
     """Input for MCPTool."""
+
     server_name: str = Field(description="MCP server name")
     tool_name: str = Field(description="Tool name")
     arguments: dict = Field(default_factory=dict, description="Tool arguments")
@@ -88,6 +94,7 @@ class MCPCallToolInput(BaseModel):
 
 class MCPCallToolOutput(BaseModel):
     """Output from MCPTool."""
+
     server_name: str
     tool_name: str
     result: dict | None
@@ -99,31 +106,34 @@ async def mcp_call_tool_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[MCPCallToolOutput]:
     """Call MCP tool."""
     client = get_mcp_client()
-    
+
     try:
         result = await client.call_tool(
-            input_data.server_name,
-            input_data.tool_name,
-            input_data.arguments
+            input_data.server_name, input_data.tool_name, input_data.arguments
         )
-        
-        return ToolResult(data=MCPCallToolOutput(
-            server_name=input_data.server_name,
-            tool_name=input_data.tool_name,
-            result=result,
-            is_error=False
-        ))
+
+        return ToolResult(
+            data=MCPCallToolOutput(
+                server_name=input_data.server_name,
+                tool_name=input_data.tool_name,
+                result=result,
+                is_error=False,
+            )
+        )
     except Exception as e:
-        return ToolResult(data=MCPCallToolOutput(
-            server_name=input_data.server_name,
-            tool_name=input_data.tool_name,
-            result=None,
-            is_error=True
-        ), error=str(e))
+        return ToolResult(
+            data=MCPCallToolOutput(
+                server_name=input_data.server_name,
+                tool_name=input_data.tool_name,
+                result=None,
+                is_error=True,
+            ),
+            error=str(e),
+        )
 
 
 # Register MCP tools

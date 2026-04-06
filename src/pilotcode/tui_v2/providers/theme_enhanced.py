@@ -9,14 +9,14 @@ import json
 @dataclass
 class Theme:
     """A color theme definition."""
-    
+
     # Basic colors
     background: str = "#1e1e1e"
     surface: str = "#2d2d2d"
     text: str = "#ffffff"
     text_muted: str = "#a0a0a0"
     border: str = "#3e3e3e"
-    
+
     # Accent colors
     primary: str = "#0066cc"
     secondary: str = "#6c757d"
@@ -24,14 +24,14 @@ class Theme:
     danger: str = "#dc3545"
     warning: str = "#ffc107"
     info: str = "#17a2b8"
-    
+
     # Message-specific colors
     user_message: str = "#0066cc"
     assistant_message: str = "#2d2d2d"
     tool_message: str = "#ffc107"
     error_message: str = "#dc3545"
     system_message: str = "#6c757d"
-    
+
     # Syntax highlighting
     syntax_keyword: str = "#ff79c6"
     syntax_string: str = "#f1fa8c"
@@ -42,12 +42,12 @@ class Theme:
     syntax_file_ref: str = "#4FC1FF"
     syntax_command: str = "#FF79C6"
     syntax_mention: str = "#50FA7B"
-    
+
     # UI elements
     cursor: str = "#ffffff"
     selection: str = "#264f78"
     scrollbar: str = "#424242"
-    
+
     # Metadata
     name: str = "default"
     is_dark: bool = True
@@ -61,7 +61,6 @@ BUILT_IN_THEMES: Dict[str, Theme] = {
         surface="#2d2d2d",
         text="#ffffff",
     ),
-    
     "light": Theme(
         name="light",
         is_dark=False,
@@ -82,7 +81,6 @@ BUILT_IN_THEMES: Dict[str, Theme] = {
         selection="#b4d7ff",
         scrollbar="#c1c1c1",
     ),
-    
     "dracula": Theme(
         name="dracula",
         background="#282a36",
@@ -106,7 +104,6 @@ BUILT_IN_THEMES: Dict[str, Theme] = {
         syntax_variable="#f8f8f2",
         syntax_operator="#ff79c6",
     ),
-    
     "monokai": Theme(
         name="monokai",
         background="#272822",
@@ -130,7 +127,6 @@ BUILT_IN_THEMES: Dict[str, Theme] = {
         syntax_variable="#f8f8f2",
         syntax_operator="#f92672",
     ),
-    
     "nord": Theme(
         name="nord",
         background="#2e3440",
@@ -154,7 +150,6 @@ BUILT_IN_THEMES: Dict[str, Theme] = {
         syntax_variable="#eceff4",
         syntax_operator="#81a1c1",
     ),
-    
     "gruvbox": Theme(
         name="gruvbox",
         background="#282828",
@@ -178,7 +173,6 @@ BUILT_IN_THEMES: Dict[str, Theme] = {
         syntax_variable="#ebdbb2",
         syntax_operator="#fb4934",
     ),
-    
     "high-contrast": Theme(
         name="high-contrast",
         background="#000000",
@@ -203,95 +197,96 @@ BUILT_IN_THEMES: Dict[str, Theme] = {
 
 class ThemeManager:
     """Manages themes and theme switching.
-    
+
     Features:
     - Built-in themes
     - Custom theme loading
     - Theme persistence
     - Auto-detection of system theme
     """
-    
+
     def __init__(self, storage_dir: Optional[Path] = None):
         self.storage_dir = storage_dir or Path.home() / ".pilotcode"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.themes_file = self.storage_dir / "custom_themes.json"
         self.config_file = self.storage_dir / "theme_config.json"
-        
+
         self._themes: Dict[str, Theme] = dict(BUILT_IN_THEMES)
         self._current_theme: str = "default"
         self._change_callbacks: List[Callable[[Theme], None]] = []
-        
+
         self._load_custom_themes()
         self._load_config()
-    
+
     def _load_custom_themes(self):
         """Load custom themes from disk."""
         if not self.themes_file.exists():
             return
-        
+
         try:
-            with open(self.themes_file, 'r') as f:
+            with open(self.themes_file, "r") as f:
                 data = json.load(f)
-            
+
             for name, theme_data in data.items():
                 theme = Theme(name=name, **theme_data)
                 self._themes[name] = theme
         except Exception as e:
             print(f"Failed to load custom themes: {e}")
-    
+
     def _save_custom_themes(self):
         """Save custom themes to disk."""
         custom_themes = {
             name: {
-                k: v for k, v in theme.__dict__.items()
-                if k not in ('name',) and not k.startswith('_')
+                k: v
+                for k, v in theme.__dict__.items()
+                if k not in ("name",) and not k.startswith("_")
             }
             for name, theme in self._themes.items()
             if name not in BUILT_IN_THEMES
         }
-        
+
         try:
-            with open(self.themes_file, 'w') as f:
+            with open(self.themes_file, "w") as f:
                 json.dump(custom_themes, f, indent=2)
         except Exception as e:
             print(f"Failed to save custom themes: {e}")
-    
+
     def _load_config(self):
         """Load theme configuration."""
         if not self.config_file.exists():
             return
-        
+
         try:
-            with open(self.config_file, 'r') as f:
+            with open(self.config_file, "r") as f:
                 config = json.load(f)
-            self._current_theme = config.get('current_theme', 'default')
+            self._current_theme = config.get("current_theme", "default")
         except Exception as e:
             print(f"Failed to load theme config: {e}")
-    
+
     def _save_config(self):
         """Save theme configuration."""
         try:
-            with open(self.config_file, 'w') as f:
-                json.dump({'current_theme': self._current_theme}, f)
+            with open(self.config_file, "w") as f:
+                json.dump({"current_theme": self._current_theme}, f)
         except Exception as e:
             print(f"Failed to save theme config: {e}")
-    
+
     def get_theme(self, name: Optional[str] = None) -> Theme:
         """Get a theme by name, or the current theme if no name given."""
         name = name or self._current_theme
         return self._themes.get(name, self._themes["default"])
-    
+
     def set_theme(self, name: str) -> bool:
         """Set the current theme.
-        
+
         Returns True if successful, False if theme not found.
         """
         if name not in self._themes:
             return False
-        
+
         self._current_theme = name
         self._save_config()
-        
+
         # Notify callbacks
         theme = self._themes[name]
         for callback in self._change_callbacks:
@@ -299,64 +294,64 @@ class ThemeManager:
                 callback(theme)
             except Exception as e:
                 print(f"Theme change callback failed: {e}")
-        
+
         return True
-    
+
     def get_current_theme_name(self) -> str:
         """Get the name of the current theme."""
         return self._current_theme
-    
+
     def list_themes(self) -> List[str]:
         """List all available theme names."""
         return list(self._themes.keys())
-    
+
     def list_built_in_themes(self) -> List[str]:
         """List built-in theme names."""
         return list(BUILT_IN_THEMES.keys())
-    
+
     def add_custom_theme(self, name: str, theme: Theme) -> bool:
         """Add a custom theme.
-        
+
         Returns False if name conflicts with built-in theme.
         """
         if name in BUILT_IN_THEMES:
             return False
-        
+
         theme.name = name
         self._themes[name] = theme
         self._save_custom_themes()
         return True
-    
+
     def remove_custom_theme(self, name: str) -> bool:
         """Remove a custom theme."""
         if name in BUILT_IN_THEMES:
             return False
-        
+
         if name in self._themes:
             del self._themes[name]
             self._save_custom_themes()
-            
+
             # Switch to default if current theme was removed
             if self._current_theme == name:
                 self.set_theme("default")
-            
+
             return True
-        
+
         return False
-    
+
     def on_theme_change(self, callback: Callable[[Theme], None]):
         """Register a callback for theme changes."""
         self._change_callbacks.append(callback)
-    
+
     def off_theme_change(self, callback: Callable[[Theme], None]):
         """Unregister a theme change callback."""
         if callback in self._change_callbacks:
             self._change_callbacks.remove(callback)
-    
+
     def get_theme_css(self, name: Optional[str] = None) -> str:
         """Generate CSS for a theme."""
         theme = self.get_theme(name)
-        
+
         return f"""
         /* Theme: {theme.name} */
         Screen {{
@@ -418,52 +413,56 @@ class ThemeManager:
             color: {theme.syntax_string};
         }}
         """
-    
+
     def auto_detect_theme(self) -> str:
         """Auto-detect system theme preference.
-        
+
         Returns the recommended theme name.
         """
         import os
         import platform
-        
+
         system = platform.system()
-        
+
         # Check for macOS dark mode
         if system == "Darwin":
             try:
                 import subprocess
+
                 result = subprocess.run(
-                    ['defaults', 'read', '-g', 'AppleInterfaceStyle'],
+                    ["defaults", "read", "-g", "AppleInterfaceStyle"],
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
                 if "Dark" in result.stdout:
                     return "default"
             except Exception:
                 pass
-        
+
         # Check for GTK dark mode on Linux
         if system == "Linux":
             try:
-                theme = os.environ.get('GTK_THEME', '').lower()
-                if 'dark' in theme:
+                theme = os.environ.get("GTK_THEME", "").lower()
+                if "dark" in theme:
                     return "default"
             except Exception:
                 pass
-        
+
         # Check Windows
         if system == "Windows":
             try:
                 import winreg
+
                 registry = winreg.ConnectRegistry(None, winreg.HKEY_CURRENT_USER)
-                key = winreg.OpenKey(registry, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+                key = winreg.OpenKey(
+                    registry, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+                )
                 value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
                 if value == 0:
                     return "default"
             except Exception:
                 pass
-        
+
         # Default to light if detection fails
         return "light"
 

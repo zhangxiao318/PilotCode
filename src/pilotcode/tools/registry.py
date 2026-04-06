@@ -10,19 +10,19 @@ if TYPE_CHECKING:
 
 class ToolRegistry:
     """Registry for tools."""
-    
+
     def __init__(self):
         self._tools: dict[str, Tool] = {}
         self._aliases: dict[str, str] = {}  # alias -> name
-    
+
     def register(self, tool: Tool) -> None:
         """Register a tool."""
         self._tools[tool.name] = tool
-        
+
         # Register aliases
         for alias in tool.aliases:
             self._aliases[alias] = tool.name
-    
+
     def get(self, name: str) -> Tool | None:
         """Get tool by name or alias."""
         if name in self._tools:
@@ -30,15 +30,15 @@ class ToolRegistry:
         if name in self._aliases:
             return self._tools[self._aliases[name]]
         return None
-    
+
     def get_all(self) -> Tools:
         """Get all registered tools."""
         return list(self._tools.values())
-    
+
     def has_tool(self, name: str) -> bool:
         """Check if tool exists."""
         return name in self._tools or name in self._aliases
-    
+
     def filter_by_permission(self, permission_context: ToolPermissionContext) -> Tools:
         """Filter tools based on permission context."""
         # TODO: Implement permission-based filtering
@@ -75,27 +75,26 @@ def get_tool_by_name(name: str) -> Tool | None:
 
 
 def assemble_tool_pool(
-    permission_context: ToolPermissionContext,
-    mcp_tools: Tools | None = None
+    permission_context: ToolPermissionContext, mcp_tools: Tools | None = None
 ) -> Tools:
     """Assemble tool pool from built-in and MCP tools."""
     registry = get_tool_registry()
-    
+
     # Get built-in tools
     built_in_tools = registry.filter_by_permission(permission_context)
-    
+
     # Get MCP tools
     mcp_tools = mcp_tools or []
-    
+
     # Filter MCP tools by deny rules
     # TODO: Implement filtering
     allowed_mcp_tools = mcp_tools
-    
+
     # Merge tools, built-in takes precedence
     tool_map: dict[str, Tool] = {}
     for tool in allowed_mcp_tools:
         tool_map[tool.name] = tool
     for tool in built_in_tools:
         tool_map[tool.name] = tool
-    
+
     return list(tool_map.values())

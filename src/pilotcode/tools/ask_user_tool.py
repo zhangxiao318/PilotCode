@@ -9,15 +9,16 @@ from .registry import register_tool
 
 class AskUserInput(BaseModel):
     """Input for AskUser tool."""
+
     question: str = Field(description="The question to ask the user")
     options: list[str] | None = Field(
-        default=None,
-        description="Optional list of choices for the user"
+        default=None, description="Optional list of choices for the user"
     )
 
 
 class AskUserOutput(BaseModel):
     """Output from AskUser tool."""
+
     response: str
     question: str
 
@@ -27,31 +28,29 @@ async def ask_user_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[AskUserOutput]:
     """Ask user a question."""
     # This would normally interact with TUI
     # For now, just return a placeholder
     # In real implementation, this would show a prompt and wait for user input
-    
+
     from rich.console import Console
+
     console = Console()
-    
+
     console.print(f"\n[bold cyan]{input_data.question}[/bold cyan]")
-    
+
     if input_data.options:
         for i, option in enumerate(input_data.options, 1):
             console.print(f"  {i}. {option}")
         console.print("Enter your choice (number or text):")
-    
+
     # In actual implementation, this would use prompt_toolkit for async input
     # For now, return a simulated response
     response = input("> ")
-    
-    return ToolResult(data=AskUserOutput(
-        response=response,
-        question=input_data.question
-    ))
+
+    return ToolResult(data=AskUserOutput(response=response, question=input_data.question))
 
 
 async def ask_user_description(input_data: AskUserInput, options: dict[str, Any]) -> str:

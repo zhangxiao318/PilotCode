@@ -44,7 +44,7 @@ if config.base_url:
         print("  - base_url is local: yes")
     else:
         print(f"  - base_url is local: no (is '{config.base_url}')")
-    
+
     if not config.base_url.startswith("https://api."):
         print("  - base_url is not https://api.: yes")
     else:

@@ -10,12 +10,14 @@ from .registry import register_tool
 
 class SleepInput(BaseModel):
     """Input for Sleep tool."""
+
     seconds: float = Field(description="Number of seconds to sleep", ge=0, le=3600)
     reason: str | None = Field(default=None, description="Reason for sleeping")
 
 
 class SleepOutput(BaseModel):
     """Output from Sleep tool."""
+
     seconds: float
     reason: str | None
     message: str
@@ -26,28 +28,26 @@ async def sleep_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[SleepOutput]:
     """Sleep for specified duration."""
     # Check if aborted
     if context.is_aborted():
         return ToolResult(
-            data=SleepOutput(
-                seconds=0,
-                reason=input_data.reason,
-                message="Sleep aborted"
-            ),
-            error="Aborted"
+            data=SleepOutput(seconds=0, reason=input_data.reason, message="Sleep aborted"),
+            error="Aborted",
         )
-    
+
     # Sleep
     await asyncio.sleep(input_data.seconds)
-    
-    return ToolResult(data=SleepOutput(
-        seconds=input_data.seconds,
-        reason=input_data.reason,
-        message=f"Slept for {input_data.seconds} seconds"
-    ))
+
+    return ToolResult(
+        data=SleepOutput(
+            seconds=input_data.seconds,
+            reason=input_data.reason,
+            message=f"Slept for {input_data.seconds} seconds",
+        )
+    )
 
 
 SleepTool = build_tool(

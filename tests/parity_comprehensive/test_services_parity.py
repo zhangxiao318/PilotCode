@@ -51,11 +51,13 @@ class TestExportService:
     @pytest.mark.asyncio
     async def test_export_command_exists(self):
         from pilotcode.commands.base import get_all_commands
+
         names = {c.name for c in get_all_commands()}
         assert "export" in names
 
     def test_session_resume_exists(self):
         from pilotcode.commands.base import get_all_commands
+
         names = {c.name for c in get_all_commands()}
         assert "resume" in names
 
@@ -64,8 +66,10 @@ class TestLspService:
     @pytest.mark.asyncio
     async def test_lsp_command_exists(self):
         from pilotcode.commands.base import get_all_commands
+
         assert "lsp" in {c.name for c in get_all_commands()}
 
     def test_lsp_tool_exists(self):
         from pilotcode.tools.registry import get_tool_by_name
+
         assert get_tool_by_name("LSP") is not None

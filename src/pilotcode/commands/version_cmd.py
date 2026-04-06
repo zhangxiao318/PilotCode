@@ -18,15 +18,17 @@ async def version_command(args: list[str], context: CommandContext) -> str:
         "  - Commands: 25 implemented",
         "  - Core: asyncio, pydantic, rich",
         "",
-        "License: MIT"
+        "License: MIT",
     ]
-    
+
     return "\n".join(lines)
 
 
-register_command(CommandHandler(
-    name="version",
-    description="Show version information",
-    handler=version_command,
-    aliases=["v", "--version"]
-))
+register_command(
+    CommandHandler(
+        name="version",
+        description="Show version information",
+        handler=version_command,
+        aliases=["v", "--version"],
+    )
+)

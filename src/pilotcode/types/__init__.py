@@ -51,7 +51,7 @@ from .hooks import (
 __all__ = [
     # Base types
     "UUID",
-    "AgentId", 
+    "AgentId",
     "ToolName",
     "CommandName",
     "SessionId",

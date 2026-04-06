@@ -92,42 +92,44 @@ class QueryEngine:
             content = self.config.custom_system_prompt
         else:
             content = self._get_default_system_prompt()
-        
+
         # Add runtime context (OS, cwd, etc.)
         context = self._get_runtime_context()
         if context:
             content = context + "\n\n" + content
 
         return SystemMessage(content=content)
-    
+
     def _get_runtime_context(self) -> str:
         """Get runtime context (OS, cwd, etc.) for system prompt."""
         import os
         import sys
         import platform
-        
+
         context_lines = ["## Runtime Environment"]
-        
+
         # OS information
         os_name = platform.system()
         os_version = platform.release()
         context_lines.append(f"- **OS**: {os_name} {os_version}")
         context_lines.append(f"- **Platform**: {sys.platform}")
-        
+
         # Current working directory
         cwd = self.config.cwd or os.getcwd()
         context_lines.append(f"- **Current Directory**: {cwd}")
-        
+
         # Shell information
         if sys.platform == "win32":
             shell = os.environ.get("COMSPEC", "cmd.exe")
             context_lines.append(f"- **Default Shell**: {shell}")
-            context_lines.append("- **Command Notes**: Use Windows commands (e.g., `dir`, `cd`, `type`)")
+            context_lines.append(
+                "- **Command Notes**: Use Windows commands (e.g., `dir`, `cd`, `type`)"
+            )
         else:
             shell = os.environ.get("SHELL", "/bin/bash")
             context_lines.append(f"- **Default Shell**: {shell}")
             context_lines.append("- **Command Notes**: Use Unix commands (e.g., `ls`, `cd`, `cat`)")
-        
+
         return "\n".join(context_lines)
 
     def _get_default_system_prompt(self) -> str:
@@ -183,6 +185,16 @@ Do NOT rely on any time information in the system prompt as it may be outdated.
    - "查找并测试代码" -> Call Grep AND Bash together
    - "分析项目结构" -> Call Glob AND multiple FileRead together
 
+9. **MERGE/CONCATENATE FILES** - To combine multiple files into one:
+   - Unix/Linux: `Bash(command="cat file1.txt file2.txt > output.txt")`
+   - Windows: `Bash(command="type file1.txt file2.txt > output.txt")`
+
+10. **WRITE PYTHON SCRIPTS FOR COMPLEX TASKS** - When no tool exists for a task, or tools are not installed:
+    - Write a Python script to perform the task using FileWrite
+    - Execute the script using Bash: `Bash(command="python script.py")`
+    - Examples: complex data processing, file format conversion, API calls without curl, custom algorithms, etc.
+    - Clean up temporary scripts after execution if no longer needed
+
 ## Example Workflow for Code Analysis
 
 User: "分析这个项目的代码"
@@ -202,6 +214,47 @@ User: "查看 blog_app 目录有哪些 Python 文件并读取 app.py"
 Your response should be (make both calls at once):
 - Glob(pattern="blog_app/*.py")  
 - FileRead(path="blog_app/app.py")
+
+## Example: Merge/Concatenate Files
+
+User: "把 file1.txt 和 file2.txt 合并到 output.txt"
+
+Your response should be:
+1. Read both files: `FileRead(path="file1.txt")` and `FileRead(path="file2.txt")`
+2. Then write merged content: `FileWrite(path="output.txt", content=file1_content + "\n" + file2_content)`
+
+OR use Bash (platform-specific):
+- Unix: `Bash(command="cat file1.txt file2.txt > output.txt")`
+- Windows: `Bash(command="type file1.txt file2.txt > output.txt")`
+
+## Example: Writing Python Script for Complex Task
+
+User: "Convert all JSON files in the data folder to CSV format"
+
+Your response should be:
+1. Write a Python script using FileWrite to handle the conversion:
+   ```
+   FileWrite(path="convert_json_to_csv.py", content='''
+   import json
+   import csv
+   import os
+   from pathlib import Path
+
+   data_dir = Path("data")
+   for json_file in data_dir.glob("*.json"):
+       with open(json_file, 'r') as f:
+           data = json.load(f)
+       
+       csv_file = json_file.with_suffix('.csv')
+       with open(csv_file, 'w', newline='') as f:
+           if data and len(data) > 0:
+               writer = csv.DictWriter(f, fieldnames=data[0].keys())
+               writer.writeheader()
+               writer.writerows(data)
+       print(f"Converted {json_file} -> {csv_file}")
+   ''')
+   ```
+2. Execute the script: `Bash(command="python convert_json_to_csv.py")`
 
 ## Example: Testing Code (CRITICAL)
 

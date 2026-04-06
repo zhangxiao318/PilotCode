@@ -42,6 +42,7 @@ class TestSessionPersistence:
     @pytest.mark.asyncio
     async def test_resume_command_exists(self):
         from pilotcode.commands.base import process_user_input, CommandContext
+
         is_cmd, result = await process_user_input("/resume", CommandContext(cwd="."))
         assert is_cmd is True
         assert "No saved session" in result or "messages loaded" in result

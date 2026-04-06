@@ -260,7 +260,7 @@ def check_api_key_configured(model_name: str) -> bool:
     import os
 
     model_info = get_model_info(model_name)
-    
+
     # For custom/unknown models, consider configured if model name is provided
     # (local models like Ollama don't need API keys)
     if not model_info:

@@ -84,13 +84,13 @@ def decorated_function():
 GLOBAL_VAR = "test"
 ANOTHER_VAR = 123
 '''
-        file_path.write_text(content, encoding='utf-8')
+        file_path.write_text(content, encoding="utf-8")
         return file_path
 
     def test_analyze_file_basic(self, analyzer, sample_python_file):
         """Test basic file analysis."""
         module = analyzer.analyze_file(sample_python_file)
-        
+
         assert module is not None
         assert module.file_path == str(sample_python_file)
         assert module.docstring == "Sample module for testing."
@@ -98,9 +98,9 @@ ANOTHER_VAR = 123
     def test_analyze_classes(self, analyzer, sample_python_file):
         """Test class extraction."""
         module = analyzer.analyze_file(sample_python_file)
-        
+
         assert len(module.classes) == 2
-        
+
         # Check BaseClass
         base_class = next(c for c in module.classes if c.name == "BaseClass")
         assert base_class.docstring == "Base class for demonstration."
@@ -108,7 +108,7 @@ ANOTHER_VAR = 123
         method_names = [m.name for m in base_class.methods]
         assert "__init__" in method_names
         assert "greet" in method_names
-        
+
         # Check DerivedClass
         derived_class = next(c for c in module.classes if c.name == "DerivedClass")
         assert derived_class.bases == ["BaseClass"]
@@ -118,7 +118,7 @@ ANOTHER_VAR = 123
     def test_analyze_functions(self, analyzer, sample_python_file):
         """Test function extraction."""
         module = analyzer.analyze_file(sample_python_file)
-        
+
         # Should have simple_function, complex_function, decorated_function
         func_names = [f.name for f in module.functions]
         assert "simple_function" in func_names
@@ -128,7 +128,7 @@ ANOTHER_VAR = 123
     def test_function_details(self, analyzer, sample_python_file):
         """Test detailed function analysis."""
         module = analyzer.analyze_file(sample_python_file)
-        
+
         complex_func = next(f for f in module.functions if f.name == "complex_function")
         assert complex_func.returns == "bool"
         assert "x: int" in complex_func.args
@@ -139,28 +139,28 @@ ANOTHER_VAR = 123
     def test_decorated_function(self, analyzer, sample_python_file):
         """Test decorator extraction."""
         module = analyzer.analyze_file(sample_python_file)
-        
+
         decorated = next(f for f in module.functions if f.name == "decorated_function")
         assert "decorator" in decorated.decorators
 
     def test_imports(self, analyzer, sample_python_file):
         """Test import extraction."""
         module = analyzer.analyze_file(sample_python_file)
-        
-        import_names = [imp.get('module', imp.get('type')) for imp in module.imports]
-        assert 'os' in import_names or 'typing' in import_names
+
+        import_names = [imp.get("module", imp.get("type")) for imp in module.imports]
+        assert "os" in import_names or "typing" in import_names
 
     def test_global_vars(self, analyzer, sample_python_file):
         """Test global variable extraction."""
         module = analyzer.analyze_file(sample_python_file)
-        
+
         assert "GLOBAL_VAR" in module.global_vars
         assert "ANOTHER_VAR" in module.global_vars
 
     def test_async_method(self, analyzer, sample_python_file):
         """Test async method detection."""
         module = analyzer.analyze_file(sample_python_file)
-        
+
         derived_class = next(c for c in module.classes if c.name == "DerivedClass")
         async_method = next(m for m in derived_class.methods if m.name == "async_method")
         assert async_method.is_async is True
@@ -189,10 +189,10 @@ class TestProjectAnalysis:
         # Create package structure
         pkg_dir = tmp_path / "mypackage"
         pkg_dir.mkdir()
-        
+
         # __init__.py
         (pkg_dir / "__init__.py").write_text('"""My package."""\n')
-        
+
         # main module
         (pkg_dir / "main.py").write_text('''
 """Main module."""
@@ -202,7 +202,7 @@ from .utils import helper
 if __name__ == "__main__":
     helper()
 ''')
-        
+
         # utils module
         (pkg_dir / "utils.py").write_text('''
 """Utility functions."""
@@ -218,7 +218,7 @@ class UtilityClass:
     def method(self):
         pass
 ''')
-        
+
         # submodule
         sub_dir = pkg_dir / "submodule"
         sub_dir.mkdir()
@@ -232,24 +232,26 @@ class CoreProcessor:
     def process(self):
         helper()
 ''')
-        
+
         return tmp_path
 
     def test_analyze_project(self, sample_project):
         """Test full project analysis."""
         analyzer = ASTCodeAnalyzer()
         arch = analyzer.analyze_project(sample_project)
-        
+
         assert isinstance(arch, ProjectArchitecture)
         assert arch.total_files == 5  # 5 Python files
-        assert arch.total_classes >= 1  # UtilityClass, CoreProcessor (class methods don't count as top-level functions)
+        assert (
+            arch.total_classes >= 1
+        )  # UtilityClass, CoreProcessor (class methods don't count as top-level functions)
         assert arch.total_functions >= 1  # helper
 
     def test_entry_points(self, sample_project):
         """Test entry point detection."""
         analyzer = ASTCodeAnalyzer()
         arch = analyzer.analyze_project(sample_project)
-        
+
         # main.py has if __name__ == "__main__"
         assert any("main.py" in ep for ep in arch.entry_points)
 
@@ -257,7 +259,7 @@ class CoreProcessor:
         """Test layer structure identification."""
         analyzer = ASTCodeAnalyzer()
         arch = analyzer.analyze_project(sample_project)
-        
+
         # Should have organized structure
         assert "utils" in arch.layer_structure or True  # Layer detection may vary
 
@@ -265,7 +267,7 @@ class CoreProcessor:
         """Test dependency graph building."""
         analyzer = ASTCodeAnalyzer()
         arch = analyzer.analyze_project(sample_project)
-        
+
         assert "main" in arch.dependency_graph or len(arch.dependency_graph) > 0
 
 
@@ -279,35 +281,35 @@ class TestComplexityCalculation:
     def test_simple_function_complexity(self, analyzer, tmp_path):
         """Test complexity of simple function."""
         file_path = tmp_path / "test.py"
-        file_path.write_text('''
+        file_path.write_text("""
 def simple():
     return 1
-''')
+""")
         module = analyzer.analyze_file(file_path)
         assert module.functions[0].complexity == 1
 
     def test_if_complexity(self, analyzer, tmp_path):
         """Test complexity with if statement."""
         file_path = tmp_path / "test.py"
-        file_path.write_text('''
+        file_path.write_text("""
 def with_if(x):
     if x > 0:
         return 1
     return 0
-''')
+""")
         module = analyzer.analyze_file(file_path)
         assert module.functions[0].complexity == 2
 
     def test_nested_if_complexity(self, analyzer, tmp_path):
         """Test complexity with nested if."""
         file_path = tmp_path / "test.py"
-        file_path.write_text('''
+        file_path.write_text("""
 def nested(x, y):
     if x > 0:
         if y > 0:
             return 1
     return 0
-''')
+""")
         module = analyzer.analyze_file(file_path)
         # Should be 3: base 1 + outer if + inner if
         assert module.functions[0].complexity == 3
@@ -315,12 +317,12 @@ def nested(x, y):
     def test_boolean_op_complexity(self, analyzer, tmp_path):
         """Test complexity with boolean operations."""
         file_path = tmp_path / "test.py"
-        file_path.write_text('''
+        file_path.write_text("""
 def bool_op(x, y, z):
     if x and y and z:
         return 1
     return 0
-''')
+""")
         module = analyzer.analyze_file(file_path)
         # Should account for boolean operations
         assert module.functions[0].complexity >= 3
@@ -342,10 +344,10 @@ def main():
 if __name__ == "__main__":
     main()
 ''')
-        
+
         analyzer = ASTCodeAnalyzer()
         report = analyzer.generate_architecture_report(tmp_path)
-        
+
         assert "Project Architecture Analysis" in report
         assert "Statistics" in report
         assert "main.py" in report
@@ -364,17 +366,17 @@ class TestGlobalInstance:
     def test_analyzer_caching(self, tmp_path):
         """Test that analyzer caches results."""
         analyzer = get_analyzer()
-        
+
         # Clear cache first
         analyzer._cache.clear()
-        
+
         file_path = tmp_path / "test.py"
         file_path.write_text("def foo(): pass")
-        
+
         # First call should cache
         module1 = analyzer.analyze_file(file_path)
         assert str(file_path) in analyzer._cache
-        
+
         # Second call should return cached (check by comparing content)
         module2 = analyzer.analyze_file(file_path)
         assert module1.file_path == module2.file_path
@@ -389,7 +391,7 @@ class TestEdgeCases:
         analyzer = ASTCodeAnalyzer()
         file_path = tmp_path / "broken.py"
         file_path.write_text("def foo(\n")  # Incomplete function
-        
+
         result = analyzer.analyze_file(file_path)
         assert result is None
 
@@ -398,7 +400,7 @@ class TestEdgeCases:
         analyzer = ASTCodeAnalyzer()
         file_path = tmp_path / "empty.py"
         file_path.write_text("")
-        
+
         module = analyzer.analyze_file(file_path)
         assert module is not None
         assert len(module.classes) == 0
@@ -416,7 +418,7 @@ def 中文函数():
     """中文文档字符串."""
     pass
 ''')
-        
+
         module = analyzer.analyze_file(file_path)
         # Unicode handling may vary, just check it doesn't crash
         assert module is None or module is not None  # Either is acceptable
@@ -425,7 +427,7 @@ def 中文函数():
         """Test decorators with arguments."""
         analyzer = ASTCodeAnalyzer()
         file_path = tmp_path / "decorators.py"
-        file_path.write_text('''
+        file_path.write_text("""
 @decorator(arg1, arg2)
 def func():
     pass
@@ -433,8 +435,8 @@ def func():
 @decorator.subdecorator()
 def func2():
     pass
-''')
-        
+""")
+
         module = analyzer.analyze_file(file_path)
         func = module.functions[0]
         assert len(func.decorators) > 0

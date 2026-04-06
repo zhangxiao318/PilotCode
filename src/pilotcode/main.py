@@ -4,7 +4,7 @@ import sys
 import os
 
 # Add src to path for development
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from pilotcode.cli import cli_main
 

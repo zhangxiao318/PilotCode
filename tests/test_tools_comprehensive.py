@@ -20,6 +20,7 @@ async def _allow_callback(*args, **kwargs):
 def _convert_paths_to_strings(data: dict) -> dict:
     """Convert Path objects to strings in input data."""
     from pathlib import Path
+
     result = {}
     for key, value in data.items():
         if isinstance(value, Path):
@@ -247,7 +248,9 @@ class TestWebTools:
 class TestMiscTools:
     @pytest.mark.asyncio
     async def test_todo_write(self, temp_dir):
-        result = await call_tool("TodoWrite", {"todos": [{"content": "test todo", "status": "in_progress"}]})
+        result = await call_tool(
+            "TodoWrite", {"todos": [{"content": "test todo", "status": "in_progress"}]}
+        )
         assert not result.is_error
 
     @pytest.mark.asyncio

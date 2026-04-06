@@ -11,6 +11,7 @@ from ..types.message import ContentBlock, TextBlock
 @dataclass
 class CommandHandler:
     """Handler for a command."""
+
     name: str
     description: str
     handler: Callable[..., Awaitable[Any]]
@@ -21,19 +22,19 @@ class CommandHandler:
 
 class CommandRegistry:
     """Registry for commands."""
-    
+
     def __init__(self):
         self._commands: dict[str, CommandHandler] = {}
         self._aliases: dict[str, str] = {}
-    
+
     def register(self, handler: CommandHandler) -> None:
         """Register a command handler."""
         self._commands[handler.name] = handler
-        
+
         # Register aliases
         for alias in handler.aliases:
             self._aliases[alias] = handler.name
-    
+
     def get(self, name: str) -> CommandHandler | None:
         """Get command by name or alias."""
         if name in self._commands:
@@ -41,11 +42,11 @@ class CommandRegistry:
         if name in self._aliases:
             return self._commands[self._aliases[name]]
         return None
-    
+
     def get_all(self) -> list[CommandHandler]:
         """Get all registered commands."""
         return list(self._commands.values())
-    
+
     def has_command(self, name: str) -> bool:
         """Check if command exists."""
         return name in self._commands or name in self._aliases
@@ -82,53 +83,50 @@ def get_command_by_name(name: str) -> CommandHandler | None:
 
 def parse_command(input_text: str) -> tuple[str | None, list[str]]:
     """Parse command from input text.
-    
+
     Returns (command_name, args) or (None, []) if not a command.
     """
     input_text = input_text.strip()
-    
+
     # Check if it starts with /
-    if not input_text.startswith('/'):
+    if not input_text.startswith("/"):
         return None, []
-    
+
     # Remove leading /
     input_text = input_text[1:]
-    
+
     # Split into parts
     parts = input_text.split()
     if not parts:
         return None, []
-    
+
     command_name = parts[0]
     args = parts[1:]
-    
+
     return command_name, args
 
 
-async def process_user_input(
-    input_text: str,
-    context: CommandContext
-) -> tuple[bool, Any]:
+async def process_user_input(input_text: str, context: CommandContext) -> tuple[bool, Any]:
     """Process user input, checking for commands.
-    
+
     Returns (is_command, result):
     - If is_command is True, result is the command output
     - If is_command is False, result is the original input (to send to model)
     """
     command_name, args = parse_command(input_text)
-    
+
     if command_name is None:
         # Not a command, return as-is
         return False, input_text
-    
+
     # Find command
     registry = get_command_registry()
     handler = registry.get(command_name)
-    
+
     if handler is None:
         # Unknown command
         return True, f"Unknown command: /{command_name}"
-    
+
     # Execute command
     try:
         result = await handler.handler(args, context)
@@ -139,23 +137,25 @@ async def process_user_input(
 
 # Built-in commands
 
+
 async def help_command(args: list[str], context: CommandContext) -> str:
     """Show help."""
     registry = get_command_registry()
     commands = registry.get_all()
-    
+
     lines = ["Available commands:", ""]
     for cmd in sorted(commands, key=lambda c: c.name):
         alias_str = f" (aliases: {', '.join(cmd.aliases)})" if cmd.aliases else ""
         lines.append(f"  /{cmd.name}{alias_str} - {cmd.description}")
-    
-    return '\n'.join(lines)
+
+    return "\n".join(lines)
 
 
 async def clear_command(args: list[str], context: CommandContext) -> str:
     """Clear screen."""
     import os
-    os.system('clear' if os.name != 'nt' else 'cls')
+
+    os.system("clear" if os.name != "nt" else "cls")
     return "Screen cleared."
 
 
@@ -184,16 +184,17 @@ async def mcp_remove_command(args: list[str], context: CommandContext) -> str:
 async def resume_command(args: list[str], context: CommandContext) -> str:
     """Resume a saved session."""
     import os
+
     session_path = os.path.join(context.cwd, ".pilotcode_session.json")
     if args:
         session_path = args[0] if os.path.isabs(args[0]) else os.path.join(context.cwd, args[0])
-    
+
     if not os.path.exists(session_path):
         return f"[red]No saved session found at {session_path}[/red]"
-    
+
     if context.query_engine is None:
         return "[red]Query engine not available[/red]"
-    
+
     success = context.query_engine.load_session(session_path)
     if success:
         msg_count = len(context.query_engine.messages)
@@ -202,44 +203,44 @@ async def resume_command(args: list[str], context: CommandContext) -> str:
 
 
 # Register built-in commands
-register_command(CommandHandler(
-    name="help",
-    description="Show available commands",
-    handler=help_command,
-    aliases=["h", "?"]
-))
+register_command(
+    CommandHandler(
+        name="help", description="Show available commands", handler=help_command, aliases=["h", "?"]
+    )
+)
 
-register_command(CommandHandler(
-    name="clear",
-    description="Clear the screen",
-    handler=clear_command,
-    aliases=["cls"]
-))
+register_command(
+    CommandHandler(
+        name="clear", description="Clear the screen", handler=clear_command, aliases=["cls"]
+    )
+)
 
-register_command(CommandHandler(
-    name="quit",
-    description="Exit the application",
-    handler=quit_command,
-    aliases=["exit", "q"]
-))
+register_command(
+    CommandHandler(
+        name="quit", description="Exit the application", handler=quit_command, aliases=["exit", "q"]
+    )
+)
 
-register_command(CommandHandler(
-    name="resume",
-    description="Resume a saved conversation session",
-    handler=resume_command,
-    aliases=[]
-))
+register_command(
+    CommandHandler(
+        name="resume",
+        description="Resume a saved conversation session",
+        handler=resume_command,
+        aliases=[],
+    )
+)
 
-register_command(CommandHandler(
-    name="mcp-add",
-    description="Add an MCP server",
-    handler=mcp_add_command,
-    aliases=[]
-))
+register_command(
+    CommandHandler(
+        name="mcp-add", description="Add an MCP server", handler=mcp_add_command, aliases=[]
+    )
+)
 
-register_command(CommandHandler(
-    name="mcp-remove",
-    description="Remove an MCP server",
-    handler=mcp_remove_command,
-    aliases=[]
-))
+register_command(
+    CommandHandler(
+        name="mcp-remove",
+        description="Remove an MCP server",
+        handler=mcp_remove_command,
+        aliases=[],
+    )
+)

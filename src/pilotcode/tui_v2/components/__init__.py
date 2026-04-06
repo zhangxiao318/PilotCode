@@ -6,17 +6,8 @@ from .message.virtual_list import HybridMessageList
 from .status.bar import StatusBar
 from .search_bar import SearchBar, SearchMode, SearchNavigate
 from .diff_view import DiffView, DiffSummary, create_diff
-from .session_fork import (
-    SessionForkManager, 
-    ForkDialog, 
-    ForkNavigator, 
-    SessionForked
-)
-from .frecency_history import (
-    FrecencyHistory, 
-    FrecencyInputHistory, 
-    HistoryEntry
-)
+from .session_fork import SessionForkManager, ForkDialog, ForkNavigator, SessionForked
+from .frecency_history import FrecencyHistory, FrecencyInputHistory, HistoryEntry
 
 __all__ = [
     # Core components
@@ -24,7 +15,6 @@ __all__ = [
     "PromptWithMode",
     "MessageDisplay",
     "MessageList",
-
     "HybridMessageList",
     "StatusBar",
     # Search

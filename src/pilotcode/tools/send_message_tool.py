@@ -12,6 +12,7 @@ from .registry import register_tool
 @dataclass
 class Message:
     """Message between agents."""
+
     from_id: str
     to_id: str
     content: str
@@ -25,6 +26,7 @@ _message_bus: dict[str, list[Message]] = {}
 
 class SendMessageInput(BaseModel):
     """Input for SendMessage tool."""
+
     to: str = Field(description="Recipient agent ID or 'broadcast'")
     content: str = Field(description="Message content")
     message_type: str = Field(default="text", description="Message type")
@@ -33,6 +35,7 @@ class SendMessageInput(BaseModel):
 
 class SendMessageOutput(BaseModel):
     """Output from SendMessage tool."""
+
     to: str
     content: str
     delivered: bool
@@ -44,45 +47,53 @@ async def send_message_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[SendMessageOutput]:
     """Send message to agent."""
-    
+
     sender = input_data.from_id or "system"
-    
+
     msg = Message(
         from_id=sender,
         to_id=input_data.to,
         content=input_data.content,
         timestamp=datetime.now().isoformat(),
-        message_type=input_data.message_type
+        message_type=input_data.message_type,
     )
-    
+
     # Store message
     if input_data.to not in _message_bus:
         _message_bus[input_data.to] = []
-    
+
     _message_bus[input_data.to].append(msg)
-    
+
     # Generate message ID
     message_id = f"msg_{datetime.now().timestamp()}"
-    
-    return ToolResult(data=SendMessageOutput(
-        to=input_data.to,
-        content=input_data.content[:100] + "..." if len(input_data.content) > 100 else input_data.content,
-        delivered=True,
-        message_id=message_id
-    ))
+
+    return ToolResult(
+        data=SendMessageOutput(
+            to=input_data.to,
+            content=(
+                input_data.content[:100] + "..."
+                if len(input_data.content) > 100
+                else input_data.content
+            ),
+            delivered=True,
+            message_id=message_id,
+        )
+    )
 
 
 class ReceiveMessageInput(BaseModel):
     """Input for ReceiveMessage tool."""
+
     agent_id: str = Field(description="Agent ID to check messages for")
     mark_read: bool = Field(default=True, description="Mark messages as read")
 
 
 class ReceiveMessageOutput(BaseModel):
     """Output from ReceiveMessage tool."""
+
     agent_id: str
     messages: list[dict]
     count: int
@@ -93,31 +104,26 @@ async def receive_message_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[ReceiveMessageOutput]:
     """Receive messages for agent."""
-    
+
     messages = _message_bus.get(input_data.agent_id, [])
-    
+
     message_list = [
-        {
-            "from": m.from_id,
-            "content": m.content,
-            "timestamp": m.timestamp,
-            "type": m.message_type
-        }
+        {"from": m.from_id, "content": m.content, "timestamp": m.timestamp, "type": m.message_type}
         for m in messages
     ]
-    
+
     # Clear if mark_read
     if input_data.mark_read:
         _message_bus[input_data.agent_id] = []
-    
-    return ToolResult(data=ReceiveMessageOutput(
-        agent_id=input_data.agent_id,
-        messages=message_list,
-        count=len(message_list)
-    ))
+
+    return ToolResult(
+        data=ReceiveMessageOutput(
+            agent_id=input_data.agent_id, messages=message_list, count=len(message_list)
+        )
+    )
 
 
 # Register tools

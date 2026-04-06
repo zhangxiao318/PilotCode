@@ -12,6 +12,7 @@ from .registry import register_tool
 
 class REPLInput(BaseModel):
     """Input for REPL tool."""
+
     language: str = Field(description="Programming language: python, node, etc.")
     code: str = Field(description="Code to execute")
     timeout: int = Field(default=30, description="Timeout in seconds")
@@ -19,6 +20,7 @@ class REPLInput(BaseModel):
 
 class REPLOutput(BaseModel):
     """Output from REPL tool."""
+
     language: str
     stdout: str
     stderr: str
@@ -27,31 +29,11 @@ class REPLOutput(BaseModel):
 
 # Language configurations
 REPL_CONFIGS = {
-    "python": {
-        "command": "python3",
-        "args": ["-c"],
-        "extension": ".py"
-    },
-    "node": {
-        "command": "node",
-        "args": ["-e"],
-        "extension": ".js"
-    },
-    "bash": {
-        "command": "bash",
-        "args": ["-c"],
-        "extension": ".sh"
-    },
-    "ruby": {
-        "command": "ruby",
-        "args": ["-e"],
-        "extension": ".rb"
-    },
-    "perl": {
-        "command": "perl",
-        "args": ["-e"],
-        "extension": ".pl"
-    }
+    "python": {"command": "python3", "args": ["-c"], "extension": ".py"},
+    "node": {"command": "node", "args": ["-e"], "extension": ".js"},
+    "bash": {"command": "bash", "args": ["-c"], "extension": ".sh"},
+    "ruby": {"command": "ruby", "args": ["-e"], "extension": ".rb"},
+    "perl": {"command": "perl", "args": ["-e"], "extension": ".pl"},
 }
 
 
@@ -60,61 +42,48 @@ async def repl_call(
     context: ToolUseContext,
     can_use_tool: Any,
     parent_message: Any,
-    on_progress: Any
+    on_progress: Any,
 ) -> ToolResult[REPLOutput]:
     """Execute code in REPL."""
-    
+
     config = REPL_CONFIGS.get(input_data.language)
-    
+
     if not config:
         return ToolResult(
-            data=REPLOutput(
-                language=input_data.language,
-                stdout="",
-                stderr="",
-                exit_code=-1
-            ),
-            error=f"Unsupported language: {input_data.language}. Supported: {', '.join(REPL_CONFIGS.keys())}"
+            data=REPLOutput(language=input_data.language, stdout="", stderr="", exit_code=-1),
+            error=f"Unsupported language: {input_data.language}. Supported: {', '.join(REPL_CONFIGS.keys())}",
         )
-    
+
     try:
         # Run the code
         cmd = [config["command"]] + config["args"] + [input_data.code]
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=input_data.timeout
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=input_data.timeout)
+
+        return ToolResult(
+            data=REPLOutput(
+                language=input_data.language,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                exit_code=result.returncode,
+            )
         )
-        
-        return ToolResult(data=REPLOutput(
-            language=input_data.language,
-            stdout=result.stdout,
-            stderr=result.stderr,
-            exit_code=result.returncode
-        ))
-    
+
     except subprocess.TimeoutExpired:
         return ToolResult(
             data=REPLOutput(
                 language=input_data.language,
                 stdout="",
                 stderr=f"Timeout after {input_data.timeout} seconds",
-                exit_code=-1
+                exit_code=-1,
             ),
-            error=f"Timeout after {input_data.timeout} seconds"
+            error=f"Timeout after {input_data.timeout} seconds",
         )
-    
+
     except Exception as e:
         return ToolResult(
-            data=REPLOutput(
-                language=input_data.language,
-                stdout="",
-                stderr=str(e),
-                exit_code=-1
-            ),
-            error=str(e)
+            data=REPLOutput(language=input_data.language, stdout="", stderr=str(e), exit_code=-1),
+            error=str(e),
         )
 
 

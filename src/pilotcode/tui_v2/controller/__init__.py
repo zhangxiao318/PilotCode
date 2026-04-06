@@ -4,6 +4,6 @@ from .controller import TUIController, UIMessage, MessageType
 
 __all__ = [
     "TUIController",
-    "UIMessage", 
+    "UIMessage",
     "MessageType",
 ]

@@ -30,6 +30,14 @@ def translate_command_for_windows(command: str) -> str:
     if cmd_stripped == "pwd":
         return "cd"
 
+    # cat FILE1 [FILE2...] -> type FILE1 [FILE2...] (Windows equivalent)
+    # Handles: cat file.txt, cat file1.txt file2.txt, cat file1 file2 > output.txt
+    cat_match = re.match(r"^cat\s+(.+)$", cmd_stripped)
+    if cat_match:
+        args = cat_match.group(1)
+        # Replace cat with type, keep the rest of arguments (files, redirections)
+        return f"type {args}"
+
     # seq N -> PowerShell equivalent
     if re.match(r"^seq\s+\d+$", cmd_stripped):
         n = cmd_stripped.split()[1]

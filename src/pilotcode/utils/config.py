@@ -208,7 +208,11 @@ class ConfigManager:
             if ".gguf" in config.default_model or ".bin" in config.default_model:
                 return True
             # Local models with specific patterns (e.g., localhost, 127.0.0.1)
-            if config.base_url and ("localhost" in config.base_url or "127.0.0.1" in config.base_url or ":11434" in config.base_url):
+            if config.base_url and (
+                "localhost" in config.base_url
+                or "127.0.0.1" in config.base_url
+                or ":11434" in config.base_url
+            ):
                 return True
             # Custom base URL without API key (local/custom endpoint)
             if config.base_url and not config.base_url.startswith("https://api."):
@@ -218,29 +222,29 @@ class ConfigManager:
 
     async def verify_configuration(self, timeout: float = 10.0) -> dict[str, Any]:
         """Verify configuration by sending a test message to the LLM.
-        
+
         Args:
             timeout: Timeout in seconds for the test request
-            
+
         Returns:
             Dict with 'success' (bool), 'message' (str), and optional 'response' (str)
         """
         from .model_client import ModelClient, Message
-        
+
         result = {
             "success": False,
             "message": "",
             "response": None,
             "error": None,
         }
-        
+
         # First check if configuration exists
         if not self.is_configured():
             result["message"] = "No configuration found"
             return result
-        
+
         config = self.load_global_config()
-        
+
         try:
             # Create client with current configuration
             client = ModelClient(
@@ -248,14 +252,14 @@ class ConfigManager:
                 base_url=config.base_url or None,
                 model=config.default_model or None,
             )
-            
+
             # Send test message
             test_messages = [Message(role="user", content="Who are you? Reply in one sentence.")]
-            
+
             response_chunks = []
             async for chunk in client.chat_completion(
-                test_messages, 
-                max_tokens=50, 
+                test_messages,
+                max_tokens=50,
                 stream=True,
                 temperature=0.7,
             ):
@@ -264,15 +268,15 @@ class ConfigManager:
                     content = delta.get("content", "")
                     if content:
                         response_chunks.append(content)
-                
+
                 # Early exit if we have enough response
                 if len(response_chunks) >= 5:
                     break
-            
+
             await client.close()
-            
+
             full_response = "".join(response_chunks).strip()
-            
+
             if full_response:
                 result["success"] = True
                 result["message"] = f"LLM responded successfully"
@@ -280,7 +284,7 @@ class ConfigManager:
             else:
                 result["message"] = "LLM returned empty response"
                 result["error"] = "Empty response from model"
-                
+
         except asyncio.TimeoutError:
             result["message"] = f"Connection timeout after {timeout}s"
             result["error"] = "Timeout"
@@ -288,7 +292,7 @@ class ConfigManager:
             error_str = str(e)
             result["message"] = f"Connection failed: {error_str[:100]}"
             result["error"] = error_str
-            
+
         return result
 
     def get_config_status(self) -> dict[str, Any]:

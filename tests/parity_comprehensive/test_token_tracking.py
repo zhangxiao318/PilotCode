@@ -43,7 +43,9 @@ class TestAutoCompact:
         engine = QueryEngine(QueryEngineConfig(cwd=".", auto_compact=True, max_tokens=1))
         # Add many messages to exceed token limit
         for i in range(10):
-            engine.messages.append(UserMessage(content=f"This is a longer message number {i} with many tokens"))
+            engine.messages.append(
+                UserMessage(content=f"This is a longer message number {i} with many tokens")
+            )
         compacted = engine.auto_compact_if_needed()
         assert compacted is True
         # Should keep fewer messages after compaction
