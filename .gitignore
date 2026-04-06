@@ -40,3 +40,7 @@ Thumbs.db
 # Project specific
 .sessions/
 *.log
+
+# Local configuration
+config/settings.json
+*.local
