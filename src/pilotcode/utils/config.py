@@ -9,17 +9,18 @@ from typing import Any
 from platformdirs import user_config_dir
 
 from .models_config import (
-    get_model_info, 
+    get_model_info,
     get_default_model,
     get_model_from_env,
     ModelInfo,
-    SUPPORTED_MODELS
+    SUPPORTED_MODELS,
 )
 
 
 @dataclass
 class GlobalConfig:
     """Global configuration."""
+
     theme: str = "default"
     verbose: bool = False
     auto_compact: bool = True
@@ -29,13 +30,13 @@ class GlobalConfig:
     model_provider: str = ""
     allowed_tools: list[str] = field(default_factory=list)
     mcp_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
-    
+
     def __post_init__(self):
         """Validate and set defaults after initialization."""
         # Set default model if not specified
         if not self.default_model:
             self.default_model = get_default_model()
-        
+
         # Set base_url from model config if not specified
         if not self.base_url and self.default_model:
             model_info = get_model_info(self.default_model)
@@ -46,6 +47,7 @@ class GlobalConfig:
 @dataclass
 class ProjectConfig:
     """Project-specific configuration."""
+
     allowed_tools: list[str] = field(default_factory=list)
     mcp_servers: dict[str, dict[str, Any]] | None = None
     custom_instructions: str | None = None
@@ -53,10 +55,10 @@ class ProjectConfig:
 
 class ConfigManager:
     """Manages configuration files with environment variable support."""
-    
+
     CONFIG_DIR = Path(user_config_dir("pilotcode", "pilotcode"))
     SETTINGS_FILE = CONFIG_DIR / "settings.json"
-    
+
     # Environment variable mappings
     ENV_MAPPINGS = {
         "PILOTCODE_THEME": "theme",
@@ -69,16 +71,16 @@ class ConfigManager:
         "LOCAL_API_KEY": "api_key",
         "OPENAI_BASE_URL": "base_url",
     }
-    
+
     def __init__(self):
         self._global_config: GlobalConfig | None = None
         self._project_config: ProjectConfig | None = None
         self._ensure_config_dir()
-    
+
     def _ensure_config_dir(self) -> None:
         """Ensure configuration directory exists."""
         self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     def _apply_env_overrides(self, config: GlobalConfig) -> GlobalConfig:
         """Apply environment variable overrides to config."""
         for env_var, config_key in self.ENV_MAPPINGS.items():
@@ -88,7 +90,7 @@ class ConfigManager:
                 if config_key in ("verbose", "auto_compact"):
                     value = value.lower() in ("true", "1", "yes", "on")
                 setattr(config, config_key, value)
-        
+
         # Check for model-specific env configuration
         model_from_env = get_model_from_env()
         if model_from_env:
@@ -97,70 +99,70 @@ class ConfigManager:
                 config.default_model = model_name
             if not config.api_key:
                 config.api_key = api_key
-            
+
             # Update base_url from model config
             model_info = get_model_info(model_name)
             if model_info and not config.base_url:
                 config.base_url = model_info.base_url
-        
+
         return config
-    
+
     def load_global_config(self) -> GlobalConfig:
         """Load global configuration from file and environment."""
         if self._global_config is not None:
             return self._global_config
-        
+
         # Load from file
         if self.SETTINGS_FILE.exists():
             try:
-                with open(self.SETTINGS_FILE, 'r') as f:
+                with open(self.SETTINGS_FILE, "r") as f:
                     data = json.load(f)
                 self._global_config = GlobalConfig(**data)
             except Exception:
                 self._global_config = GlobalConfig()
         else:
             self._global_config = GlobalConfig()
-        
+
         # Apply environment overrides
         self._global_config = self._apply_env_overrides(self._global_config)
-        
+
         # Set model provider
         if self._global_config.default_model:
             model_info = get_model_info(self._global_config.default_model)
             if model_info:
                 self._global_config.model_provider = model_info.provider.value
-        
+
         return self._global_config
-    
+
     def save_global_config(self, config: GlobalConfig) -> None:
         """Save global configuration."""
         self._ensure_config_dir()
-        with open(self.SETTINGS_FILE, 'w') as f:
+        with open(self.SETTINGS_FILE, "w") as f:
             json.dump(asdict(config), f, indent=2)
         self._global_config = config
-    
+
     def load_project_config(self, cwd: str | None = None) -> ProjectConfig | None:
         """Load project configuration from .pilotcode.json."""
         if cwd is None:
             cwd = os.getcwd()
-        
+
         config_file = Path(cwd) / ".pilotcode.json"
         if not config_file.exists():
             # Try to find in git root
             git_root = self._find_git_root(cwd)
             if git_root:
                 config_file = Path(git_root) / ".pilotcode.json"
-        
+
         if config_file.exists():
             try:
-                with open(config_file, 'r') as f:
+                with open(config_file, "r") as f:
                     data = json.load(f)
                 return ProjectConfig(**data)
             except Exception:
                 pass
-        
+
         return None
-    
+
     def _find_git_root(self, path: str) -> str | None:
         """Find git repository root."""
         current = Path(path).resolve()
@@ -169,43 +171,54 @@ class ConfigManager:
                 return str(current)
             current = current.parent
         return None
-    
+
     def get_effective_config(self, cwd: str | None = None) -> dict[str, Any]:
         """Get effective configuration (global + project)."""
         global_config = self.load_global_config()
         project_config = self.load_project_config(cwd)
-        
+
         result = asdict(global_config)
-        
+
         if project_config:
             project_dict = {k: v for k, v in asdict(project_config).items() if v is not None}
             result.update(project_dict)
-        
+
         return result
-    
+
     def is_configured(self) -> bool:
         """Check if the application has valid configuration."""
         config = self.load_global_config()
-        
+
         # Check if API key is set
         if config.api_key:
             return True
-        
+
         # Check if model-specific env vars are set
         model_from_env = get_model_from_env()
         if model_from_env:
             return True
-        
-        # Check for Ollama (local, no key needed)
-        if config.default_model == "ollama":
-            return True
-        
+
+        # Check for local models (Ollama, llama.cpp, etc. - no key needed)
+        if config.default_model:
+            # Ollama default model name
+            if config.default_model == "ollama":
+                return True
+            # Local models with file extensions (.gguf, .bin, etc.)
+            if ".gguf" in config.default_model or ".bin" in config.default_model:
+                return True
+            # Local models with specific patterns (e.g., localhost, 127.0.0.1)
+            if config.base_url and ("localhost" in config.base_url or "127.0.0.1" in config.base_url or ":11434" in config.base_url):
+                return True
+            # Custom base URL without API key (local/custom endpoint)
+            if config.base_url and not config.base_url.startswith("https://api."):
+                return True
+
         return False
-    
+
     def get_config_status(self) -> dict[str, Any]:
         """Get detailed configuration status."""
         config = self.load_global_config()
-        
+
         status = {
             "configured": self.is_configured(),
             "config_file_exists": self.SETTINGS_FILE.exists(),
@@ -215,12 +228,12 @@ class ConfigManager:
             "has_api_key": bool(config.api_key),
             "env_overrides": {},
         }
-        
+
         # Check which env vars are set
         for env_var in self.ENV_MAPPINGS.keys():
             if os.environ.get(env_var):
                 status["env_overrides"][env_var] = "***set***"
-        
+
         return status
 
 
@@ -263,7 +276,7 @@ def get_config_status() -> dict[str, Any]:
 
 def ensure_configured() -> bool:
     """Ensure application is configured, return True if configured.
-    
+
     This function checks configuration and can be used at startup
     to verify the application is ready to run.
     """
