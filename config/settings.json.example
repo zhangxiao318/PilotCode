@@ -1,0 +1,9 @@
+{
+  "theme": "default",
+  "verbose": false,
+  "auto_compact": true,
+  "default_model": "default",
+  "base_url": "http://172.19.201.40:3509/v1",
+  "allowed_tools": [],
+  "mcp_servers": {}
+}
