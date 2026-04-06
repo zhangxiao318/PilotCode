@@ -197,7 +197,7 @@ python3 demo.py  # Run demo
 
 ### Usage
 ```bash
-./run.sh        # Run with shell script
+./pilotcode     # Run with shell script
 python3 -m pilotcode  # Run as module
 ```
 

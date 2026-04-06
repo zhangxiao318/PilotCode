@@ -333,7 +333,7 @@ python3 full_demo.py
 python3 -m pilotcode
 
 # Or
-./run.sh
+./pilotcode
 ```
 
 ## Current Capabilities

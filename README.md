@@ -26,8 +26,8 @@ python3 -m pilotcode
 # 运行演示
 python3 full_demo.py
 
-# 或使用脚本
-./run.sh
+# 或使用启动脚本
+./pilotcode
 ```
 
 ## Model Configuration

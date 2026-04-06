@@ -12,16 +12,16 @@
 cd /home/zx/mycc/pilotcode_py
 
 # 查看当前配置
-./run.sh config --list
+./pilotcode config --list
 
 # 设置API密钥（如果需要）
-./run.sh config --set api_key --value "your-api-key"
+./pilotcode config --set api_key --value "your-api-key"
 
 # 设置模型名称（Qwen）
-./run.sh config --set default_model --value "qwen"
+./pilotcode config --set default_model --value "qwen"
 
 # 验证配置
-./run.sh config --list
+./pilotcode config --list
 ```
 
 ---
@@ -73,7 +73,7 @@ EOF
 # 临时设置（当前终端）
 export OPENAI_BASE_URL="http://172.19.201.40:3509/v1"
 export LOCAL_API_KEY="your-api-key"
-./run.sh
+./pilotcode
 
 # 或添加到 ~/.bashrc 永久生效
 echo 'export OPENAI_BASE_URL="http://172.19.201.40:3509/v1"' >> ~/.bashrc
@@ -87,7 +87,7 @@ source ~/.bashrc
 启动后输入测试命令：
 
 ```bash
-./run.sh
+./pilotcode
 ```
 
 然后输入：
@@ -112,7 +112,7 @@ curl http://172.19.201.40:3509/v1/models
 
 如果Qwen服务需要API密钥：
 ```bash
-./run.sh config --set api_key --value "your-key"
+./pilotcode config --set api_key --value "your-key"
 ```
 
 ### 3. 模型名称问题
@@ -125,14 +125,14 @@ curl http://172.19.201.40:3509/v1/models
 
 尝试不同的模型名称：
 ```bash
-./run.sh config --set default_model --value "qwen-7b"
+./pilotcode config --set default_model --value "qwen-7b"
 ```
 
 ### 4. 查看完整请求日志
 
 启用verbose模式：
 ```bash
-./run.sh main --verbose
+./pilotcode --verbose
 ```
 
 ---
@@ -163,12 +163,12 @@ EOF
 echo "Qwen API配置完成！"
 echo "配置路径: ~/.config/pilotcode/settings.json"
 echo ""
-echo "启动命令: ./run.sh"
+echo "启动命令: ./pilotcode"
 ```
 
 保存并执行：
 ```bash
 chmod +x setup_qwen.sh
 ./setup_qwen.sh
-./run.sh
+./pilotcode
 ```

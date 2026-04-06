@@ -6,13 +6,13 @@
 
 ```bash
 # 赋予执行权限（首次使用）
-chmod +x run.sh
+chmod +x pilotcode
 
 # 启动主程序
-./run.sh
+./pilotcode
 
 # 或指定参数
-./run.sh --verbose --model gpt-4
+./pilotcode --verbose --model gpt-4
 ```
 
 ### 方法 2: Python 模块启动
@@ -219,7 +219,7 @@ python3 -m pilotcode config --set base_url --value http://your-server:port/v1
 
 **解决**: 检查文件权限
 ```bash
-chmod +x run.sh
+chmod +x pilotcode
 chmod -R u+rw src/
 ```
 
@@ -230,7 +230,7 @@ chmod -R u+rw src/
 ### 示例 1: 启动并执行任务
 
 ```bash
-./run.sh
+./pilotcode
 > /agents create coder my_coder
 > /agents
 > /workflow sequential "Analyze the codebase and find bugs"
@@ -239,14 +239,14 @@ chmod -R u+rw src/
 ### 示例 2: 代码审查工作流
 
 ```bash
-./run.sh
+./pilotcode
 > /workflow parallel "Review this code for issues" reviewer debugger
 ```
 
 ### 示例 3: 调试会话
 
 ```bash
-./run.sh
+./pilotcode
 > /agents create debugger bug_hunter
 > Debug the error in main.py line 42
 ```
