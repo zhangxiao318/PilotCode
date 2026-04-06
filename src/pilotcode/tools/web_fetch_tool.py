@@ -59,12 +59,16 @@ async def web_fetch_call(
                 status_code=response.status_code
             ))
     except httpx.HTTPError as e:
+        # Not all HTTPError exceptions have a response (e.g., ConnectError)
+        status_code = 0
+        if hasattr(e, 'response') and e.response is not None:
+            status_code = getattr(e.response, 'status_code', 0)
         return ToolResult(
             data=WebFetchOutput(
                 url=input_data.url,
                 content="",
                 title=None,
-                status_code=getattr(e.response, 'status_code', 0)
+                status_code=status_code
             ),
             error=f"HTTP error: {str(e)}"
         )
