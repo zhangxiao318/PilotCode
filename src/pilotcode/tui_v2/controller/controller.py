@@ -225,15 +225,6 @@ class TUIController:
 
         return False
 
-    def _debug_log(self, msg: str):
-        """Write debug log to file."""
-        import os
-        from datetime import datetime
-
-        if os.environ.get("PILOTCODE_DEBUG"):
-            with open("/tmp/pilotcode_debug.log", "a") as f:
-                f.write(f"{datetime.now().isoformat()} {msg}\n")
-
     def _normalize_tool_name(self, name: str) -> str:
         """Normalize tool name to ensure consistent cache keys.
 
@@ -267,19 +258,11 @@ class TUIController:
         tool_name = self._normalize_tool_name(tool_msg.name)
         params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
 
-        # DEBUG
-        if tool_msg.name != tool_name:
-            self._debug_log(f"[_execute_tool] normalized '{tool_msg.name}' -> '{tool_name}'")
-        self._debug_log(f"[_execute_tool] tool_name={tool_name}, params={params}")
-        self._debug_log(f"[_execute_tool] cache={dict(self._session_permissions)}")
-        self._debug_log(f"[_execute_tool] id(self)={id(self)}")
-
         # Check if tool is safe (read-only) - skip permission for safe operations
         is_safe = self._is_safe_tool(tool_name, params)
 
         # Check session-level permission cache
         if tool_name in self._session_permissions:
-            self._debug_log(f"[_execute_tool] Cache HIT for {tool_name}")
             allowed = self._session_permissions[tool_name]
             if not allowed:
                 self.query_engine.add_tool_result(
