@@ -251,6 +251,22 @@ def test_files_dir(temp_dir, sample_python_file, sample_json_file) -> Path:
 # Helper Functions
 # ============================================================================
 
+def create_test_file(directory: Path, filename: str, content: str) -> Path:
+    """Create a test file with given content.
+    
+    Args:
+        directory: Directory to create the file in
+        filename: Name of the file
+        content: Content to write to the file
+        
+    Returns:
+        Path to the created file
+    """
+    file_path = directory / filename
+    file_path.write_text(content)
+    return file_path
+
+
 async def run_tool_test(
     tool_name: str,
     input_data: dict,
@@ -275,3 +291,69 @@ async def run_tool_test(
 
 # Make run_tool_test available as a helper
 pytest.run_tool_test = run_tool_test
+
+
+# ============================================================================
+# Mock LLM Fixtures
+# ============================================================================
+
+@pytest.fixture
+def mock_model_client():
+    """Create a mock model client for testing."""
+    from tests.mock_llm import MockModelClient
+    client = MockModelClient()
+    yield client
+    # Cleanup
+    import asyncio
+    try:
+        asyncio.get_event_loop().run_until_complete(client.close())
+    except:
+        pass
+
+
+@pytest.fixture
+def query_engine_factory(mock_model_client, app_store):
+    """Factory for creating QueryEngine instances with mock client."""
+    from pilotcode.query_engine import QueryEngine, QueryEngineConfig
+    from pilotcode.tools.registry import get_all_tools
+    
+    def _factory(
+        tools=None,
+        cwd="/tmp",
+        custom_system_prompt=None,
+        auto_compact=False,
+        max_tokens=4000,
+    ):
+        config = QueryEngineConfig(
+            cwd=cwd,
+            tools=tools if tools is not None else get_all_tools()[:5],
+            get_app_state=app_store.get_state,
+            set_app_state=lambda f: app_store.set_state(f),
+            custom_system_prompt=custom_system_prompt,
+            auto_compact=auto_compact,
+            max_tokens=max_tokens,
+        )
+        engine = QueryEngine(config=config)
+        # Replace the client with our mock
+        engine.client = mock_model_client
+        return engine
+    
+    return _factory
+
+
+@pytest.fixture
+def auto_allow_permissions():
+    """Configure permission manager to allow all operations."""
+    from pilotcode.permissions.permission_manager import get_permission_manager, PermissionLevel
+    
+    pm = get_permission_manager()
+    original_callback = pm._permission_callback
+    
+    async def allow_all_callback(request):
+        return PermissionLevel.ALLOW
+    
+    pm.set_permission_callback(allow_all_callback)
+    yield pm
+    
+    # Restore original callback
+    pm.set_permission_callback(original_callback)

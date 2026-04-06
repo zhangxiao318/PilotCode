@@ -88,7 +88,7 @@ class TestToolCallFlow:
     async def test_file_write_then_read(self, mock_model_client, query_engine_factory, auto_allow_permissions, temp_dir):
         """LLM writes a file then reads it back."""
         tools = get_all_tools()
-        test_file = temp_dir + "/test_factorial.c"
+        test_file = str(temp_dir / "test_factorial.c")
 
         mock_model_client.set_responses([
             MockLLMResponse.with_tool_call(

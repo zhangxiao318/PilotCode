@@ -17,11 +17,25 @@ async def _allow_callback(*args, **kwargs):
     return {"behavior": "allow"}
 
 
+def _convert_paths_to_strings(data: dict) -> dict:
+    """Convert Path objects to strings in input data."""
+    from pathlib import Path
+    result = {}
+    for key, value in data.items():
+        if isinstance(value, Path):
+            result[key] = str(value)
+        else:
+            result[key] = value
+    return result
+
+
 async def call_tool(tool_name: str, input_data: dict, context: ToolUseContext | None = None):
     """Helper to call a tool by name with default allow callback."""
     tool = get_tool_by_name(tool_name)
     assert tool is not None, f"Tool {tool_name} not found"
     ctx = context or ToolUseContext()
+    # Convert Path objects to strings
+    input_data = _convert_paths_to_strings(input_data)
     parsed = tool.input_schema(**input_data)
     return await tool.call(
         parsed,
