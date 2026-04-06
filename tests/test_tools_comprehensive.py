@@ -227,19 +227,18 @@ class TestGitTools:
 # ---------------------------------------------------------------------------
 class TestWebTools:
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="Network-dependent; run manually with --run-web-tests")
     async def test_web_search(self):
         result = await call_tool("WebSearch", {"query": "python factorial"})
-        # Network may not be available, so we just check the tool runs
-        # Don't assert on results as network may be unavailable
-        if not result.is_error:
-            assert len(result.data.results) >= 0  # Just check it returns something
+        assert not result.is_error
+        assert len(result.data.results) > 0 or "error" not in str(result.data).lower()
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="Network-dependent; run manually with --run-web-tests")
     async def test_web_fetch(self):
         result = await call_tool("WebFetch", {"url": "https://example.com"})
-        # Network may not be available, so we just check the tool runs
-        if not result.is_error:
-            assert result.data.content is not None
+        assert not result.is_error
+        assert "example" in result.data.content.lower()
 
 
 # ---------------------------------------------------------------------------
