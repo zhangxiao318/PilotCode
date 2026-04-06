@@ -44,3 +44,11 @@ Thumbs.db
 # Local configuration
 config/settings.json
 *.local
+
+# Temporary files
+*.tmp
+TEMP_*
+DOCUMENTS_*_REPORT.md
+share_*.json
+uv.lock
+pilotcode.cmd
