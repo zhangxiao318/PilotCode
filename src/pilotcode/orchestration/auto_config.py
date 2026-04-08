@@ -81,6 +81,20 @@ def configure_auto_decomposition(
         _auto_config.default_strategy = default_strategy
 
 
+def enable_auto_decomposition():
+    """Enable automatic task decomposition globally."""
+    global _auto_config
+    _auto_config.enabled = True
+
+
+def disable_auto_decomposition():
+    """Disable automatic task decomposition globally."""
+    global _auto_config
+    _auto_config.enabled = False
+    if default_strategy is not None:
+        _auto_config.default_strategy = default_strategy
+
+
 def should_auto_decompose(task: str, complexity_score: int) -> bool:
     """Determine if a task should be automatically decomposed.
     
