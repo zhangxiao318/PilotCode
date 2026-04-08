@@ -54,13 +54,16 @@ class TaskDecomposer:
     
     # Complexity indicators that suggest decomposition
     COMPLEXITY_INDICATORS = [
-        r"implement|create|build|develop",  # Building something
+        r"implement|create|build|develop.*system|develop.*feature",  # Building something substantial
         r"refactor|restructure|redesign",   # Large changes
         r"analyze.*codebase|understand.*project",  # Exploration
         r"test.*comprehensive|full.*test",  # Testing
         r"migrate|upgrade|update.*to",      # Migration
         r"multiple|several|various",        # Multiple items
         r"and.*then|followed by|after.*then",  # Sequential steps
+        r"with.*and|including.*and",         # Multiple components
+        r"authentication|authorization",     # Complex features
+        r"database|service|module|component", # System components
     ]
     
     # Indicators of parallelizable work
@@ -80,31 +83,36 @@ class TaskDecomposer:
         Uses a hybrid approach:
         1. Rule-based heuristics for quick decisions
         2. LLM analysis for complex cases
+        3. Pattern-based auto-decomposition for known patterns
         """
         # Quick heuristic analysis
         heuristic = self._heuristic_analysis(task)
         
-        # If clearly simple or clearly complex, use heuristic
-        if heuristic["confidence"] > 0.8:
+        # If clearly simple, return without decomposition
+        if heuristic["confidence"] > 0.8 and heuristic["strategy"] == DecompositionStrategy.NONE:
             return self._create_decomposition(
                 task, 
                 heuristic["strategy"],
-                heuristic.get("subtasks", []),
-                heuristic["reasoning"]
+                [],
+                heuristic["reasoning"],
+                confidence=heuristic["confidence"]
             )
+        
+        # If clearly complex, use auto_decompose for pattern-based decomposition
+        if heuristic["confidence"] >= 0.8 and heuristic["strategy"] != DecompositionStrategy.NONE:
+            return self.auto_decompose(task)
+        
+        # For medium confidence, try pattern matching first
+        pattern_result = self._pattern_match_decompose(task)
+        if pattern_result:
+            return pattern_result
         
         # Otherwise, use LLM for detailed analysis
         if self.model_client:
             return self._llm_analysis(task, context)
         
-        # Fallback to heuristic
-        return self._create_decomposition(
-            task,
-            heuristic["strategy"],
-            heuristic.get("subtasks", []),
-            heuristic["reasoning"],
-            confidence=heuristic["confidence"]
-        )
+        # Final fallback to auto_decompose
+        return self.auto_decompose(task)
     
     def _heuristic_analysis(self, task: str) -> dict:
         """Quick rule-based analysis."""
@@ -148,21 +156,32 @@ class TaskDecomposer:
                 "confidence": 0.7
             }
         
-        if parallel_score > 0:
-            return {
-                "strategy": DecompositionStrategy.PARALLEL,
-                "reasoning": "Task contains parallelizable components",
-                "confidence": 0.6 + (0.1 * parallel_score)
-            }
+        # High complexity tasks should use auto_decompose patterns
+        if complexity_score >= 2:
+            # Return with high confidence to trigger auto_decompose
+            if parallel_score > 0:
+                return {
+                    "strategy": DecompositionStrategy.PARALLEL,
+                    "reasoning": "Task contains parallelizable components",
+                    "confidence": 0.85,
+                    "subtasks": []  # Will be populated by auto_decompose
+                }
+            elif complexity_score > 3:
+                return {
+                    "strategy": DecompositionStrategy.HIERARCHICAL,
+                    "reasoning": "High complexity suggests hierarchical decomposition",
+                    "confidence": 0.85,
+                    "subtasks": []
+                }
+            else:
+                return {
+                    "strategy": DecompositionStrategy.SEQUENTIAL,
+                    "reasoning": "Moderate complexity suggests sequential steps",
+                    "confidence": 0.85,
+                    "subtasks": []
+                }
         
-        if complexity_score > 3:
-            return {
-                "strategy": DecompositionStrategy.HIERARCHICAL,
-                "reasoning": "High complexity suggests hierarchical decomposition",
-                "confidence": 0.6
-            }
-        
-        # Default to sequential for moderate complexity
+        # Default fallback
         return {
             "strategy": DecompositionStrategy.SEQUENTIAL,
             "reasoning": "Moderate complexity suggests sequential steps",
@@ -218,6 +237,117 @@ Guidelines:
                 "Error in LLM analysis, falling back to no decomposition"
             )
     
+    def _pattern_match_decompose(self, task: str) -> Optional[DecompositionResult]:
+        """Try to match task against known decomposition patterns.
+        
+        Returns:
+            DecompositionResult if pattern matched, None otherwise
+        """
+        task_lower = task.lower()
+        
+        # Pattern: Implementation with tests
+        if ("implement" in task_lower or "create" in task_lower) and \
+           ("test" in task_lower or "tests" in task_lower):
+            return self._decompose_implementation_with_tests(task)
+        
+        # Pattern: Refactoring
+        if "refactor" in task_lower:
+            return self._decompose_refactoring(task)
+        
+        # Pattern: Bug fix
+        if any(word in task_lower for word in ["fix", "bug", "error", "issue", "debug"]):
+            return self._decompose_bug_fix(task)
+        
+        # Pattern: Code review
+        if any(word in task_lower for word in ["review", "audit", "check"]):
+            return self._decompose_code_review(task)
+        
+        # Pattern: Migration/Upgrade
+        if any(word in task_lower for word in ["migrate", "upgrade", "update to"]):
+            return self._decompose_migration(task)
+        
+        # Pattern: Analysis/Exploration
+        if any(word in task_lower for word in ["analyze", "explore", "understand", "investigate"]):
+            return self._decompose_analysis(task)
+        
+        return None
+    
+    def _decompose_migration(self, task: str) -> DecompositionResult:
+        """Decompose migration/upgrade task."""
+        return DecompositionResult(
+            original_task=task,
+            strategy=DecompositionStrategy.SEQUENTIAL,
+            subtasks=[
+                SubTask(
+                    id="assess",
+                    description="Assess current state",
+                    prompt=f"Assess the current state before migration:\n\n{task}\n\nIdentify:\n1. What needs to change\n2. Potential risks\n3. Dependencies",
+                    role="explorer",
+                    estimated_complexity=3
+                ),
+                SubTask(
+                    id="plan",
+                    description="Plan migration steps",
+                    prompt=f"Create a detailed migration plan:\n\n{task}\n\nInclude:\n1. Step-by-step migration\n2. Rollback strategy\n3. Testing at each step",
+                    role="planner",
+                    dependencies=["assess"],
+                    estimated_complexity=3
+                ),
+                SubTask(
+                    id="migrate",
+                    description="Execute migration",
+                    prompt=f"Execute the migration:\n\n{task}\n\nFollow the migration plan carefully.",
+                    role="coder",
+                    dependencies=["plan"],
+                    estimated_complexity=4
+                ),
+                SubTask(
+                    id="verify",
+                    description="Verify migration success",
+                    prompt=f"Verify the migration was successful:\n\n{task}\n\nCheck:\n1. All functionality works\n2. No regressions\n3. Performance is acceptable",
+                    role="tester",
+                    dependencies=["migrate"],
+                    estimated_complexity=2
+                )
+            ],
+            reasoning="Migration requires careful assessment, planning, execution, and verification",
+            confidence=0.9
+        )
+    
+    def _decompose_analysis(self, task: str) -> DecompositionResult:
+        """Decompose analysis/exploration task."""
+        return DecompositionResult(
+            original_task=task,
+            strategy=DecompositionStrategy.SEQUENTIAL,
+            subtasks=[
+                SubTask(
+                    id="explore",
+                    description="Explore and gather information",
+                    prompt=f"Explore the codebase to gather information:\n\n{task}\n\nFocus on:\n1. Finding relevant files\n2. Understanding structure\n3. Identifying key components",
+                    role="explorer",
+                    estimated_complexity=3
+                ),
+                SubTask(
+                    id="analyze",
+                    description="Analyze findings",
+                    prompt=f"Analyze the findings from exploration:\n\n{task}\n\nProvide:\n1. Summary of findings\n2. Key insights\n3. Recommendations",
+                    role="explainer",
+                    dependencies=["explore"],
+                    estimated_complexity=3
+                ),
+                SubTask(
+                    id="document",
+                    description="Document the analysis",
+                    prompt=f"Document the analysis results:\n\n{task}\n\nCreate clear documentation of findings.",
+                    role="explainer",
+                    dependencies=["analyze"],
+                    estimated_complexity=2
+                )
+            ],
+            reasoning="Analysis requires exploration, analysis, and documentation",
+            confidence=0.9
+        )
+    
     def _create_decomposition(
         self,
         task: str,
@@ -259,26 +389,19 @@ Guidelines:
         
         Creates standard decomposition patterns for common tasks.
         """
-        task_lower = task.lower()
+        # Try pattern matching first
+        result = self._pattern_match_decompose(task)
+        if result:
+            return result
         
-        # Pattern: "Implement X with tests"
-        if "implement" in task_lower and ("test" in task_lower or "tests" in task_lower):
-            return self._decompose_implementation_with_tests(task)
-        
-        # Pattern: "Refactor X"
-        if "refactor" in task_lower:
-            return self._decompose_refactoring(task)
-        
-        # Pattern: "Fix bug in X"
-        if any(word in task_lower for word in ["fix", "bug", "error", "issue"]):
-            return self._decompose_bug_fix(task)
-        
-        # Pattern: "Review X"
-        if "review" in task_lower or "audit" in task_lower:
-            return self._decompose_code_review(task)
-        
-        # Default analysis
-        return self.analyze(task)
+        # Fallback: no decomposition
+        return DecompositionResult(
+            original_task=task,
+            strategy=DecompositionStrategy.NONE,
+            subtasks=[],
+            reasoning="No matching decomposition pattern found",
+            confidence=0.5
+        )
     
     def _decompose_implementation_with_tests(self, task: str) -> DecompositionResult:
         """Decompose implementation task."""
