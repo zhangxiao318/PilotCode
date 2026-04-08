@@ -1,0 +1,13 @@
+{
+  "name": "docker",
+  "version": "1.0.0",
+  "description": "Docker container management tools",
+  "author": {
+    "name": "PilotCode Team",
+    "email": "team@pilotcode.dev"
+  },
+  "license": "MIT",
+  "keywords": ["docker", "containers", "devops"],
+  "commands": "./commands",
+  "skills": "./skills"
+}

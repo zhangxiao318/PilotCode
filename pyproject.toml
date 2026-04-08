@@ -79,4 +79,7 @@ markers = [
     "e2e: marks tests as end-to-end tests",
     "network: marks tests that require network access",
     "tui: marks tests that require TUI",
+    "plugin: marks tests as plugin system tests",
+    "plugin_unit: marks tests as plugin unit tests",
+    "plugin_integration: marks tests as plugin integration tests",
 ]
