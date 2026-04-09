@@ -153,6 +153,7 @@ class REPL:
                 # Ensure output is flushed and visible before showing prompt
                 self.console.print()  # Extra blank line for readability
                 sys.stdout.flush()  # Force flush on Windows
+            # else: no content to display
 
             # Execute pending tools
             if not pending_tools:

@@ -342,7 +342,9 @@ class MessageDisplay(Static):
     def watch_message(self, message: UIMessage):
         """React to message changes."""
         self._update_classes()
-        self.refresh()
+        # Use layout=True to force recalculation of widget size
+        # This is critical for streaming updates where content grows
+        self.refresh(layout=True)
 
     def action_copy(self):
         """Copy message content to clipboard."""

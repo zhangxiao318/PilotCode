@@ -49,6 +49,10 @@ class HybridMessageList(ScrollableContainer):
                 and self._streaming_message.message.type == message.type
             ):
                 self._streaming_message.message = message
+                # Force refresh with layout to update widget size
+                self._streaming_message.refresh(layout=True)
+                # Auto-scroll to bottom during streaming
+                self.scroll_end(animate=False)
                 return self._streaming_message
 
         # Handle streaming completion
@@ -58,6 +62,8 @@ class HybridMessageList(ScrollableContainer):
                 and self._streaming_message.message.type == message.type
             ):
                 self._streaming_message.message = message
+                # Force final refresh with layout
+                self._streaming_message.refresh(layout=True)
                 self._streaming_message = None
                 self.scroll_end()
                 return self._displays[-1]
@@ -70,10 +76,10 @@ class HybridMessageList(ScrollableContainer):
         if message.is_streaming:
             self._streaming_message = display
 
-        # Auto-scroll to bottom
+        # Auto-scroll to bottom immediately and after refresh
+        self.scroll_end(animate=False)
         def scroll_to_bottom():
             self.scroll_end(animate=False)
-
         self.call_after_refresh(scroll_to_bottom)
 
         # Warning for very large histories
