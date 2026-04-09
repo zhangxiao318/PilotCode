@@ -150,6 +150,69 @@ jobs:
         python test_all_tools.py || true
 
   # ============================================================================
+  # Plugin Unit Tests
+  # ============================================================================
+  plugin-unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+        pip install pyyaml  # Required for plugin tests
+    
+    - name: Run plugin unit tests
+      run: |
+        pytest tests/plugins/unit -v --tb=short \
+          --cov=pilotcode.plugins \
+          --cov-report=xml:plugin-coverage.xml \
+          --cov-report=term-missing
+    
+    - name: Upload plugin coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./plugin-coverage.xml
+        flags: plugin-unittests
+        name: plugin-codecov
+
+  # ============================================================================
+  # Plugin Integration Tests
+  # ============================================================================
+  plugin-integration-tests:
+    runs-on: ubuntu-latest
+    needs: plugin-unit-tests
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+        pip install pyyaml
+    
+    - name: Run plugin integration tests
+      run: |
+        pytest tests/plugins/integration -v --tb=short -m "plugin_integration" || true
+      continue-on-error: true
+
+  # ============================================================================
   # E2E Tests
   # ============================================================================
   e2e-tests:
@@ -206,13 +269,16 @@ jobs:
   # ============================================================================
   test-summary:
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, tool-tests]
+    needs: [lint, unit-tests, tool-tests, plugin-unit-tests]
     if: always()
     
     steps:
     - name: Test Summary
       run: |
         echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- Lint: ${{ needs.lint.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Unit Tests: ${{ needs.unit-tests.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Tool Tests: ${{ needs.tool-tests.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Result |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Tool Tests | ${{ needs.tool-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Plugin Unit Tests | ${{ needs.plugin-unit-tests.result }} |" >> $GITHUB_STEP_SUMMARY
