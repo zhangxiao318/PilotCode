@@ -1,0 +1,19 @@
+{
+  "name": "local-test-marketplace",
+  "description": "Local marketplace for testing",
+  "version": "1.0.0",
+  "owner": {
+    "name": "Test User"
+  },
+  "plugins": [
+    {
+      "name": "docker",
+      "description": "Docker container management tools",
+      "version": "1.0.0",
+      "author": {
+        "name": "PilotCode Team"
+      },
+      "source": "./docker-plugin"
+    }
+  ]
+}
