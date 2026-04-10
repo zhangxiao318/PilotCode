@@ -86,7 +86,10 @@ Do something useful.
         assert skill.aliases == ["ms", "my"]
         assert "Do something useful" in skill.content
     
-    def test_load_skill_without_name_uses_filename(self, tmp_path):
+    def test_load_skill_without_name_raises_error(self, tmp_path):
+        """Test that error is raised when name not in frontmatter."""
+        from pilotcode.plugins.loader.skills import SkillLoadError
+        
         skill_file = tmp_path / "filename-skill.md"
         skill_file.write_text("""---
 description: Uses filename
@@ -95,9 +98,9 @@ description: Uses filename
 Content here.
 """)
         
-        skill = load_skill_from_file(skill_file)
-        
-        assert skill.name == "filename-skill"
+        # Should raise error because name is required
+        with pytest.raises(SkillLoadError):
+            load_skill_from_file(skill_file)
 
 
 class TestPluginManifest:

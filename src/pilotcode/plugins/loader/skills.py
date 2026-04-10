@@ -74,10 +74,10 @@ def load_skill_from_file(file_path: Path) -> SkillDefinition:
     
     frontmatter, markdown = parse_frontmatter(content)
     
-    # Extract name from frontmatter, or use filename without extension
+    # Extract name from frontmatter - required for plugin skills
     name = frontmatter.get("name")
     if not name:
-        name = file_path.stem
+        raise SkillLoadError(f"Skill file {file_path} missing required 'name' field in frontmatter")
     
     # Build skill definition
     skill = SkillDefinition(
