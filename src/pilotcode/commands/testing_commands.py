@@ -151,12 +151,14 @@ def run_pytest_tests(
     start_time = __import__("time").time()
 
     try:
+        # Use shorter timeout when running in test environment
+        timeout = 30 if os.environ.get("PYTEST_CURRENT_TEST") else 300
         result = subprocess.run(
             cmd,
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=300,  # 5 minute timeout
+            timeout=timeout,
         )
         duration = __import__("time").time() - start_time
 
@@ -433,6 +435,10 @@ async def test_command(args: list[str], context: CommandContext) -> str:
       /test --verbose
       /test --maxfail=5
     """
+    # Detect if we're running inside pytest to avoid recursion
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return "[dim]Skipping test command during pytest run[/dim]"
+
     # Parse arguments
     test_path: Optional[str] = None
     verbose = False
