@@ -85,11 +85,9 @@ class TestMarketplaceSource:
     
     def test_github_source_requires_repo(self):
         """Test GitHub source requires repo field."""
-        # Note: Validation happens but may not raise at construction time
-        # depending on Pydantic version
-        source = MarketplaceSource(source="github")
-        # Repo should be None if not provided
-        assert source.repo is None
+        # Validation should raise at construction time
+        with pytest.raises(ValueError):
+            MarketplaceSource(source="github")
     
     def test_url_source(self):
         """Test URL source creation."""

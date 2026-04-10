@@ -31,7 +31,7 @@ from .dependencies import DependencyResolver, DependencyGraph
 from .versioning import VersionManager, UpdateChecker
 from .autoupdate import AutoUpdater, UpdatePolicy, MarketplaceUpdater
 from ..sources.github import GitHubSource
-from ..sources.base import SourceError
+from ..sources.base import SourceError, DownloadResult
 
 
 class PluginError(Exception):
@@ -148,11 +148,28 @@ class PluginManager:
                 # Source is a dict
                 source_config = entry.source
             
-            result = await self._github_source.download(
-                source_config,
-                cache_path,
-                force=force
-            )
+            # Handle local directory sources
+            if source_config.get("source") == "directory":
+                source_path = Path(source_config.get("path"))
+                if not source_path.exists():
+                    raise PluginError(f"Local plugin path does not exist: {source_path}")
+                
+                # Copy to cache
+                if cache_path.exists() and force:
+                    shutil.rmtree(cache_path)
+                
+                if cache_path.exists():
+                    raise PluginError(f"Plugin already exists at {cache_path}. Use --force to overwrite.")
+                
+                shutil.copytree(source_path, cache_path)
+                result = DownloadResult(success=True, path=cache_path)
+            else:
+                # Use git source for github/git sources
+                result = await self._github_source.download(
+                    source_config,
+                    cache_path,
+                    force=force
+                )
             
             if not result.success:
                 raise PluginError(f"Failed to download plugin: {result.error}")

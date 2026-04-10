@@ -252,6 +252,12 @@ Guidelines:
                 parallel_score += 1
         is_parallel = parallel_score > 0
         
+        # Pattern: Multi-module/Complex project (with modules, components, platform)
+        multi_module_indicators = ["module", "component", "platform", "system"]
+        if any(word in task_lower for word in multi_module_indicators) and \
+           ("implement" in task_lower or "create" in task_lower or "build" in task_lower or "develop" in task_lower):
+            return self._decompose_multi_module_project(task)
+        
         # Pattern: Implementation with tests
         if ("implement" in task_lower or "create" in task_lower) and \
            ("test" in task_lower or "tests" in task_lower):
@@ -375,6 +381,56 @@ Guidelines:
                 )
             ],
             reasoning="Analysis requires exploration, analysis, and documentation",
+            confidence=0.9
+        )
+    
+    def _decompose_multi_module_project(self, task: str) -> DecompositionResult:
+        """Decompose multi-module or complex project implementation."""
+        return DecompositionResult(
+            original_task=task,
+            strategy=DecompositionStrategy.HIERARCHICAL,
+            subtasks=[
+                SubTask(
+                    id="design",
+                    description="Design system architecture",
+                    prompt=f"Design the system architecture for this project:\n\n{task}\n\nProvide:\n1. Overall architecture\n2. Module relationships\n3. Interface definitions",
+                    role="planner",
+                    estimated_complexity=4
+                ),
+                SubTask(
+                    id="implement_core",
+                    description="Implement core modules",
+                    prompt=f"Implement the core modules:\n\n{task}\n\nFocus on:\n1. Core functionality\n2. Shared components\n3. Base interfaces",
+                    role="coder",
+                    dependencies=["design"],
+                    estimated_complexity=4
+                ),
+                SubTask(
+                    id="implement_features",
+                    description="Implement feature modules",
+                    prompt=f"Implement the feature modules:\n\n{task}\n\nBuild on the core to implement specific features.",
+                    role="coder",
+                    dependencies=["implement_core"],
+                    estimated_complexity=3
+                ),
+                SubTask(
+                    id="integrate",
+                    description="Integrate all modules",
+                    prompt=f"Integrate all modules together:\n\n{task}\n\nEnsure:\n1. All modules work together\n2. Interfaces are compatible\n3. End-to-end flow works",
+                    role="coder",
+                    dependencies=["implement_features"],
+                    estimated_complexity=3
+                ),
+                SubTask(
+                    id="test",
+                    description="Test the complete system",
+                    prompt=f"Test the complete system:\n\n{task}\n\nCover:\n1. Unit tests for each module\n2. Integration tests\n3. End-to-end scenarios",
+                    role="tester",
+                    dependencies=["integrate"],
+                    estimated_complexity=3
+                )
+            ],
+            reasoning="Multi-module projects benefit from hierarchical decomposition with design, implementation, integration, and testing phases",
             confidence=0.9
         )
     

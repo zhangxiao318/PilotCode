@@ -87,7 +87,7 @@ class PluginConfig:
     
     def save_known_marketplaces(self, marketplaces: dict[str, KnownMarketplace]) -> None:
         """Save known marketplaces configuration."""
-        data = {name: config.model_dump() for name, config in marketplaces.items()}
+        data = {name: config.model_dump(by_alias=True) for name, config in marketplaces.items()}
         with open(self.known_marketplaces_file, "w") as f:
             json.dump(data, f, indent=2, default=str)
     
@@ -117,7 +117,7 @@ class PluginConfig:
     
     def save_installed_plugins(self, installations: list[PluginInstallation]) -> None:
         """Save installed plugins records."""
-        data = [inst.model_dump() for inst in installations]
+        data = [inst.model_dump(by_alias=True) for inst in installations]
         with open(self.installed_plugins_file, "w") as f:
             json.dump(data, f, indent=2, default=str)
     
@@ -157,7 +157,7 @@ class PluginConfig:
         # Update with plugin settings
         existing["enabledPlugins"] = settings.enabled_plugins
         existing["extraKnownMarketplaces"] = {
-            name: config.model_dump()
+            name: config.model_dump(by_alias=True)
             for name, config in settings.extra_known_marketplaces.items()
         }
         

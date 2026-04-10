@@ -280,9 +280,6 @@ class AgentCoordinator:
         """Get execution statistics."""
         workflows = list(self._workflows.values())
         
-        if not workflows:
-            return {"total": 0}
-        
         total = len(workflows)
         success = sum(1 for w in workflows if w.status == "success")
         partial = sum(1 for w in workflows if w.status == "partial")
@@ -296,7 +293,7 @@ class AgentCoordinator:
             "success": success,
             "partial": partial,
             "failed": failed,
-            "success_rate": success / total if total > 0 else 0,
+            "success_rate": success / total if total > 0 else 0.0,
             "total_duration_seconds": total_duration,
             "average_duration_seconds": avg_duration
         }
