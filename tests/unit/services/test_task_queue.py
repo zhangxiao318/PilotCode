@@ -47,6 +47,12 @@ class TestTaskResult:
 class TestBackgroundTaskQueue:
     """Tests for BackgroundTaskQueue."""
 
+    @pytest.fixture(autouse=True)
+    async def cleanup_queue(self):
+        """Automatically clean up queue after each test."""
+        yield
+        # Cleanup is handled by each test's try/finally or explicit stop
+
     def test_init(self):
         """Test initialization."""
         queue = BackgroundTaskQueue(max_concurrent=5)
@@ -62,7 +68,7 @@ class TestBackgroundTaskQueue:
         await queue.start()
         assert queue._running_flag is True
 
-        await queue.stop(wait_for_complete=False)
+        await queue.stop(wait_for_complete=True)
         assert queue._running_flag is False
 
     @pytest.mark.asyncio
@@ -80,7 +86,9 @@ class TestBackgroundTaskQueue:
         assert task.id is not None
         assert task in queue._tasks.values()
 
-        await queue.stop(wait_for_complete=False)
+        # Wait for task to complete before stopping
+        await asyncio.sleep(0.1)
+        await queue.stop(wait_for_complete=True)
 
     @pytest.mark.asyncio
     async def test_task_execution(self):
@@ -105,7 +113,7 @@ class TestBackgroundTaskQueue:
         assert task.result is not None
         assert task.result.success is True
 
-        await queue.stop(wait_for_complete=False)
+        await queue.stop(wait_for_complete=True)
 
     @pytest.mark.asyncio
     async def test_task_failure(self):
@@ -126,7 +134,7 @@ class TestBackgroundTaskQueue:
         assert task.result.success is False
         assert "Test error" in task.result.error
 
-        await queue.stop(wait_for_complete=False)
+        await queue.stop(wait_for_complete=True)
 
     @pytest.mark.asyncio
     async def test_cancel_task(self):
@@ -146,7 +154,9 @@ class TestBackgroundTaskQueue:
         assert result is True
         assert task._cancelled is True
 
-        await queue.stop(wait_for_complete=False)
+        # Give time for cancellation to take effect
+        await asyncio.sleep(0.1)
+        await queue.stop(wait_for_complete=True)
 
     @pytest.mark.asyncio
     async def test_cancel_nonexistent_task(self):
@@ -172,7 +182,7 @@ class TestBackgroundTaskQueue:
 
         assert retrieved is task
 
-        await queue.stop(wait_for_complete=False)
+        await queue.stop(wait_for_complete=True)
 
     @pytest.mark.asyncio
     async def test_get_tasks(self):
@@ -186,11 +196,13 @@ class TestBackgroundTaskQueue:
         await queue.submit(test_task(), name="task1")
         await queue.submit(test_task(), name="task2")
 
+        # Wait for tasks to complete before stopping
+        await asyncio.sleep(0.1)
         tasks = queue.get_tasks()
 
         assert len(tasks) == 2
 
-        await queue.stop(wait_for_complete=False)
+        await queue.stop(wait_for_complete=True)
 
     @pytest.mark.asyncio
     async def test_get_tasks_with_status_filter(self):
@@ -211,7 +223,7 @@ class TestBackgroundTaskQueue:
         assert len(tasks) == 1
         assert tasks[0].status == TaskStatus.COMPLETED
 
-        await queue.stop(wait_for_complete=False)
+        await queue.stop(wait_for_complete=True)
 
     @pytest.mark.asyncio
     async def test_get_stats(self):
@@ -224,12 +236,14 @@ class TestBackgroundTaskQueue:
 
         await queue.submit(test_task())
 
+        # Wait for task to complete
+        await asyncio.sleep(0.1)
         stats = queue.get_stats()
 
         assert stats["total_tasks"] == 1
         assert stats["max_concurrent"] == 3
 
-        await queue.stop(wait_for_complete=False)
+        await queue.stop(wait_for_complete=True)
 
     def test_clear_completed(self):
         """Test clearing completed tasks."""
@@ -280,7 +294,7 @@ class TestBackgroundTaskQueue:
         assert len(completed_tasks) >= 0  # May or may not be called
         assert len(progress_updates) == 1
 
-        await queue.stop(wait_for_complete=False)
+        await queue.stop(wait_for_complete=True)
 
 
 class TestGlobalFunctions:
@@ -305,7 +319,8 @@ class TestGlobalFunctions:
 
         # Clean up
         queue = get_task_queue()
-        await queue.stop(wait_for_complete=False)
+        await asyncio.sleep(0.1)
+        await queue.stop(wait_for_complete=True)
 
 
 if __name__ == "__main__":

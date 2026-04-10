@@ -1,7 +1,7 @@
 """Permission system type definitions."""
 
 from typing import Literal, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 PermissionMode = Literal[
     "default",  # Default: follow rules
@@ -63,8 +63,7 @@ class ToolPermissionContext(BaseModel):
     await_automated_checks_before_dialog: bool = False
     pre_plan_mode: PermissionMode | None = None
 
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 class PermissionDecision(BaseModel):

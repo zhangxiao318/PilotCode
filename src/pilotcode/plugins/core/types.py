@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from datetime import datetime
 
 
@@ -88,8 +88,7 @@ class HooksConfig(BaseModel):
     user_prompt_submit: list[str] = Field(default_factory=list)
     permission_request: list[str] = Field(default_factory=list)
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class SkillDefinition(BaseModel):
@@ -142,8 +141,7 @@ class PluginManifest(BaseModel):
             raise ValueError("Plugin name cannot contain spaces")
         return v
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class PluginMarketplaceEntry(BaseModel):
