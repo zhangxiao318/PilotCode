@@ -1,7 +1,7 @@
 """Command type definitions."""
 
 from typing import Literal, Callable, Awaitable, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from .message import ContentBlock
 
 CommandType = Literal["prompt", "local", "local_jsx"]
@@ -14,8 +14,7 @@ class CommandContext(BaseModel):
     verbose: bool = False
     query_engine: Any | None = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class Command(BaseModel):
@@ -28,8 +27,7 @@ class Command(BaseModel):
     is_enabled: bool = True
     is_hidden: bool = False
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class PromptCommand(Command):
@@ -40,8 +38,7 @@ class PromptCommand(Command):
     content_length: int
     get_prompt: Callable[[list[str], CommandContext], Awaitable[list[ContentBlock]]]
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class LocalCommandResult(BaseModel):
@@ -59,8 +56,7 @@ class LocalCommand(Command):
     supports_non_interactive: bool = True
     call: Callable[[list[str], CommandContext], Awaitable[LocalCommandResult]]
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class LocalJSXCommand(Command):
@@ -69,5 +65,4 @@ class LocalJSXCommand(Command):
     type: Literal["local_jsx"] = "local_jsx"
     call: Callable[[list[str], CommandContext], Awaitable[Any]]  # Returns component
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)

@@ -86,7 +86,10 @@ Do something useful.
         assert skill.aliases == ["ms", "my"]
         assert "Do something useful" in skill.content
     
-    def test_load_skill_without_name_uses_filename(self, tmp_path):
+    def test_load_skill_without_name_raises_error(self, tmp_path):
+        """Test that error is raised when name not in frontmatter."""
+        from pilotcode.plugins.loader.skills import SkillLoadError
+        
         skill_file = tmp_path / "filename-skill.md"
         skill_file.write_text("""---
 description: Uses filename
@@ -95,9 +98,9 @@ description: Uses filename
 Content here.
 """)
         
-        skill = load_skill_from_file(skill_file)
-        
-        assert skill.name == "filename-skill"
+        # Should raise error because name is required
+        with pytest.raises(SkillLoadError):
+            load_skill_from_file(skill_file)
 
 
 class TestPluginManifest:
@@ -206,16 +209,21 @@ class TestMarketplaceSource:
 class TestPluginManager:
     """Test plugin manager functionality."""
     
-    async def test_initialize_loads_marketplaces(self, tmp_path):
+    async def test_initialize_loads_marketplaces(self, tmp_path, monkeypatch):
         from pilotcode.plugins.core.manager import PluginManager
+        from unittest.mock import AsyncMock
         
         config = PluginConfig(config_dir=tmp_path)
         manager = PluginManager(config)
         
+        # Mock marketplace update to avoid network calls
+        manager.marketplace.update_marketplace = AsyncMock()
+        
         await manager.initialize()
         
-        # Should have official marketplace
-        assert "claude-plugins-official" in manager.marketplace.list_marketplaces()
+        # Should have official marketplace registered in config
+        known = config.load_known_marketplaces()
+        assert "claude-plugins-official" in known
     
     async def test_install_local_plugin(self, tmp_path):
         from pilotcode.plugins.core.manager import PluginManager

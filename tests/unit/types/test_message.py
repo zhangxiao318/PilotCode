@@ -251,7 +251,7 @@ class TestSerialization:
     def test_user_message_to_dict(self):
         """Test serializing UserMessage to dict."""
         msg = UserMessage(content="Hello")
-        data = msg.dict()
+        data = msg.model_dump()
 
         assert data["type"] == "user"
         assert data["content"] == "Hello"
@@ -262,7 +262,7 @@ class TestSerialization:
         """Test serializing and deserializing message."""
         original = ToolUseMessage(tool_use_id="call_1", name="Bash", input={"command": "ls"})
 
-        data = original.dict()
+        data = original.model_dump()
         restored = ToolUseMessage(**data)
 
         assert restored.tool_use_id == original.tool_use_id

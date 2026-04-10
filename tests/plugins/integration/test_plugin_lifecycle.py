@@ -23,38 +23,166 @@ pytestmark = [
 ]
 
 
+@pytest.fixture
+async def manager(temp_config_dir, monkeypatch):
+    """Create plugin manager with temp config."""
+    from unittest.mock import AsyncMock, MagicMock
+    import json as json_mod
+    from pathlib import Path
+    
+    # Reset global plugin manager to ensure fresh state for each test
+    import pilotcode.plugins.core.manager as manager_module
+    manager_module._manager = None
+    
+    config = PluginConfig(config_dir=temp_config_dir)
+    
+    # Mock network calls to avoid timeouts
+    from pilotcode.plugins.core.marketplace import MarketplaceManager
+    original_update = MarketplaceManager.update_marketplace
+    
+    async def mock_update(self, name):
+        """Mock update that loads from source directory instead of network."""
+        import shutil
+        # Get the known marketplace config
+        known = config.load_known_marketplaces()
+        if name not in known:
+            return True
+        
+        marketplace_config = known[name]
+        source = marketplace_config.source
+        
+        # Handle directory source (local marketplace)
+        if source.source == "directory" and source.file_path:
+            source_path = Path(source.file_path)
+            # Try .claude-plugin/marketplace.json first
+            marketplace_file = source_path / ".claude-plugin" / "marketplace.json"
+            if not marketplace_file.exists():
+                marketplace_file = source_path / "marketplace.json"
+            
+            if marketplace_file.exists():
+                # Copy to cache
+                target_path = Path(marketplace_config.install_location)
+                target_path.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(marketplace_file, target_path / "marketplace.json")
+                
+                # Load into memory
+                try:
+                    with open(marketplace_file) as f:
+                        data = json_mod.load(f)
+                    from pilotcode.plugins.core.types import PluginMarketplace
+                    marketplace = PluginMarketplace(**data)
+                    self._marketplaces[name] = marketplace
+                except Exception:
+                    pass
+        return True
+    
+    MarketplaceManager.update_marketplace = mock_update
+    
+    manager = await get_plugin_manager(config)
+    yield manager
+    # Cleanup
+    await manager.marketplace.stop_background_checks() if hasattr(manager.marketplace, 'stop_background_checks') else None
+    # Reset global manager
+    manager_module._manager = None
+    # Restore original
+    MarketplaceManager.update_marketplace = original_update
+
+
+@pytest.fixture
+def create_local_marketplace(temp_config_dir):
+    """Create a local marketplace for testing."""
+    def _create(plugins):
+        marketplace_dir = temp_config_dir / "marketplace"
+        marketplace_dir.mkdir(exist_ok=True)
+        
+        marketplace_data = {
+            "name": "test-marketplace",
+            "description": "Test marketplace",
+            "version": "1.0.0",
+            "plugins": plugins,
+        }
+        
+        marketplace_file = marketplace_dir / "marketplace.json"
+        with open(marketplace_file, "w") as f:
+            json.dump(marketplace_data, f, indent=2)
+        
+        return marketplace_dir
+    return _create
+
+
 class TestPluginLifecycle:
     """Test complete plugin lifecycle."""
     
-    @pytest.fixture
-    async def manager(self, temp_config_dir):
-        """Create plugin manager with temp config."""
-        config = PluginConfig(config_dir=temp_config_dir)
-        manager = await get_plugin_manager(config)
-        yield manager
-        # Cleanup
-        await manager.marketplace.stop_background_checks() if hasattr(manager.marketplace, 'stop_background_checks') else None
-    
-    @pytest.fixture
-    def create_local_marketplace(self, temp_config_dir):
-        """Create a local marketplace for testing."""
-        def _create(plugins):
-            marketplace_dir = temp_config_dir / "marketplace"
-            marketplace_dir.mkdir(exist_ok=True)
-            
-            marketplace_data = {
-                "name": "test-marketplace",
-                "description": "Test marketplace",
+    async def test_full_plugin_lifecycle(
+        self,
+        manager,
+        create_local_marketplace,
+        create_test_plugin,
+        temp_config_dir,
+    ):
+        """Test complete plugin lifecycle: install → load → use → uninstall."""
+        # 1. Create test plugin
+        plugin_dir = create_test_plugin("test-lifecycle", with_skills=True)
+        
+        # 2. Create local marketplace
+        marketplace_dir = create_local_marketplace([
+            {
+                "name": "test-lifecycle",
+                "description": "Test plugin for lifecycle",
                 "version": "1.0.0",
-                "plugins": plugins,
+                "source": str(plugin_dir),
             }
+        ])
+        
+        # 3. Add marketplace
+        await manager.marketplace.add_marketplace(
+            "test-lifecycle-marketplace",
+            MarketplaceSource(source="directory", file_path=str(marketplace_dir)),
+        )
+        
+        # 4. Install plugin
+        plugin = await manager.install_plugin(
+            "test-lifecycle@test-lifecycle-marketplace",
+            scope=PluginScope.USER,
+        )
+        
+        assert plugin.manifest.name == "test-lifecycle"
+        assert plugin.enabled is True
+        
+        # 5. Load plugins
+        result = await manager.load_plugins()
+        
+        assert len(result.enabled) >= 1
+        loaded_plugin = manager.get_loaded_plugin("test-lifecycle@test-lifecycle-marketplace")
+        assert loaded_plugin is not None
+        
+        # 6. Load and verify skills
+        if loaded_plugin.skills_path:
+            skill_loader = SkillLoader(loaded_plugin.skills_path)
+            skills = skill_loader.load_all()
             
-            marketplace_file = marketplace_dir / "marketplace.json"
-            with open(marketplace_file, "w") as f:
-                json.dump(marketplace_data, f, indent=2)
-            
-            return marketplace_dir
-        return _create
+            assert len(skills) >= 1
+            assert skills[0].name == "test-skill"
+        
+        # 7. Disable plugin
+        success = await manager.disable_plugin("test-lifecycle@test-lifecycle-marketplace")
+        assert success is True
+        
+        result = await manager.load_plugins()
+        loaded = [p for p in result.disabled if p.manifest.name == "test-lifecycle"]
+        assert len(loaded) >= 1
+        
+        # 8. Re-enable plugin
+        success = await manager.enable_plugin("test-lifecycle@test-lifecycle-marketplace")
+        assert success is True
+        
+        # 9. Uninstall plugin
+        success = await manager.uninstall_plugin("test-lifecycle@test-lifecycle-marketplace")
+        assert success is True
+        
+        # Verify uninstalled
+        plugin_after = manager.get_loaded_plugin("test-lifecycle@test-lifecycle-marketplace")
+        assert plugin_after is None
     
     async def test_full_plugin_lifecycle(
         self,

@@ -193,7 +193,7 @@ class TestCommandSerialization:
         """Test serializing Command to dict."""
         cmd = Command(name="test", description="Test command", type="local", aliases=["t"])
 
-        data = cmd.dict()
+        data = cmd.model_dump()
 
         assert data["name"] == "test"
         assert data["description"] == "Test command"
@@ -205,7 +205,7 @@ class TestCommandSerialization:
         """Test serializing LocalCommandResult to dict."""
         result = LocalCommandResult(success=True, message="Done", data={"count": 5})
 
-        data = result.dict()
+        data = result.model_dump()
 
         assert data["success"] is True
         assert data["message"] == "Done"

@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from datetime import datetime
 
 
@@ -50,6 +50,15 @@ class MarketplaceSource(BaseModel):
             raise ValueError("GitHub source requires 'repo' field")
         return v
     
+    @model_validator(mode='after')
+    def validate_github_source(self):
+        """Validate that GitHub source has repo field."""
+        if self.source == "github" and not self.repo:
+            raise ValueError("GitHub source requires 'repo' field")
+        if self.source == "file" and not self.file_path:
+            raise ValueError("File source requires 'path' field")
+        return self
+    
     model_config = {"populate_by_name": True}
 
 
@@ -79,8 +88,7 @@ class HooksConfig(BaseModel):
     user_prompt_submit: list[str] = Field(default_factory=list)
     permission_request: list[str] = Field(default_factory=list)
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class SkillDefinition(BaseModel):
@@ -133,8 +141,7 @@ class PluginManifest(BaseModel):
             raise ValueError("Plugin name cannot contain spaces")
         return v
     
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class PluginMarketplaceEntry(BaseModel):
@@ -145,6 +152,7 @@ class PluginMarketplaceEntry(BaseModel):
     author: Optional[PluginAuthor] = None
     source: Union[dict[str, Any], str]  # GitHub repo, URL, or local path
     dependencies: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
 
 
 class PluginMarketplace(BaseModel):

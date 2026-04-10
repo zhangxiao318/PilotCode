@@ -281,8 +281,21 @@ class TestConfigManager:
 
     def test_is_configured_without_api_key(self, temp_config_dir, monkeypatch):
         """Test is_configured without API key."""
-        # Ensure no API key is set
-        for key in ["PILOTCODE_API_KEY", "LOCAL_API_KEY", "OPENAI_API_KEY"]:
+        # Ensure no API key is set (clear all possible API key env vars)
+        api_key_env_vars = [
+            "PILOTCODE_API_KEY",
+            "LOCAL_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "AZURE_OPENAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "DASHSCOPE_API_KEY",
+            "ZHIPU_API_KEY",
+            "MOONSHOT_API_KEY",
+            "BAICHUAN_API_KEY",
+            "ARK_API_KEY",
+        ]
+        for key in api_key_env_vars:
             monkeypatch.delenv(key, raising=False)
 
         manager = ConfigManager()

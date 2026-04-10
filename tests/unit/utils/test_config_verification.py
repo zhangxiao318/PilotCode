@@ -22,6 +22,23 @@ class TestConfigVerification:
         """Create an isolated ConfigManager for testing."""
         from pilotcode.utils.config import ConfigManager
 
+        # Clear all API key environment variables to ensure clean state
+        api_key_env_vars = [
+            "PILOTCODE_API_KEY",
+            "LOCAL_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "AZURE_OPENAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "DASHSCOPE_API_KEY",
+            "ZHIPU_API_KEY",
+            "MOONSHOT_API_KEY",
+            "BAICHUAN_API_KEY",
+            "ARK_API_KEY",
+        ]
+        for env_var in api_key_env_vars:
+            monkeypatch.delenv(env_var, raising=False)
+
         # Create a fresh instance with isolated paths
         manager = ConfigManager.__new__(ConfigManager)
         manager._global_config = None
@@ -291,6 +308,23 @@ class TestConfigManagerIntegration:
     def test_is_configured_vs_verify(self, tmp_path, monkeypatch):
         """Test that is_configured and verify work together."""
         from pilotcode.utils.config import ConfigManager, GlobalConfig
+
+        # Clear all API key environment variables to ensure clean state
+        api_key_env_vars = [
+            "PILOTCODE_API_KEY",
+            "LOCAL_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "AZURE_OPENAI_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "DASHSCOPE_API_KEY",
+            "ZHIPU_API_KEY",
+            "MOONSHOT_API_KEY",
+            "BAICHUAN_API_KEY",
+            "ARK_API_KEY",
+        ]
+        for env_var in api_key_env_vars:
+            monkeypatch.delenv(env_var, raising=False)
 
         # Create isolated manager
         manager = ConfigManager.__new__(ConfigManager)

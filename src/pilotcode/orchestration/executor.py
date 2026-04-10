@@ -88,10 +88,12 @@ class TaskExecutor:
     def __init__(
         self,
         agent_factory: Callable[[str, str], Any],
-        max_parallel: int = 3
+        max_parallel: int = 3,
+        max_concurrency: int = None
     ):
         self.agent_factory = agent_factory
-        self.max_parallel = max_parallel
+        # Support both max_parallel and max_concurrency for backward compatibility
+        self.max_parallel = max_concurrency if max_concurrency is not None else max_parallel
         self._progress_callbacks: list[Callable[[str, dict], None]] = []
     
     def on_progress(self, callback: Callable[[str, dict], None]):
@@ -157,10 +159,12 @@ class TaskExecutor:
     async def execute_parallel(
         self,
         subtasks: list[Any],
-        context: dict = None
+        context: dict = None,
+        max_concurrency: int = None
     ) -> list[ExecutionResult]:
         """Execute subtasks in parallel with concurrency limit."""
-        semaphore = asyncio.Semaphore(self.max_parallel)
+        concurrency = max_concurrency if max_concurrency is not None else self.max_parallel
+        semaphore = asyncio.Semaphore(concurrency)
         context = context or {}
         
         async def run_with_limit(subtask: Any, index: int) -> ExecutionResult:
