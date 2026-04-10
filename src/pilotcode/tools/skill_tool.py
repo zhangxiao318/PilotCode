@@ -40,10 +40,10 @@ def register_dynamic_skill(
     description: str,
     content: str,
     allowed_tools: list[str] = None,
-    source: str = "plugin"
+    source: str = "plugin",
 ) -> None:
     """Register a dynamic skill from a plugin.
-    
+
     Args:
         name: Skill name
         description: Skill description
@@ -67,7 +67,7 @@ def load_skill_config(skill_name: str) -> dict | None:
     # Check dynamic skills first
     if skill_name in _dynamic_skills:
         return _dynamic_skills[skill_name]
-    
+
     # Fall back to legacy skill.json
     skill_path = SKILLS_DIR / skill_name / "skill.json"
 
@@ -84,11 +84,11 @@ def load_skill_config(skill_name: str) -> dict | None:
 def _list_all_skills() -> list[str]:
     """List all available skills (legacy + dynamic)."""
     skills = []
-    
+
     # Add dynamic skills
     for name in _dynamic_skills:
         skills.append(name)
-    
+
     # Add legacy skills
     if SKILLS_DIR.exists():
         for item in SKILLS_DIR.iterdir():
@@ -96,7 +96,7 @@ def _list_all_skills() -> list[str]:
                 config = load_skill_config(item.name)
                 if config and item.name not in skills:
                     skills.append(item.name)
-    
+
     return sorted(skills)
 
 
@@ -112,13 +112,13 @@ async def skill_call(
     if input_data.action == "list":
         # List available skills
         skills = _list_all_skills()
-        
+
         skill_list = []
         for skill_name in skills:
             config = load_skill_config(skill_name)
             if config:
-                desc = config.get('description', 'No description')
-                source = config.get('source', 'legacy')
+                desc = config.get("description", "No description")
+                source = config.get("source", "legacy")
                 skill_list.append(f"{skill_name}: {desc} [{source}]")
 
         return ToolResult(
@@ -146,7 +146,11 @@ async def skill_call(
         content_preview = ""
         if config.get("version") == "plugin" and "content" in config:
             content = config["content"]
-            content_preview = f"\nContent Preview:\n{content[:500]}..." if len(content) > 500 else f"\nContent:\n{content}"
+            content_preview = (
+                f"\nContent Preview:\n{content[:500]}..."
+                if len(content) > 500
+                else f"\nContent:\n{content}"
+            )
 
         info = f"""Skill: {config.get('name', input_data.skill_name)}
 Version: {config.get('version', 'unknown')}
@@ -177,11 +181,11 @@ Allowed Tools: {', '.join(config.get('allowedTools', [])) if config.get('allowed
         # For plugin-based skills with content
         if "content" in config:
             skill_content = config["content"]
-            
+
             # Simple argument substitution
             for key, value in input_data.args.items():
                 skill_content = skill_content.replace(f"{{{key}}}", str(value))
-            
+
             return ToolResult(
                 data=SkillOutput(
                     skill_name=input_data.skill_name,

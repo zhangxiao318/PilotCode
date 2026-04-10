@@ -1,5 +1,6 @@
 """Tests for Testing Commands."""
 
+import os
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -226,14 +227,17 @@ class TestTestExecution:
             "pilotcode.commands.testing_commands.detect_test_framework",
             return_value=TestFramework.UNKNOWN,
         ):
-            result = await run_test_cmd([], command_context)
-            assert "Could not detect" in result
+            # Clear PYTEST_CURRENT_TEST to test actual command logic
+            with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+                result = await run_test_cmd([], command_context)
+                assert "Could not detect" in result
 
     @pytest.mark.asyncio
     async def test_test_help(self, command_context):
         """Test help output."""
-        result = await run_test_cmd(["--help"], command_context)
-        assert "Usage:" in result
+        with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+            result = await run_test_cmd(["--help"], command_context)
+            assert "Usage:" in result
 
 
 class TestCoverageCmd:

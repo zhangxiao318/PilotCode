@@ -78,8 +78,10 @@ class HybridMessageList(ScrollableContainer):
 
         # Auto-scroll to bottom immediately and after refresh
         self.scroll_end(animate=False)
+
         def scroll_to_bottom():
             self.scroll_end(animate=False)
+
         self.call_after_refresh(scroll_to_bottom)
 
         # Warning for very large histories

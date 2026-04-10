@@ -1,11 +1,16 @@
 """Test command implementation."""
 
 import subprocess
+import os
 from .base import CommandHandler, register_command, CommandContext
 
 
 async def test_command(args: list[str], context: CommandContext) -> str:
     """Handle /test command."""
+    # Detect if we're running inside pytest to avoid recursion
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return "[dim]Skipping test command during pytest run[/dim]"
+
     if args:
         # Run specific test
         test_path = args[0]
@@ -16,6 +21,7 @@ async def test_command(args: list[str], context: CommandContext) -> str:
                 capture_output=True,
                 text=True,
                 cwd=context.cwd,
+                timeout=60,  # Add timeout to prevent hanging
             )
 
             output = result.stdout
@@ -27,6 +33,8 @@ async def test_command(args: list[str], context: CommandContext) -> str:
             else:
                 return f"Tests failed:\n{output}"
 
+        except subprocess.TimeoutExpired:
+            return "Tests timed out after 60 seconds"
         except Exception as e:
             return f"Error: {e}"
 
@@ -34,7 +42,11 @@ async def test_command(args: list[str], context: CommandContext) -> str:
         # Run all tests
         try:
             result = subprocess.run(
-                ["python", "-m", "pytest", "-v"], capture_output=True, text=True, cwd=context.cwd
+                ["python", "-m", "pytest", "-v"],
+                capture_output=True,
+                text=True,
+                cwd=context.cwd,
+                timeout=120,  # Add timeout to prevent hanging
             )
 
             output = result.stdout
@@ -46,6 +58,8 @@ async def test_command(args: list[str], context: CommandContext) -> str:
             else:
                 return f"Some tests failed:\n{output}"
 
+        except subprocess.TimeoutExpired:
+            return "Tests timed out after 120 seconds"
         except Exception as e:
             return f"Error: {e}"
 

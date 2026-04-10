@@ -4,7 +4,7 @@ A simplified but compatible implementation of the ClaudeCode plugin system.
 
 Usage:
     from pilotcode.plugins import get_plugin_manager
-    
+
     manager = get_plugin_manager()
     await manager.install_plugin("docker@claude-plugins-official")
     await manager.load_plugins()

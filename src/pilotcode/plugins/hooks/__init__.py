@@ -4,9 +4,9 @@ Provides a comprehensive hook system compatible with ClaudeCode's hook protocol.
 
 Example usage:
     from pilotcode.plugins.hooks import HookManager, HookType
-    
+
     manager = HookManager()
-    
+
     @manager.register(HookType.PRE_TOOL_USE)
     async def my_hook(context: HookContext) -> HookResult:
         # Modify tool input or block execution

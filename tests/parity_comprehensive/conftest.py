@@ -42,3 +42,24 @@ def auto_allow_all(monkeypatch):
             level=PermissionLevel.ALWAYS_ALLOW,
         )
     yield pm
+
+
+@pytest.fixture(autouse=True)
+def cleanup_tasks_after_test():
+    """Automatically cleanup tasks after each test to prevent hanging."""
+    yield
+    # Cleanup after test
+    try:
+        from pilotcode.tools.task_tools import cleanup_all_tasks
+
+        # Try to run cleanup if we're in an async context
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                # Schedule cleanup in the background
+                asyncio.create_task(cleanup_all_tasks())
+        except RuntimeError:
+            # No running loop, can create new one
+            asyncio.run(cleanup_all_tasks())
+    except Exception:
+        pass  # Ignore cleanup errors

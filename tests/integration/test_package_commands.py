@@ -1,5 +1,6 @@
 """Tests for Package Management Commands."""
 
+import os
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -140,14 +141,16 @@ class TestInstallCommand:
     @pytest.mark.asyncio
     async def test_install_no_packages(self, command_context):
         """Test install with no packages."""
-        result = await install_command([], command_context)
-        assert "Usage:" in result
+        with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+            result = await install_command([], command_context)
+            assert "Usage:" in result
 
     @pytest.mark.asyncio
     async def test_install_help(self, command_context):
         """Test install help."""
-        result = await install_command(["--help"], command_context)
-        assert "Usage:" in result
+        with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+            result = await install_command(["--help"], command_context)
+            assert "Usage:" in result
 
     @pytest.mark.asyncio
     async def test_install_unknown_manager(self, command_context):
@@ -156,7 +159,8 @@ class TestInstallCommand:
             "pilotcode.commands.package_commands.detect_package_manager",
             return_value=PackageManager.UNKNOWN,
         ):
-            result = await install_command(["requests"], command_context)
+            with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+                result = await install_command(["requests"], command_context)
             assert "Could not detect" in result
 
 
@@ -166,8 +170,9 @@ class TestUpgradeCommand:
     @pytest.mark.asyncio
     async def test_upgrade_help(self, command_context):
         """Test upgrade help."""
-        result = await upgrade_command(["--help"], command_context)
-        assert "Usage:" in result
+        with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+            result = await upgrade_command(["--help"], command_context)
+            assert "Usage:" in result
 
     @pytest.mark.asyncio
     async def test_upgrade_unknown_manager(self, command_context):
@@ -176,8 +181,9 @@ class TestUpgradeCommand:
             "pilotcode.commands.package_commands.detect_package_manager",
             return_value=PackageManager.UNKNOWN,
         ):
-            result = await upgrade_command(["requests"], command_context)
-            assert "Could not detect" in result
+            with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+                result = await upgrade_command(["requests"], command_context)
+                assert "Could not detect" in result
 
 
 class TestUninstallCommand:
@@ -186,14 +192,16 @@ class TestUninstallCommand:
     @pytest.mark.asyncio
     async def test_uninstall_no_packages(self, command_context):
         """Test uninstall with no packages."""
-        result = await uninstall_command([], command_context)
-        assert "Usage:" in result
+        with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+            result = await uninstall_command([], command_context)
+            assert "Usage:" in result
 
     @pytest.mark.asyncio
     async def test_uninstall_help(self, command_context):
         """Test uninstall help."""
-        result = await uninstall_command(["--help"], command_context)
-        assert "Usage:" in result
+        with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+            result = await uninstall_command(["--help"], command_context)
+            assert "Usage:" in result
 
     @pytest.mark.asyncio
     async def test_uninstall_unknown_manager(self, command_context):
@@ -202,8 +210,9 @@ class TestUninstallCommand:
             "pilotcode.commands.package_commands.detect_package_manager",
             return_value=PackageManager.UNKNOWN,
         ):
-            result = await uninstall_command(["requests"], command_context)
-            assert "Could not detect" in result
+            with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+                result = await uninstall_command(["requests"], command_context)
+                assert "Could not detect" in result
 
 
 class TestListPackagesCommand:
@@ -212,8 +221,9 @@ class TestListPackagesCommand:
     @pytest.mark.asyncio
     async def test_list_packages_help(self, command_context):
         """Test list packages help."""
-        result = await list_packages_command(["--help"], command_context)
-        assert "Usage:" in result
+        with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+            result = await list_packages_command(["--help"], command_context)
+            assert "Usage:" in result
 
     @pytest.mark.asyncio
     async def test_list_packages_unknown_manager(self, command_context):
@@ -222,8 +232,9 @@ class TestListPackagesCommand:
             "pilotcode.commands.package_commands.detect_package_manager",
             return_value=PackageManager.UNKNOWN,
         ):
-            result = await list_packages_command([], command_context)
-            assert "Could not detect" in result
+            with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": ""}, clear=False):
+                result = await list_packages_command([], command_context)
+                assert "Could not detect" in result
 
 
 # Test command registration

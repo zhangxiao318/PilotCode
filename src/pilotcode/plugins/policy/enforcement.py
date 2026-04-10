@@ -15,10 +15,10 @@ from ..security.verification import PluginVerifier, VerificationResult
 
 class PolicyEnforcer:
     """Enforces policies on plugin operations.
-    
+
     Combines policy checks with security verification and audit logging.
     """
-    
+
     def __init__(
         self,
         policy_manager: Optional[PolicyManager] = None,
@@ -28,7 +28,7 @@ class PolicyEnforcer:
         self.policy = policy_manager or PolicyManager()
         self.verifier = verifier or PluginVerifier()
         self.audit = audit_logger or AuditLogger()
-    
+
     async def check_install(
         self,
         plugin_id: str,
@@ -37,12 +37,12 @@ class PolicyEnforcer:
         plugin_path: Optional[Path] = None,
     ) -> tuple[bool, str]:
         """Check if plugin can be installed.
-        
+
         Performs:
         1. Policy checks
         2. Security verification (if path provided)
         3. Audit logging
-        
+
         Returns:
             Tuple of (allowed, message)
         """
@@ -51,7 +51,7 @@ class PolicyEnforcer:
         if not allowed:
             self._log_denied(AuditAction.INSTALL, plugin_id, message)
             return False, message
-        
+
         # Check if approval required
         if self.policy.requires_approval():
             self._log_event(
@@ -61,18 +61,18 @@ class PolicyEnforcer:
                 "Installation requires approval",
             )
             return True, "Installation requires admin approval"
-        
+
         # Security verification
         if plugin_path:
             if self.policy.requires_signature():
                 self.verifier.set_policy(require_signature=True)
-            
+
             result = self.verifier.verify(plugin_path)
-            
+
             if not result.can_install:
                 self._log_denied(AuditAction.INSTALL, plugin_id, result.message)
                 return False, result.message
-            
+
             if result.should_warn:
                 self._log_event(
                     AuditAction.VERIFY,
@@ -80,7 +80,7 @@ class PolicyEnforcer:
                     plugin_id,
                     result.message,
                 )
-        
+
         # Log success
         if self.policy.should_audit_installs():
             self._log_event(
@@ -89,19 +89,19 @@ class PolicyEnforcer:
                 plugin_id,
                 "Installation approved",
             )
-        
+
         return True, "Allowed"
-    
+
     def check_update(self, plugin_id: str, marketplace: str) -> tuple[bool, str]:
         """Check if auto-update is allowed."""
         if not self.policy.can_auto_update(plugin_id, marketplace):
             return False, "Auto-update not allowed by policy"
         return True, "Allowed"
-    
+
     def check_marketplace(self, marketplace: str) -> tuple[bool, str]:
         """Check if marketplace is allowed."""
         return self.policy.check_marketplace(marketplace)
-    
+
     def _log_event(
         self,
         action: AuditAction,
@@ -118,7 +118,7 @@ class PolicyEnforcer:
             message=message,
             details=details,
         )
-    
+
     def _log_denied(
         self,
         action: AuditAction,
@@ -132,7 +132,7 @@ class PolicyEnforcer:
             plugin_id=plugin_id,
             message=reason,
         )
-    
+
     def get_policy_summary(self) -> str:
         """Get policy summary."""
         return self.policy.get_policy_summary()
