@@ -35,6 +35,9 @@ class TestConfigVerification:
             "MOONSHOT_API_KEY",
             "BAICHUAN_API_KEY",
             "ARK_API_KEY",
+            "PILOTCODE_MODEL",
+            "PILOTCODE_BASE_URL",
+            "OPENAI_BASE_URL",  # This can trigger local model detection
         ]
         for env_var in api_key_env_vars:
             monkeypatch.delenv(env_var, raising=False)
@@ -322,6 +325,9 @@ class TestConfigManagerIntegration:
             "MOONSHOT_API_KEY",
             "BAICHUAN_API_KEY",
             "ARK_API_KEY",
+            "PILOTCODE_MODEL",
+            "PILOTCODE_BASE_URL",
+            "OPENAI_BASE_URL",  # This can trigger local model detection
         ]
         for env_var in api_key_env_vars:
             monkeypatch.delenv(env_var, raising=False)
