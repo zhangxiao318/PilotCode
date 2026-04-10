@@ -245,18 +245,25 @@ Guidelines:
         """
         task_lower = task.lower()
         
+        # Check for parallel indicators first - if found, may override strategy
+        parallel_score = 0
+        for pattern in self.PARALLEL_INDICATORS:
+            if re.search(pattern, task_lower):
+                parallel_score += 1
+        is_parallel = parallel_score > 0
+        
         # Pattern: Implementation with tests
         if ("implement" in task_lower or "create" in task_lower) and \
            ("test" in task_lower or "tests" in task_lower):
-            return self._decompose_implementation_with_tests(task)
+            return self._decompose_implementation_with_tests(task, is_parallel)
         
         # Pattern: Refactoring
         if "refactor" in task_lower:
-            return self._decompose_refactoring(task)
+            return self._decompose_refactoring(task, is_parallel)
         
         # Pattern: Bug fix
         if any(word in task_lower for word in ["fix", "bug", "error", "issue", "debug"]):
-            return self._decompose_bug_fix(task)
+            return self._decompose_bug_fix(task, is_parallel)
         
         # Pattern: Code review
         if any(word in task_lower for word in ["review", "audit", "check"]):
@@ -268,7 +275,7 @@ Guidelines:
         
         # Pattern: Analysis/Exploration
         if any(word in task_lower for word in ["analyze", "explore", "understand", "investigate"]):
-            return self._decompose_analysis(task)
+            return self._decompose_analysis(task, is_parallel)
         
         return None
     
@@ -314,8 +321,31 @@ Guidelines:
             confidence=0.9
         )
     
-    def _decompose_analysis(self, task: str) -> DecompositionResult:
+    def _decompose_analysis(self, task: str, parallel: bool = False) -> DecompositionResult:
         """Decompose analysis/exploration task."""
+        if parallel:
+            return DecompositionResult(
+                original_task=task,
+                strategy=DecompositionStrategy.PARALLEL,
+                subtasks=[
+                    SubTask(
+                        id="explore",
+                        description="Explore and gather information",
+                        prompt=f"Explore independently to gather information:\n\n{task}\n\nFocus on:\n1. Finding relevant files\n2. Understanding structure\n3. Identifying key components",
+                        role="explorer",
+                        estimated_complexity=3
+                    ),
+                    SubTask(
+                        id="document",
+                        description="Document the analysis",
+                        prompt=f"Document the analysis results:\n\n{task}\n\nCreate clear documentation of findings.",
+                        role="explainer",
+                        estimated_complexity=2
+                    )
+                ],
+                reasoning="Task contains parallelizable components",
+                confidence=0.85
+            )
         return DecompositionResult(
             original_task=task,
             strategy=DecompositionStrategy.SEQUENTIAL,
@@ -403,8 +433,31 @@ Guidelines:
             confidence=0.5
         )
     
-    def _decompose_implementation_with_tests(self, task: str) -> DecompositionResult:
+    def _decompose_implementation_with_tests(self, task: str, parallel: bool = False) -> DecompositionResult:
         """Decompose implementation task."""
+        if parallel:
+            return DecompositionResult(
+                original_task=task,
+                strategy=DecompositionStrategy.PARALLEL,
+                subtasks=[
+                    SubTask(
+                        id="implement",
+                        description="Implement the code",
+                        prompt=f"Implement the solution:\n\n{task}\n\nWrite clean, well-documented code.",
+                        role="coder",
+                        estimated_complexity=4
+                    ),
+                    SubTask(
+                        id="test",
+                        description="Write tests",
+                        prompt=f"Write comprehensive tests for the implementation:\n\n{task}\n\nCover:\n1. Happy path\n2. Edge cases\n3. Error cases",
+                        role="tester",
+                        estimated_complexity=3
+                    )
+                ],
+                reasoning="Task contains parallelizable components",
+                confidence=0.85
+            )
         return DecompositionResult(
             original_task=task,
             strategy=DecompositionStrategy.SEQUENTIAL,
@@ -437,8 +490,32 @@ Guidelines:
             confidence=0.85
         )
     
-    def _decompose_refactoring(self, task: str) -> DecompositionResult:
+    def _decompose_refactoring(self, task: str, parallel: bool = False) -> DecompositionResult:
         """Decompose refactoring task."""
+        if parallel:
+            return DecompositionResult(
+                original_task=task,
+                strategy=DecompositionStrategy.PARALLEL,
+                subtasks=[
+                    SubTask(
+                        id="refactor",
+                        description="Refactor independently",
+                        prompt=f"Execute the refactoring:\n\n{task}\n\nMake incremental changes.",
+                        role="coder",
+                        estimated_complexity=4
+                    ),
+                    SubTask(
+                        id="verify",
+                        description="Verify the refactoring",
+                        prompt=f"Verify the refactoring is correct:\n\n{task}\n\nCheck:\n1. Functionality preserved\n2. Code quality improved\n3. No regressions",
+                        role="reviewer",
+                        dependencies=["refactor"],
+                        estimated_complexity=2
+                    )
+                ],
+                reasoning="Task contains parallelizable components",
+                confidence=0.85
+            )
         return DecompositionResult(
             original_task=task,
             strategy=DecompositionStrategy.SEQUENTIAL,
@@ -479,8 +556,33 @@ Guidelines:
             confidence=0.9
         )
     
-    def _decompose_bug_fix(self, task: str) -> DecompositionResult:
+    def _decompose_bug_fix(self, task: str, parallel: bool = False) -> DecompositionResult:
         """Decompose bug fix task."""
+        if parallel:
+            # For parallelizable bug fixes, check independently and then verify
+            return DecompositionResult(
+                original_task=task,
+                strategy=DecompositionStrategy.PARALLEL,
+                subtasks=[
+                    SubTask(
+                        id="check_files",
+                        description="Check files for issues",
+                        prompt=f"Check for issues:\n\n{task}\n\nIdentify any problems found.",
+                        role="debugger",
+                        estimated_complexity=3
+                    ),
+                    SubTask(
+                        id="verify",
+                        description="Verify and consolidate findings",
+                        prompt=f"Verify the findings:\n\n{task}\n\nConsolidate all findings and confirm the results.",
+                        role="tester",
+                        dependencies=["check_files"],
+                        estimated_complexity=2
+                    )
+                ],
+                reasoning="Task contains parallelizable components",
+                confidence=0.85
+            )
         return DecompositionResult(
             original_task=task,
             strategy=DecompositionStrategy.SEQUENTIAL,
