@@ -24,6 +24,7 @@ class TaskStatus(str, Enum):
 
 # Task storage
 _tasks: dict[str, "Task"] = {}
+_task_handles: dict[str, asyncio.Task] = {}  # Track running task handles
 
 
 @dataclass
@@ -81,8 +82,14 @@ async def task_create_call(
         task.status = TaskStatus.RUNNING
         task.started_at = datetime.now()
 
-        # Start in background
-        asyncio.create_task(_run_task(task, input_data.command))
+        # Start in background and track the task handle
+        task_handle = asyncio.create_task(_run_task(task, input_data.command))
+        _task_handles[task_id] = task_handle
+        
+        # Clean up handle when done
+        def on_done(t):
+            _task_handles.pop(task_id, None)
+        task_handle.add_done_callback(on_done)
 
     return ToolResult(
         data=TaskCreateOutput(
@@ -94,12 +101,23 @@ async def task_create_call(
 async def _run_task(task: Task, command: str) -> None:
     """Run task in background."""
     try:
+        # Create subprocess with a timeout to prevent hanging
         process = await asyncio.create_subprocess_shell(
             command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
 
         task.process = process
-        stdout, stderr = await process.communicate()
+        
+        # Wait for process with timeout (60 seconds default)
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            task.error = "Task timed out after 60 seconds"
+            task.status = TaskStatus.FAILED
+            task.completed_at = datetime.now()
+            return
 
         task.result = stdout.decode("utf-8", errors="replace")
         if stderr:
@@ -108,6 +126,14 @@ async def _run_task(task: Task, command: str) -> None:
         task.status = TaskStatus.COMPLETED if process.returncode == 0 else TaskStatus.FAILED
         task.completed_at = datetime.now()
 
+    except asyncio.CancelledError:
+        # Handle task cancellation gracefully
+        if task.process and task.process.returncode is None:
+            task.process.kill()
+            await task.process.wait()
+        task.status = TaskStatus.CANCELLED
+        task.completed_at = datetime.now()
+        raise
     except Exception as e:
         task.error = str(e)
         task.status = TaskStatus.FAILED
@@ -258,6 +284,15 @@ async def task_stop_call(
             )
         )
 
+    # Cancel the asyncio task if still running
+    task_handle = _task_handles.pop(input_data.task_id, None)
+    if task_handle and not task_handle.done():
+        task_handle.cancel()
+        try:
+            await asyncio.wait_for(task_handle, timeout=2)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
+    
     if task.process:
         task.process.terminate()
         try:
@@ -398,3 +433,28 @@ register_tool(TaskGetTool)
 register_tool(TaskListTool)
 register_tool(TaskStopTool)
 register_tool(TaskUpdateTool)
+
+
+async def cleanup_all_tasks():
+    """Cancel and cleanup all running tasks. Used for testing."""
+    global _task_handles, _tasks
+    
+    # Cancel all running task handles
+    for task_id, handle in list(_task_handles.items()):
+        if not handle.done():
+            handle.cancel()
+            try:
+                await asyncio.wait_for(handle, timeout=1)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+    _task_handles.clear()
+    
+    # Terminate any remaining processes
+    for task in list(_tasks.values()):
+        if task.process and task.process.returncode is None:
+            task.process.kill()
+            try:
+                await asyncio.wait_for(task.process.wait(), timeout=1)
+            except asyncio.TimeoutError:
+                pass
+    _tasks.clear()
