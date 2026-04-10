@@ -87,6 +87,8 @@ class PluginConfig:
     
     def save_known_marketplaces(self, marketplaces: dict[str, KnownMarketplace]) -> None:
         """Save known marketplaces configuration."""
+        # Ensure directory exists
+        self.known_marketplaces_file.parent.mkdir(parents=True, exist_ok=True)
         data = {name: config.model_dump(by_alias=True) for name, config in marketplaces.items()}
         with open(self.known_marketplaces_file, "w") as f:
             json.dump(data, f, indent=2, default=str)

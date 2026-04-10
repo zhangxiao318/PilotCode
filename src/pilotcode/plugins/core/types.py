@@ -154,6 +154,7 @@ class PluginMarketplaceEntry(BaseModel):
     author: Optional[PluginAuthor] = None
     source: Union[dict[str, Any], str]  # GitHub repo, URL, or local path
     dependencies: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
 
 
 class PluginMarketplace(BaseModel):

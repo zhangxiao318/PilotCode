@@ -209,16 +209,21 @@ class TestMarketplaceSource:
 class TestPluginManager:
     """Test plugin manager functionality."""
     
-    async def test_initialize_loads_marketplaces(self, tmp_path):
+    async def test_initialize_loads_marketplaces(self, tmp_path, monkeypatch):
         from pilotcode.plugins.core.manager import PluginManager
+        from unittest.mock import AsyncMock
         
         config = PluginConfig(config_dir=tmp_path)
         manager = PluginManager(config)
         
+        # Mock marketplace update to avoid network calls
+        manager.marketplace.update_marketplace = AsyncMock()
+        
         await manager.initialize()
         
-        # Should have official marketplace
-        assert "claude-plugins-official" in manager.marketplace.list_marketplaces()
+        # Should have official marketplace registered in config
+        known = config.load_known_marketplaces()
+        assert "claude-plugins-official" in known
     
     async def test_install_local_plugin(self, tmp_path):
         from pilotcode.plugins.core.manager import PluginManager
