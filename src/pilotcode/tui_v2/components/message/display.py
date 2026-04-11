@@ -10,8 +10,7 @@ from rich.console import RenderableType
 from rich.markdown import Markdown
 from rich.text import Text
 
-from pilotcode.tui_v2.controller.controller import UIMessage
-from pilotcode.types.message import MessageType
+from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
 
 # Internal clipboard buffer (fallback when system clipboard is unavailable)
 _internal_clipboard: str = ""
@@ -257,15 +256,15 @@ class MessageDisplay(Static):
         if type_class:
             self.add_class(type_class)
 
-    def _get_type_class(self, msg_type: MessageType) -> str:
+    def _get_type_class(self, msg_type: UIMessageType) -> str:
         """Get CSS class for message type."""
         mapping = {
-            MessageType.USER: "user",
-            MessageType.ASSISTANT: "assistant",
-            MessageType.TOOL_USE: "tool",
-            MessageType.TOOL_RESULT: "tool-result",
-            MessageType.ERROR: "error",
-            MessageType.SYSTEM: "system",
+            UIMessageType.USER: "user",
+            UIMessageType.ASSISTANT: "assistant",
+            UIMessageType.TOOL_USE: "tool",
+            UIMessageType.TOOL_RESULT: "tool-result",
+            UIMessageType.ERROR: "error",
+            UIMessageType.SYSTEM: "system",
         }
         return mapping.get(msg_type, "")
 
@@ -275,12 +274,12 @@ class MessageDisplay(Static):
             return ""
 
         headers = {
-            MessageType.USER: "You",
-            MessageType.ASSISTANT: "🤖",
-            MessageType.TOOL_USE: "🔧",
-            MessageType.TOOL_RESULT: "📤",
-            MessageType.ERROR: "❌",
-            MessageType.SYSTEM: "ℹ️",
+            UIMessageType.USER: "You",
+            UIMessageType.ASSISTANT: "🤖",
+            UIMessageType.TOOL_USE: "🔧",
+            UIMessageType.TOOL_RESULT: "📤",
+            UIMessageType.ERROR: "❌",
+            UIMessageType.SYSTEM: "ℹ️",
         }
 
         return headers.get(self.message.type, "")
@@ -293,14 +292,14 @@ class MessageDisplay(Static):
         content = self.message.content or ""
 
         # Tool messages - green dot prefix
-        if self.message.type == MessageType.TOOL_USE:
+        if self.message.type == UIMessageType.TOOL_USE:
             tool_name = self.message.metadata.get("tool_name", "Tool")
             is_safe = self.message.metadata.get("is_safe", False)
             safe_marker = "✓" if is_safe else "⚠"
             return Text(f"● {safe_marker} {tool_name}", style="green")
 
         # Tool result - show output preview
-        if self.message.type == MessageType.TOOL_RESULT:
+        if self.message.type == UIMessageType.TOOL_RESULT:
             # Truncate long output
             lines = content.strip().split("\n")
             preview = lines[0][:80] if lines else ""
@@ -309,11 +308,11 @@ class MessageDisplay(Static):
             return Text(f"→ {preview}", style="dim")
 
         # User messages - smiley prefix
-        if self.message.type == MessageType.USER:
+        if self.message.type == UIMessageType.USER:
             return Text(f"☺ {content}")
 
         # Assistant messages - white dot prefix + markdown
-        if self.message.type == MessageType.ASSISTANT:
+        if self.message.type == UIMessageType.ASSISTANT:
             try:
                 # Prepend white dot to content
                 marked_content = f"● {content}"
@@ -472,11 +471,11 @@ class MessageList(ScrollableContainer):
                 return self._messages[-1]
 
         # Store TOOL_USE to potentially combine with result
-        if message.type == MessageType.TOOL_USE:
+        if message.type == UIMessageType.TOOL_USE:
             self._pending_tool = message
 
         # TOOL_RESULT - check if we can combine with pending tool
-        if message.type == MessageType.TOOL_RESULT and self._pending_tool:
+        if message.type == UIMessageType.TOOL_RESULT and self._pending_tool:
             # For now, just show both separately with compact styling
             self._pending_tool = None
 

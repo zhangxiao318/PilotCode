@@ -2,7 +2,7 @@
 
 from typing import TypeAlias, Union
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID  # noqa: F401 - Re-exported in __init__.py
 
 # Type aliases
 AgentId: TypeAlias = str
