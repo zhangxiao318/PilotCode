@@ -10,20 +10,19 @@ This tool provides capabilities to:
 - Wait for elements
 """
 
-import asyncio
 import json
 from typing import Any
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
 try:
-    from playwright.async_api import async_playwright, Page, Browser, BrowserContext
+    from playwright.async_api import async_playwright
 
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
@@ -280,7 +279,6 @@ async def screenshot(full_page: bool = False) -> dict:
 
     try:
         import base64
-        from io import BytesIO
 
         screenshot_bytes = await session.page.screenshot(full_page=full_page)
         screenshot_b64 = base64.b64encode(screenshot_bytes).decode()

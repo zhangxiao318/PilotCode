@@ -3,14 +3,10 @@
 import re
 from typing import Optional, List, Tuple
 from textual.widgets import Static
-from textual.containers import Vertical, ScrollableContainer
 from textual.reactive import reactive
-from textual.message import Message
 from rich.console import RenderableType
-from rich.syntax import Syntax
 from rich.panel import Panel
 from rich.text import Text
-from rich.columns import Columns
 
 
 class DiffLine:

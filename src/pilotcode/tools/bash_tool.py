@@ -2,14 +2,12 @@
 
 import asyncio
 import re
-import shlex
 import os
 import sys
 from typing import Any
-from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
@@ -41,14 +39,14 @@ def translate_command_for_windows(command: str) -> str:
     # seq N -> PowerShell equivalent
     if re.match(r"^seq\s+\d+$", cmd_stripped):
         n = cmd_stripped.split()[1]
-        return f"powershell -Command " + f'"for ($i = 1; $i -le {n}; $i++) {{ Write-Output $i }}"'
+        return "powershell -Command " + f'"for ($i = 1; $i -le {n}; $i++) {{ Write-Output $i }}"'
 
     # seq START END -> PowerShell equivalent
     if re.match(r"^seq\s+\d+\s+\d+$", cmd_stripped):
         parts = cmd_stripped.split()
         start, end = parts[1], parts[2]
         return (
-            f"powershell -Command "
+            "powershell -Command "
             + f'"for ($i = {start}; $i -le {end}; $i++) {{ Write-Output $i }}"'
         )
 
@@ -190,7 +188,7 @@ async def execute_bash(
         try:
             process.kill()
             await process.wait()
-        except:
+        except Exception:
             pass
         return BashOutput(
             stdout="",

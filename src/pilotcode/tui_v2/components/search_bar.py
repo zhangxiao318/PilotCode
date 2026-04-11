@@ -3,10 +3,8 @@
 import re
 from typing import Optional, Callable, List, Tuple
 from textual.widgets import Static, Input
-from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.message import Message
-from rich.text import Text
 
 
 class SearchMode(Message):

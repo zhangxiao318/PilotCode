@@ -6,7 +6,7 @@ Records all plugin-related operations for compliance and security review.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -15,6 +15,7 @@ from typing import Optional
 
 class AuditAction(Enum):
     """Types of audited actions."""
+
     INSTALL = "install"
     UNINSTALL = "uninstall"
     ENABLE = "enable"
@@ -27,6 +28,7 @@ class AuditAction(Enum):
 
 class AuditOutcome(Enum):
     """Outcome of audited action."""
+
     SUCCESS = "success"
     FAILURE = "failure"
     DENIED = "denied"
@@ -36,6 +38,7 @@ class AuditOutcome(Enum):
 @dataclass
 class AuditEvent:
     """Audit event record."""
+
     timestamp: str
     action: str
     plugin_id: Optional[str]
@@ -43,7 +46,7 @@ class AuditEvent:
     outcome: str
     details: dict
     message: Optional[str] = None
-    
+
     def to_dict(self) -> dict:
         return {
             "timestamp": self.timestamp,
@@ -54,7 +57,7 @@ class AuditEvent:
             "details": self.details,
             "message": self.message,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "AuditEvent":
         return cls(
@@ -70,18 +73,16 @@ class AuditEvent:
 
 class AuditLogger:
     """Logs plugin operations for audit.
-    
+
     Maintains a tamper-evident log of all plugin operations.
     """
-    
+
     def __init__(self, log_path: Optional[Path] = None):
-        self.log_path = log_path or (
-            Path.home() / ".config" / "pilotcode" / "audit.log"
-        )
+        self.log_path = log_path or (Path.home() / ".config" / "pilotcode" / "audit.log")
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self._buffer: list[AuditEvent] = []
         self._auto_flush = True
-    
+
     def log(
         self,
         action: AuditAction,
@@ -101,23 +102,23 @@ class AuditLogger:
             details=details or {},
             message=message,
         )
-        
+
         self._buffer.append(event)
-        
+
         if self._auto_flush:
             self.flush()
-    
+
     def flush(self) -> None:
         """Write buffered events to log."""
         if not self._buffer:
             return
-        
+
         with open(self.log_path, "a") as f:
             for event in self._buffer:
                 f.write(json.dumps(event.to_dict()) + "\n")
-        
+
         self._buffer.clear()
-    
+
     def get_events(
         self,
         action: Optional[AuditAction] = None,
@@ -126,42 +127,43 @@ class AuditLogger:
     ) -> list[AuditEvent]:
         """Get audit events."""
         events = []
-        
+
         if not self.log_path.exists():
             return events
-        
+
         with open(self.log_path, "r") as f:
             for line in reversed(f.readlines()):
                 line = line.strip()
                 if not line:
                     continue
-                
+
                 try:
                     data = json.loads(line)
                     event = AuditEvent.from_dict(data)
-                    
+
                     if action and event.action != action.value:
                         continue
                     if plugin_id and event.plugin_id != plugin_id:
                         continue
-                    
+
                     events.append(event)
-                    
+
                     if len(events) >= limit:
                         break
                 except json.JSONDecodeError:
                     continue
-        
+
         return events
-    
+
     def get_install_history(self, plugin_id: str) -> list[AuditEvent]:
         """Get install/uninstall history for a plugin."""
         events = self.get_events(plugin_id=plugin_id, limit=50)
         return [
-            e for e in events
+            e
+            for e in events
             if e.action in (AuditAction.INSTALL.value, AuditAction.UNINSTALL.value)
         ]
-    
+
     def clear(self) -> None:
         """Clear audit log (use with caution)."""
         if self.log_path.exists():

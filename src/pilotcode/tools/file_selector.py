@@ -17,7 +17,6 @@ Features:
 
 from __future__ import annotations
 
-import os
 import fnmatch
 import re
 from dataclasses import dataclass
@@ -28,7 +27,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from pilotcode.tools.base import Tool, ToolResult, ToolUseContext, build_tool
+from pilotcode.tools.base import ToolResult, ToolUseContext, build_tool
 from pilotcode.tools.registry import register_tool
 
 
@@ -259,15 +258,29 @@ def sort_files(files: list[FileInfo], sort_by: SortBy, order: SortOrder) -> list
     reverse = order == SortOrder.DESC
 
     if sort_by == SortBy.NAME:
-        key_func = lambda f: f.name.lower()
+
+        def key_func(f):
+            return f.name.lower()
+
     elif sort_by == SortBy.SIZE:
-        key_func = lambda f: f.size
+
+        def key_func(f):
+            return f.size
+
     elif sort_by == SortBy.DATE:
-        key_func = lambda f: f.modified
+
+        def key_func(f):
+            return f.modified
+
     elif sort_by == SortBy.TYPE:
-        key_func = lambda f: (not f.is_dir, f.extension.lower(), f.name.lower())
+
+        def key_func(f):
+            return (not f.is_dir, f.extension.lower(), f.name.lower())
+
     else:
-        key_func = lambda f: f.name.lower()
+
+        def key_func(f):
+            return f.name.lower()
 
     # Always put directories first when sorting by name or type
     if sort_by in (SortBy.NAME, SortBy.TYPE):

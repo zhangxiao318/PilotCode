@@ -3,12 +3,12 @@
 import asyncio
 import uuid
 from typing import Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
@@ -85,10 +85,11 @@ async def task_create_call(
         # Start in background and track the task handle
         task_handle = asyncio.create_task(_run_task(task, input_data.command))
         _task_handles[task_id] = task_handle
-        
+
         # Clean up handle when done
         def on_done(t):
             _task_handles.pop(task_id, None)
+
         task_handle.add_done_callback(on_done)
 
     return ToolResult(
@@ -107,7 +108,7 @@ async def _run_task(task: Task, command: str) -> None:
         )
 
         task.process = process
-        
+
         # Wait for process with timeout (60 seconds default)
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60)
@@ -292,7 +293,7 @@ async def task_stop_call(
             await asyncio.wait_for(task_handle, timeout=2)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             pass
-    
+
     if task.process:
         task.process.terminate()
         try:
@@ -438,7 +439,7 @@ register_tool(TaskUpdateTool)
 async def cleanup_all_tasks():
     """Cancel and cleanup all running tasks. Used for testing."""
     global _task_handles, _tasks
-    
+
     # Cancel all running task handles
     for task_id, handle in list(_task_handles.items()):
         if not handle.done():
@@ -448,7 +449,7 @@ async def cleanup_all_tasks():
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 pass
     _task_handles.clear()
-    
+
     # Terminate any remaining processes
     for task in list(_tasks.values()):
         if task.process and task.process.returncode is None:

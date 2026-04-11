@@ -1,13 +1,11 @@
 """Base tool definitions."""
 
-from typing import Any, Callable, Awaitable, TypeVar, Generic, AsyncGenerator, TYPE_CHECKING
-from abc import ABC, abstractmethod
+from typing import Any, Callable, Awaitable, TypeVar, Generic, TYPE_CHECKING
 from dataclasses import dataclass, field
 from pydantic import BaseModel
 import asyncio
 
 if TYPE_CHECKING:
-    from ..types.permissions import PermissionResult, ToolPermissionContext
     from ..state.app_state import AppState
 
 

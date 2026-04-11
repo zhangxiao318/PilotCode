@@ -1,7 +1,7 @@
 """Tool registry for managing tools."""
 
-from typing import Any, TYPE_CHECKING
-from .base import Tool, Tools, tool_matches_name
+from typing import TYPE_CHECKING
+from .base import Tool, Tools
 from ..types.permissions import ToolPermissionContext
 
 if TYPE_CHECKING:

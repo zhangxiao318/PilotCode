@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from typing import Any, AsyncIterator
+from typing import Any
 from dataclasses import dataclass
 from pydantic import BaseModel
 
@@ -74,7 +74,7 @@ class MCPClient:
         }
 
         await self._send_message(connection, init_request)
-        response = await self._read_message(connection)
+        await self._read_message(connection)
 
         # Fetch tools
         await self._fetch_tools(connection)

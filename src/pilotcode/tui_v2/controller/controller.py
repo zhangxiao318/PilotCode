@@ -8,12 +8,10 @@ from pathlib import Path
 
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
 from pilotcode.types.message import (
-    MessageType,
+    UIMessageType,
     UserMessage,
     AssistantMessage,
     ToolUseMessage,
-    ToolResultMessage,
-    SystemMessage,
 )
 from pilotcode.tools.registry import get_all_tools
 from pilotcode.tools.base import ToolUseContext
@@ -30,7 +28,7 @@ from pilotcode.permissions import get_tool_executor
 from pilotcode.state.app_state import AppState
 
 
-class MessageType(Enum):
+class UIUIMessageType(Enum):
     """UI message types."""
 
     USER = auto()
@@ -45,7 +43,7 @@ class MessageType(Enum):
 class UIMessage:
     """Message for UI display."""
 
-    type: MessageType
+    type: UIUIMessageType
     content: str
     metadata: dict = None
     is_streaming: bool = False
@@ -127,7 +125,7 @@ class TUIController:
         5. Continue until complete
         """
         if not self.query_engine:
-            yield UIMessage(type=MessageType.ERROR, content="Query engine not initialized")
+            yield UIMessage(type=UIMessageType.ERROR, content="Query engine not initialized")
             return
 
         iteration = 0
@@ -144,7 +142,7 @@ class TUIController:
                 if isinstance(msg, UserMessage):
                     # User message - display it
                     yield UIMessage(
-                        type=MessageType.USER,
+                        type=UIMessageType.USER,
                         content=msg.content if isinstance(msg.content, str) else str(msg.content),
                         is_complete=True,
                     )
@@ -162,7 +160,7 @@ class TUIController:
 
                     # Yield update for assistant messages
                     yield UIMessage(
-                        type=MessageType.ASSISTANT,
+                        type=UIMessageType.ASSISTANT,
                         content=accumulated_content,
                         is_streaming=not result.is_complete,
                         is_complete=result.is_complete,
@@ -177,9 +175,8 @@ class TUIController:
                     )
                     # Add progress info
                     tool_idx = len(pending_tools)
-                    progress_info = f"[turn {iteration}/{self.max_iterations}]"
                     yield UIMessage(
-                        type=MessageType.TOOL_USE,
+                        type=UIMessageType.TOOL_USE,
                         content=f"{msg.name}",
                         metadata={
                             "tool_name": msg.name,
@@ -269,7 +266,7 @@ class TUIController:
                     tool_msg.tool_use_id, "Tool execution denied by session policy", is_error=True
                 )
                 yield UIMessage(
-                    type=MessageType.TOOL_RESULT,
+                    type=UIMessageType.TOOL_RESULT,
                     content="Denied (session policy)",
                     metadata={"tool_name": tool_name, "error": True},
                     is_complete=True,
@@ -333,7 +330,7 @@ class TUIController:
 
             # Yield result message
             yield UIMessage(
-                type=MessageType.TOOL_RESULT,
+                type=UIMessageType.TOOL_RESULT,
                 content=output[:500] if len(output) > 500 else output,
                 metadata={
                     "tool_name": tool_name,
@@ -347,7 +344,7 @@ class TUIController:
             error_msg = str(e)
             self.query_engine.add_tool_result(tool_msg.tool_use_id, error_msg, is_error=True)
             yield UIMessage(
-                type=MessageType.ERROR,
+                type=UIMessageType.ERROR,
                 content=error_msg,
                 metadata={"tool_name": tool_name},
                 is_complete=True,

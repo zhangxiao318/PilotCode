@@ -3,8 +3,7 @@
 Supports both domestic (China) and international models.
 """
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 from enum import Enum
 
 

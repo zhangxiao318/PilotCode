@@ -4,7 +4,7 @@ import json
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 from ..utils.config import get_config_manager, get_global_config, GlobalConfig
 

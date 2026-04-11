@@ -1,10 +1,13 @@
 """Application state definitions."""
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..types.permissions import ToolPermissionContext
+
+if TYPE_CHECKING:
+    from .store import Store
 
 
 @dataclass

@@ -5,11 +5,8 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pathlib import Path
 from textual.widgets import Static, Button, ListView, ListItem, Label
-from textual.containers import Vertical, Horizontal
-from textual.reactive import reactive
+from textual.containers import Horizontal
 from textual.message import Message
-from rich.text import Text
-from rich.panel import Panel
 
 from pilotcode.tui_v2.controller.controller import UIMessage, MessageType
 

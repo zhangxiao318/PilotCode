@@ -2,10 +2,8 @@
 
 from typing import Optional
 from textual.containers import ScrollableContainer
-from textual.reactive import reactive
-from rich.console import RenderableType
 
-from pilotcode.tui_v2.controller.controller import UIMessage, MessageType
+from pilotcode.tui_v2.controller.controller import UIMessage
 from pilotcode.tui_v2.components.message.display import MessageDisplay
 
 
@@ -78,8 +76,10 @@ class HybridMessageList(ScrollableContainer):
 
         # Auto-scroll to bottom immediately and after refresh
         self.scroll_end(animate=False)
+
         def scroll_to_bottom():
             self.scroll_end(animate=False)
+
         self.call_after_refresh(scroll_to_bottom)
 
         # Warning for very large histories

@@ -7,9 +7,7 @@ This module provides:
 """
 
 from dataclasses import dataclass, field
-from typing import Any
 from datetime import datetime
-import json
 
 
 @dataclass

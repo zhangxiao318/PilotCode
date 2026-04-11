@@ -1,15 +1,11 @@
 """Enhanced prompt input with history, autocomplete and syntax highlighting."""
 
 import re
-from typing import Optional, Callable
-from pathlib import Path
+from typing import Optional
 
 from textual.widgets import Static, TextArea
 from textual.containers import Horizontal, Vertical
-from textual.reactive import reactive
 from textual.message import Message
-from rich.text import Text
-from rich.syntax import Syntax
 
 
 class PromptInput(TextArea):

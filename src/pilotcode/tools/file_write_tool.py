@@ -7,10 +7,9 @@ import time
 import hashlib
 from pathlib import Path
 from typing import Any
-from datetime import datetime
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
@@ -64,7 +63,7 @@ async def write_file_atomic(file_path: str, content: str, append: bool = False) 
             try:
                 os.close(temp_fd)
                 os.unlink(temp_path)
-            except:
+            except Exception:
                 pass
             raise
 

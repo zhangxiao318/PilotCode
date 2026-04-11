@@ -10,10 +10,8 @@ This module provides:
 
 import json
 import gzip
-import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from dataclasses import dataclass, asdict
 from platformdirs import user_data_dir
 

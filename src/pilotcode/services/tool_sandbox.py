@@ -20,13 +20,9 @@ from __future__ import annotations
 import os
 import re
 import shlex
-import signal
 import subprocess
-import tempfile
-import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Optional
 from enum import Enum
 
@@ -253,7 +249,7 @@ class ToolSandbox:
         Returns:
             SandboxResult with execution details
         """
-        start_time = time.time()
+        time.time()
         timeout = timeout or self.config.max_execution_time
 
         # Security analysis
@@ -480,7 +476,7 @@ class ToolSandbox:
         analysis = self._analyzer.analyze(command)
 
         # Parse command to check individual parts
-        parts = shlex.split(command)
+        shlex.split(command)
 
         recommendations = []
 

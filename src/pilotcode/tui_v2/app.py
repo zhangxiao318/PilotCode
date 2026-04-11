@@ -2,11 +2,10 @@
 
 import sys
 import argparse
-from pathlib import Path
 
 from textual.app import App
 
-from pilotcode.state.store import Store, set_global_store, get_store
+from pilotcode.state.store import Store, set_global_store
 from pilotcode.state.app_state import get_default_app_state
 from pilotcode.tui_v2.screens.session import SessionScreen
 

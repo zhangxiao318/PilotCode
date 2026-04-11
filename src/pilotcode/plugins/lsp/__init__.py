@@ -4,7 +4,7 @@ Allows plugins to provide language servers for enhanced code intelligence.
 
 Example:
     from pilotcode.plugins.lsp import LSPManager
-    
+
     manager = LSPManager()
     await manager.start_server("typescript", {
         "command": "typescript-language-server",

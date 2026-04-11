@@ -20,11 +20,12 @@ Features:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from typing import Optional, Any, AsyncIterator
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 import httpx
@@ -1117,7 +1118,3 @@ def clear_github_service() -> None:
     """Clear the global GitHub service instance."""
     global _default_service
     _default_service = None
-
-
-# Import asyncio at the end to avoid circular issues
-import asyncio

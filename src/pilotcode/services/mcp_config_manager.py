@@ -9,8 +9,7 @@ Lower-level configurations override higher-level ones.
 """
 
 import json
-import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any

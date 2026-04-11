@@ -11,11 +11,8 @@ Provides comprehensive code understanding:
 from __future__ import annotations
 
 import ast
-import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
 from collections import defaultdict
 
 
@@ -183,9 +180,7 @@ class ASTCodeAnalyzer:
             func_info.args.append(arg_str)
 
         # Default values
-        defaults = [None] * (len(args.args) - len(args.defaults)) + [
-            ast.dump(d) for d in args.defaults
-        ]
+        [None] * (len(args.args) - len(args.defaults)) + [ast.dump(d) for d in args.defaults]
 
         # *args
         if args.vararg:

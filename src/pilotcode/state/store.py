@@ -1,7 +1,6 @@
 """State store implementation."""
 
-from typing import Callable, TypeVar, Generic
-from dataclasses import dataclass, fields
+from typing import Callable, TypeVar
 import copy
 
 from .app_state import AppState

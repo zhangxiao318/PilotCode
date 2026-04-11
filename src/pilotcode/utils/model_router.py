@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, AsyncIterator
 
-from .model_client import ModelClient, get_model_client
+from .model_client import ModelClient
 
 
 class ModelTier(Enum):

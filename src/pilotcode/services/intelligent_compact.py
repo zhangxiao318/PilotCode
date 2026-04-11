@@ -6,14 +6,13 @@ This module implements advanced context management:
 3. Structured summary generation
 """
 
-import json
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 from datetime import datetime
 
 if TYPE_CHECKING:
-    from ..types.message import MessageType
+    pass
 
 
 @dataclass
@@ -149,7 +148,6 @@ class IntelligentContextCompactor:
             SystemMessage,
             UserMessage,
             AssistantMessage,
-            ToolUseMessage,
             ToolResultMessage,
         )
 
@@ -218,7 +216,7 @@ class IntelligentContextCompactor:
         self, messages: list[Any], include_files: bool = True, include_errors: bool = True
     ) -> dict[str, Any]:
         """Generate structured summary of conversation (ClaudeCode-style)."""
-        from ..types.message import UserMessage, AssistantMessage, ToolUseMessage, ToolResultMessage
+        from ..types.message import UserMessage, ToolUseMessage, ToolResultMessage
 
         summary = {
             "primary_request": "",

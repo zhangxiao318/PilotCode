@@ -12,13 +12,10 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-import subprocess
-from dataclasses import dataclass
-from pathlib import Path
-from typing import AsyncIterator, Callable
+from typing import Any, Callable
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
@@ -218,7 +215,7 @@ class RipgrepRunner:
                     path = path_data.get("text", "")
 
                     line_num = match_data.get("line_number", 0)
-                    absolute_offset = match_data.get("absolute_offset", 0)
+                    match_data.get("absolute_offset", 0)
 
                     # Get match text
                     lines = match_data.get("lines", {})
@@ -364,7 +361,6 @@ async def ripgrep_call(
     # Resolve path
     search_path = input_data.path
     if not os.path.isabs(search_path) and context.get_app_state:
-        from ..state.app_state import AppState
 
         app_state = context.get_app_state()
         if app_state:

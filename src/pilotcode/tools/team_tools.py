@@ -2,7 +2,7 @@
 
 from pydantic import Field
 from pilotcode.tools.base import Tool, ToolResult
-from pilotcode.services.team_manager import get_team_manager, AgentStatus
+from pilotcode.services.team_manager import get_team_manager
 
 
 class TeamCreate(Tool):

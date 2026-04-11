@@ -12,7 +12,7 @@ import random
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 from enum import Enum
-from datetime import datetime, timedelta
+from datetime import datetime
 
 T = TypeVar("T")
 
@@ -60,7 +60,7 @@ class ErrorClassifier:
     def classify_error(error: Exception) -> ErrorCategory:
         """Classify an error into a category."""
         error_str = str(error).lower()
-        error_type = type(error).__name__.lower()
+        type(error).__name__.lower()
 
         # Rate limiting
         if any(x in error_str for x in ["rate limit", "too many requests", "429", "ratelimit"]):
@@ -257,7 +257,7 @@ class CircuitBreaker:
             result = await fn(*args, **kwargs)
             self.record_success()
             return result
-        except Exception as e:
+        except Exception:
             self.record_failure()
             raise
 

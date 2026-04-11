@@ -135,6 +135,9 @@ class BackgroundTaskQueue:
         async with self._semaphore:
             if task._cancelled:
                 task.status = TaskStatus.CANCELLED
+                # Properly close the coroutine to avoid "never awaited" warning
+                if task.coro is not None:
+                    task.coro.close()
                 return
 
             task.status = TaskStatus.RUNNING

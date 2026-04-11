@@ -2,12 +2,11 @@
 
 import difflib
 import os
-import re
 from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
@@ -97,7 +96,7 @@ async def edit_file_content(
                 file_path=str(path),
                 replacements_made=0,
                 original_content=original_content,
-                error=f"String not found in file",
+                error="String not found in file",
             )
 
         if expected_replacements is not None:
@@ -150,7 +149,7 @@ async def file_edit_validate(
         if os.path.exists(file_path):
             mtime = os.path.getmtime(file_path)
             if mtime > read_timestamp:
-                return False, f"File has been modified since it was read"
+                return False, "File has been modified since it was read"
     else:
         if os.path.exists(file_path):
             return False, "File must be read before editing (to enable conflict detection)"

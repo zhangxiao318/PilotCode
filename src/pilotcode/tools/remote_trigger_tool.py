@@ -4,7 +4,7 @@ import httpx
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
@@ -63,7 +63,7 @@ async def remote_trigger_call(
             # Get response content
             try:
                 response_text = response.text[:1000]  # Limit size
-            except:
+            except Exception:
                 response_text = "<binary response>"
 
             return ToolResult(

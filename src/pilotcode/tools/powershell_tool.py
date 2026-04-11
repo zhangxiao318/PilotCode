@@ -1,12 +1,11 @@
 """PowerShell Tool for Windows PowerShell execution."""
 
 import asyncio
-import os
 import sys
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
@@ -61,7 +60,7 @@ async def execute_powershell(command: str, timeout: int = 600) -> PowerShellOutp
         try:
             process.kill()
             await process.wait()
-        except:
+        except Exception:
             pass
         return PowerShellOutput(
             stdout="",

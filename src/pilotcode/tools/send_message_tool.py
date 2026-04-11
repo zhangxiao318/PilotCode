@@ -1,11 +1,11 @@
 """SendMessage tool for agent communication."""
 
 from typing import Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pydantic import BaseModel, Field
 from datetime import datetime
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 

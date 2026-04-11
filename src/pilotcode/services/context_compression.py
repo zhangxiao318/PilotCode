@@ -6,13 +6,11 @@ Implements intelligent context window management:
 3. Semantic chunking
 """
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..types.message import MessageType, UserMessage, AssistantMessage
-    from ..tools.base import ToolResult
+    from ..types.message import MessageType
 
 
 @dataclass
