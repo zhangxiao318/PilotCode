@@ -86,10 +86,10 @@ pilotcode configure
 
 ```powershell
 # 启动交互式 CLI
-uv run python -m pilotcode
+uv run python -m pilotcode main
 
 # 或者使用短命令
-uv run pilotcode
+uv run pilotcode main
 ```
 
 ### 方式三：使用 pip 安装后运行

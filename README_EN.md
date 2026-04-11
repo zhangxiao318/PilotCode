@@ -33,8 +33,14 @@ pip3 install -e .
 # 2. Configure LLM (interactive wizard)
 python3 -m pilotcode configure
 
-# 3. Run
-python3 -m pilotcode
+# 3. Run (Linux/macOS)
+./pilotcode.sh
+
+# Or Windows
+.\pilotcode.cmd
+
+# Or using Python module
+python3 -m pilotcode main
 ```
 
 More ways to start:
@@ -42,8 +48,11 @@ More ways to start:
 # Run demo
 python3 full_demo.py
 
-# Or use the launch script
-./pilotcode
+# One-shot command mode
+python3 -m pilotcode main -p "Analyze the code structure of current directory"
+
+# Simple CLI mode
+python3 -m pilotcode main --simple
 ```
 
 ## Model Configuration

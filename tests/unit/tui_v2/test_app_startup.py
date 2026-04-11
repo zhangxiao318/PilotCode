@@ -16,19 +16,19 @@ class TestTUIv2Startup:
         from pilotcode.tui_v2.screens.session import SessionScreen
         from pilotcode.tui_v2.components.message.display import MessageDisplay
         from pilotcode.tui_v2.components.message.virtual_list import HybridMessageList
-        
+
         # Verify UIMessageType is an Enum with expected values
-        assert hasattr(UIMessageType, 'USER')
-        assert hasattr(UIMessageType, 'ASSISTANT')
-        assert hasattr(UIMessageType, 'SYSTEM')
-        assert hasattr(UIMessageType, 'ERROR')
-        assert hasattr(UIMessageType, 'TOOL_USE')
-        assert hasattr(UIMessageType, 'TOOL_RESULT')
+        assert hasattr(UIMessageType, "USER")
+        assert hasattr(UIMessageType, "ASSISTANT")
+        assert hasattr(UIMessageType, "SYSTEM")
+        assert hasattr(UIMessageType, "ERROR")
+        assert hasattr(UIMessageType, "TOOL_USE")
+        assert hasattr(UIMessageType, "TOOL_RESULT")
 
     def test_uimessage_creation(self):
         """Test that UIMessage can be created with all message types."""
         from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
-        
+
         # Test all message types
         for msg_type in UIMessageType:
             msg = UIMessage(type=msg_type, content=f"Test {msg_type.name}")
@@ -41,17 +41,17 @@ class TestTUIv2Startup:
     def test_session_screen_import(self):
         """Test that SessionScreen can be imported and instantiated."""
         from pilotcode.tui_v2.screens.session import SessionScreen
-        
+
         # Verify the class exists and has required methods
-        assert hasattr(SessionScreen, 'on_mount')
-        assert hasattr(SessionScreen, '_show_welcome')
-        assert hasattr(SessionScreen, 'compose')
+        assert hasattr(SessionScreen, "on_mount")
+        assert hasattr(SessionScreen, "_show_welcome")
+        assert hasattr(SessionScreen, "compose")
 
     def test_message_display_import(self):
         """Test that MessageDisplay can be imported with correct type handling."""
         from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
         from pilotcode.tui_v2.components.message.display import MessageDisplay
-        
+
         # Test that MessageDisplay can be created with different message types
         for msg_type in [UIMessageType.SYSTEM, UIMessageType.USER, UIMessageType.ASSISTANT]:
             msg = UIMessage(type=msg_type, content=f"Test {msg_type.name}")
@@ -62,7 +62,7 @@ class TestTUIv2Startup:
     def test_welcome_message_creation(self):
         """Test that welcome message can be created correctly."""
         from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
-        
+
         welcome_text = """┌────────────────────────────────────────────────────────┐
 │  Welcome to PilotCode v0.2.0! 🚀                       │
 │                                                        │
@@ -74,7 +74,7 @@ class TestTUIv2Startup:
 │  /clear - Clear history                                │
 │  /quit  - Exit                                         │
 └────────────────────────────────────────────────────────┘"""
-        
+
         welcome_msg = UIMessage(type=UIMessageType.SYSTEM, content=welcome_text)
         assert welcome_msg.type == UIMessageType.SYSTEM
         assert "Welcome to PilotCode" in welcome_msg.content
@@ -84,16 +84,16 @@ class TestTUIv2Startup:
     async def test_controller_submit_message_mock(self):
         """Test controller message submission with mocked dependencies."""
         from pilotcode.tui_v2.controller.controller import TUIController, UIMessageType
-        
+
         # Create controller with mocked query engine
-        with patch('pilotcode.tui_v2.controller.controller.QueryEngine') as MockEngine:
+        with patch("pilotcode.tui_v2.controller.controller.QueryEngine") as MockEngine:
             mock_engine = MagicMock()
             mock_engine.count_tokens.return_value = 0
             MockEngine.return_value = mock_engine
-            
+
             controller = TUIController(max_iterations=10)
             controller.query_engine = mock_engine
-            
+
             # Verify controller is properly initialized
             assert controller.max_iterations == 10
             assert controller.get_token_count() == 0
@@ -105,7 +105,7 @@ class TestWelcomeScreen:
     def test_welcome_screen_content(self):
         """Test that welcome screen contains expected elements."""
         from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
-        
+
         # This is the actual welcome text from session.py
         welcome_text = """┌────────────────────────────────────────────────────────┐
 │  Welcome to PilotCode v0.2.0! 🚀                       │
@@ -118,39 +118,39 @@ class TestWelcomeScreen:
 │  /clear - Clear history                                │
 │  /quit  - Exit                                         │
 └────────────────────────────────────────────────────────┘"""
-        
+
         welcome_msg = UIMessage(type=UIMessageType.SYSTEM, content=welcome_text)
-        
+
         # Verify all expected elements are in the welcome message
         assert "PilotCode" in welcome_msg.content
         assert "v0.2.0" in welcome_msg.content
         assert "🚀" in welcome_msg.content
-        
+
         # Verify commands are listed
         assert "/help" in welcome_msg.content
         assert "/save" in welcome_msg.content
         assert "/load" in welcome_msg.content
         assert "/clear" in welcome_msg.content
         assert "/quit" in welcome_msg.content
-        
+
         # Verify tips are listed
         assert "@filename" in welcome_msg.content
         assert "Shift+Enter" in welcome_msg.content
         assert "Up/Down" in welcome_msg.content
-        
+
         # Verify it's a system message
         assert welcome_msg.type == UIMessageType.SYSTEM
 
     def test_welcome_message_box_formatting(self):
         """Test that welcome message uses proper box drawing characters."""
         from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
-        
+
         welcome_text = """┌────────────────────────────────────────────────────────┐
 │  Welcome to PilotCode v0.2.0! 🚀                       │
 └────────────────────────────────────────────────────────┘"""
-        
+
         welcome_msg = UIMessage(type=UIMessageType.SYSTEM, content=welcome_text)
-        
+
         # Verify box drawing characters
         assert "┌" in welcome_msg.content  # Top left corner
         assert "┐" in welcome_msg.content  # Top right corner
@@ -166,22 +166,22 @@ class TestTUIv2Integration:
     def test_full_tui_import_chain(self):
         """Test that the full TUI import chain works without errors."""
         # This test verifies all the MessageType import fixes are correct
-        
+
         # Import main app
         from pilotcode.tui_v2.app import EnhancedApp
-        
+
         # Import screens
         from pilotcode.tui_v2.screens.session import SessionScreen
-        
+
         # Import components
         from pilotcode.tui_v2.components.message.display import MessageDisplay, MessageList
         from pilotcode.tui_v2.components.message.virtual_list import HybridMessageList
         from pilotcode.tui_v2.components.prompt.input import PromptWithMode
         from pilotcode.tui_v2.components.status.bar import StatusBar
-        
+
         # Import controller
         from pilotcode.tui_v2.controller.controller import TUIController, UIMessage, UIMessageType
-        
+
         # Verify all imports succeeded
         assert EnhancedApp is not None
         assert SessionScreen is not None
@@ -194,7 +194,7 @@ class TestTUIv2Integration:
     def test_message_type_class_mapping(self):
         """Test that MessageDisplay type class mapping uses correct types."""
         from pilotcode.tui_v2.controller.controller import UIMessageType
-        
+
         # This mirrors the mapping in display.py
         mapping = {
             UIMessageType.USER: "user",
@@ -204,7 +204,7 @@ class TestTUIv2Integration:
             UIMessageType.ERROR: "error",
             UIMessageType.SYSTEM: "system",
         }
-        
+
         # Verify all types are mapped
         for msg_type in UIMessageType:
             assert msg_type in mapping, f"{msg_type} not in mapping"
@@ -212,7 +212,7 @@ class TestTUIv2Integration:
     def test_message_type_label_mapping(self):
         """Test that MessageDisplay label mapping uses correct types."""
         from pilotcode.tui_v2.controller.controller import UIMessageType
-        
+
         # This mirrors the label mapping in display.py
         labels = {
             UIMessageType.USER: "You",
@@ -222,7 +222,7 @@ class TestTUIv2Integration:
             UIMessageType.ERROR: "❌",
             UIMessageType.SYSTEM: "ℹ️",
         }
-        
+
         # Verify all types have labels
         for msg_type in UIMessageType:
             assert msg_type in labels, f"{msg_type} not in labels"

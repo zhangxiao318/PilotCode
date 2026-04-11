@@ -130,9 +130,15 @@ python3 -m pilotcode configure --show
 
 ```bash
 # Default start (recommended)
-python3 -m pilotcode
+python3 -m pilotcode main
 
-# Or use aliases
+# Or use startup scripts (Linux/macOS)
+./pilotcode.sh
+
+# Windows
+.\pilotcode.cmd
+
+# Or use aliases (after installation)
 pilotcode
 pc
 ```
@@ -141,26 +147,26 @@ pc
 
 ```bash
 # Execute a single command and exit
-python3 -m pilotcode -p "Analyze the code structure of current directory"
+python3 -m pilotcode main -p "Analyze the code structure of current directory"
 ```
 
 ### Simple CLI Mode (No TUI)
 
 ```bash
-python3 -m pilotcode --simple
+python3 -m pilotcode main --simple
 ```
 
 ### Other Startup Options
 
 ```bash
 # Specify working directory
-python3 -m pilotcode --cwd /path/to/project
+python3 -m pilotcode main --cwd /path/to/project
 
 # Auto-allow all tool executions (use with caution)
-python3 -m pilotcode --auto-allow
+python3 -m pilotcode main --auto-allow
 
 # Show verbose logs
-python3 -m pilotcode --verbose
+python3 -m pilotcode main --verbose
 ```
 
 ---
