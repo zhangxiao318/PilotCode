@@ -41,7 +41,7 @@ class REPL:
             env_limit = os.environ.get("PILOTCODE_MAX_ITERATIONS")
             self.max_iterations = int(env_limit) if env_limit else self.DEFAULT_MAX_ITERATIONS
 
-        config = get_global_config()
+        get_global_config()
         self.store.set_state(lambda s: s)
 
         self.session = PromptSession(

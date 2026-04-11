@@ -328,7 +328,7 @@ class AdaptiveContextManager(ContextManager):
         )
         
         # Get value retention target
-        retention_target = self.feedback_loop.get_value_retention_target(
+        self.feedback_loop.get_value_retention_target(
             self.current_task_description
         )
         

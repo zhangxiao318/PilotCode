@@ -63,7 +63,7 @@ async def write_file_atomic(file_path: str, content: str, append: bool = False) 
             try:
                 os.close(temp_fd)
                 os.unlink(temp_path)
-            except:
+            except Exception:
                 pass
             raise
 

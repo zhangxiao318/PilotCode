@@ -45,9 +45,9 @@ class ToolExecutor:
         color = risk_colors.get(request.risk_level, "yellow")
 
         content = Text()
-        content.append(f"Tool: ", style="bold")
+        content.append("Tool: ", style="bold")
         content.append(f"{request.tool_name}\n", style="cyan")
-        content.append(f"Risk: ", style="bold")
+        content.append("Risk: ", style="bold")
         content.append(f"{request.risk_level.upper()}\n", style=f"bold {color}")
 
         content.append("\nDetails:\n", style="bold")

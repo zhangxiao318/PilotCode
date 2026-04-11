@@ -8,7 +8,7 @@ from rich.panel import Panel
 from .components.repl import run_repl, run_headless
 from .version import __version__
 from .utils.config import is_configured, get_config_manager
-from .utils.configure import run_configure_wizard, format_model_list
+from .utils.configure import run_configure_wizard, format_model_list, get_available_model_names
 
 app = typer.Typer(
     name="pilotcode", help="PilotCode - AI-powered coding assistant", add_completion=False
@@ -285,9 +285,6 @@ def tools(
             aliases = f" [dim](aliases: {', '.join(tool.aliases)})[/dim]" if tool.aliases else ""
             console.print(f"  [cyan]{tool.name}[/cyan]{aliases}")
             console.print(f"     {desc[:80]}...\n" if len(desc) > 80 else f"     {desc}\n")
-
-
-from .utils.configure import get_available_model_names
 
 
 def cli_main():

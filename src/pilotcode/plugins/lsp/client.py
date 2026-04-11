@@ -224,7 +224,7 @@ class LspClient:
     async def _handle_notification(self, message: dict) -> None:
         """Handle server notifications."""
         method = message.get("method")
-        params = message.get("params", {})
+        message.get("params", {})
 
         if method == "textDocument/publishDiagnostics":
             # Handle diagnostics

@@ -24,6 +24,12 @@ from rich.panel import Panel
 from pilotcode.types.command import CommandContext
 from pilotcode.utils.git import git_exec, get_current_branch, get_repo_info
 from pilotcode.commands.base import CommandHandler, register_command
+from pilotcode.services.github_service import (
+    GitHubService,
+    CreatePullRequestRequest,
+    CreateIssueRequest,
+    IssueState,
+)
 
 console = Console()
 
@@ -567,15 +573,6 @@ async def push_command(args: list[str], context: CommandContext) -> str:
         return "\n".join(output)
     else:
         return f"[red]Push failed:[/red] {result.stderr}"
-
-
-# Import GitHub service for PR and issue commands
-from pilotcode.services.github_service import (
-    GitHubService,
-    CreatePullRequestRequest,
-    CreateIssueRequest,
-    IssueState,
-)
 
 
 async def _pr_list() -> str:

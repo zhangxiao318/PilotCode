@@ -127,7 +127,6 @@ from .intelligent_compact import (
 from .risk_assessment import (
     ToolRiskAnalyzer,
     CommandRiskAnalyzer,
-    RiskLevel,
     RiskAssessment,
     get_risk_analyzer,
 )

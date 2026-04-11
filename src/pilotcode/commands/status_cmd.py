@@ -20,7 +20,7 @@ async def status_command(args: list[str], context: CommandContext) -> str:
             for line in result.stdout.strip().split("\n")[:5]:
                 lines.append(f"  {line}")
             lines.append("")
-    except:
+    except Exception:
         pass
 
     # Current directory

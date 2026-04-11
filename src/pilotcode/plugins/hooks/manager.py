@@ -6,7 +6,7 @@ This is the main interface for the hook system.
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 
 from .types import (
     HookType,

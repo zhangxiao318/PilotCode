@@ -20,6 +20,7 @@ Features:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from typing import Optional, Any, AsyncIterator
@@ -1119,5 +1120,4 @@ def clear_github_service() -> None:
     _default_service = None
 
 
-# Import asyncio at the end to avoid circular issues
-import asyncio
+

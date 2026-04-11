@@ -586,7 +586,7 @@ Examples:
     framework = detect_test_framework(context.cwd)
 
     if framework != TestFramework.PYTEST:
-        return f"[yellow]Coverage report currently only supported for pytest projects[/yellow]"
+        return "[yellow]Coverage report currently only supported for pytest projects[/yellow]"
 
     # Run coverage
     with Progress(

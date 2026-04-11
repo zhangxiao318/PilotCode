@@ -63,7 +63,7 @@ async def remote_trigger_call(
             # Get response content
             try:
                 response_text = response.text[:1000]  # Limit size
-            except:
+            except Exception:
                 response_text = "<binary response>"
 
             return ToolResult(

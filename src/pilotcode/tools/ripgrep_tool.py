@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-from typing import Callable
+from typing import Any, Callable
 from pydantic import BaseModel, Field
 
 from .base import ToolResult, ToolUseContext, build_tool
@@ -215,7 +215,7 @@ class RipgrepRunner:
                     path = path_data.get("text", "")
 
                     line_num = match_data.get("line_number", 0)
-                    absolute_offset = match_data.get("absolute_offset", 0)
+                    match_data.get("absolute_offset", 0)
 
                     # Get match text
                     lines = match_data.get("lines", {})

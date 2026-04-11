@@ -212,7 +212,7 @@ class AgentCoordinator:
         self, task: str, decomposition: Any, results: list[ExecutionResult]
     ) -> str:
         """Generate a summary of the workflow execution."""
-        lines = [f"# Task Execution Summary\n"]
+        lines = ["# Task Execution Summary\n"]
         lines.append(f"**Original Task:** {task}\n")
         lines.append(f"**Strategy:** {decomposition.strategy.name}\n")
         lines.append(f"**Subtasks:** {len(decomposition.subtasks)}\n\n")

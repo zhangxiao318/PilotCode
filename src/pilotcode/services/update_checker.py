@@ -219,15 +219,12 @@ class UpdateChecker:
 
         # Try PyPI first, then GitHub
         latest_info = None
-        source = ""
 
         if self.package_name:
             latest_info = await self._fetch_pypi_version()
-            source = "PyPI"
 
         if not latest_info and self.github_repo:
             latest_info = await self._fetch_github_version()
-            source = "GitHub"
 
         if not latest_info:
             return UpdateCheckResult(
@@ -361,7 +358,7 @@ class UpdateChecker:
 
         if result.status == UpdateStatus.UPDATE_AVAILABLE and result.info:
             lines = [
-                f"⬆️  Update available!",
+                "⬆️  Update available!",
                 f"   Current: {result.info.current_version}",
                 f"   Latest:  {result.info.latest_version}",
             ]

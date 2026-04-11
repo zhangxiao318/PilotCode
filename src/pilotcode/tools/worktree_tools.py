@@ -78,7 +78,7 @@ async def enter_worktree_call(
 
     # Change to the worktree directory
     if context.get_app_state:
-        app_state = context.get_app_state()
+        context.get_app_state()
         # Update cwd in state
         if context.set_app_state:
             context.set_app_state(lambda s: s)  # Trigger update

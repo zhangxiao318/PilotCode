@@ -86,7 +86,7 @@ def confirm_action(
         Confirmation prompt string
     """
     lines = [
-        f"",
+        "",
         f"Confirm {action}:",
         f"  Plugin: {plugin_id}",
     ]
@@ -94,8 +94,8 @@ def confirm_action(
     if details:
         lines.append(f"  {details}")
 
-    lines.append(f"")
-    lines.append(f"Proceed? [y/N]: ")
+    lines.append("")
+    lines.append("Proceed? [y/N]: ")
 
     return "\n".join(lines)
 

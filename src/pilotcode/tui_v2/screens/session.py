@@ -230,7 +230,7 @@ class SessionScreen(Screen):
         """Handle slash commands using the command registry."""
         # Create command context
 
-        store = get_store()
+        get_store()
         ctx = CommandContext(
             cwd=str(Path.cwd()),
             query_engine=self.controller.query_engine if self.controller else None,

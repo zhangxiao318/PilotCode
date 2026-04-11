@@ -192,35 +192,6 @@ class TaskDecomposer:
 
     def _llm_analysis(self, task: str, context: str) -> DecompositionResult:
         """Use LLM to analyze and decompose task."""
-        prompt = f"""Analyze this programming task and determine the optimal decomposition strategy.
-
-Task: {task}
-Context: {context}
-
-Provide a JSON response with this structure:
-{{
-    "should_decompose": true/false,
-    "strategy": "none|sequential|parallel|hierarchical|iterative",
-    "reasoning": "explanation of why this strategy was chosen",
-    "confidence": 0.0-1.0,
-    "subtasks": [
-        {{
-            "id": "step1",
-            "description": "brief description",
-            "role": "coder|debugger|tester|reviewer|planner|explainer",
-            "prompt": "full prompt for this subtask",
-            "dependencies": [],
-            "complexity": 1-5
-        }}
-    ]
-}}
-
-Guidelines:
-- Use "none" for tasks that are atomic and don't benefit from decomposition
-- Use "sequential" when steps depend on previous results
-- Use "parallel" when subtasks are independent
-- Use "hierarchical" for complex tasks needing a coordinator
-- Use "iterative" for tasks requiring refinement loops"""
 
         try:
             # This would call the actual model client

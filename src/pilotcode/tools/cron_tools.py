@@ -23,7 +23,7 @@ def load_cron_jobs():
         try:
             with open(CRON_FILE, "r") as f:
                 return json.load(f)
-        except:
+        except Exception:
             pass
     return {}
 

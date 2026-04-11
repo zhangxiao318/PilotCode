@@ -550,7 +550,7 @@ class PluginManager:
         if plugin_id not in updates:
             return True  # Already up to date
 
-        update_info = updates[plugin_id]
+        updates[plugin_id]
 
         # Get current installation
         installation = self._get_installation(plugin_id)

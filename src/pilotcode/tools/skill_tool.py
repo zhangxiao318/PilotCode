@@ -76,7 +76,7 @@ def load_skill_config(skill_name: str) -> dict | None:
     try:
         with open(skill_path, "r") as f:
             return json.load(f)
-    except:
+    except Exception:
         return None
 
 

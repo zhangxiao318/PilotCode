@@ -277,7 +277,7 @@ class ConfigManager:
 
             if full_response:
                 result["success"] = True
-                result["message"] = f"LLM responded successfully"
+                result["message"] = "LLM responded successfully"
                 result["response"] = full_response[:200]  # Truncate if too long
             else:
                 result["message"] = "LLM returned empty response"

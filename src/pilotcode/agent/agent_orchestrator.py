@@ -537,7 +537,7 @@ Previous discussion:
         from ..tools.registry import get_tool_by_name
 
         client = get_model_client()
-        executor = ToolExecutor()
+        ToolExecutor()
         ctx = ToolUseContext()
 
         messages = [
@@ -609,7 +609,7 @@ Previous discussion:
 
             agent.status = AgentStatus.COMPLETED
             return ""
-        except Exception as e:
+        except Exception:
             import traceback
 
             traceback.print_exc()

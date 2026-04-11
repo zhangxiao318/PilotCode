@@ -16,21 +16,21 @@ project_root = current_file.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from pilotcode.query_engine import QueryEngine
-from pilotcode.types.message import (
+from pilotcode.query_engine import QueryEngine  # noqa: E402
+from pilotcode.types.message import (  # noqa: E402
     UserMessage,
     AssistantMessage,
     ToolUseMessage,
     SystemMessage,
 )
-from pilotcode.utils.config import get_global_config
-from pilotcode.commands.base import process_user_input
-from pilotcode.tools.base import ToolUseContext as CommandContext
-from pilotcode.services.session_context import (
+from pilotcode.utils.config import get_global_config  # noqa: E402
+from pilotcode.commands.base import process_user_input  # noqa: E402
+from pilotcode.tools.base import ToolUseContext as CommandContext  # noqa: E402
+from pilotcode.services.session_context import (  # noqa: E402
     get_session_context_manager,
     reset_session_context,
 )
-from pilotcode.services.context_compression import get_context_compressor
+from pilotcode.services.context_compression import get_context_compressor  # noqa: E402
 
 
 @dataclass
@@ -546,7 +546,7 @@ class SimpleCLI:
                             # For long outputs, show first 300 and last 100 chars
                             print(f"  Output ({len(output_display)} chars):")
                             print(f"    {output_display[:300]}...")
-                            print(f"    ... [truncated] ...")
+                            print("    ... [truncated] ...")
                             print(f"    ...{output_display[-100:]}")
                         elif len(output_display) > 100:
                             print(f"  Output: {output_display[:200]}...")

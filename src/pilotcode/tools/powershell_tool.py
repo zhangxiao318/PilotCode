@@ -60,7 +60,7 @@ async def execute_powershell(command: str, timeout: int = 600) -> PowerShellOutp
         try:
             process.kill()
             await process.wait()
-        except:
+        except Exception:
             pass
         return PowerShellOutput(
             stdout="",

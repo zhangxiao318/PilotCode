@@ -1,5 +1,6 @@
 """LSP Tool for Language Server Protocol integration."""
 
+import asyncio
 import json
 from typing import Any
 from pydantic import BaseModel, Field

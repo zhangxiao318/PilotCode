@@ -230,14 +230,14 @@ class PermissionManager:
         from ..utils.config import get_config_manager
 
         # Only save ALWAYS_ALLOW and NEVER_ALLOW
-        persistent = {
+        {
             k: v.to_dict()
             for k, v in self._permissions.items()
             if v.level in (PermissionLevel.ALWAYS_ALLOW, PermissionLevel.NEVER_ALLOW)
         }
 
         manager = get_config_manager()
-        config = manager.load_global_config()
+        manager.load_global_config()
 
         # Store in config (you might want to add a field for this)
         # For now, we'll just keep in memory

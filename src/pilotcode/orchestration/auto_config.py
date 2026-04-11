@@ -6,6 +6,8 @@ Controls when and how tasks are automatically decomposed.
 from dataclasses import dataclass
 from typing import Optional
 
+from .decomposer import DecompositionStrategy
+
 
 @dataclass
 class AutoDecompositionConfig:
@@ -87,7 +89,7 @@ def enable_auto_decomposition():
     _auto_config.enabled = True
 
 
-def disable_auto_decomposition():
+def disable_auto_decomposition(default_strategy: DecompositionStrategy | None = None):
     """Disable automatic task decomposition globally."""
     global _auto_config
     _auto_config.enabled = False

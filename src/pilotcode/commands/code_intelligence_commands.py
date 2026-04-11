@@ -10,6 +10,7 @@ This module provides code intelligence commands using the LSP Manager:
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from rich.console import Console
@@ -224,7 +225,7 @@ Examples:
         references = await lsp_manager.get_references(language.value, filepath, line, character)
 
         if not references:
-            return f"[dim]No references found[/dim]"
+            return "[dim]No references found[/dim]"
 
         # Build table
         table = Table(title=f"References ({len(references)} found)")
@@ -304,14 +305,14 @@ Examples:
         definitions = await lsp_manager.get_definition(language.value, filepath, line, character)
 
         if not definitions:
-            return f"[dim]No definition found[/dim]"
+            return "[dim]No definition found[/dim]"
 
         # Build output
         for i, definition in enumerate(definitions, 1):
             uri = definition.get("uri", "")
             range_info = definition.get("range", {})
             start = range_info.get("start", {})
-            end = range_info.get("end", {})
+            range_info.get("end", {})
 
             def_line = start.get("line", 0) + 1
             def_char = start.get("character", 0) + 1
@@ -389,7 +390,7 @@ Examples:
         hover_info = await lsp_manager.get_hover(language.value, filepath, line, character)
 
         if not hover_info:
-            return f"[dim]No information available[/dim]"
+            return "[dim]No information available[/dim]"
 
         contents = hover_info.get("contents", "")
 
@@ -474,7 +475,7 @@ Examples:
         )
 
         if not implementations:
-            return f"[dim]No implementations found[/dim]"
+            return "[dim]No implementations found[/dim]"
 
         # Build table
         table = Table(title=f"Implementations ({len(implementations)} found)")

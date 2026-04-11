@@ -256,7 +256,7 @@ class PermissionCheckHook:
             from ..permissions.permission_manager import get_permission_manager, PermissionRequest
 
             pm = get_permission_manager()
-            request = PermissionRequest(
+            PermissionRequest(
                 tool_name=context.tool_name,
                 tool_input=context.tool_input,
                 description=f"Execute {context.tool_name}",

@@ -180,7 +180,7 @@ class ASTCodeAnalyzer:
             func_info.args.append(arg_str)
 
         # Default values
-        defaults = [None] * (len(args.args) - len(args.defaults)) + [
+        [None] * (len(args.args) - len(args.defaults)) + [
             ast.dump(d) for d in args.defaults
         ]
 

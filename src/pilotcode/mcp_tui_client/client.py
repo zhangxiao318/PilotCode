@@ -140,7 +140,7 @@ class TUITestClient:
         for session_id in list(self.sessions.keys()):
             try:
                 await self.close_session(session_id)
-            except:
+            except Exception:
                 pass
 
         # Stop reader

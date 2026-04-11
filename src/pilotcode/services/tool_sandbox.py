@@ -249,7 +249,7 @@ class ToolSandbox:
         Returns:
             SandboxResult with execution details
         """
-        start_time = time.time()
+        time.time()
         timeout = timeout or self.config.max_execution_time
 
         # Security analysis
@@ -476,7 +476,7 @@ class ToolSandbox:
         analysis = self._analyzer.analyze(command)
 
         # Parse command to check individual parts
-        parts = shlex.split(command)
+        shlex.split(command)
 
         recommendations = []
 
