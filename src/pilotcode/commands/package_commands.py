@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import subprocess
 import json
-from typing import Optional, Any
+from typing import Optional
 from enum import Enum
 from dataclasses import dataclass
 
@@ -423,7 +423,7 @@ Examples:
             console.print(Panel("\n".join(lines), title="Output", border_style="blue"))
         return ""
     else:
-        console.print(f"[red]✗ Installation failed[/red]")
+        console.print("[red]✗ Installation failed[/red]")
         if output:
             console.print(
                 Panel(
@@ -622,7 +622,7 @@ Examples:
         return "[yellow]Could not detect package manager[/yellow]"
 
     # Confirm uninstall
-    console.print(f"[yellow]The following packages will be uninstalled:[/yellow]")
+    console.print("[yellow]The following packages will be uninstalled:[/yellow]")
     for pkg in packages:
         console.print(f"  - {pkg}")
 
@@ -692,8 +692,6 @@ Examples:
   /list_packages
   /list_packages --outdated
 """
-
-    show_outdated = "--outdated" in args or "-o" in args
 
     # Detect package manager
     manager = detect_package_manager(context.cwd)

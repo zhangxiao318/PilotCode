@@ -9,7 +9,12 @@ from .agent_manager import (
     AgentWorkflow,
     ENHANCED_AGENT_DEFINITIONS,
 )
-from .agent_orchestrator import AgentOrchestrator, WorkflowStep, WorkflowType, get_orchestrator
+from .agent_orchestrator import (
+    AgentOrchestrator,
+    WorkflowStep,
+    WorkflowType,
+    get_orchestrator,
+)
 from .agent_hooks import AgentHooks, HookManager, get_hook_manager
 
 __all__ = [
@@ -23,6 +28,7 @@ __all__ = [
     "AgentOrchestrator",
     "WorkflowStep",
     "WorkflowType",
+    "get_orchestrator",
     "AgentHooks",
     "HookManager",
     "get_hook_manager",

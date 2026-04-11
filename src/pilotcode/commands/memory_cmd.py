@@ -27,7 +27,7 @@ async def memory_command(args: list[str], context: CommandContext) -> str:
                     with open(filepath, "r") as f:
                         data = json.load(f)
                     files.append((filename[:-5], data.get("created", "Unknown")))
-                except:
+                except Exception:
                     pass
 
         if not files:

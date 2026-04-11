@@ -27,7 +27,7 @@ async def rm_command(args: list[str], context: CommandContext) -> str:
                 shutil.rmtree(path)
                 return f"Removed directory: {target_path}"
             else:
-                return f"Use -r flag to remove directories"
+                return "Use -r flag to remove directories"
         else:
             path.unlink()
             return f"Removed: {target_path}"

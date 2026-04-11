@@ -1,7 +1,6 @@
 """Debug command implementation."""
 
 import sys
-import os
 from .base import CommandHandler, register_command, CommandContext
 
 

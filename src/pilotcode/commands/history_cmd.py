@@ -19,7 +19,7 @@ def load_history():
         try:
             with open(HISTORY_FILE, "r") as f:
                 return json.load(f)
-        except:
+        except Exception:
             pass
     return []
 

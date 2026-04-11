@@ -12,7 +12,6 @@ All commands work with both local Git and GitHub integration.
 
 from __future__ import annotations
 
-import asyncio
 import os
 from dataclasses import dataclass
 from typing import Optional
@@ -25,6 +24,12 @@ from rich.panel import Panel
 from pilotcode.types.command import CommandContext
 from pilotcode.utils.git import git_exec, get_current_branch, get_repo_info
 from pilotcode.commands.base import CommandHandler, register_command
+from pilotcode.services.github_service import (
+    GitHubService,
+    CreatePullRequestRequest,
+    CreateIssueRequest,
+    IssueState,
+)
 
 console = Console()
 
@@ -570,15 +575,6 @@ async def push_command(args: list[str], context: CommandContext) -> str:
         return f"[red]Push failed:[/red] {result.stderr}"
 
 
-# Import GitHub service for PR and issue commands
-from pilotcode.services.github_service import (
-    GitHubService,
-    CreatePullRequestRequest,
-    CreateIssueRequest,
-    IssueState,
-)
-
-
 async def _pr_list() -> str:
     """List open PRs."""
     repo_info = await get_repo_info()
@@ -826,7 +822,7 @@ async def _issue_list() -> str:
 
             count = 0
             async for issue in github.list_issues(repo_info.github_owner, repo_info.github_repo):
-                labels = ", ".join([l.name for l in issue.labels[:3]])
+                labels = ", ".join([label.name for label in issue.labels[:3]])
                 if len(issue.labels) > 3:
                     labels += "..."
 
@@ -894,7 +890,9 @@ async def _issue_view(number: str) -> str:
             status_text = "Open" if issue.state == IssueState.OPEN else "Closed"
 
             labels_text = (
-                ", ".join([f"[#{l.color}]{l.name}[/#{l.color}]" for l in issue.labels])
+                ", ".join(
+                    [f"[#{label.color}]{label.name}[/#{label.color}]" for label in issue.labels]
+                )
                 if issue.labels
                 else "None"
             )

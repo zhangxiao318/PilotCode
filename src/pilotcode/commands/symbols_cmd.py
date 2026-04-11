@@ -29,7 +29,7 @@ async def symbols_command(args: list[str], context: CommandContext) -> str:
                 for line in lines[:50]:  # Limit output
                     parts = line.split(None, 2)
                     if len(parts) >= 3:
-                        name, kind, location = parts[0], parts[1], parts[2]
+                        name, kind, _location = parts[0], parts[1], parts[2]
                         output += f"  {kind}: {name}\n"
                 return output
             else:

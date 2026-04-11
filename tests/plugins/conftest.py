@@ -17,6 +17,7 @@ try:
         PluginMarketplace,
         PluginMarketplaceEntry,
     )
+
     PLUGINS_AVAILABLE = True
 except ImportError:
     PLUGINS_AVAILABLE = False
@@ -72,10 +73,11 @@ def sample_marketplace():
 @pytest.fixture
 def create_test_plugin(temp_config_dir):
     """Factory fixture to create test plugins."""
+
     def _create(name: str, version: str = "1.0.0", with_skills: bool = True):
         plugin_dir = temp_config_dir / "test_plugins" / name
         plugin_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create plugin.json
         manifest = {
             "name": name,
@@ -84,12 +86,12 @@ def create_test_plugin(temp_config_dir):
         }
         with open(plugin_dir / "plugin.json", "w") as f:
             json.dump(manifest, f, indent=2)
-        
+
         # Create skills if requested
         if with_skills:
             skills_dir = plugin_dir / "skills"
             skills_dir.mkdir(exist_ok=True)
-            
+
             skill_content = """---
 name: test-skill
 description: A test skill
@@ -99,9 +101,9 @@ This is a test skill content.
 """
             with open(skills_dir / "test.md", "w") as f:
                 f.write(skill_content)
-        
+
         return plugin_dir
-    
+
     return _create
 
 
@@ -149,12 +151,8 @@ Path: {path}
 def sample_hooks_config():
     """Sample hooks configuration."""
     return {
-        "preToolUse": [
-            {"command": "echo 'Pre-tool hook'"}
-        ],
-        "postToolUse": [
-            {"command": "echo 'Post-tool hook'"}
-        ],
+        "preToolUse": [{"command": "echo 'Pre-tool hook'"}],
+        "postToolUse": [{"command": "echo 'Post-tool hook'"}],
     }
 
 

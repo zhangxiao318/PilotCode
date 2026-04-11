@@ -2,7 +2,6 @@
 
 import os
 import subprocess
-import re
 from pathlib import Path
 from .base import CommandHandler, register_command, CommandContext
 

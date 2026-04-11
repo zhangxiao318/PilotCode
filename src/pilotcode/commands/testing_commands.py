@@ -22,13 +22,11 @@ import subprocess
 from typing import Optional, Any
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.tree import Tree
 
 from pilotcode.types.command import CommandContext
 from pilotcode.commands.base import CommandHandler, register_command
@@ -46,10 +44,14 @@ class TestFramework(str, Enum):
     GO = "go"
     UNKNOWN = "unknown"
 
+    __test__ = False  # Tell pytest not to collect this as a test class
+
 
 @dataclass
 class TestResult:
     """Test execution result."""
+
+    __test__ = False  # Tell pytest not to collect this as a test class
 
     framework: TestFramework
     total: int = 0
@@ -584,7 +586,7 @@ Examples:
     framework = detect_test_framework(context.cwd)
 
     if framework != TestFramework.PYTEST:
-        return f"[yellow]Coverage report currently only supported for pytest projects[/yellow]"
+        return "[yellow]Coverage report currently only supported for pytest projects[/yellow]"
 
     # Run coverage
     with Progress(

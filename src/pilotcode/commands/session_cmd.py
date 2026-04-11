@@ -1,6 +1,5 @@
 """Session command implementation with full persistence support."""
 
-import os
 from datetime import datetime
 from .base import CommandHandler, register_command, CommandContext
 from ..services.session_persistence import (

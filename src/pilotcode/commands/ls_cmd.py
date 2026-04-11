@@ -1,6 +1,5 @@
 """Ls command implementation."""
 
-import os
 from pathlib import Path
 from datetime import datetime
 from .base import CommandHandler, register_command, CommandContext

@@ -28,8 +28,6 @@ Examples:
 
     # Handle options
     show_arch = "--arch" in args
-    show_module = "--module" in args
-    show_deps = "--deps" in args
 
     path = Path(context.cwd) / target
 

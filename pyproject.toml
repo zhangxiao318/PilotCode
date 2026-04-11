@@ -15,6 +15,7 @@ dependencies = [
     "anthropic>=0.28.0",
     "textual>=0.70.0",
     "aiofiles>=23.0.0",
+    "aiohttp>=3.9.0",
     "watchdog>=4.0.0",
     "gitpython>=3.1.0",
     "shellingham>=1.5.0",
@@ -74,6 +75,12 @@ addopts = [
     "--strict-config",
     "-ra",
 ]
+filterwarnings = [
+    # Suppress asyncio subprocess transport cleanup warnings
+    # These occur when subprocess transports are garbage collected after event loop closes
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+    "ignore::RuntimeWarning:asyncio",
+]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
@@ -83,4 +90,7 @@ markers = [
     "plugin: marks tests as plugin system tests",
     "plugin_unit: marks tests as plugin unit tests",
     "plugin_integration: marks tests as plugin integration tests",
+    "unit: marks tests as unit tests",
+    "security: marks tests as security tests",
+    "performance: marks tests as performance tests",
 ]

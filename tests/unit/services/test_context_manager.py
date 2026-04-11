@@ -349,6 +349,7 @@ class TestCompactionStrategies:
     def test_token_count_compaction(self, context_manager):
         """Test token count compaction strategy."""
         import time
+
         # Custom estimator that returns different sizes
         # Note: preserve_recent=2 means last 4 messages are protected
         # So we need more messages to ensure some can be removed

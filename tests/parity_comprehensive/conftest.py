@@ -51,6 +51,7 @@ def cleanup_tasks_after_test():
     # Cleanup after test
     try:
         from pilotcode.tools.task_tools import cleanup_all_tasks
+
         # Try to run cleanup if we're in an async context
         try:
             loop = asyncio.get_running_loop()
