@@ -31,20 +31,38 @@ def check_configuration() -> bool:
     # Get config to check if it's a local model (skip verification for local models)
     config_manager = get_config_manager()
     config = config_manager.load_global_config()
+
+    # Check both config file and environment variables for base_url
+    # Environment variables can override config, so we need to check both
+    import os
+    env_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("PILOTCODE_BASE_URL")
+    effective_base_url = env_base_url or config.base_url or ""
+    
+    # Also check the raw config file (before env var overrides)
+    # This handles the case where user configured a local model but env var overrides it
+    raw_config = config_manager.load_raw_global_config()
+    config_base_url = raw_config.base_url or config.base_url or ""
+    
+    def is_local_url(url: str) -> bool:
+        """Check if URL points to a local/internal model."""
+        if not url:
+            return False
+        return (
+            "localhost" in url
+            or "127.0.0.1" in url
+            or ":11434" in url
+            or url.startswith("http://192.168.")
+            or url.startswith("http://10.")
+            or url.startswith("http://172.")
+        )
     
     # Skip dynamic verification for local/internal network models
-    base_url = config.base_url or ""
-    is_local_model = (
-        "localhost" in base_url
-        or "127.0.0.1" in base_url
-        or ":11434" in base_url
-        or base_url.startswith("http://192.168.")
-        or base_url.startswith("http://10.")
-        or base_url.startswith("http://172.")
-    )
-    
+    # Check both effective URL (after env override) and config file URL
+    is_local_model = is_local_url(effective_base_url) or is_local_url(config_base_url)
+
     if is_local_model:
-        console.print(f"[dim]Using local LLM at {base_url}[/dim]")
+        display_url = effective_base_url or config_base_url
+        console.print(f"[dim]Using local/internal LLM at {display_url}[/dim]")
         return True
 
     # Deep check: verify LLM is actually accessible
