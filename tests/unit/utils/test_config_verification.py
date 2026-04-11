@@ -212,18 +212,24 @@ class TestConfigVerification:
         with patch("pilotcode.utils.model_client.ModelClient") as MockClient:
             mock_client = AsyncMock()
 
-            # Simulate slow response that would timeout
-            async def slow_generator(*args, **kwargs):
-                await asyncio.sleep(10)  # Longer than timeout
+            # Use a future that never completes to simulate timeout
+            # This avoids actually waiting for the timeout duration
+            async def hanging_generator(*args, **kwargs):
+                # Create a future that never resolves
+                future = asyncio.Future()
+                try:
+                    await asyncio.wait_for(future, timeout=0.01)
+                except asyncio.TimeoutError:
+                    pass
                 if False:  # Make it a generator
                     yield {}
 
-            mock_client.chat_completion = MagicMock(return_value=slow_generator())
+            mock_client.chat_completion = MagicMock(return_value=hanging_generator())
             mock_client.close = AsyncMock()
             MockClient.return_value = mock_client
 
             # Use very short timeout
-            result = await isolated_manager.verify_configuration(timeout=0.1)
+            result = await isolated_manager.verify_configuration(timeout=0.01)
 
             # Should fail due to timeout
             assert result["success"] is False or result["error"] is not None
