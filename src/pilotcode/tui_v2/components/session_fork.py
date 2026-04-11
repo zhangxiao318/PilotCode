@@ -8,7 +8,8 @@ from textual.widgets import Static, Button, ListView, ListItem, Label
 from textual.containers import Horizontal
 from textual.message import Message
 
-from pilotcode.tui_v2.controller.controller import UIMessage, MessageType
+from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
+from pilotcode.types.message import MessageType
 
 
 class SessionForked(Message):
