@@ -416,8 +416,8 @@ class TaskAwareCompressor(IntelligentContextCompactor):
         elif message.role == "assistant":
             # Extract key actions/decisions
             lines = content.split('\n')
-            key_lines = [l for l in lines if any(
-                kw in l.lower() for kw in ["created", "modified", "fixed", "added", "implemented"]
+            key_lines = [line for line in lines if any(
+                kw in line.lower() for kw in ["created", "modified", "fixed", "added", "implemented"]
             )]
             if key_lines:
                 summary = "[Summary: " + "; ".join(key_lines[:3]) + "]"

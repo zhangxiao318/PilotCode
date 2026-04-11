@@ -527,8 +527,8 @@ Previous discussion:
                 pass
 
         # Fallback: split by numbered items
-        lines = [l.strip() for l in decomposition.split("\n") if l.strip()]
-        return [l for l in lines if l and not l.startswith(("```", "["))]
+        lines = [line.strip() for line in decomposition.split("\n") if line.strip()]
+        return [line for line in lines if line and not line.startswith(("```", "["))]
 
     async def _run_agent_task(self, agent: SubAgent, prompt: str) -> str:
         """Run a single agent task with basic tool support."""

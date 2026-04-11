@@ -167,7 +167,7 @@ class InformationDensityCalculator:
     
     def _uniqueness_score(self, content: str) -> float:
         """Calculate content uniqueness (lower repetition = higher score)."""
-        lines = [l.strip() for l in content.split('\n') if l.strip()]
+        lines = [line.strip() for line in content.split('\n') if line.strip()]
         if not lines:
             return 0.0
         

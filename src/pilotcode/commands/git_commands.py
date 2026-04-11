@@ -825,7 +825,7 @@ async def _issue_list() -> str:
 
             count = 0
             async for issue in github.list_issues(repo_info.github_owner, repo_info.github_repo):
-                labels = ", ".join([l.name for l in issue.labels[:3]])
+                labels = ", ".join([label.name for label in issue.labels[:3]])
                 if len(issue.labels) > 3:
                     labels += "..."
 
@@ -893,7 +893,7 @@ async def _issue_view(number: str) -> str:
             status_text = "Open" if issue.state == IssueState.OPEN else "Closed"
 
             labels_text = (
-                ", ".join([f"[#{l.color}]{l.name}[/#{l.color}]" for l in issue.labels])
+                ", ".join([f"[#{label.color}]{label.name}[/#{label.color}]" for label in issue.labels])
                 if issue.labels
                 else "None"
             )
