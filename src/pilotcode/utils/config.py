@@ -108,7 +108,7 @@ class ConfigManager:
 
     def load_raw_global_config(self) -> GlobalConfig:
         """Load global configuration from file only (no env overrides).
-        
+
         This is useful for checking the original config before environment
         variables are applied.
         """
