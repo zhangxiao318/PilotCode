@@ -28,9 +28,26 @@ def check_configuration() -> bool:
     if not is_configured():
         return _show_configuration_prompt()
 
-    # Deep check: verify LLM is actually accessible
+    # Get config to check if it's a local model (skip verification for local models)
     config_manager = get_config_manager()
+    config = config_manager.load_global_config()
+    
+    # Skip dynamic verification for local/internal network models
+    base_url = config.base_url or ""
+    is_local_model = (
+        "localhost" in base_url
+        or "127.0.0.1" in base_url
+        or ":11434" in base_url
+        or base_url.startswith("http://192.168.")
+        or base_url.startswith("http://10.")
+        or base_url.startswith("http://172.")
+    )
+    
+    if is_local_model:
+        console.print(f"[dim]Using local LLM at {base_url}[/dim]")
+        return True
 
+    # Deep check: verify LLM is actually accessible
     try:
         console.print("[dim]Verifying LLM configuration...[/dim]")
         verification = asyncio.run(config_manager.verify_configuration(timeout=10.0))
