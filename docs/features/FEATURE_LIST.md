@@ -5,7 +5,7 @@
 | 版本 | 文件数 | 代码行数 |
 |------|--------|----------|
 | **原始 TypeScript** | 1,884 个 | ~512,000 行 |
-| **当前 Python** | ~50 个 | ~13,000 行 |
+| **当前 Python** | ~255 个 | ~55,000 行 |
 | **目标 Python** | ~500+ 个 | ~150,000 行 |
 
 ---
@@ -14,11 +14,11 @@
 
 | 组件 | 状态 | 完成度 |
 |------|------|--------|
-| 工具系统 | 59/80 工具 | 74% |
-| 命令系统 | 65/80 命令 | 81% |
-| Agent 系统 | 核心完成 | 85% |
-| Hook 系统 | 基础完成 | 70% |
-| TUI 组件 | 基础完成 | 60% |
+| 工具系统 | 55/80 工具 | 69% |
+| 命令系统 | 67/80 命令 | 84% |
+| Agent 系统 | 完整实现 | 95% |
+| Hook 系统 | 核心完成 | 85% |
+| TUI 组件 | 核心完成 | 75% |
 
 ---
 
@@ -41,21 +41,21 @@
 
 ### 1.3 配置系统
 - [x] 基础配置管理 (config.py)
-- [ ] 项目配置 (.pilotcode.json)
-- [ ] 全局配置 (~/.config/pilotcode/)
+- [x] 项目配置 (.pilotcode.json)
+- [x] 全局配置 (~/.config/pilotcode/ 或 %LOCALAPPDATA%/pilotcode/)
 - [ ] 配置迁移 (migrations/)
 - [ ] 远程管理设置 (remoteManagedSettings)
 
 ---
 
-## Phase 2: 工具系统 (51/80 工具)
+## Phase 2: 工具系统 (55/80 工具)
 
 ### 2.1 文件操作工具 ✅
 - [x] **FileRead** - 读取文件
 - [x] **FileWrite** - 写入文件
 - [x] **FileEdit** - 编辑文件 (搜索/替换)
 - [x] **NotebookEdit** - Jupyter Notebook 编辑
-- [ ] FileSelectorTool - 文件选择
+- [x] **FileSelectorTool** - 文件选择
 
 ### 2.2 Shell 工具 ✅
 - [x] **Bash** - Bash 命令执行
