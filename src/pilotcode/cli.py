@@ -38,8 +38,10 @@ def check_configuration() -> bool:
     env_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("PILOTCODE_BASE_URL")
     effective_base_url = env_base_url or config.base_url or ""
     
-    # Also check if config file has a local address but env var overrides it
-    config_base_url = config.base_url or ""
+    # Also check the raw config file (before env var overrides)
+    # This handles the case where user configured a local model but env var overrides it
+    raw_config = config_manager.load_raw_global_config()
+    config_base_url = raw_config.base_url or config.base_url or ""
     
     def is_local_url(url: str) -> bool:
         """Check if URL points to a local/internal model."""

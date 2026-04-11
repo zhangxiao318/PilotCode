@@ -106,6 +106,21 @@ class ConfigManager:
 
         return config
 
+    def load_raw_global_config(self) -> GlobalConfig:
+        """Load global configuration from file only (no env overrides).
+        
+        This is useful for checking the original config before environment
+        variables are applied.
+        """
+        if self.SETTINGS_FILE.exists():
+            try:
+                with open(self.SETTINGS_FILE, "r") as f:
+                    data = json.load(f)
+                return GlobalConfig(**data)
+            except Exception:
+                return GlobalConfig()
+        return GlobalConfig()
+
     def load_global_config(self) -> GlobalConfig:
         """Load global configuration from file and environment."""
         if self._global_config is not None:
