@@ -25,7 +25,7 @@ class TestKnowledgeFragment:
 
     def test_access_updates_count(self):
         fragment = KnowledgeFragment(key="test", value="value")
-        
+
         time.sleep(0.01)  # Ensure time difference
         fragment.access()
 
