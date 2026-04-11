@@ -1,12 +1,10 @@
 """LSP Tool for Language Server Protocol integration."""
 
 import json
-import subprocess
 from typing import Any
-from dataclasses import dataclass
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
@@ -209,7 +207,6 @@ async def lsp_call(
     on_progress: Any,
 ) -> ToolResult[LSPOutput]:
     """Execute LSP command."""
-    import asyncio
 
     client = LSPClient(input_data.language)
 

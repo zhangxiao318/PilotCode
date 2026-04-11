@@ -12,7 +12,7 @@ import random
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 from enum import Enum
-from datetime import datetime, timedelta
+from datetime import datetime
 
 T = TypeVar("T")
 

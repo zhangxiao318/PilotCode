@@ -23,8 +23,8 @@ from __future__ import annotations
 import os
 import time
 from typing import Optional, Any, AsyncIterator
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 import httpx

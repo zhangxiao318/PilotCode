@@ -2,7 +2,6 @@
 
 from typing import TypeAlias, Union
 from datetime import datetime
-from uuid import UUID
 
 # Type aliases
 AgentId: TypeAlias = str

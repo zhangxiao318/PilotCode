@@ -8,10 +8,9 @@ to provide better suggestions than simple chronological history.
 import json
 import time
 import math
-from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass, asdict
+from typing import List, Dict, Optional
+from dataclasses import dataclass
 from pathlib import Path
-from collections import defaultdict
 
 
 @dataclass

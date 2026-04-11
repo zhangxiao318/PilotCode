@@ -12,8 +12,6 @@ from pilotcode.types.message import (
     UserMessage,
     AssistantMessage,
     ToolUseMessage,
-    ToolResultMessage,
-    SystemMessage,
 )
 from pilotcode.tools.registry import get_all_tools
 from pilotcode.tools.base import ToolUseContext

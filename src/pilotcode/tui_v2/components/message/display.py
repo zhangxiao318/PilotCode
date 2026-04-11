@@ -1,6 +1,5 @@
 """Message display components for chat interface."""
 
-import asyncio
 from typing import Optional
 from textual.widgets import Static, Button, TextArea
 from textual.containers import Vertical, ScrollableContainer, Horizontal
@@ -9,9 +8,7 @@ from textual.reactive import reactive
 from textual.message import Message
 from rich.console import RenderableType
 from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.text import Text
-from rich.align import Align
 
 from pilotcode.tui_v2.controller.controller import UIMessage, MessageType
 
@@ -615,9 +612,6 @@ class TextViewerDialog(Screen):
 
     def _save_to_file(self):
         """Save content to a file in /tmp for downloading."""
-        import tempfile
-        import os
-        from pathlib import Path
 
         try:
             # Create a temp file with meaningful name

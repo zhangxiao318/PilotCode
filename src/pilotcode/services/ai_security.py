@@ -4,7 +4,6 @@ Following Claude Code's approach of using AI to detect potential
 command injection and security risks in bash commands.
 """
 
-import functools
 import re
 from dataclasses import dataclass
 from enum import Enum

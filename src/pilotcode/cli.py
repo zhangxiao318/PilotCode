@@ -4,7 +4,6 @@ import asyncio
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich import box
 
 from .components.repl import run_repl, run_headless
 from .version import __version__

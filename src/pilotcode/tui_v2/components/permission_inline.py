@@ -2,9 +2,9 @@
 
 import asyncio
 from enum import Enum, auto
-from typing import Optional, Callable
+from typing import Optional
 from textual.widgets import Static, Button
-from textual.containers import Vertical, Horizontal
+from textual.containers import Vertical
 from textual.reactive import reactive
 from textual.message import Message
 

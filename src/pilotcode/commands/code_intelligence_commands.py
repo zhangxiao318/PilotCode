@@ -15,12 +15,11 @@ from typing import Optional
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.tree import Tree
 
 from pilotcode.types.command import CommandContext
 from pilotcode.commands.base import CommandHandler, register_command
-from pilotcode.services.lsp_manager import get_lsp_manager, LSPManager, Language
+from pilotcode.services.lsp_manager import get_lsp_manager, Language
 from pilotcode.utils.git import get_repo_info_sync
 
 console = Console()

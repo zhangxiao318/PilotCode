@@ -3,7 +3,7 @@
 import uuid
 import json
 from enum import Enum
-from typing import Any, Callable
+from typing import Callable
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path

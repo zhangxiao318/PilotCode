@@ -1,7 +1,6 @@
 """Status command implementation."""
 
 import subprocess
-import os
 from datetime import datetime
 from .base import CommandHandler, register_command, CommandContext
 

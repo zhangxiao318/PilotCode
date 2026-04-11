@@ -1,10 +1,8 @@
 """Model client for interacting with LLM APIs."""
 
-import os
 import json
 from typing import Any, AsyncIterator
 from dataclasses import dataclass
-from enum import Enum
 import httpx
 
 from .config import get_global_config

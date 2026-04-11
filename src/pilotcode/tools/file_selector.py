@@ -17,7 +17,6 @@ Features:
 
 from __future__ import annotations
 
-import os
 import fnmatch
 import re
 from dataclasses import dataclass
@@ -28,7 +27,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from pilotcode.tools.base import Tool, ToolResult, ToolUseContext, build_tool
+from pilotcode.tools.base import ToolResult, ToolUseContext, build_tool
 from pilotcode.tools.registry import register_tool
 
 

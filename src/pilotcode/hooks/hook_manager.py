@@ -1,11 +1,9 @@
 """Hook manager for tool execution."""
 
-import asyncio
 from enum import Enum, auto
 from typing import Any, Callable, Awaitable
 from dataclasses import dataclass, field
 from datetime import datetime
-from functools import wraps
 
 
 class HookType(Enum):

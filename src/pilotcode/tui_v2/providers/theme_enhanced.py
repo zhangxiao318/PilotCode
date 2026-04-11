@@ -1,7 +1,7 @@
 """Enhanced theme system with multiple built-in themes and custom theme support."""
 
 from typing import Dict, Optional, Callable, List
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 import json
 

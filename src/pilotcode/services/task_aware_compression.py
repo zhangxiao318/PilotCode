@@ -9,14 +9,13 @@ This module implements:
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from enum import Enum
 
-from .context_manager import ContextMessage, CompactStrategy
-from .memory_value import MemoryValueEstimator, MessageValueScore
-from .intelligent_compact import IntelligentContextCompactor, CompactionResult
+from .context_manager import ContextMessage
+from .memory_value import MemoryValueEstimator
+from .intelligent_compact import IntelligentContextCompactor
 
 
 class CompressionMode(Enum):

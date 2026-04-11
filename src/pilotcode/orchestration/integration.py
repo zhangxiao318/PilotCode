@@ -7,10 +7,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from ..tools.registry import get_tool_by_name
 from ..utils.model_client import get_model_client
 from .coordinator import AgentCoordinator, get_coordinator
-from .decomposer import TaskDecomposer
 
 
 class OrchestrationAdapter:

@@ -1,6 +1,6 @@
 """Session provider for TUI state management."""
 
-from typing import Optional, Callable, Any
+from typing import Optional, Callable
 from dataclasses import dataclass, field
 
 

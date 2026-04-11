@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from rich.console import Console
 
 from .hook_manager import HookContext, HookResult, get_hook_manager, HookType
-from ..state.store import get_store
 
 console = Console()
 

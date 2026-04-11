@@ -1,7 +1,6 @@
 """Git command implementation."""
 
 import subprocess
-import os
 from .base import CommandHandler, register_command, CommandContext
 
 

@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 

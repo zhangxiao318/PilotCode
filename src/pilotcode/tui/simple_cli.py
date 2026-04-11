@@ -6,7 +6,6 @@ Uses standard input/output for maximum compatibility.
 
 import asyncio
 import sys
-import json
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, field
@@ -17,21 +16,19 @@ project_root = current_file.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from pilotcode.query_engine import QueryEngine, QueryResult
+from pilotcode.query_engine import QueryEngine
 from pilotcode.types.message import (
     UserMessage,
     AssistantMessage,
     ToolUseMessage,
-    ToolResultMessage,
     SystemMessage,
 )
-from pilotcode.utils.config import get_global_config, GlobalConfig
+from pilotcode.utils.config import get_global_config
 from pilotcode.commands.base import process_user_input
 from pilotcode.tools.base import ToolUseContext as CommandContext
 from pilotcode.services.session_context import (
     get_session_context_manager,
     reset_session_context,
-    SessionContextManager,
 )
 from pilotcode.services.context_compression import get_context_compressor
 

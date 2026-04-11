@@ -8,7 +8,6 @@ from typing import Any, Optional
 
 from .types import (
     LspServerConfig,
-    LspDiagnostics,
     LspCompletionItem,
     LspLocation,
     LspHover,

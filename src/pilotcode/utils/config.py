@@ -13,8 +13,6 @@ from .models_config import (
     get_model_info,
     get_default_model,
     get_model_from_env,
-    ModelInfo,
-    SUPPORTED_MODELS,
 )
 
 

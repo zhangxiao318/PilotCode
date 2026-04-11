@@ -2,13 +2,12 @@
 
 import os
 import re
-import subprocess
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 from enum import Enum
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 

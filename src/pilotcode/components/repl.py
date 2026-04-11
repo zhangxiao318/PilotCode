@@ -9,7 +9,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.status import Status
-from rich.text import Text
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
@@ -21,7 +20,7 @@ from ..state.app_state import get_default_app_state
 from ..state.store import Store, set_global_store
 from ..utils.config import get_global_config
 from ..types.message import AssistantMessage, ToolUseMessage
-from ..permissions import get_tool_executor, PermissionLevel
+from ..permissions import get_tool_executor
 
 
 class REPL:

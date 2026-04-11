@@ -23,6 +23,7 @@ __all__ = [
     "AgentOrchestrator",
     "WorkflowStep",
     "WorkflowType",
+    "get_orchestrator",
     "AgentHooks",
     "HookManager",
     "get_hook_manager",

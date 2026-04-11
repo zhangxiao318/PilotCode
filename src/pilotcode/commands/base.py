@@ -2,10 +2,8 @@
 
 from typing import Any, Callable, Awaitable
 from dataclasses import dataclass, field
-import re
 
-from ..types.command import Command, CommandContext, CommandType, PromptCommand, LocalCommand
-from ..types.message import ContentBlock, TextBlock
+from ..types.command import CommandContext, CommandType
 
 
 @dataclass

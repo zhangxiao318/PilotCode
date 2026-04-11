@@ -225,7 +225,6 @@ class SignatureManager:
     def _verify_signature(self, data: str, signature: str, key: str) -> bool:
         """Verify signature."""
         import hmac
-        import base64
 
         expected = self._sign_data(data, key)
         return hmac.compare_digest(expected, signature)

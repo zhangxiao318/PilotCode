@@ -2,10 +2,8 @@
 
 from typing import Optional
 from textual.containers import ScrollableContainer
-from textual.reactive import reactive
-from rich.console import RenderableType
 
-from pilotcode.tui_v2.controller.controller import UIMessage, MessageType
+from pilotcode.tui_v2.controller.controller import UIMessage
 from pilotcode.tui_v2.components.message.display import MessageDisplay
 
 

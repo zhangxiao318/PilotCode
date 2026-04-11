@@ -1,7 +1,5 @@
 """Theme provider for TUI."""
 
-import json
-from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 

@@ -10,7 +10,6 @@ from .agent_manager import (
     get_agent_manager,
     SubAgent,
     AgentStatus,
-    ENHANCED_AGENT_DEFINITIONS,
 )
 from ..utils.model_client import get_model_client
 from ..tools.base import ToolUseContext

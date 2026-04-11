@@ -6,7 +6,6 @@ This is the main interface for the hook system.
 from __future__ import annotations
 
 import asyncio
-import functools
 from typing import Optional
 
 from .types import (
@@ -16,7 +15,6 @@ from .types import (
     HookCallback,
     RegisteredHook,
     AggregatedHookResult,
-    HookError,
 )
 
 

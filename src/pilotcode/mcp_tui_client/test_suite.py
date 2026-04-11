@@ -4,11 +4,10 @@ import asyncio
 import tempfile
 import os
 import shutil
-from pathlib import Path
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
-from .client import TUITestClient, ScreenCapture, MCPClientError
+from .client import TUITestClient
 
 
 @dataclass

@@ -12,7 +12,6 @@ All commands work with both local Git and GitHub integration.
 
 from __future__ import annotations
 
-import asyncio
 import os
 from dataclasses import dataclass
 from typing import Optional

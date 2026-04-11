@@ -1,6 +1,5 @@
 """Config command implementation."""
 
-import json
 from .base import CommandHandler, register_command, CommandContext
 
 

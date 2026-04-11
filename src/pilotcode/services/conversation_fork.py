@@ -15,11 +15,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, TYPE_CHECKING
 import time
 
-from ..utils.model_router import quick_summarize, TaskType
+from ..utils.model_router import quick_summarize
 from ..services.file_metadata_cache import clear_file_metadata_cache
 
 if TYPE_CHECKING:
-    from ..types.message import MessageType, SystemMessage
+    pass
 
 
 @dataclass
@@ -347,7 +347,7 @@ class ConversationForker:
         2. Add summary as context message
         3. Keep last 2 user-assistant pairs for continuity
         """
-        from ..types.message import SystemMessage, UserMessage, AssistantMessage
+        from ..types.message import SystemMessage
 
         new_messages = []
 

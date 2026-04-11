@@ -12,9 +12,9 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from ..orchestration.coordinator import AgentCoordinator, WorkflowResult
+from ..orchestration.coordinator import AgentCoordinator
 from ..orchestration.integration import initialize_orchestration
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 

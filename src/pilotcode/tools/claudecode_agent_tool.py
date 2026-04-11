@@ -14,11 +14,11 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncIterator, Callable, Optional
+from typing import Any, Callable, Optional
 
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 

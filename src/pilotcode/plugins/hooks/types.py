@@ -5,7 +5,7 @@ Compatible with ClaudeCode's hook protocol.
 
 from __future__ import annotations
 
-from enum import Enum, auto
+from enum import Enum
 from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable, Optional
 from datetime import datetime

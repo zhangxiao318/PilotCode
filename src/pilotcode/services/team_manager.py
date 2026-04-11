@@ -7,7 +7,6 @@ This module provides:
 4. Task delegation
 """
 
-import asyncio
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable

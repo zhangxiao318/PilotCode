@@ -1,6 +1,5 @@
 """Main session screen for chat interface."""
 
-import asyncio
 from pathlib import Path
 from textual.screen import Screen
 from textual.containers import Horizontal, Vertical
@@ -8,7 +7,6 @@ from textual.widgets import Static, Header, Footer
 from textual.reactive import reactive
 
 from pilotcode.tui_v2.controller.controller import TUIController, UIMessage, MessageType
-from pilotcode.tui_v2.components.message.display import MessageDisplay
 from pilotcode.tui_v2.components.message.virtual_list import HybridMessageList
 from pilotcode.tui_v2.components.prompt.input import PromptWithMode
 from pilotcode.tui_v2.components.status.bar import StatusBar
@@ -19,13 +17,11 @@ from pilotcode.tui_v2.components.permission_inline import (
     PermissionResponded,
 )
 from pilotcode.tui_v2.components.search_bar import SearchBar, SearchMode, SearchNavigate
-from pilotcode.tui_v2.providers.session import get_session_provider
-from pilotcode.state.store import Store, get_store
-from pilotcode.commands.base import process_user_input, get_command_registry
+from pilotcode.state.store import get_store
+from pilotcode.commands.base import process_user_input
 from pilotcode.types.command import CommandContext
 
 # Import all commands to ensure they are registered
-import pilotcode.commands
 
 
 class SessionScreen(Screen):
@@ -233,7 +229,6 @@ class SessionScreen(Screen):
     async def _handle_command(self, text: str):
         """Handle slash commands using the command registry."""
         # Create command context
-        from pilotcode.tools.base import ToolUseContext
 
         store = get_store()
         ctx = CommandContext(

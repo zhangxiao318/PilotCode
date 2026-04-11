@@ -1,6 +1,5 @@
 """Share command implementation."""
 
-import os
 import json
 from datetime import datetime
 from .base import CommandHandler, register_command, CommandContext

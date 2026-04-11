@@ -11,10 +11,10 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from pydantic import BaseModel, Field
 
-from .types import KnownMarketplace, PluginInstallation, PluginScope
+from .types import KnownMarketplace, PluginInstallation
 
 
 class PluginSettings(BaseModel):

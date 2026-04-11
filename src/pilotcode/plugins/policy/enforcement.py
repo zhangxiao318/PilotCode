@@ -8,9 +8,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from .policy import PolicyManager, PolicyAction
+from .policy import PolicyManager
 from .audit import AuditLogger, AuditAction, AuditOutcome
-from ..security.verification import PluginVerifier, VerificationResult
+from ..security.verification import PluginVerifier
 
 
 class PolicyEnforcer:

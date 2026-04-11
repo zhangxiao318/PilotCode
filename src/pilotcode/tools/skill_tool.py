@@ -3,13 +3,12 @@
 Supports both legacy skill.json format and new plugin-based Markdown skills.
 """
 
-import os
 import json
 from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 SKILLS_DIR = Path.home() / ".local" / "share" / "pilotcode" / "skills"

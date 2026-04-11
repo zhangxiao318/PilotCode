@@ -6,16 +6,13 @@ and prompting users to update when a new version is available.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
 
 import aiohttp
 

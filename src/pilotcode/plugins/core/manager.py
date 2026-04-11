@@ -22,11 +22,10 @@ from .types import (
     PluginScope,
     PluginInstallation,
     PluginLoadResult,
-    MCPServerConfig,
     HooksConfig,
 )
 from .config import PluginConfig
-from .marketplace import MarketplaceManager, MarketplaceError
+from .marketplace import MarketplaceManager
 from .dependencies import DependencyResolver, DependencyGraph
 from .versioning import VersionManager, UpdateChecker
 from .autoupdate import AutoUpdater, UpdatePolicy, MarketplaceUpdater

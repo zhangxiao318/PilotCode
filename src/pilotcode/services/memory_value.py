@@ -13,11 +13,10 @@ import re
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 from collections import defaultdict
 from enum import Enum
 
-from pydantic import BaseModel
 
 from .context_manager import ContextMessage
 

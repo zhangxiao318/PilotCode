@@ -4,7 +4,6 @@ import asyncio
 import json
 from typing import Any, AsyncIterator, Callable
 from dataclasses import dataclass, field
-from uuid import uuid4
 
 from .types.message import (
     MessageType,
@@ -16,18 +15,15 @@ from .types.message import (
     serialize_messages,
     deserialize_messages,
 )
-from .tools.base import Tool, ToolUseContext, Tools
-from .tools.registry import assemble_tool_pool
+from .tools.base import Tools
 from .state.app_state import AppState
-from .utils.model_client import ModelClient, Message as APIMessage, ToolCall, get_model_client
-from .services.token_estimation import get_token_estimator, TokenEstimator
+from .utils.model_client import Message as APIMessage, ToolCall, get_model_client
+from .services.token_estimation import get_token_estimator
 from .services.context_compression import get_context_compressor, CompressionResult
 from .services.intelligent_compact import (
     get_intelligent_compactor,
-    IntelligentContextCompactor,
-    CompactConfig,
 )
-from .services.tool_orchestrator import get_tool_orchestrator, ToolOrchestrator
+from .services.tool_orchestrator import get_tool_orchestrator
 
 
 @dataclass

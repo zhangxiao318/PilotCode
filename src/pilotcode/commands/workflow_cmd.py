@@ -8,7 +8,6 @@ from .base import CommandHandler, register_command, CommandContext
 from ..agent import (
     get_agent_manager,
     get_orchestrator,
-    WorkflowType,
     WorkflowStep,
     AgentStatus,
 )

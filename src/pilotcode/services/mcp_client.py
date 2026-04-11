@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from typing import Any, AsyncIterator
+from typing import Any
 from dataclasses import dataclass
 from pydantic import BaseModel
 

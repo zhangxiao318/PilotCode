@@ -8,10 +8,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
 
-from .types import PluginInstallation, PluginScope
 from .versioning import VersionManager, UpdateChecker
 
 

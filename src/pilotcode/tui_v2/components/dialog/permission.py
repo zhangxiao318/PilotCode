@@ -5,7 +5,6 @@ from typing import Optional
 from textual.screen import ModalScreen
 from textual.containers import Vertical, Horizontal
 from textual.widgets import Static, Button
-from textual.reactive import reactive
 
 
 class PermissionAction(Enum):

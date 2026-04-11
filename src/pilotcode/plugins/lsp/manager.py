@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, Optional
 
-from .types import LspServerConfig, LspServer, LspDiagnostics
+from .types import LspServerConfig, LspServer
 from .client import LspClient
 
 

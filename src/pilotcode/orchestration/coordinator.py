@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Callable, Optional
 
 from .decomposer import TaskDecomposer, DecompositionStrategy
-from .executor import TaskExecutor, ExecutionPlan, ExecutionResult, ExecutionStatus
+from .executor import TaskExecutor, ExecutionResult, ExecutionStatus
 
 
 @dataclass

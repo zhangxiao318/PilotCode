@@ -1,12 +1,11 @@
 """MCP Tools for Model Context Protocol integration."""
 
-import json
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
-from ..services.mcp_client import get_mcp_client, MCPConfig
+from ..services.mcp_client import get_mcp_client
 
 
 class MCPListResourcesInput(BaseModel):

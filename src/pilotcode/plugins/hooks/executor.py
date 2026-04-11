@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
     from .manager import HookManager
 
-from .types import HookContext, HookType, HookResult, AggregatedHookResult
+from .types import HookContext, HookType, AggregatedHookResult
 
 
 class HookExecutor:

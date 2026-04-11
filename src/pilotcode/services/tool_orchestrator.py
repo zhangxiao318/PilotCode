@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable
 from enum import Enum
 
-from ..tools.base import Tool, ToolUseContext, ToolResult
+from ..tools.base import ToolUseContext, ToolResult
 from ..tools.registry import get_tool_by_name
 from ..services.tool_cache import get_tool_cache
 

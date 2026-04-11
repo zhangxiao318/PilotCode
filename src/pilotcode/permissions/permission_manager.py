@@ -1,13 +1,13 @@
 """Permission management for tool execution with risk assessment."""
 
-from enum import Enum, auto
+from enum import Enum
 from dataclasses import dataclass, field
 from typing import Callable, Awaitable
 from datetime import datetime
 import hashlib
 import json
 
-from ..services.risk_assessment import get_risk_analyzer, RiskLevel, RiskAssessment
+from ..services.risk_assessment import get_risk_analyzer, RiskAssessment
 
 
 class PermissionLevel(Enum):

@@ -22,13 +22,11 @@ import subprocess
 from typing import Optional, Any
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.tree import Tree
 
 from pilotcode.types.command import CommandContext
 from pilotcode.commands.base import CommandHandler, register_command

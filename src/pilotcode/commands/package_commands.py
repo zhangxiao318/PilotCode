@@ -19,7 +19,7 @@ from __future__ import annotations
 import os
 import subprocess
 import json
-from typing import Optional, Any
+from typing import Optional
 from enum import Enum
 from dataclasses import dataclass
 

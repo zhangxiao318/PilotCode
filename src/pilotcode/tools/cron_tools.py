@@ -6,7 +6,7 @@ from typing import Any
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-from .base import Tool, ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 CRON_FILE = os.path.expanduser("~/.local/share/pilotcode/cron.json")

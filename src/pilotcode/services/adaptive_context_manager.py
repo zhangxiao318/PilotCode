@@ -12,18 +12,16 @@ and learns from outcomes.
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional, Callable
+from typing import Any, Optional
 from enum import Enum
-from pathlib import Path
 
 from pydantic import Field
 
 from .context_manager import (
     ContextManager, ContextConfig, ContextMessage, 
-    CompactStrategy, MessagePriority
+    MessagePriority
 )
 from .memory_value import MemoryValueEstimator, MessageValueScore
 from .task_aware_compression import (
@@ -32,10 +30,10 @@ from .task_aware_compression import (
 )
 from .compression_feedback import (
     CompressionFeedbackLoop, CompressionQualityMonitor,
-    TaskOutcome, CompressionQuality
+    TaskOutcome
 )
 from .hierarchical_memory import (
-    HierarchicalMemory, EpisodeSummary, MemorySnapshotGenerator
+    HierarchicalMemory
 )
 
 
