@@ -46,10 +46,14 @@ class TestFramework(str, Enum):
     GO = "go"
     UNKNOWN = "unknown"
 
+    __test__ = False  # Tell pytest not to collect this as a test class
+
 
 @dataclass
 class TestResult:
     """Test execution result."""
+
+    __test__ = False  # Tell pytest not to collect this as a test class
 
     framework: TestFramework
     total: int = 0

@@ -83,4 +83,7 @@ markers = [
     "plugin: marks tests as plugin system tests",
     "plugin_unit: marks tests as plugin unit tests",
     "plugin_integration: marks tests as plugin integration tests",
+    "unit: marks tests as unit tests",
+    "security: marks tests as security tests",
+    "performance: marks tests as performance tests",
 ]
