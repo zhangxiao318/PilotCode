@@ -205,11 +205,14 @@ class ConfigManager:
             # Local models with file extensions (.gguf, .bin, etc.)
             if ".gguf" in config.default_model or ".bin" in config.default_model:
                 return True
-            # Local models with specific patterns (e.g., localhost, 127.0.0.1)
+            # Local models with specific patterns (e.g., localhost, 127.0.0.1, local network)
             if config.base_url and (
                 "localhost" in config.base_url
                 or "127.0.0.1" in config.base_url
                 or ":11434" in config.base_url
+                or config.base_url.startswith("http://192.168.")
+                or config.base_url.startswith("http://10.")
+                or config.base_url.startswith("http://172.")
             ):
                 return True
             # Custom base URL without API key (local/custom endpoint)
