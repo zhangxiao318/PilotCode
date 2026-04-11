@@ -10,7 +10,7 @@ from rich.console import RenderableType
 from rich.markdown import Markdown
 from rich.text import Text
 
-from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
+from pilotcode.tui_v2.controller.controller import UIMessage
 from pilotcode.types.message import MessageType
 
 # Internal clipboard buffer (fallback when system clipboard is unavailable)

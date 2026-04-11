@@ -6,7 +6,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Static, Header, Footer
 from textual.reactive import reactive
 
-from pilotcode.tui_v2.controller.controller import TUIController, UIMessage, UIMessageType
+from pilotcode.tui_v2.controller.controller import TUIController, UIMessage
 from pilotcode.types.message import MessageType
 from pilotcode.tui_v2.components.message.virtual_list import HybridMessageList
 from pilotcode.tui_v2.components.prompt.input import PromptWithMode
