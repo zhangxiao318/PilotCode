@@ -142,7 +142,10 @@ a324d65 Initial commit: PilotCode Python v0.2.0
 ```bash
 # Clone and run
 cd /home/zx/mycc/pilotcode_py
-python3 -m pilotcode
+python3 -m pilotcode main
+
+# Or use startup script
+./pilotcode.sh
 
 # Or run demo
 python3 full_demo.py

@@ -30,7 +30,7 @@ pip3 install -e .
 
 **验证安装：**
 ```bash
-python3 -m pilotcode --version
+python3 -m pilotcode main --version
 ```
 
 ---

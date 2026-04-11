@@ -197,8 +197,9 @@ python3 demo.py  # Run demo
 
 ### Usage
 ```bash
-./pilotcode     # Run with shell script
-python3 -m pilotcode  # Run as module
+./pilotcode.sh        # Run with shell script (Linux/macOS)
+.\pilotcode.cmd       # Run with batch script (Windows)
+python3 -m pilotcode main  # Run as module
 ```
 
 ## Testing
