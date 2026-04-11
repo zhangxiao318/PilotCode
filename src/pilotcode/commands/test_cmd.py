@@ -10,7 +10,7 @@ async def test_command(args: list[str], context: CommandContext) -> str:
     # Detect if we're running inside pytest to avoid recursion
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return "[dim]Skipping test command during pytest run[/dim]"
-    
+
     if args:
         # Run specific test
         test_path = args[0]
@@ -42,9 +42,9 @@ async def test_command(args: list[str], context: CommandContext) -> str:
         # Run all tests
         try:
             result = subprocess.run(
-                ["python", "-m", "pytest", "-v"], 
-                capture_output=True, 
-                text=True, 
+                ["python", "-m", "pytest", "-v"],
+                capture_output=True,
+                text=True,
                 cwd=context.cwd,
                 timeout=120,  # Add timeout to prevent hanging
             )

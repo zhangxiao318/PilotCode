@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from rich.console import Console
 
 from .hook_manager import HookContext, HookResult, get_hook_manager, HookType
-from ..state.store import get_store
 
 console = Console()
 
@@ -257,7 +256,7 @@ class PermissionCheckHook:
             from ..permissions.permission_manager import get_permission_manager, PermissionRequest
 
             pm = get_permission_manager()
-            request = PermissionRequest(
+            PermissionRequest(
                 tool_name=context.tool_name,
                 tool_input=context.tool_input,
                 description=f"Execute {context.tool_name}",

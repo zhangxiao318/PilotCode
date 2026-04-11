@@ -8,7 +8,6 @@ from .base import CommandHandler, register_command, CommandContext
 from ..agent import (
     get_agent_manager,
     get_orchestrator,
-    WorkflowType,
     WorkflowStep,
     AgentStatus,
 )
@@ -101,7 +100,7 @@ async def workflow_command(args: list[str], context: CommandContext) -> str:
                 console.print(f"\n[cyan]{key}:[/cyan]")
                 console.print(str(value)[:500])
 
-            return f"\nWorkflow completed successfully"
+            return "\nWorkflow completed successfully"
         else:
             return f"Workflow failed: {', '.join(result.errors)}"
 
@@ -135,7 +134,7 @@ async def workflow_command(args: list[str], context: CommandContext) -> str:
                 console.print(f"\n[cyan]{key}:[/cyan]")
                 console.print(str(value)[:300])
 
-            return f"\nParallel workflow completed successfully"
+            return "\nParallel workflow completed successfully"
         else:
             return f"Workflow failed: {', '.join(result.errors)}"
 
@@ -157,7 +156,7 @@ async def workflow_command(args: list[str], context: CommandContext) -> str:
             console.print("\n[bold]Final Answer:[/bold]")
             console.print(result.results.get("final_answer", "No final answer")[:1000])
 
-            return f"\nSupervisor workflow completed"
+            return "\nSupervisor workflow completed"
         else:
             return f"Workflow failed: {', '.join(result.errors)}"
 
@@ -186,9 +185,9 @@ async def workflow_command(args: list[str], context: CommandContext) -> str:
                         f"  [cyan]{resp['agent']}:[/cyan] {str(resp.get('response', ''))[:200]}..."
                     )
 
-            return f"\nDebate completed"
+            return "\nDebate completed"
         else:
-            return f"Debate failed"
+            return "Debate failed"
 
     elif action == "show":
         if len(args) < 2:

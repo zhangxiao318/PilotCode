@@ -14,22 +14,22 @@ from ..core.types import SkillDefinition
 
 class CommandLoader:
     """Loader for plugin commands."""
-    
+
     def __init__(self, commands_path: Path):
         self.commands_path = Path(commands_path)
         self._commands: dict[str, SkillDefinition] = {}
-    
+
     def load_all(self) -> list[SkillDefinition]:
         """Load all commands from the directory.
-        
+
         Returns:
             List of loaded commands
         """
         if not self.commands_path.exists():
             return []
-        
+
         commands = []
-        
+
         # Load individual .md files
         for md_file in self.commands_path.glob("*.md"):
             try:
@@ -41,13 +41,13 @@ class CommandLoader:
                 commands.append(cmd)
             except SkillLoadError as e:
                 print(f"Warning: Failed to load command {md_file}: {e}")
-        
+
         return commands
-    
+
     def get_command(self, name: str) -> Optional[SkillDefinition]:
         """Get a loaded command by name."""
         return self._commands.get(name)
-    
+
     def list_commands(self) -> list[str]:
         """List names of all loaded commands."""
         return list(self._commands.keys())

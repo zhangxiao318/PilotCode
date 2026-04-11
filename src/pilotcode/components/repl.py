@@ -9,7 +9,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.status import Status
-from rich.text import Text
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
@@ -21,7 +20,7 @@ from ..state.app_state import get_default_app_state
 from ..state.store import Store, set_global_store
 from ..utils.config import get_global_config
 from ..types.message import AssistantMessage, ToolUseMessage
-from ..permissions import get_tool_executor, PermissionLevel
+from ..permissions import get_tool_executor
 
 
 class REPL:
@@ -42,7 +41,7 @@ class REPL:
             env_limit = os.environ.get("PILOTCODE_MAX_ITERATIONS")
             self.max_iterations = int(env_limit) if env_limit else self.DEFAULT_MAX_ITERATIONS
 
-        config = get_global_config()
+        get_global_config()
         self.store.set_state(lambda s: s)
 
         self.session = PromptSession(

@@ -4,11 +4,10 @@ import asyncio
 import tempfile
 import os
 import shutil
-from pathlib import Path
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
-from .client import TUITestClient, ScreenCapture, MCPClientError
+from .client import TUITestClient
 
 
 @dataclass
@@ -196,7 +195,7 @@ class PilotCodeTestSuite:
 
             # Check if file was created (if FileWrite was used)
             factorial_path = os.path.join(self.test_dir, "factorial.c")
-            file_created = os.path.exists(factorial_path)
+            os.path.exists(factorial_path)
 
             await self.client.close_session()
 
@@ -312,7 +311,7 @@ class PilotCodeTestSuite:
             await asyncio.sleep(8)
 
             # Verify file exists
-            hello_path = os.path.join(self.test_dir, "hello.py")
+            os.path.join(self.test_dir, "hello.py")
             # File might be created, might not - depends on AI
 
             screen = await self.client.capture_screen()

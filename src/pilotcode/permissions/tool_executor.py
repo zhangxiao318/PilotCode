@@ -1,7 +1,7 @@
 """Safe tool executor with permission checking."""
 
 import asyncio
-from typing import Any, Callable
+from typing import Callable
 from dataclasses import dataclass
 
 from rich.console import Console
@@ -9,7 +9,6 @@ from rich.panel import Panel
 from rich.text import Text
 
 from .permission_manager import (
-    PermissionManager,
     get_permission_manager,
     PermissionRequest,
     PermissionLevel,
@@ -46,9 +45,9 @@ class ToolExecutor:
         color = risk_colors.get(request.risk_level, "yellow")
 
         content = Text()
-        content.append(f"Tool: ", style="bold")
+        content.append("Tool: ", style="bold")
         content.append(f"{request.tool_name}\n", style="cyan")
-        content.append(f"Risk: ", style="bold")
+        content.append("Risk: ", style="bold")
         content.append(f"{request.risk_level.upper()}\n", style=f"bold {color}")
 
         content.append("\nDetails:\n", style="bold")
