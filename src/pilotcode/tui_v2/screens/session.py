@@ -6,8 +6,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Static, Header, Footer
 from textual.reactive import reactive
 
-from pilotcode.tui_v2.controller.controller import TUIController, UIMessage
-from pilotcode.types.message import MessageType
+from pilotcode.tui_v2.controller.controller import TUIController, UIMessage, UIMessageType
 from pilotcode.tui_v2.components.message.virtual_list import HybridMessageList
 from pilotcode.tui_v2.components.prompt.input import PromptWithMode
 from pilotcode.tui_v2.components.status.bar import StatusBar
@@ -172,7 +171,7 @@ class SessionScreen(Screen):
 │  /quit  - Exit                                         │
 └────────────────────────────────────────────────────────┘"""
 
-        welcome_msg = UIMessage(type=MessageType.SYSTEM, content=welcome_text)
+        welcome_msg = UIMessage(type=UIMessageType.SYSTEM, content=welcome_text)
         if self.message_list:
             self.message_list.add_message(welcome_msg)
 
@@ -189,7 +188,7 @@ class SessionScreen(Screen):
 
         # Show user message immediately for feedback
         if self.message_list:
-            user_msg = UIMessage(type=MessageType.USER, content=text, is_complete=True)
+            user_msg = UIMessage(type=UIMessageType.USER, content=text, is_complete=True)
             self.message_list.add_message(user_msg)
 
         # Process as normal message in background worker
@@ -208,7 +207,7 @@ class SessionScreen(Screen):
         try:
             async for msg in self.controller.submit_message(text):
                 # Skip user messages as they're already displayed
-                if msg.type == MessageType.USER:
+                if msg.type == UIMessageType.USER:
                     continue
 
                 self.message_list.add_message(msg)
@@ -219,7 +218,7 @@ class SessionScreen(Screen):
                     self.status_bar.set_token_count(tokens)
 
         except Exception as e:
-            error_msg = UIMessage(type=MessageType.ERROR, content=f"Error: {str(e)}")
+            error_msg = UIMessage(type=UIMessageType.ERROR, content=f"Error: {str(e)}")
             self.message_list.add_message(error_msg)
 
         finally:
@@ -254,7 +253,7 @@ class SessionScreen(Screen):
 
             # Display command result
             if isinstance(result, str):
-                msg = UIMessage(type=MessageType.SYSTEM, content=result)
+                msg = UIMessage(type=UIMessageType.SYSTEM, content=result)
                 if self.message_list:
                     self.message_list.add_message(msg)
 
@@ -269,7 +268,7 @@ class SessionScreen(Screen):
         except SystemExit:
             self.app.exit()
         except Exception as e:
-            msg = UIMessage(type=MessageType.ERROR, content=f"Error executing command: {str(e)}")
+            msg = UIMessage(type=UIMessageType.ERROR, content=f"Error executing command: {str(e)}")
             if self.message_list:
                 self.message_list.add_message(msg)
 
@@ -355,7 +354,7 @@ class SessionScreen(Screen):
 
         # Find last assistant message
         for display in reversed(self.message_list._messages_list):
-            if display.message and display.message.type == MessageType.ASSISTANT:
+            if display.message and display.message.type == UIMessageType.ASSISTANT:
                 content = display.message.content or ""
                 system_ok, used_internal = self._copy_to_clipboard(content)
                 if system_ok:
@@ -384,7 +383,7 @@ class SessionScreen(Screen):
 
         # Find last code block in assistant messages
         for display in reversed(self.message_list._messages_list):
-            if display.message and display.message.type == MessageType.ASSISTANT:
+            if display.message and display.message.type == UIMessageType.ASSISTANT:
                 content = display.message.content or ""
                 # Match code blocks: ```language\ncode\n```
                 code_blocks = re.findall(r"```(?:\w+)?\n(.*?)\n```", content, re.DOTALL)
