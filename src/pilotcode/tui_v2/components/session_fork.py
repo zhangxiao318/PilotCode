@@ -8,8 +8,7 @@ from textual.widgets import Static, Button, ListView, ListItem, Label
 from textual.containers import Horizontal
 from textual.message import Message
 
-from pilotcode.tui_v2.controller.controller import UIMessage
-from pilotcode.types.message import MessageType
+from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
 
 
 class SessionForked(Message):
@@ -153,7 +152,7 @@ class SessionForkManager:
             messages = []
             for msg_data in data.get("messages", []):
                 msg = UIMessage(
-                    type=MessageType[msg_data["type"]],
+                    type=UIMessageType[msg_data["type"]],
                     content=msg_data.get("content", ""),
                     metadata=msg_data.get("metadata", {}),
                     is_complete=msg_data.get("is_complete", True),
@@ -268,7 +267,7 @@ class ForkDialog(Static):
         # List of messages
         list_view = ListView()
         for idx, msg in enumerate(self.messages):
-            if msg.type in (MessageType.USER, MessageType.ASSISTANT):
+            if msg.type in (UIMessageType.USER, UIMessageType.ASSISTANT):
                 preview = (msg.content or "")[:50]
                 if len(msg.content or "") > 50:
                     preview += "..."
