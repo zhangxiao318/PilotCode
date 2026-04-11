@@ -74,6 +74,12 @@ addopts = [
     "--strict-config",
     "-ra",
 ]
+filterwarnings = [
+    # Suppress asyncio subprocess transport cleanup warnings
+    # These occur when subprocess transports are garbage collected after event loop closes
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+    "ignore::RuntimeWarning:asyncio",
+]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",

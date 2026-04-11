@@ -142,8 +142,15 @@ class TestBackgroundTaskQueue:
         queue = BackgroundTaskQueue()
         await queue.start()
 
+        # Use an Event that never resolves instead of sleep
+        # This avoids the "never awaited" warning when cancelled
+        stop_event = asyncio.Event()
+
         async def long_task():
-            await asyncio.sleep(10)
+            try:
+                await stop_event.wait()
+            except asyncio.CancelledError:
+                pass
             return "done"
 
         task = await queue.submit(long_task())
@@ -173,15 +180,17 @@ class TestBackgroundTaskQueue:
         queue = BackgroundTaskQueue()
         await queue.start()
 
-        async def test_task():
+        async def simple_task():
             return "result"
 
-        task = await queue.submit(test_task(), name="my_task")
+        task = await queue.submit(simple_task(), name="my_task")
 
         retrieved = queue.get_task(task.id)
 
         assert retrieved is task
 
+        # Wait for task to complete before stopping
+        await asyncio.sleep(0.1)
         await queue.stop(wait_for_complete=True)
 
     @pytest.mark.asyncio
@@ -280,10 +289,10 @@ class TestBackgroundTaskQueue:
 
         await queue.start()
 
-        async def test_task():
+        async def quick_task():
             return "done"
 
-        task = await queue.submit(test_task())
+        task = await queue.submit(quick_task())
 
         # Simulate progress
         queue._notify_progress(task, 0.5)
