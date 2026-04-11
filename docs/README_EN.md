@@ -34,7 +34,7 @@ pip3 install -e .
 python3 -m pilotcode configure
 
 # 3. Run
-python3 -m pilotcode
+python3 -m pilotcode main
 ```
 
 More ways to start:
@@ -42,8 +42,11 @@ More ways to start:
 # Run demo
 python3 full_demo.py
 
-# Or use the launch script
-./pilotcode
+# Or use the launch script (Linux/macOS)
+./pilotcode.sh
+
+# Windows
+.\pilotcode.cmd
 ```
 
 ## Model Configuration

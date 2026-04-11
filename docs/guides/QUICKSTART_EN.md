@@ -28,7 +28,7 @@ pip3 install -e .
 
 **Verify Installation:**
 ```bash
-python3 -m pilotcode --version
+python3 -m pilotcode main --version
 ```
 
 ---
