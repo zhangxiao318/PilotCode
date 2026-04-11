@@ -35,14 +35,15 @@ def check_configuration() -> bool:
     # Check both config file and environment variables for base_url
     # Environment variables can override config, so we need to check both
     import os
+
     env_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("PILOTCODE_BASE_URL")
     effective_base_url = env_base_url or config.base_url or ""
-    
+
     # Also check the raw config file (before env var overrides)
     # This handles the case where user configured a local model but env var overrides it
     raw_config = config_manager.load_raw_global_config()
     config_base_url = raw_config.base_url or config.base_url or ""
-    
+
     def is_local_url(url: str) -> bool:
         """Check if URL points to a local/internal model."""
         if not url:
@@ -55,7 +56,7 @@ def check_configuration() -> bool:
             or url.startswith("http://10.")
             or url.startswith("http://172.")
         )
-    
+
     # Skip dynamic verification for local/internal network models
     # Check both effective URL (after env override) and config file URL
     is_local_model = is_local_url(effective_base_url) or is_local_url(config_base_url)
