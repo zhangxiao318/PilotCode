@@ -33,8 +33,14 @@ pip3 install -e .
 # 2. 配置 LLM（交互式向导）
 python3 -m pilotcode configure
 
-# 3. 运行
-python3 -m pilotcode
+# 3. 运行（Linux/macOS）
+./pilotcode.sh
+
+# 或 Windows
+.\pilotcode.cmd
+
+# 或使用 Python 模块方式
+python3 -m pilotcode main
 ```
 
 更多启动方式：
@@ -42,8 +48,11 @@ python3 -m pilotcode
 # 运行演示
 python3 full_demo.py
 
-# 或使用启动脚本
-./pilotcode
+# 单次命令模式
+python3 -m pilotcode main -p "分析当前目录的代码结构"
+
+# 简单 CLI 模式
+python3 -m pilotcode main --simple
 ```
 
 ## Model Configuration
