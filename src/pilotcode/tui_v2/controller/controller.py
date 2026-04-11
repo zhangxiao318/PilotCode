@@ -8,7 +8,6 @@ from pathlib import Path
 
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
 from pilotcode.types.message import (
-    UIMessageType,
     UserMessage,
     AssistantMessage,
     ToolUseMessage,
@@ -28,7 +27,7 @@ from pilotcode.permissions import get_tool_executor
 from pilotcode.state.app_state import AppState
 
 
-class UIUIMessageType(Enum):
+class UIMessageType(Enum):
     """UI message types."""
 
     USER = auto()
@@ -43,7 +42,7 @@ class UIUIMessageType(Enum):
 class UIMessage:
     """Message for UI display."""
 
-    type: UIUIMessageType
+    type: UIMessageType
     content: str
     metadata: dict = None
     is_streaming: bool = False

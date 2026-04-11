@@ -890,7 +890,9 @@ async def _issue_view(number: str) -> str:
             status_text = "Open" if issue.state == IssueState.OPEN else "Closed"
 
             labels_text = (
-                ", ".join([f"[#{label.color}]{label.name}[/#{label.color}]" for label in issue.labels])
+                ", ".join(
+                    [f"[#{label.color}]{label.name}[/#{label.color}]" for label in issue.labels]
+                )
                 if issue.labels
                 else "None"
             )

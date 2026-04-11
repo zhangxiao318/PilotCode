@@ -693,7 +693,6 @@ Examples:
   /list_packages --outdated
 """
 
-
     # Detect package manager
     manager = detect_package_manager(context.cwd)
 

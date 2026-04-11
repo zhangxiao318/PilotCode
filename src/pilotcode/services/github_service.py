@@ -1118,6 +1118,3 @@ def clear_github_service() -> None:
     """Clear the global GitHub service instance."""
     global _default_service
     _default_service = None
-
-
-
