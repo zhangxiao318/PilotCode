@@ -29,13 +29,25 @@
 | [MERGE_TESTS_PLAN.md](implementation/MERGE_TESTS_PLAN.md) | 测试合并计划 |
 
 ### ✨ [features/](features/) - 功能文档
-包含功能清单、功能审计和缺失功能分析。
+包含功能特性介绍、功能清单和审计。
 
+**核心特性：**
 | 文档 | 说明 |
 |------|------|
-| [FEATURE_LIST.md](features/FEATURE_LIST.md) | 功能清单 |
+| [README.md](features/README.md) | **功能特性索引** |
+| [agent-system.md](features/agent-system.md) | Agent 编排系统 |
+| [code-indexing.md](features/code-indexing.md) | 代码索引与搜索 |
+| [hook-system.md](features/hook-system.md) | Hook 扩展系统 |
+| [context-compaction.md](features/context-compaction.md) | 智能上下文压缩 |
+| [error-recovery.md](features/error-recovery.md) | 错误恢复与重试 |
+| [session-management.md](features/session-management.md) | 会话管理 |
+
+**开发文档：**
+| 文档 | 说明 |
+|------|------|
+| [FEATURE_LIST.md](features/FEATURE_LIST.md) | 详细功能清单 |
 | [FEATURE_AUDIT.md](features/FEATURE_AUDIT.md) | 功能审计 |
-| [MISSING_FEATURES.md](features/MISSING_FEATURES.md) | 缺失功能 |
+| [MISSING_FEATURES.md](features/MISSING_FEATURES.md) | 缺失功能分析 |
 
 ### 📊 [comparison/](comparison/) - 对比分析
 包含与ClaudeCode等工具的对比分析。
