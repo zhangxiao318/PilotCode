@@ -27,7 +27,7 @@ uv python install 3.11
 ### 3. 克隆项目
 
 ```powershell
-git clone ssh://zx@192.168.1.110/home/zx/mycc/PilotCode.git
+git clone https://github.com/zhangxiao318/PilotCode.git
 cd PilotCode
 ```
 

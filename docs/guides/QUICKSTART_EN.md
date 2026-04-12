@@ -14,7 +14,7 @@ Get started with PilotCode AI coding assistant in 5 minutes.
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/zhangxiao318/PilotCode.git
 cd PilotCode
 
 # Create virtual environment (recommended)

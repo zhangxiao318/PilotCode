@@ -16,7 +16,7 @@
 
 ```bash
 # 克隆仓库
-git clone <repository-url>
+git clone https://github.com/zhangxiao318/PilotCode.git
 cd PilotCode
 
 # 创建虚拟环境（推荐）
