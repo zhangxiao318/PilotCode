@@ -269,10 +269,6 @@ async def run_headless(
     import json as json_mod
     from ..permissions import get_permission_manager, PermissionLevel, ToolPermission
 
-    import sys
-
-    print(f"[run_headless] Starting with cwd={cwd}", file=sys.stderr)
-
     # Create initial state with correct cwd
     from ..state.app_state import AppState
 
@@ -281,7 +277,6 @@ async def run_headless(
     set_global_store(store)
 
     working_dir = store.get_state().cwd
-    print(f"[run_headless] Working dir: {working_dir}", file=sys.stderr)
 
     tools = get_all_tools()
     query_engine = QueryEngine(
