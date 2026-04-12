@@ -42,6 +42,7 @@ async def execute_powershell(command: str, timeout: int = 600) -> PowerShellOutp
     try:
         # Hide window on Windows
         import subprocess
+
         startupinfo = None
         if is_windows():
             startupinfo = subprocess.STARTUPINFO()

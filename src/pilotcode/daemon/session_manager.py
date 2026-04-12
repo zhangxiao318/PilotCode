@@ -126,7 +126,11 @@ class SessionManager:
             return result
 
     async def execute_query(
-        self, session_id: str, query: str, stream_callback: Optional[callable] = None, cwd: Optional[str] = None
+        self,
+        session_id: str,
+        query: str,
+        stream_callback: Optional[callable] = None,
+        cwd: Optional[str] = None,
     ) -> dict:
         """Execute a query in a session."""
         async with self._lock:

@@ -167,6 +167,7 @@ async def execute_bash(
     try:
         # Hide window on Windows
         import subprocess
+
         startupinfo = None
         if sys.platform == "win32":
             startupinfo = subprocess.STARTUPINFO()
