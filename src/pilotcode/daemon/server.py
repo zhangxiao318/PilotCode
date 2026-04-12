@@ -224,6 +224,8 @@ class DaemonServer:
         message = params.get("message", "")
         cwd = params.get("cwd", ".")
         
+        print(f"[DaemonServer] _handle_query: session_id={session_id}, cwd={cwd}, message={message[:50]}...", file=sys.stderr)
+        
         if not message:
             raise ValueError("Message is required")
         

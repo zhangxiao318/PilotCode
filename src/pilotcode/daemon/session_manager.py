@@ -136,15 +136,19 @@ class SessionManager:
         stream_callback: Optional[callable] = None
     ) -> dict:
         """Execute a query in a session."""
+        print(f"[SessionManager] execute_query: session_id={session_id}", file=sys.stderr)
+        
         async with self._lock:
             session = self._sessions.get(session_id)
             if not session:
                 raise ValueError(f"Session not found: {session_id}")
             
+            print(f"[SessionManager] Found session: cwd={session.cwd}, messages={len(session.messages)}", file=sys.stderr)
             session.touch()
         
         # Execute query (outside lock to allow concurrent queries on different sessions)
         try:
+            print(f"[SessionManager] Calling run_headless with cwd={session.cwd}", file=sys.stderr)
             result = await run_headless(
                 prompt=query,
                 auto_allow=session.auto_allow,
