@@ -177,9 +177,18 @@ async def execute_bash(
         # Wait for completion with timeout
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
+        # Try multiple encodings for Windows compatibility
+        def decode_output(data: bytes) -> str:
+            for encoding in ['utf-8', 'gbk', 'gb2312', 'cp936', 'latin-1']:
+                try:
+                    return data.decode(encoding, errors='strict')
+                except UnicodeDecodeError:
+                    continue
+            return data.decode('utf-8', errors='replace')
+
         return BashOutput(
-            stdout=stdout.decode("utf-8", errors="replace"),
-            stderr=stderr.decode("utf-8", errors="replace"),
+            stdout=decode_output(stdout),
+            stderr=decode_output(stderr),
             exit_code=process.returncode or 0,
             command=command,
         )

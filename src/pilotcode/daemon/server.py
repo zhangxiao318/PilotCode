@@ -6,8 +6,17 @@ import asyncio
 import json
 import sys
 import socket
+import os
 from pathlib import Path
 from typing import Optional, Callable
+
+# Set UTF-8 encoding for Windows
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    # Set console code page to UTF-8
+    os.system("chcp 65001 >nul 2>&1")
 
 from .protocol import Request, Response, Notification, ErrorCode
 from .session_manager import SessionManager
