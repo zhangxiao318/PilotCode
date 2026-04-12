@@ -73,6 +73,8 @@ from . import bisect_cmd  # noqa: F401
 from . import switch_cmd  # noqa: F401
 from . import revert_cmd  # noqa: F401
 from . import workflow_cmd  # noqa: F401
+from . import code_index_cmd  # noqa: F401
+from . import code_search_cmd  # noqa: F401
 
 __all__ = [
     "CommandHandler",

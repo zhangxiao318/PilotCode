@@ -79,6 +79,9 @@ from .repl_tool import REPLTool  # noqa: F401
 from .task_output_tool import TaskOutputTool  # noqa: F401
 from .synthetic_output_tool import SyntheticOutputTool  # noqa: F401
 from .remote_trigger_tool import RemoteTriggerTool  # noqa: F401
+from .code_index_tool import CodeIndexTool  # noqa: F401
+from .code_search_tool import CodeSearchTool  # noqa: F401
+from .code_context_tool import CodeContextTool  # noqa: F401
 
 __all__ = [
     "Tool",

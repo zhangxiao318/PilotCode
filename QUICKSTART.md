@@ -192,12 +192,219 @@ python3 -m pilotcode main --verbose
 | 命令 | 说明 |
 |------|------|
 | `/help` | 显示帮助信息 |
+| `/index` | 索引代码库（用于智能搜索） |
+| `/search` | 语义/符号代码搜索 |
 | `/model <name>` | 切换模型 |
 | `/config` | 查看/修改配置 |
 | `/theme` | 切换主题 |
 | `/session` | 会话管理 |
 | `/cost` | 查看用量统计 |
 | `/quit` | 退出 |
+
+---
+
+## 代码索引与搜索
+
+PilotCode 提供企业级的代码索引和智能搜索功能，帮助你快速理解和定位代码。
+
+### 为什么要使用代码索引？
+
+| 场景 | 无索引（Grep） | 有索引（Code Index） |
+|------|--------------|-------------------|
+| 查找函数定义 | 扫描所有文件（慢） | 毫秒级符号跳转 |
+| 语义查询 | 不支持 | 支持自然语言搜索 |
+| 大项目（1000+文件） | 性能急剧下降 | 依然快速 |
+| 代码关系分析 | 手动整理 | 自动提取类/函数关系 |
+
+### /index 命令 - 索引代码库
+
+首次使用代码搜索前，需要先建立索引：
+
+```bash
+# 增量索引（只索引变化的文件，推荐）
+/index
+
+# 完整重新索引
+/index full
+
+# 查看索引统计
+/index stats
+
+# 清除索引
+/index clear
+
+# 导出/导入索引
+/index export
+/index import
+```
+
+**索引统计示例：**
+```
+📊 Index Statistics
+Files: 369
+Symbols: 3574
+Snippets: 1777
+Last Indexed: 2026-04-12 09:29:03
+
+Languages:
+  python: 369 files
+  cpp: 42 files
+  c: 15 files
+```
+
+### /search 命令 - 智能代码搜索
+
+支持四种搜索方式：
+
+#### 1. 语义搜索（默认）
+使用自然语言描述你想找的代码：
+```bash
+# 搜索用户认证相关的代码
+/search authentication logic
+
+# 搜索数据库连接相关
+/search database connection pool
+
+# 搜索错误处理
+/search error handling and retry
+```
+
+#### 2. 符号搜索（精确查找）
+查找函数、类、变量定义：
+```bash
+# 查找类定义
+/search -s UserModel
+
+# 查找函数
+/search -s authenticate_user
+
+# 查找方法
+/search -s calculate_total
+```
+
+#### 3. 正则搜索
+使用正则表达式匹配：
+```bash
+# 查找所有类定义
+/search -r "class \w+"
+
+# 查找特定模式的函数
+/search -r "def.*auth"
+
+# 查找 TODO 注释
+/search -r "TODO|FIXME|XXX"
+```
+
+#### 4. 文件搜索
+按文件名搜索：
+```bash
+# 查找所有测试文件
+/search -f "*test*.py"
+
+# 查找配置文件
+/search -f "config.*"
+```
+
+#### 高级过滤
+```bash
+# 按语言过滤
+/search authentication -l python
+
+# 按文件模式过滤
+/search database -f "*.py"
+
+# 限制结果数量
+/search -s User -n 5
+```
+
+### 使用场景示例
+
+#### 场景1：理解陌生项目
+```bash
+# 第一步：建立索引
+/index full
+
+# 查看项目概览
+/index stats
+
+# 搜索项目入口
+/search main function
+
+# 搜索核心类
+/search -s "Main|App|Server"
+```
+
+#### 场景2：查找特定功能的实现
+```bash
+# 语义搜索更直观
+/search password hashing
+
+# 找到后查看具体实现
+/search -s hash_password
+```
+
+#### 场景3：代码重构前分析
+```bash
+# 查找所有使用某函数的地方
+/search -s old_function_name
+
+# 查找继承关系
+/search -r "class.*\(OldClass\)"
+```
+
+#### 场景4：C/C++ 项目开发
+```bash
+# 索引 C/C++ 项目
+/index full
+
+# 查找头文件中的宏
+/search -r "#define MAX"
+
+# 查找类定义（支持 .cpp/.cc/.cxx/.hpp/.hh/.hxx）
+/search -s "MyClass"
+
+# 查找函数实现
+/search -s "process_data"
+```
+
+### 支持的编程语言
+
+代码索引支持以下语言：
+
+| 语言 | 扩展名 | 符号提取 |
+|------|--------|----------|
+| Python | `.py` | ✅ 类、函数、方法、变量 |
+| C | `.c`, `.h` | ✅ 函数、结构体、宏、typedef |
+| C++ | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx` | ✅ 类、函数、方法、命名空间、模板 |
+| JavaScript | `.js`, `.jsx` | ✅ 类、函数、方法 |
+| TypeScript | `.ts`, `.tsx` | ✅ 类、接口、函数 |
+| Go | `.go` | ✅ 函数、结构体 |
+| Rust | `.rs` | ✅ 函数、结构体、trait |
+| Java | `.java` | ✅ 类、方法、接口 |
+| 其他 | `.rb`, `.php`, `.swift`, `.kt` | ⚠️ 基础支持 |
+
+### 最佳实践
+
+1. **首次使用项目时**：先运行 `/index full` 建立完整索引
+2. **代码变化后**：运行 `/index` 进行增量更新
+3. **查找具体符号**：使用 `/search -s SymbolName`（最快）
+4. **探索性搜索**：使用语义搜索 `/search natural language query`
+5. **大项目优化**：如果项目很大，首次索引可能需要 2-3 分钟
+
+### 故障排除
+
+```bash
+# 搜索返回空结果？
+/index stats          # 检查是否已索引
+/index full           # 尝试重新索引
+
+# 索引很慢？
+/index clear          # 清除后重新索引
+# 注意：首次索引大项目（1000+文件）需要几分钟是正常的
+
+# 想查看索引了哪些文件？
+/search -f "*.py" -n 50    # 列出前50个Python文件
+```
 
 ---
 

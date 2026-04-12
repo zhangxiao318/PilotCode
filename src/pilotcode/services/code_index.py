@@ -85,6 +85,20 @@ class CodeIndexer:
                 re.MULTILINE,
             ),
         },
+        "c": {
+            "function": re.compile(r"^\s*(?:\w+\s+)+(\w+)\s*\([^)]*\)\s*\{", re.MULTILINE),
+            "struct": re.compile(r"^\s*struct\s+(\w+)", re.MULTILINE),
+            "typedef": re.compile(r"^\s*typedef\s+.*\s+(\w+)\s*;", re.MULTILINE),
+            "macro": re.compile(r"^\s*#define\s+(\w+)", re.MULTILINE),
+        },
+        "cpp": {
+            "class": re.compile(r"^\s*class\s+(\w+)", re.MULTILINE),
+            "struct": re.compile(r"^\s*struct\s+(\w+)", re.MULTILINE),
+            "function": re.compile(r"^\s*(?:\w+[\s*&]+)+(\w+)\s*\([^)]*\)(?:\s*const)?\s*(?:\{|\{)", re.MULTILINE),
+            "method": re.compile(r"^\s*(?:virtual\s+)?(?:\w+[\s*&]+)+(\w+)\s*\([^)]*\)(?:\s*const)?\s*\{", re.MULTILINE),
+            "namespace": re.compile(r"^\s*namespace\s+(\w+)", re.MULTILINE),
+            "template": re.compile(r"^\s*template\s*<[^>]+>\s*\n\s*(?:class|struct)\s+(\w+)", re.MULTILINE),
+        },
     }
 
     def __init__(self):
@@ -97,18 +111,29 @@ class CodeIndexer:
         ext = Path(file_path).suffix.lower()
 
         language_map = {
+            # Python
             ".py": "python",
+            # JavaScript/TypeScript
             ".js": "javascript",
             ".jsx": "javascript",
             ".ts": "typescript",
             ".tsx": "typescript",
+            # Java, Go, Rust
             ".java": "java",
             ".go": "go",
             ".rs": "rust",
-            ".cpp": "cpp",
+            # C
             ".c": "c",
             ".h": "c",
+            # C++
+            ".cpp": "cpp",
             ".hpp": "cpp",
+            ".cc": "cpp",
+            ".hh": "cpp",
+            ".cxx": "cpp",
+            ".hxx": "cpp",
+            ".c++": "cpp",
+            ".h++": "cpp",
         }
 
         return language_map.get(ext)
@@ -199,6 +224,32 @@ class CodeIndexer:
 
         return symbols
 
+    def _extract_c_cpp_symbols(self, content: str, file_path: str, language: str) -> list[Symbol]:
+        """Extract C/C++ symbols using regex patterns."""
+        symbols = []
+        patterns = self.PATTERNS.get(language, {})
+
+        for pattern_type, pattern in patterns.items():
+            for match in pattern.finditer(content):
+                # Get the first non-None group
+                name = next((g for g in match.groups() if g is not None), None)
+                if name:
+                    # Calculate line number
+                    line_num = content[: match.start()].count("\n") + 1
+                    column = match.start() - content.rfind("\n", 0, match.start())
+
+                    symbols.append(
+                        Symbol(
+                            name=name,
+                            symbol_type=pattern_type,
+                            file_path=file_path,
+                            line_number=line_num,
+                            column=column,
+                        )
+                    )
+
+        return symbols
+
     async def index_file(self, file_path: str) -> list[Symbol]:
         """Index a single file.
 
@@ -224,6 +275,8 @@ class CodeIndexer:
             symbols = self._extract_python_symbols(content, file_path)
         elif language in ("javascript", "typescript"):
             symbols = self._extract_js_ts_symbols(content, file_path, language)
+        elif language in ("c", "cpp"):
+            symbols = self._extract_c_cpp_symbols(content, file_path, language)
         else:
             symbols = []
 

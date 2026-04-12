@@ -289,6 +289,9 @@ DON'T STOP after reading files. You MUST execute the code to test it!"""
             "TaskUpdate": "Update task progress or status.",
             "Config": "Read or write configuration settings.",
             "LSP": "Use Language Server Protocol for code intelligence (go to definition, find references, etc.)",
+            "CodeIndex": "Index the codebase for intelligent search. Run this first when working with a new repository.",
+            "CodeSearch": "Search code using semantic (natural language), symbol, or regex search.",
+            "CodeContext": "Build code context for a query using RAG. Use this to understand large codebases.",
             "NotebookEdit": "Edit Jupyter notebook files (.ipynb).",
             "PowerShell": "Execute PowerShell commands (cross-platform support).",
         }

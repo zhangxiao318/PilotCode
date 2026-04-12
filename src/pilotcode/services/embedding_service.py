@@ -452,15 +452,29 @@ class EmbeddingService:
 
         ext = Path(file_path).suffix.lower()
         language_map = {
+            # Python
             ".py": "python",
+            ".pyw": "python",
+            ".pyi": "python",
+            # JavaScript/TypeScript
             ".js": "javascript",
             ".ts": "typescript",
+            # Go, Rust, Java
             ".go": "go",
             ".rs": "rust",
             ".java": "java",
-            ".cpp": "cpp",
+            # C
             ".c": "c",
             ".h": "c",
+            # C++
+            ".cpp": "cpp",
+            ".hpp": "cpp",
+            ".cc": "cpp",
+            ".hh": "cpp",
+            ".cxx": "cpp",
+            ".hxx": "cpp",
+            ".c++": "cpp",
+            ".h++": "cpp",
         }
         return language_map.get(ext, "unknown")
 
