@@ -52,7 +52,11 @@
 |------|------|
 | [QUICKSTART.md](guides/QUICKSTART.md) | **快速开始指南** - 5分钟上手 |
 | [QUICKSTART_EN.md](guides/QUICKSTART_EN.md) | **Quick Start Guide** (English) |
-| [SETUP_QWEN_API.md](guides/SETUP_QWEN_API.md) | Qwen API设置指南 |
+| [WINDOWS_GUIDE.md](guides/WINDOWS_GUIDE.md) | Windows 安装指南 |
+| [llm-setup.md](guides/llm-setup.md) | LLM 接口设置指南 |
+| [analyze-large-project.md](guides/analyze-large-project.md) | 大型项目代码分析指南 |
+| [development-workflow.md](guides/development-workflow.md) | 开发工作流指南 |
+| [SETUP_QWEN_API.md](guides/SETUP_QWEN_API.md) | Qwen API 设置指南（内部） |
 
 ### 📈 [progress/](progress/) - 进度文档
 包含项目进度总结和里程碑跟踪。
@@ -82,8 +86,12 @@
 
 **新用户？** 从 [QUICKSTART.md](../QUICKSTART.md) 开始，5分钟快速上手。
 
+**配置 LLM？** 查看 [guides/llm-setup.md](guides/llm-setup.md) 了解如何连接各种 LLM API。
+
+**分析大型项目？** 查看 [guides/analyze-large-project.md](guides/analyze-large-project.md) 学习代码索引和搜索。
+
+**开发工作流？** 查看 [guides/development-workflow.md](guides/development-workflow.md) 了解 AI 辅助开发流程。
+
 **开发者？** 查看 [architecture/](architecture/) 了解系统设计，[implementation/](implementation/) 了解实现细节。
 
 **想了解功能？** 查看 [features/](features/) 目录。
-
-**配置API？** 查看 [guides/SETUP_QWEN_API.md](guides/SETUP_QWEN_API.md)。
