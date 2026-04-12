@@ -71,11 +71,13 @@
 
 ---
 
-## 其他功能文档
+## 开发归档
 
-- [FEATURE_LIST.md](./FEATURE_LIST.md) - 详细功能清单
-- [FEATURE_AUDIT.md](./FEATURE_AUDIT.md) - 功能审计报告
-- [MISSING_FEATURES.md](./MISSING_FEATURES.md) - 缺失功能分析
+以下文档是开发过程中的过程性记录，已归档：
+
+- [FEATURE_LIST.md](../archive/FEATURE_LIST.md) - 详细功能清单
+- [FEATURE_AUDIT.md](../archive/FEATURE_AUDIT.md) - 功能审计报告
+- [MISSING_FEATURES.md](../archive/MISSING_FEATURES.md) - 缺失功能分析
 
 ---
 
