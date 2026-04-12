@@ -69,6 +69,7 @@ class ConfigManager:
         # Legacy env vars for backward compatibility
         "LOCAL_API_KEY": "api_key",
         "OPENAI_BASE_URL": "base_url",
+        "OPENAI_API_KEY": "api_key",
     }
 
     def __init__(self):

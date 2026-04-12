@@ -53,8 +53,17 @@ class ModelClient:
 
         # Map model key to actual API model name (e.g., "qwen" -> "qwen-max")
         model_info = get_model_info(model_key)
-        if model_info and model_info.default_model:
+        if model_info and model_info.default_model and model_info.default_model != "default":
             self.model = model_info.default_model
+        elif model_key == "custom":
+            # For custom models, detect provider from base_url
+            config_base = config.base_url or ""
+            if "dashscope" in config_base.lower() or "aliyun" in config_base.lower():
+                self.model = "qwen-max"  # Alibaba DashScope
+            elif "deepseek" in config_base.lower():
+                self.model = "deepseek-chat"
+            else:
+                self.model = "default"  # Fallback
         else:
             self.model = model_key
 
@@ -139,13 +148,18 @@ class ModelClient:
 
         if stream:
             async with self.client.stream("POST", "/chat/completions", json=payload) as response:
+                response.raise_for_status()
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
                         data = line[6:]
                         if data == "[DONE]":
                             break
                         try:
-                            yield json.loads(data)
+                            chunk = json.loads(data)
+                            # Check for API errors
+                            if chunk.get("error"):
+                                raise Exception(f"API Error: {chunk['error']}")
+                            yield chunk
                         except json.JSONDecodeError:
                             continue
         else:

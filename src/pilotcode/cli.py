@@ -169,8 +169,17 @@ def main(
     skip_config_check: bool = typer.Option(
         False, "--skip-config-check", help="Skip configuration check (for testing)"
     ),
+    daemon: bool = typer.Option(
+        False, "--daemon", help="Run in daemon mode (stdio) for VS Code integration"
+    ),
 ):
     """PilotCode - Python rewrite of Claude Code."""
+
+    if daemon:
+        # Run in daemon mode for VS Code (skip config check)
+        from .daemon import start_daemon
+        start_daemon()
+        raise typer.Exit()
 
     if version:
         console.print(f"PilotCode {__version__}")

@@ -256,6 +256,7 @@ async def run_headless(
     auto_allow: bool = False,
     json_mode: bool = False,
     max_iterations: int = 25,
+    initial_messages: list | None = None,
 ) -> dict[str, Any]:
     """Run a single prompt in headless mode and return structured output.
 
@@ -279,6 +280,10 @@ async def run_headless(
             set_app_state=lambda f: store.set_state(f),
         )
     )
+
+    # Load initial messages if provided (for session continuity)
+    if initial_messages:
+        query_engine.messages = initial_messages
 
     tool_executor = get_tool_executor()
 
@@ -359,14 +364,33 @@ async def run_headless(
         success = False
         response_text = f"Error: {e}"
 
+    # Convert Pydantic messages to plain dicts for JSON serialization
+    serializable_messages = []
+    for msg in query_engine.messages:
+        if hasattr(msg, 'model_dump'):
+            # Use mode='json' to convert UUID/datetime to strings
+            serializable_messages.append(msg.model_dump(mode='json'))
+        elif hasattr(msg, 'dict'):
+            d = msg.dict()
+            # Convert UUID and datetime to strings
+            for k, v in d.items():
+                if hasattr(v, '__str__') and not isinstance(v, (str, int, float, bool, list, dict)):
+                    d[k] = str(v)
+            serializable_messages.append(d)
+        elif isinstance(msg, dict):
+            serializable_messages.append(msg)
+        else:
+            serializable_messages.append({"type": str(getattr(msg, "type", "unknown")), "content": str(getattr(msg, "content", ""))})
+    
     output = {
         "response": response_text,
         "tool_calls": tool_calls_log,
         "success": success,
+        "messages": serializable_messages,  # Include full message history for session persistence
     }
 
     if json_mode:
-        print(json_mod.dumps(output, indent=2))
+        print(json_mod.dumps(output, indent=2, default=str))
     else:
         print(response_text)
 
