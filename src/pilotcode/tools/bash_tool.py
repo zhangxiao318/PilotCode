@@ -179,12 +179,12 @@ async def execute_bash(
 
         # Try multiple encodings for Windows compatibility
         def decode_output(data: bytes) -> str:
-            for encoding in ['utf-8', 'gbk', 'gb2312', 'cp936', 'latin-1']:
+            for encoding in ["utf-8", "gbk", "gb2312", "cp936", "latin-1"]:
                 try:
-                    return data.decode(encoding, errors='strict')
+                    return data.decode(encoding, errors="strict")
                 except UnicodeDecodeError:
                     continue
-            return data.decode('utf-8', errors='replace')
+            return data.decode("utf-8", errors="replace")
 
         return BashOutput(
             stdout=decode_output(stdout),

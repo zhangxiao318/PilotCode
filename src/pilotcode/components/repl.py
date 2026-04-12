@@ -270,14 +270,16 @@ async def run_headless(
     from ..permissions import get_permission_manager, PermissionLevel, ToolPermission
 
     import sys
+
     print(f"[run_headless] Starting with cwd={cwd}", file=sys.stderr)
-    
+
     # Create initial state with correct cwd
     from ..state.app_state import AppState
+
     initial_state = AppState(cwd=cwd or str(os.getcwd()))
     store = Store(initial_state)
     set_global_store(store)
-    
+
     working_dir = store.get_state().cwd
     print(f"[run_headless] Working dir: {working_dir}", file=sys.stderr)
 
@@ -377,21 +379,26 @@ async def run_headless(
     # Convert Pydantic messages to plain dicts for JSON serialization
     serializable_messages = []
     for msg in query_engine.messages:
-        if hasattr(msg, 'model_dump'):
+        if hasattr(msg, "model_dump"):
             # Use mode='json' to convert UUID/datetime to strings
-            serializable_messages.append(msg.model_dump(mode='json'))
-        elif hasattr(msg, 'dict'):
+            serializable_messages.append(msg.model_dump(mode="json"))
+        elif hasattr(msg, "dict"):
             d = msg.dict()
             # Convert UUID and datetime to strings
             for k, v in d.items():
-                if hasattr(v, '__str__') and not isinstance(v, (str, int, float, bool, list, dict)):
+                if hasattr(v, "__str__") and not isinstance(v, (str, int, float, bool, list, dict)):
                     d[k] = str(v)
             serializable_messages.append(d)
         elif isinstance(msg, dict):
             serializable_messages.append(msg)
         else:
-            serializable_messages.append({"type": str(getattr(msg, "type", "unknown")), "content": str(getattr(msg, "content", ""))})
-    
+            serializable_messages.append(
+                {
+                    "type": str(getattr(msg, "type", "unknown")),
+                    "content": str(getattr(msg, "content", "")),
+                }
+            )
+
     output = {
         "response": response_text,
         "tool_calls": tool_calls_log,

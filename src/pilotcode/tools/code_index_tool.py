@@ -19,45 +19,39 @@ from ..services.codebase_indexer import get_codebase_indexer, CodebaseStats
 
 class IndexAction(str, Enum):
     """Action to perform on the code index."""
-    
-    INDEX = "index"           # Index or reindex
-    STATS = "stats"           # Get statistics
-    CLEAR = "clear"           # Clear index
-    EXPORT = "export"         # Export to file
-    IMPORT = "import"         # Import from file
+
+    INDEX = "index"  # Index or reindex
+    STATS = "stats"  # Get statistics
+    CLEAR = "clear"  # Clear index
+    EXPORT = "export"  # Export to file
+    IMPORT = "import"  # Import from file
 
 
 class CodeIndexInput(BaseModel):
     """Input for CodeIndex tool."""
-    
-    action: IndexAction = Field(
-        default=IndexAction.INDEX,
-        description="Action to perform"
-    )
+
+    action: IndexAction = Field(default=IndexAction.INDEX, description="Action to perform")
     incremental: bool = Field(
-        default=True,
-        description="For 'index' action: only index changed files"
+        default=True, description="For 'index' action: only index changed files"
     )
     max_files: Optional[int] = Field(
-        default=None,
-        description="For 'index' action: limit number of files"
+        default=None, description="For 'index' action: limit number of files"
     )
     file_path: Optional[str] = Field(
-        default=None,
-        description="For 'export'/'import': path to index file"
+        default=None, description="For 'export'/'import': path to index file"
     )
 
 
 class LanguageStats(BaseModel):
     """Statistics for a language."""
-    
+
     language: str
     file_count: int
 
 
 class CodeIndexOutput(BaseModel):
     """Output from CodeIndex tool."""
-    
+
     success: bool
     message: str
     stats: Optional[CodebaseStats] = None
@@ -74,29 +68,30 @@ async def code_index_call(
     on_progress: Any,
 ) -> ToolResult[CodeIndexOutput]:
     """Execute code index operation."""
-    
+
     indexer = get_codebase_indexer()
-    
+
     if input_data.action == IndexAction.INDEX:
         # Index the codebase
         import time
+
         start_time = time.time()
-        
+
         try:
             stats = await indexer.index_codebase(
                 incremental=input_data.incremental,
                 max_files=input_data.max_files,
             )
             elapsed = time.time() - start_time
-            
+
             languages = [
                 LanguageStats(language=lang, file_count=count)
                 for lang, count in stats.languages.items()
             ]
             languages.sort(key=lambda x: x.file_count, reverse=True)
-            
+
             message = f"Indexed {stats.total_files} files ({stats.total_symbols} symbols, {stats.total_snippets} snippets) in {elapsed:.1f}s"
-            
+
             output = CodeIndexOutput(
                 success=True,
                 message=message,
@@ -105,35 +100,40 @@ async def code_index_call(
                 indexed_files=stats.total_files,
                 elapsed_seconds=elapsed,
             )
-            
+
         except Exception as e:
             output = CodeIndexOutput(
                 success=False,
                 message=f"Indexing failed: {e}",
             )
-    
+
     elif input_data.action == IndexAction.STATS:
         # Get statistics
         stats = indexer.get_stats()
-        
+
         languages = [
             LanguageStats(language=lang, file_count=count)
             for lang, count in stats.languages.items()
         ]
         languages.sort(key=lambda x: x.file_count, reverse=True)
-        
+
         from datetime import datetime
-        last_indexed = datetime.fromtimestamp(stats.last_indexed).strftime("%Y-%m-%d %H:%M:%S") if stats.last_indexed else "Never"
-        
+
+        last_indexed = (
+            datetime.fromtimestamp(stats.last_indexed).strftime("%Y-%m-%d %H:%M:%S")
+            if stats.last_indexed
+            else "Never"
+        )
+
         message = f"Codebase: {stats.total_files} files, {stats.total_symbols} symbols, last indexed: {last_indexed}"
-        
+
         output = CodeIndexOutput(
             success=True,
             message=message,
             stats=stats,
             languages=languages,
         )
-    
+
     elif input_data.action == IndexAction.CLEAR:
         # Clear index
         indexer.clear_index()
@@ -141,7 +141,7 @@ async def code_index_call(
             success=True,
             message="Index cleared successfully",
         )
-    
+
     elif input_data.action == IndexAction.EXPORT:
         # Export index
         if not input_data.file_path:
@@ -161,7 +161,7 @@ async def code_index_call(
                     success=False,
                     message=f"Export failed: {e}",
                 )
-    
+
     elif input_data.action == IndexAction.IMPORT:
         # Import index
         if not input_data.file_path:
@@ -183,13 +183,13 @@ async def code_index_call(
                     success=False,
                     message=f"Import failed: {e}",
                 )
-    
+
     else:
         output = CodeIndexOutput(
             success=False,
             message=f"Unknown action: {input_data.action}",
         )
-    
+
     return ToolResult(data=output)
 
 

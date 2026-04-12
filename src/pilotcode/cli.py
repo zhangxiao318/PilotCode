@@ -178,6 +178,7 @@ def main(
     if daemon:
         # Run in daemon mode for VS Code (skip config check)
         from .daemon import start_daemon
+
         start_daemon()
         raise typer.Exit()
 

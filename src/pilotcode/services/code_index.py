@@ -94,10 +94,17 @@ class CodeIndexer:
         "cpp": {
             "class": re.compile(r"^\s*class\s+(\w+)", re.MULTILINE),
             "struct": re.compile(r"^\s*struct\s+(\w+)", re.MULTILINE),
-            "function": re.compile(r"^\s*(?:\w+[\s*&]+)+(\w+)\s*\([^)]*\)(?:\s*const)?\s*(?:\{|\{)", re.MULTILINE),
-            "method": re.compile(r"^\s*(?:virtual\s+)?(?:\w+[\s*&]+)+(\w+)\s*\([^)]*\)(?:\s*const)?\s*\{", re.MULTILINE),
+            "function": re.compile(
+                r"^\s*(?:\w+[\s*&]+)+(\w+)\s*\([^)]*\)(?:\s*const)?\s*(?:\{|\{)", re.MULTILINE
+            ),
+            "method": re.compile(
+                r"^\s*(?:virtual\s+)?(?:\w+[\s*&]+)+(\w+)\s*\([^)]*\)(?:\s*const)?\s*\{",
+                re.MULTILINE,
+            ),
             "namespace": re.compile(r"^\s*namespace\s+(\w+)", re.MULTILINE),
-            "template": re.compile(r"^\s*template\s*<[^>]+>\s*\n\s*(?:class|struct)\s+(\w+)", re.MULTILINE),
+            "template": re.compile(
+                r"^\s*template\s*<[^>]+>\s*\n\s*(?:class|struct)\s+(\w+)", re.MULTILINE
+            ),
         },
     }
 

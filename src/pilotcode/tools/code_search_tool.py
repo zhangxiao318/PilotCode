@@ -22,52 +22,40 @@ from ..services.codebase_indexer import (
 
 class SearchType(str, Enum):
     """Type of code search."""
-    
+
     SEMANTIC = "semantic"  # Natural language semantic search
-    SYMBOL = "symbol"      # Symbol name search
-    REGEX = "regex"        # Regex pattern search
-    FILE = "file"          # File name search
+    SYMBOL = "symbol"  # Symbol name search
+    REGEX = "regex"  # Regex pattern search
+    FILE = "file"  # File name search
 
 
 class CodeSearchInput(BaseModel):
     """Input for CodeSearch tool."""
-    
+
     query: str = Field(
         description="Search query (natural language, symbol name, regex pattern, or file pattern)"
     )
     search_type: SearchType = Field(
-        default=SearchType.SEMANTIC,
-        description="Type of search to perform"
+        default=SearchType.SEMANTIC, description="Type of search to perform"
     )
     file_pattern: Optional[str] = Field(
-        default=None,
-        description="Filter by file pattern (e.g., '*.py', 'src/**/*.js')"
+        default=None, description="Filter by file pattern (e.g., '*.py', 'src/**/*.js')"
     )
     language: Optional[str] = Field(
-        default=None,
-        description="Filter by programming language (e.g., 'python', 'javascript')"
+        default=None, description="Filter by programming language (e.g., 'python', 'javascript')"
     )
     max_results: int = Field(
-        default=10,
-        ge=1,
-        le=50,
-        description="Maximum number of results to return"
+        default=10, ge=1, le=50, description="Maximum number of results to return"
     )
-    include_content: bool = Field(
-        default=True,
-        description="Include full content in results"
-    )
+    include_content: bool = Field(default=True, description="Include full content in results")
     context_lines: int = Field(
-        default=3,
-        ge=0,
-        le=10,
-        description="Number of context lines to include around matches"
+        default=3, ge=0, le=10, description="Number of context lines to include around matches"
     )
 
 
 class CodeSearchMatch(BaseModel):
     """A single code search match."""
-    
+
     file_path: str
     start_line: int
     end_line: int
@@ -80,7 +68,7 @@ class CodeSearchMatch(BaseModel):
 
 class CodeSearchOutput(BaseModel):
     """Output from CodeSearch tool."""
-    
+
     matches: list[CodeSearchMatch]
     total_found: int
     search_type: str
@@ -96,10 +84,10 @@ async def code_search_call(
     on_progress: Any,
 ) -> ToolResult[CodeSearchOutput]:
     """Execute code search."""
-    
+
     # Get codebase indexer
     indexer = get_codebase_indexer()
-    
+
     # Build search query
     search_query = SearchQuery(
         text=input_data.query,
@@ -109,7 +97,7 @@ async def code_search_call(
         max_results=input_data.max_results,
         include_content=input_data.include_content,
     )
-    
+
     # Perform search
     try:
         results = await indexer.search(search_query)
@@ -121,9 +109,9 @@ async def code_search_call(
                 search_type=input_data.search_type.value,
                 query=input_data.query,
             ),
-            error=f"Search failed: {e}"
+            error=f"Search failed: {e}",
         )
-    
+
     # Convert to output format
     matches = []
     for snippet in results:
@@ -138,7 +126,7 @@ async def code_search_call(
             relevance_score=snippet.relevance_score,
         )
         matches.append(match)
-    
+
     output = CodeSearchOutput(
         matches=matches,
         total_found=len(matches),
@@ -146,7 +134,7 @@ async def code_search_call(
         query=input_data.query,
         truncated=len(results) >= input_data.max_results,
     )
-    
+
     return ToolResult(data=output)
 
 
@@ -169,7 +157,7 @@ def render_code_search_use(input_data: CodeSearchInput, options: dict[str, Any])
         SearchType.REGEX: "📝",
         SearchType.FILE: "📄",
     }.get(input_data.search_type, "🔍")
-    
+
     return f"{icon} CodeSearch: '{input_data.query}' ({input_data.search_type.value})"
 
 

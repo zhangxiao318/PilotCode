@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -20,7 +21,7 @@ from ..types.message import Message
 @dataclass
 class Session:
     """An active session in the daemon."""
-    
+
     session_id: str
     cwd: str
     messages: list[Message] = field(default_factory=list)
@@ -28,11 +29,11 @@ class Session:
     last_activity: float = field(default_factory=time.time)
     auto_allow: bool = True
     max_iterations: int = 25
-    
+
     def touch(self):
         """Update last activity time."""
         self.last_activity = time.time()
-    
+
     def is_expired(self, timeout_seconds: float = 3600) -> bool:
         """Check if session has expired due to inactivity."""
         return time.time() - self.last_activity > timeout_seconds
@@ -40,18 +41,18 @@ class Session:
 
 class SessionManager:
     """Manages multiple sessions in memory."""
-    
+
     def __init__(self, persist_enabled: bool = True):
         self._sessions: dict[str, Session] = {}
         self._lock = asyncio.Lock()
         self._persist_enabled = persist_enabled
         self._persistence = get_session_persistence() if persist_enabled else None
         self._cleanup_task: Optional[asyncio.Task] = None
-    
+
     async def start(self):
         """Start background tasks."""
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-    
+
     async def stop(self):
         """Stop and cleanup."""
         if self._cleanup_task:
@@ -60,43 +61,36 @@ class SessionManager:
                 await self._cleanup_task
             except asyncio.CancelledError:
                 pass
-        
+
         # Persist all sessions before exit
         if self._persist_enabled:
             async with self._lock:
                 for session in self._sessions.values():
                     await self._persist_session(session)
-    
+
     async def create_session(
-        self,
-        session_id: Optional[str] = None,
-        cwd: str = ".",
-        restore_from_disk: bool = True
+        self, session_id: Optional[str] = None, cwd: str = ".", restore_from_disk: bool = True
     ) -> Session:
         """Create a new session or restore existing one."""
         async with self._lock:
             if session_id is None:
                 session_id = f"daemon_{int(time.time() * 1000)}"
-            
+
             # Check if already in memory
             if session_id in self._sessions:
                 return self._sessions[session_id]
-            
+
             # Try to restore from disk
             messages = []
             if restore_from_disk and self._persist_enabled:
                 result = persist_load(session_id)
                 if result:
                     messages, _ = result
-            
-            session = Session(
-                session_id=session_id,
-                cwd=cwd,
-                messages=messages
-            )
+
+            session = Session(session_id=session_id, cwd=cwd, messages=messages)
             self._sessions[session_id] = session
             return session
-    
+
     async def get_session(self, session_id: str) -> Optional[Session]:
         """Get an existing session."""
         async with self._lock:
@@ -104,7 +98,7 @@ class SessionManager:
             if session:
                 session.touch()
             return session
-    
+
     async def delete_session(self, session_id: str) -> bool:
         """Delete a session."""
         async with self._lock:
@@ -114,38 +108,40 @@ class SessionManager:
                     self._persistence.delete_session(session_id)
                 return True
             return False
-    
+
     async def list_sessions(self) -> list[dict]:
         """List all active sessions."""
         async with self._lock:
             result = []
             for s in self._sessions.values():
-                result.append({
-                    "session_id": str(s.session_id),
-                    "cwd": str(s.cwd),
-                    "message_count": int(len(s.messages)),
-                    "created_at": float(s.created_at),
-                    "last_activity": float(s.last_activity),
-                })
+                result.append(
+                    {
+                        "session_id": str(s.session_id),
+                        "cwd": str(s.cwd),
+                        "message_count": int(len(s.messages)),
+                        "created_at": float(s.created_at),
+                        "last_activity": float(s.last_activity),
+                    }
+                )
             return result
-    
+
     async def execute_query(
-        self,
-        session_id: str,
-        query: str,
-        stream_callback: Optional[callable] = None
+        self, session_id: str, query: str, stream_callback: Optional[callable] = None
     ) -> dict:
         """Execute a query in a session."""
         print(f"[SessionManager] execute_query: session_id={session_id}", file=sys.stderr)
-        
+
         async with self._lock:
             session = self._sessions.get(session_id)
             if not session:
                 raise ValueError(f"Session not found: {session_id}")
-            
-            print(f"[SessionManager] Found session: cwd={session.cwd}, messages={len(session.messages)}", file=sys.stderr)
+
+            print(
+                f"[SessionManager] Found session: cwd={session.cwd}, messages={len(session.messages)}",
+                file=sys.stderr,
+            )
             session.touch()
-        
+
         # Execute query (outside lock to allow concurrent queries on different sessions)
         try:
             print(f"[SessionManager] Calling run_headless with cwd={session.cwd}", file=sys.stderr)
@@ -159,30 +155,26 @@ class SessionManager:
                 # Use session's cwd for tool execution
                 cwd=session.cwd,
             )
-            
+
             # Update session messages with new conversation
             if "messages" in result:
                 session.messages = result["messages"]
-            
+
             # Persist session after each query
             if self._persist_enabled:
                 await self._persist_session(session)
-            
+
             # Clean result for JSON serialization
             return self._clean_result(result)
-            
+
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "response": f"Error: {e}"
-            }
-    
+            return {"success": False, "error": str(e), "response": f"Error: {e}"}
+
     async def _persist_session(self, session: Session):
         """Save session to disk."""
         if not self._persist_enabled or not self._persistence:
             return
-        
+
         try:
             persist_save(
                 session_id=session.session_id,
@@ -191,7 +183,7 @@ class SessionManager:
             )
         except Exception as e:
             print(f"[Daemon] Failed to persist session {session.session_id}: {e}")
-    
+
     def _clean_result(self, result: dict) -> dict:
         """Clean result to ensure JSON serialization."""
         cleaned = {}
@@ -203,10 +195,7 @@ class SessionManager:
                     if hasattr(msg, "content"):
                         # Pydantic models have 'type' field (user/assistant)
                         role = getattr(msg, "type", None) or getattr(msg, "role", "unknown")
-                        cleaned[key].append({
-                            "role": str(role),
-                            "content": str(msg.content)
-                        })
+                        cleaned[key].append({"role": str(role), "content": str(msg.content)})
                     elif isinstance(msg, dict):
                         cleaned[key].append(msg)
             elif isinstance(value, (str, int, float, bool, list, dict)) or value is None:
@@ -214,7 +203,7 @@ class SessionManager:
             else:
                 cleaned[key] = str(value)
         return cleaned
-    
+
     async def _cleanup_loop(self):
         """Periodically cleanup expired sessions."""
         while True:
@@ -225,14 +214,11 @@ class SessionManager:
                 break
             except Exception as e:
                 print(f"[Daemon] Cleanup error: {e}")
-    
+
     async def _cleanup_expired(self):
         """Remove expired sessions."""
         async with self._lock:
-            expired = [
-                sid for sid, s in self._sessions.items()
-                if s.is_expired()
-            ]
+            expired = [sid for sid, s in self._sessions.items() if s.is_expired()]
             for sid in expired:
                 session = self._sessions[sid]
                 await self._persist_session(session)

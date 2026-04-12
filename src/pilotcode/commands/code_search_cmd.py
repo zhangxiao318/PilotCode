@@ -21,20 +21,20 @@ async def search_command_handler(
     context: CommandContext,
 ) -> str:
     """Handle /search command."""
-    
+
     indexer = get_codebase_indexer(context.cwd)
-    
+
     # Parse arguments
     search_type = "semantic"
     file_pattern = None
     language = None
     max_results = 10
     query_parts = []
-    
+
     i = 0
     while i < len(args):
         token = args[i]
-        
+
         if token in ("-s", "--symbol"):
             search_type = "symbol"
             i += 1
@@ -66,11 +66,11 @@ async def search_command_handler(
             pass
         else:
             query_parts.append(token)
-        
+
         i += 1
-    
+
     query = " ".join(query_parts).strip()
-    
+
     if not query:
         return f"""Usage: /search <query> [options]
 
@@ -87,7 +87,7 @@ Examples:
   /search -r "def.*auth"
   /search -f "*.py" -l python
 """
-    
+
     # Check if index exists
     stats = indexer.get_stats()
     if stats.total_files == 0:
@@ -95,10 +95,10 @@ Examples:
 
 The index enables fast semantic and symbol-based code search.
 """
-    
+
     # Perform search
     print(f"🔍 Searching for '{query}'...")
-    
+
     search_query = SearchQuery(
         text=query,
         query_type=search_type,
@@ -106,31 +106,33 @@ The index enables fast semantic and symbol-based code search.
         language=language,
         max_results=max_results,
     )
-    
+
     try:
         results = await indexer.search(search_query)
     except Exception as e:
         return f"Search failed: {e}"
-    
+
     if not results:
         return f"No results found for '{query}'"
-    
+
     # Format results
     lines = [f"Found {len(results)} results for '{query}':\n"]
-    
+
     for i, snippet in enumerate(results, 1):
         # Header
-        symbol_info = f" ({snippet.symbol_type} {snippet.symbol_name})" if snippet.symbol_name else ""
+        symbol_info = (
+            f" ({snippet.symbol_type} {snippet.symbol_name})" if snippet.symbol_name else ""
+        )
         lines.append(f"{i}. {snippet.file_path}:{snippet.start_line}{symbol_info}")
-        
+
         # Score
         lines.append(f"   Relevance: {snippet.relevance_score:.2f}")
-        
+
         # Content preview
         content = snippet.content
         if len(content) > 300:
             content = content[:300] + "..."
-        
+
         lines.append(f"   ```{snippet.language}")
         for line in content.split("\n")[:8]:  # Limit lines
             lines.append(f"   {line}")
@@ -138,7 +140,7 @@ The index enables fast semantic and symbol-based code search.
             lines.append("   ...")
         lines.append("   ```")
         lines.append("")
-    
+
     return "\n".join(lines)
 
 
