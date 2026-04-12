@@ -286,25 +286,20 @@ python3 -m pilotcode configure
 ## Documentation
 
 - [Architecture](docs/architecture/ARCHITECTURE.md) - Architecture details
-- [Feature List](docs/features/FEATURE_LIST.md) - Complete feature list
-- [Implementation Status](docs/implementation/IMPLEMENTATION_STATUS.md) - Current status
+- [Features](docs/features/README.md) - Feature documentation
+- [Guides](docs/guides/README.md) - User guides
 
-## Missing Features
+## Comparison with Original
 
-Major features not yet implemented:
+| Metric | TypeScript Original | Python Version |
+|--------|---------------------|----------------|
+| Files | 1,884 | ~50 |
+| Lines | ~512,000 | ~6,000 |
+| Tools | 40+ | 18 |
+| Commands | 80+ | 13 |
+| Bundle Size | Large | Lightweight |
 
-- Permission system dialogs
-- Agent swarms coordination
-- Full MCP support
-- GitHub integration
-- Skills system
-- Plugin system
-- Background daemon mode
-- Session persistence
-- Analytics/telemetry
-- Cost tracking
-
-See [Implementation Status](docs/implementation/IMPLEMENTATION_STATUS.md) for full details.
+The Python version prioritizes:
 
 ## Comparison with Original
 

@@ -2,6 +2,8 @@
 
 本文档中心包含 PilotCode 项目的所有技术文档，按主题分类组织。
 
+---
+
 ## 📁 目录结构
 
 ### 🏗️ [architecture/](architecture/) - 架构文档
@@ -10,26 +12,10 @@
 | 文档 | 说明 |
 |------|------|
 | [ARCHITECTURE.md](architecture/ARCHITECTURE.md) | 系统架构总览 |
-| [ARCHITECTURE_DEEP_ANALYSIS.md](architecture/ARCHITECTURE_DEEP_ANALYSIS.md) | 架构深度分析 |
-| [ARCHITECTURE_GAP_ANALYSIS.md](architecture/ARCHITECTURE_GAP_ANALYSIS.md) | 架构缺口分析 |
-| [ARCHITECTURE_GAP_REPORT.md](architecture/ARCHITECTURE_GAP_REPORT.md) | 架构缺口报告 |
-| [ARCHITECTURE_ROUND3.md](architecture/ARCHITECTURE_ROUND3.md) | 架构第三轮设计 |
-
-### 🔧 [implementation/](implementation/) - 实现文档
-包含功能实现详情、开发计划和实现状态跟踪。
-
-| 文档 | 说明 |
-|------|------|
-| [IMPLEMENTATION_SUMMARY.md](implementation/IMPLEMENTATION_SUMMARY.md) | 实现总结 |
-| [IMPLEMENTATION_STATUS.md](implementation/IMPLEMENTATION_STATUS.md) | 实现状态 |
-| [IMPLEMENTATION_ROUND2.md](implementation/IMPLEMENTATION_ROUND2.md) | 第二轮实现 |
-| [IMPLEMENTATION_ROUND3.md](implementation/IMPLEMENTATION_ROUND3.md) | 第三轮实现 |
-| [TUI_IMPLEMENTATION.md](implementation/TUI_IMPLEMENTATION.md) | TUI实现 |
-| [TUI_V2_ENHANCEMENTS.md](implementation/TUI_V2_ENHANCEMENTS.md) | TUI v2增强 |
-| [MERGE_TESTS_PLAN.md](implementation/MERGE_TESTS_PLAN.md) | 测试合并计划 |
+| [tools-commands-plugins.md](architecture/tools-commands-plugins.md) | Tools/Commands/Plugins 对比分析 |
 
 ### ✨ [features/](features/) - 功能文档
-包含功能特性介绍、功能清单和审计。
+包含功能特性介绍和使用说明。
 
 **核心特性：**
 | 文档 | 说明 |
@@ -42,26 +28,12 @@
 | [error-recovery.md](features/error-recovery.md) | 错误恢复与重试 |
 | [session-management.md](features/session-management.md) | 会话管理 |
 
-**开发文档：**
-| 文档 | 说明 |
-|------|------|
-| [FEATURE_LIST.md](features/FEATURE_LIST.md) | 详细功能清单 |
-| [FEATURE_AUDIT.md](features/FEATURE_AUDIT.md) | 功能审计 |
-| [MISSING_FEATURES.md](features/MISSING_FEATURES.md) | 缺失功能分析 |
-
-### 📊 [comparison/](comparison/) - 对比分析
-包含与ClaudeCode等工具的对比分析。
-
-| 文档 | 说明 |
-|------|------|
-| [COMPARISON_ANALYSIS.md](comparison/COMPARISON_ANALYSIS.md) | 对比分析 |
-| [COMPARISON_WITH_CLAUdecode.md](comparison/COMPARISON_WITH_CLAUdecode.md) | 与ClaudeCode对比 |
-
 ### 📚 [guides/](guides/) - 指南文档
 包含配置指南和使用教程。
 
 | 文档 | 说明 |
 |------|------|
+| [README.md](guides/README.md) | **指南索引** |
 | [QUICKSTART.md](guides/QUICKSTART.md) | **快速开始指南** - 5分钟上手 |
 | [QUICKSTART_EN.md](guides/QUICKSTART_EN.md) | **Quick Start Guide** (English) |
 | [WINDOWS_GUIDE.md](guides/WINDOWS_GUIDE.md) | Windows 安装指南 |
@@ -69,18 +41,40 @@
 | [analyze-large-project.md](guides/analyze-large-project.md) | 大型项目代码分析指南 |
 | [development-workflow.md](guides/development-workflow.md) | 开发工作流指南 |
 
-### 📈 [progress/](progress/) - 进度文档
-包含项目进度总结和里程碑跟踪。
+### 🔧 [commands/](commands/) - 命令文档
+包含所有可用命令的详细说明。
 
 | 文档 | 说明 |
 |------|------|
-| [PROGRESS_SUMMARY.md](progress/PROGRESS_SUMMARY.md) | 进度总结 |
+| [README.md](commands/README.md) | **命令索引** |
 
-### 其他文档
+### 🛠️ [tools/](tools/) - 工具文档
+包含所有可用工具的详细说明。
 
 | 文档 | 说明 |
 |------|------|
-| [TUI_AUTOMATION_TESTING.md](TUI_AUTOMATION_TESTING.md) | TUI自动化测试 |
+| [README.md](tools/README.md) | **工具索引** |
+
+### 🔌 [plugins/](plugins/) - 插件文档
+包含插件系统文档。
+
+| 文档 | 说明 |
+|------|------|
+| [README.md](plugins/README.md) | **插件系统索引** |
+
+### 📦 [archive/](archive/) - 归档文档
+包含开发过程中的过程性文档。
+
+| 文档 | 说明 |
+|------|------|
+| FEATURE_LIST.md | 功能清单（过程文档） |
+| FEATURE_AUDIT.md | 功能审计（过程文档） |
+| MISSING_FEATURES.md | 缺失功能分析（过程文档） |
+| implementation/ | 实现过程文档 |
+| comparison/ | 对比分析过程文档 |
+| progress/ | 进度跟踪文档 |
+
+---
 
 ## 📄 根目录核心文档
 
@@ -93,9 +87,11 @@
 - [**STARTUP_GUIDE.md**](../STARTUP_GUIDE.md) - 启动指南
 - [**STATUS.md**](../STATUS.md) - 项目状态
 
+---
+
 ## 🔍 快速导航
 
-**新用户？** 从 [QUICKSTART.md](../QUICKSTART.md) 开始，5分钟快速上手。
+**新用户？** 从 [QUICKSTART.md](../QUICKSTART.md) 或 [guides/QUICKSTART.md](guides/QUICKSTART.md) 开始。
 
 **配置 LLM？** 查看 [guides/llm-setup.md](guides/llm-setup.md) 了解如何连接各种 LLM API。
 
@@ -103,6 +99,8 @@
 
 **开发工作流？** 查看 [guides/development-workflow.md](guides/development-workflow.md) 了解 AI 辅助开发流程。
 
-**开发者？** 查看 [architecture/](architecture/) 了解系统设计，[implementation/](implementation/) 了解实现细节。
-
 **想了解功能？** 查看 [features/](features/) 目录。
+
+**查看命令？** 查看 [commands/](commands/) 目录。
+
+**查看工具？** 查看 [tools/](tools/) 目录。
