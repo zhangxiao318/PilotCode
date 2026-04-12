@@ -40,12 +40,21 @@ async def execute_powershell(command: str, timeout: int = 600) -> PowerShellOutp
         ps_executable = "powershell.exe"
 
     try:
+        # Hide window on Windows
+        import subprocess
+        startupinfo = None
+        if is_windows():
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0  # SW_HIDE
+
         process = await asyncio.create_subprocess_exec(
             ps_executable,
             "-Command",
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            startupinfo=startupinfo,
         )
 
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)

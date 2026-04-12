@@ -165,6 +165,14 @@ async def execute_bash(
         process_env.update(env)
 
     try:
+        # Hide window on Windows
+        import subprocess
+        startupinfo = None
+        if sys.platform == "win32":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0  # SW_HIDE
+
         # Create subprocess
         process = await asyncio.create_subprocess_shell(
             command,
@@ -172,6 +180,7 @@ async def execute_bash(
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env=process_env,
+            startupinfo=startupinfo,
         )
 
         # Wait for completion with timeout
