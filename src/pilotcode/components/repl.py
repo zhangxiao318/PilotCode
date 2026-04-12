@@ -272,7 +272,9 @@ async def run_headless(
     # Create initial state with correct cwd
     from ..state.app_state import AppState
 
-    initial_state = AppState(cwd=cwd or str(os.getcwd()))
+    # Ensure cwd is valid (not None, not empty)
+    effective_cwd = cwd if cwd else str(os.getcwd())
+    initial_state = AppState(cwd=effective_cwd)
     store = Store(initial_state)
     set_global_store(store)
 
