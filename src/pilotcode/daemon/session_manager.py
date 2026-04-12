@@ -126,7 +126,7 @@ class SessionManager:
             return result
 
     async def execute_query(
-        self, session_id: str, query: str, stream_callback: Optional[callable] = None
+        self, session_id: str, query: str, stream_callback: Optional[callable] = None, cwd: Optional[str] = None
     ) -> dict:
         """Execute a query in a session."""
         async with self._lock:
@@ -134,6 +134,9 @@ class SessionManager:
             if not session:
                 raise ValueError(f"Session not found: {session_id}")
             session.touch()
+
+        # Use provided cwd or fall back to session's cwd
+        effective_cwd = cwd or session.cwd
 
         # Execute query (outside lock to allow concurrent queries on different sessions)
         try:
@@ -144,8 +147,8 @@ class SessionManager:
                 max_iterations=session.max_iterations,
                 # Pass existing messages as context
                 initial_messages=session.messages,
-                # Use session's cwd for tool execution
-                cwd=session.cwd,
+                # Use effective cwd for tool execution
+                cwd=effective_cwd,
             )
 
             # Update session messages with new conversation

@@ -214,15 +214,30 @@ class DaemonServer:
         if not message:
             raise ValueError("Message is required")
 
+        # Get or create session
         if not session_id:
+            # New session: use cwd from params
             session = await self.session_manager.create_session(cwd=cwd)
             session_id = session.session_id
+            effective_cwd = cwd
+        else:
+            session = await self.session_manager.get_session(session_id)
+            if not session:
+                # Session not found, create new one with given cwd
+                session = await self.session_manager.create_session(session_id=session_id, cwd=cwd)
+                effective_cwd = cwd
+            else:
+                # Existing session: use session's saved cwd
+                # But update if params provides a different cwd (user switched project)
+                if cwd != session.cwd and cwd != ".":
+                    session.cwd = cwd
+                    effective_cwd = cwd
+                else:
+                    effective_cwd = session.cwd
 
-        session = await self.session_manager.get_session(session_id)
-        if not session:
-            session = await self.session_manager.create_session(session_id=session_id, cwd=cwd)
-
-        result = await self.session_manager.execute_query(session_id=session_id, query=message)
+        result = await self.session_manager.execute_query(
+            session_id=session_id, query=message, cwd=effective_cwd
+        )
 
         # Ensure result is JSON serializable - only extract primitive fields
         response_text = ""
