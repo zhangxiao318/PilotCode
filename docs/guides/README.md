@@ -19,7 +19,6 @@
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
 | [llm-setup.md](./llm-setup.md) | LLM 接口设置指南 | 配置 OpenAI、Claude、本地模型等 |
-| [qwen-api-setup.md](./qwen-api-setup.md) | Qwen API 设置指南（内部） | 连接内部 Qwen 服务 |
 
 ---
 

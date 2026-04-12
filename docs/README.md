@@ -56,7 +56,6 @@
 | [llm-setup.md](guides/llm-setup.md) | LLM 接口设置指南 |
 | [analyze-large-project.md](guides/analyze-large-project.md) | 大型项目代码分析指南 |
 | [development-workflow.md](guides/development-workflow.md) | 开发工作流指南 |
-| [qwen-api-setup.md](guides/qwen-api-setup.md) | Qwen API 设置指南（内部） |
 
 ### 📈 [progress/](progress/) - 进度文档
 包含项目进度总结和里程碑跟踪。
