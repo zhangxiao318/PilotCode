@@ -37,6 +37,7 @@
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
 | [context-compaction.md](./context-compaction.md) | 智能上下文压缩 | 长会话管理、成本控制 |
+| [mempo-context-management.md](./mempo-context-management.md) | MemPO 上下文管理 | 基于 MemPO 论文的智能记忆管理 |
 | [error-recovery.md](./error-recovery.md) | 错误恢复与重试 | 网络不稳定、API 限流 |
 | [session-management.md](./session-management.md) | 会话管理 | 多项目管理、历史恢复 |
 

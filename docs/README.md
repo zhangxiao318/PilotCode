@@ -25,6 +25,7 @@
 | [code-indexing.md](features/code-indexing.md) | 代码索引与搜索 |
 | [hook-system.md](features/hook-system.md) | Hook 扩展系统 |
 | [context-compaction.md](features/context-compaction.md) | 智能上下文压缩 |
+| [mempo-context-management.md](features/mempo-context-management.md) | MemPO 上下文管理 |
 | [error-recovery.md](features/error-recovery.md) | 错误恢复与重试 |
 | [session-management.md](features/session-management.md) | 会话管理 |
 
@@ -40,6 +41,7 @@
 | [llm-setup.md](guides/llm-setup.md) | LLM 接口设置指南 |
 | [analyze-large-project.md](guides/analyze-large-project.md) | 大型项目代码分析指南 |
 | [development-workflow.md](guides/development-workflow.md) | 开发工作流指南 |
+| [tui-automation-testing.md](guides/tui-automation-testing.md) | TUI 自动化测试指南 |
 
 ### 🔧 [commands/](commands/) - 命令文档
 包含所有可用命令的详细说明。

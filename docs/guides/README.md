@@ -28,6 +28,7 @@
 |------|------|----------|
 | [analyze-large-project.md](./analyze-large-project.md) | 大型项目代码分析指南 | 分析大型代码库、代码搜索 |
 | [development-workflow.md](./development-workflow.md) | 开发工作流指南 | AI 辅助开发、Git 集成、测试 |
+| [tui-automation-testing.md](./tui-automation-testing.md) | TUI 自动化测试指南 | TUI 界面自动化测试 |
 
 ---
 
