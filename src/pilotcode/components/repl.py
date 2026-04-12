@@ -279,12 +279,6 @@ async def run_headless(
     set_global_store(store)
 
     working_dir = store.get_state().cwd
-    
-    # Debug: confirm cwd
-    import sys
-    print(f"[run_headless] cwd param: {cwd}", file=sys.stderr)
-    print(f"[run_headless] effective_cwd: {effective_cwd}", file=sys.stderr)
-    print(f"[run_headless] store.cwd: {working_dir}", file=sys.stderr)
 
     tools = get_all_tools()
     query_engine = QueryEngine(
