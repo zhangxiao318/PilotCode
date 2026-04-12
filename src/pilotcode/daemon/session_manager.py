@@ -152,6 +152,8 @@ class SessionManager:
                 max_iterations=session.max_iterations,
                 # Pass existing messages as context
                 initial_messages=session.messages,
+                # Use session's cwd for tool execution
+                cwd=session.cwd,
             )
             
             # Update session messages with new conversation

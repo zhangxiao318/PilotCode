@@ -257,6 +257,7 @@ async def run_headless(
     json_mode: bool = False,
     max_iterations: int = 25,
     initial_messages: list | None = None,
+    cwd: str | None = None,
 ) -> dict[str, Any]:
     """Run a single prompt in headless mode and return structured output.
 
@@ -270,11 +271,14 @@ async def run_headless(
 
     store = Store(get_default_app_state())
     set_global_store(store)
+    
+    # Use provided cwd or fallback to store's cwd
+    working_dir = cwd or store.get_state().cwd
 
     tools = get_all_tools()
     query_engine = QueryEngine(
         QueryEngineConfig(
-            cwd=store.get_state().cwd,
+            cwd=working_dir,
             tools=tools,
             get_app_state=store.get_state,
             set_app_state=lambda f: store.set_state(f),
