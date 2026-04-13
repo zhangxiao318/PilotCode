@@ -163,7 +163,7 @@ class REPL:
                 tool_progress = f"[turn {iteration}/{self.max_iterations}]"
                 if len(pending_tools) > 1:
                     tool_progress += f" [tool {tool_idx}/{len(pending_tools)}]"
-                self.console.print(f"\n[dim]🔧 {tool_progress} {tool_msg.name}[/dim]")
+                self.console.print(f"\n[dim][T] {tool_progress} {tool_msg.name}[/dim]")
 
                 # Execute with permission
                 context = ToolUseContext(
@@ -339,7 +339,7 @@ async def run_headless(
                     tool_progress = f"[turn {turn}/{max_iterations}]"
                     if len(pending_tools) > 1:
                         tool_progress += f" [tool {tool_idx}/{len(pending_tools)}]"
-                    print(f"🔧 {tool_progress} {tool_msg.name}", flush=True)
+                    print(f"[T] {tool_progress} {tool_msg.name}", flush=True)
                 context = ToolUseContext(
                     get_app_state=store.get_state, set_app_state=lambda f: store.set_state(f)
                 )

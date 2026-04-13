@@ -166,6 +166,15 @@ def main(
     simple: bool = typer.Option(
         False, "--simple/--no-simple", help="Use simple CLI without TUI (default: False)"
     ),
+    web: bool = typer.Option(
+        False, "--web", help="Launch Web UI server (default: False)"
+    ),
+    web_port: int = typer.Option(
+        8080, "--web-port", help="Port for Web UI server (default: 8080)"
+    ),
+    web_host: str = typer.Option(
+        "127.0.0.1", "--web-host", help="Host for Web UI server (default: 127.0.0.1)"
+    ),
     skip_config_check: bool = typer.Option(
         False, "--skip-config-check", help="Skip configuration check (for testing)"
     ),
@@ -205,7 +214,59 @@ def main(
         )
         raise typer.Exit()
 
-    if simple:
+    if web:
+        # Launch Web UI server
+        import socket
+        from .web.server import run_server_standalone
+
+        def is_port_available(host: str, port: int) -> bool:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                return s.connect_ex((host, port)) != 0
+
+        port = web_port
+        host = web_host
+
+        # Find available ports
+        original_port = port
+        max_attempts = 50
+        attempts = 0
+        while attempts < max_attempts:
+            if is_port_available(host, port) and is_port_available(host, port + 1):
+                break
+            port += 2
+            attempts += 1
+
+        if attempts >= max_attempts:
+            console.print(f"[red]Could not find available ports near {original_port}[/red]")
+            raise typer.Exit(code=1)
+
+        url = f"http://{host}:{port}"
+        ws_url = f"ws://{host}:{port + 1}"
+
+        import webbrowser
+        banner = f"""
+[bold cyan]PilotCode Web UI[/bold cyan] [dim]v{__version__}[/dim]
+
+[cyan]Web interface is starting...[/cyan]
+[dim]Press Ctrl+C to stop the server[/dim]
+
+  📡 HTTP:      {url}
+  📡 WebSocket: {ws_url}
+"""
+        console.print(Panel(banner, border_style="cyan"))
+
+        # Open browser
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+        # Start server (blocks until Ctrl+C)
+        try:
+            run_server_standalone(host, port, cwd)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Server stopped.[/yellow]")
+    elif simple:
         # Launch Simple CLI (non-TUI)
         import asyncio
         from .tui.simple_cli import SimpleCLI

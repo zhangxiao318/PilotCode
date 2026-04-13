@@ -144,8 +144,12 @@ class ToolExecutor:
 
         if not is_permitted:
             # Need to ask for permission
+            # Only set default callback if no custom callback is already set
             if self.permission_manager._permission_callback is None:
                 self.permission_manager.set_permission_callback(self._interactive_permission_prompt)
+                print(f"[ToolExecutor] Using default permission prompt")
+            else:
+                print(f"[ToolExecutor] Using custom permission callback")
 
             is_granted, level = await self.permission_manager.request_permission(
                 tool_name, tool_input
@@ -162,7 +166,7 @@ class ToolExecutor:
 
         # Permission granted, execute the tool
         try:
-            self.console.print(f"[dim]🔧 Executing {tool_name}...[/dim]")
+            self.console.print(f"[dim][T] Executing {tool_name}...[/dim]")
 
             # Validate input if validation function exists
             if tool.validate_input:
