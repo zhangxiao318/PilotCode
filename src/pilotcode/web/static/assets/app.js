@@ -11,6 +11,7 @@ const messagesContainer = document.getElementById('messagesContainer');
 const welcomeMessage = document.getElementById('welcomeMessage');
 const messageInput = document.getElementById('messageInput');
 const sendBtn = document.getElementById('sendBtn');
+const stopBtn = document.getElementById('stopBtn');
 const newSessionBtn = document.getElementById('newSessionBtn');
 const sidebarToggle = document.getElementById('sidebarToggle');
 const sidebar = document.querySelector('.sidebar');
@@ -102,6 +103,12 @@ function handleMessage(data) {
             break;
         case 'streaming_error':
             handleStreamingError(data);
+            break;
+        case 'interrupted':
+            showToast(data.message || 'Query interrupted', 'info');
+            pendingMessages.delete(currentStreamId);
+            currentStreamId = null;
+            setInputState(false);
             break;
         case 'thinking':
             handleThinking(data);
@@ -401,6 +408,16 @@ function setupEventListeners() {
     // Send button
     sendBtn.addEventListener('click', sendUserMessage);
     
+    // Stop button
+    stopBtn.addEventListener('click', () => {
+        if (currentStreamId) {
+            sendMessage({
+                type: 'interrupt'
+            });
+            showToast('Stopping...', 'info');
+        }
+    });
+    
     // New session
     newSessionBtn.addEventListener('click', () => {
         messagesContainer.innerHTML = '';
@@ -450,12 +467,17 @@ function setInputState(loading) {
     if (loading) {
         inputStatus.textContent = 'Processing...';
         messageInput.disabled = true;
-        sendBtn.disabled = true;
+        sendBtn.classList.add('hidden');
+        stopBtn.classList.remove('hidden');
     } else {
         inputStatus.textContent = 'Ready';
         messageInput.disabled = false;
         messageInput.focus();
+        sendBtn.classList.remove('hidden');
+        stopBtn.classList.add('hidden');
     }
+    // Update send button disabled state based on input
+    sendBtn.disabled = messageInput.value.trim().length === 0 || !isConnected;
 }
 
 // Hide welcome message

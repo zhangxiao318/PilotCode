@@ -77,6 +77,7 @@ class WebSocketManager:
         self.clients: Set[Any] = set()
         self.cwd: str = "."
         self.permission_manager = PermissionRequestManager()
+        self.current_tasks: Dict[Any, asyncio.Task] = {}  # Track current query tasks per websocket
         
     async def register(self, websocket):
         """Register a new client."""
@@ -109,8 +110,30 @@ class WebSocketManager:
             
             if msg_type == "query":
                 query = data.get("message", "")
+                # Cancel any existing task for this websocket
+                if websocket in self.current_tasks:
+                    old_task = self.current_tasks[websocket]
+                    if not old_task.done():
+                        old_task.cancel()
+                        print(f"[Query] Cancelled previous task for client")
                 # Process query in background task to avoid blocking message loop
-                asyncio.create_task(self.process_query(websocket, query))
+                task = asyncio.create_task(self.process_query(websocket, query))
+                self.current_tasks[websocket] = task
+                
+            elif msg_type == "interrupt":
+                print(f"[WebSocket] Interrupt requested")
+                if websocket in self.current_tasks:
+                    task = self.current_tasks[websocket]
+                    if not task.done():
+                        task.cancel()
+                        print(f"[Query] Cancelled task due to interrupt")
+                    del self.current_tasks[websocket]
+                # Cancel any pending permissions
+                self.permission_manager.cancel_all()
+                await self.send_to_client(websocket, {
+                    "type": "interrupted",
+                    "message": "Query interrupted by user"
+                })
                 
             elif msg_type == "permission_response":
                 request_id = data.get("request_id", "")
@@ -249,6 +272,12 @@ class WebSocketManager:
             while iteration < max_iterations:
                 iteration += 1
                 print(f"[Query] Iteration {iteration}, query={query[:50]}...")
+                
+                # Check if task was cancelled
+                if asyncio.current_task().cancelled():
+                    print("[Query] Task cancelled, breaking loop")
+                    break
+                
                 pending_tools = []
                 
                 async for result in query_engine.submit_message(query):
@@ -385,6 +414,14 @@ class WebSocketManager:
             })
             print("[Query] Done")
             
+        except asyncio.CancelledError:
+            print("[Query] Query was cancelled")
+            await self.send_to_client(websocket, {
+                "type": "streaming_error",
+                "stream_id": stream_id,
+                "error": "Query interrupted"
+            })
+            raise  # Re-raise to propagate cancellation
         except Exception as e:
             print(f"[Query] Error: {e}")
             print(traceback.format_exc())
@@ -393,6 +430,10 @@ class WebSocketManager:
                 "stream_id": stream_id,
                 "error": str(e)
             })
+        finally:
+            # Clean up task tracking
+            if websocket in self.current_tasks:
+                del self.current_tasks[websocket]
 
 
 ws_manager = WebSocketManager()
