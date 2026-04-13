@@ -377,10 +377,27 @@ class SimpleCLI:
             print(f"   Compressed: {original_count} -> {compressed_count} messages")
 
         else:
-            print(f"❌ Unknown command: {cmd}")
-            print("   Type /help for available commands")
+            # Return None to indicate command not handled, will try process_user_input
+            return None
 
         return True
+
+    async def _try_process_user_input_command(self, text: str):
+        """Try to process command via process_user_input. Returns True if handled, False if should exit, None if not a command."""
+        context = CommandContext(
+            get_app_state=self.store.get_state, set_app_state=lambda f: self.store.set_state(f)
+        )
+        try:
+            is_command, result = await process_user_input(text, context)
+            if is_command:
+                if isinstance(result, str):
+                    print(result)
+                    if result == "__EXIT_TUI__":
+                        return False
+                return True
+        except Exception as e:
+            print(f"❌ Error executing command: {e}")
+        return None
 
     async def process_query(self, text: str):
         """Process a user query through the LLM with tool support."""
@@ -397,7 +414,10 @@ class SimpleCLI:
             if is_command:
                 if isinstance(result, str):
                     print(result)
-                return
+                    # Handle web command specially - exit after starting server
+                    if result == "__EXIT_TUI__":
+                        return False
+                return True
 
         print()
         print("🤖 Thinking...")
@@ -653,9 +673,18 @@ class SimpleCLI:
 
                 # Handle commands
                 if user_input.startswith("/"):
+                    # First try built-in commands
                     should_continue = await self.handle_command(user_input)
                     if not should_continue:
                         break
+                    # If not handled by built-in, try process_user_input
+                    if should_continue is not None:
+                        # Check for web command exit signal
+                        cmd_result = await self._try_process_user_input_command(user_input)
+                        if cmd_result is False:
+                            break
+                        if cmd_result is True:
+                            continue
                     continue
 
                 # Process query

@@ -241,6 +241,7 @@ class WebSocketManager:
             
             # Process query
             full_content = ""
+            sent_content_length = 0  # Track how much content has been sent to avoid duplicates
             max_iterations = 25
             iteration = 0
             is_continue_query = False  # Track if this is an internal continuation
@@ -269,12 +270,16 @@ class WebSocketManager:
                         if result.is_complete:
                             full_content = msg.content
                         elif not is_continue_query:
-                            # Only stream non-final content for user queries
-                            await self.send_to_client(websocket, {
-                                "type": "streaming_chunk",
-                                "stream_id": stream_id,
-                                "chunk": msg.content
-                            })
+                            # Only send new content (avoid duplicates)
+                            content = msg.content
+                            if len(content) > sent_content_length:
+                                new_content = content[sent_content_length:]
+                                await self.send_to_client(websocket, {
+                                    "type": "streaming_chunk",
+                                    "stream_id": stream_id,
+                                    "chunk": new_content
+                                })
+                                sent_content_length = len(content)
                     
                     # Handle tool use
                     elif msg_type == 'ToolUseMessage':
@@ -288,23 +293,28 @@ class WebSocketManager:
                 
                 # No more tools to execute - this is the final response
                 if not pending_tools:
-                    # Send final content if any
+                    # Send final content if any (only the new part)
                     if full_content:
-                        await self.send_to_client(websocket, {
-                            "type": "streaming_chunk",
-                            "stream_id": stream_id,
-                            "chunk": full_content
-                        })
+                        if len(full_content) > sent_content_length:
+                            new_content = full_content[sent_content_length:]
+                            await self.send_to_client(websocket, {
+                                "type": "streaming_chunk",
+                                "stream_id": stream_id,
+                                "chunk": new_content
+                            })
                         full_content = ""
                     break
                 
                 # Send final content for user-facing queries (not the final response)
                 if full_content and not is_continue_query:
-                    await self.send_to_client(websocket, {
-                        "type": "streaming_chunk",
-                        "stream_id": stream_id,
-                        "chunk": full_content
-                    })
+                    if len(full_content) > sent_content_length:
+                        new_content = full_content[sent_content_length:]
+                        await self.send_to_client(websocket, {
+                            "type": "streaming_chunk",
+                            "stream_id": stream_id,
+                            "chunk": new_content
+                        })
+                        sent_content_length = len(full_content)
                     full_content = ""
                 
                 print(f"[Query] Executing {len(pending_tools)} tools...")

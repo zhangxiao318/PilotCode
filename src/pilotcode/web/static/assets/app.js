@@ -147,6 +147,7 @@ function handleStreamingChunk(data) {
     const stream = pendingMessages.get(data.stream_id);
     if (!stream) return;
     
+    // Append new content
     stream.content += data.chunk;
     
     const contentDiv = document.getElementById(`content-${data.stream_id}`);
@@ -158,8 +159,12 @@ function handleStreamingChunk(data) {
             finalDiv.className = 'final-response';
             contentDiv.appendChild(finalDiv);
         }
-        finalDiv.innerHTML = renderMarkdown(stream.content);
-        scrollToBottom();
+        // Use incremental rendering to avoid flicker and duplicates
+        // Only render if content changed significantly
+        if (data.chunk) {
+            finalDiv.innerHTML = renderMarkdown(stream.content);
+            scrollToBottom();
+        }
     }
 }
 
@@ -471,15 +476,13 @@ function renderMarkdown(text) {
     // Escape HTML
     text = escapeHtml(text);
     
-    // Code blocks
+    // Code blocks - process first to preserve newlines
+    const codeBlocks = [];
     text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-        return `<div class="code-block">
-            <div class="code-header">
-                <span>${lang || 'text'}</span>
-                <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-            </div>
-            <pre><code>${code.trim()}</code></pre>
-        </div>`;
+        const id = codeBlocks.length;
+        // Store code with original newlines preserved
+        codeBlocks.push({ lang: lang || 'text', code: code.trim() });
+        return `__CODE_BLOCK_${id}__`;
     });
     
     // Inline code
@@ -499,8 +502,21 @@ function renderMarkdown(text) {
         return `<li style="margin-left: ${indent.length * 8}px">${item}</li>`;
     });
     
-    // Line breaks
+    // Line breaks (outside code blocks)
     text = text.replace(/\n/g, '<br>');
+    
+    // Restore code blocks
+    codeBlocks.forEach((block, id) => {
+        // Escape HTML in code, but preserve newlines as actual newlines for <pre>
+        const escapedCode = block.code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        text = text.replace(`__CODE_BLOCK_${id}__`, `<div class="code-block">
+            <div class="code-header">
+                <span>${block.lang}</span>
+                <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+            </div>
+            <pre><code>${escapedCode}</code></pre>
+        </div>`);
+    });
     
     return text;
 }
@@ -514,7 +530,15 @@ function escapeHtml(text) {
 
 // Copy code to clipboard
 function copyCode(btn) {
-    const code = btn.closest('.code-block').querySelector('code').textContent;
+    const codeBlock = btn.closest('.code-block').querySelector('code');
+    // Get the HTML content and decode HTML entities to preserve newlines
+    let code = codeBlock.innerHTML;
+    // Convert <br> to newlines
+    code = code.replace(/<br\s*\/?>/gi, '\n');
+    // Create a temp element to decode HTML entities
+    const temp = document.createElement('textarea');
+    temp.innerHTML = code;
+    code = temp.value;
     navigator.clipboard.writeText(code).then(() => {
         btn.textContent = 'Copied!';
         setTimeout(() => btn.textContent = 'Copy', 2000);
