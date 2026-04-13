@@ -241,7 +241,7 @@ class WebSocketManager:
             
             # Process query
             full_content = ""
-            max_iterations = 10
+            max_iterations = 25
             iteration = 0
             is_continue_query = False  # Track if this is an internal continuation
             
