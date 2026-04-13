@@ -353,6 +353,8 @@ class WebSocketManager:
                 # Switch to internal continuation query
                 query = "Please continue based on the tool results above."
                 is_continue_query = True
+                # Reset content length tracking for new response
+                sent_content_length = 0
             
             # Send streaming end
             await self.send_to_client(websocket, {
