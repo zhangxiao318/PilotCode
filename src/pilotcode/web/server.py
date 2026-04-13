@@ -286,7 +286,19 @@ class WebSocketManager:
                             "tool_input": msg.input
                         })
                 
-                # Send final content only for user-facing queries
+                # No more tools to execute - this is the final response
+                if not pending_tools:
+                    # Send final content if any
+                    if full_content:
+                        await self.send_to_client(websocket, {
+                            "type": "streaming_chunk",
+                            "stream_id": stream_id,
+                            "chunk": full_content
+                        })
+                        full_content = ""
+                    break
+                
+                # Send final content for user-facing queries (not the final response)
                 if full_content and not is_continue_query:
                     await self.send_to_client(websocket, {
                         "type": "streaming_chunk",
@@ -294,10 +306,6 @@ class WebSocketManager:
                         "chunk": full_content
                     })
                     full_content = ""
-                
-                # No more tools to execute
-                if not pending_tools:
-                    break
                 
                 print(f"[Query] Executing {len(pending_tools)} tools...")
                 

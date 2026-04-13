@@ -235,19 +235,24 @@ function handleToolCall(data) {
     scrollToBottom();
 }
 
-// Format tool input to single line
+// Format tool input to single line (no brackets)
 function formatToolInput(input) {
     if (!input || typeof input !== 'object') return '';
     const pairs = Object.entries(input).map(([k, v]) => {
         let val = v;
-        if (typeof v === 'string' && v.length > 30) {
-            val = v.substring(0, 15) + '...' + v.substring(v.length - 10);
+        if (typeof v === 'string') {
+            if (v.length > 40) {
+                val = v.substring(0, 20) + '...';
+            } else {
+                val = v;
+            }
         } else if (Array.isArray(v)) {
-            val = `[${v.length} items]`;
+            val = v.join(', ');
+            if (val.length > 30) val = val.substring(0, 25) + '...';
         }
-        return `${k}=${JSON.stringify(val)}`;
+        return `${k}=${val}`;
     });
-    return pairs.join(', ');
+    return pairs.join(' ');
 }
 
 // Handle tool result
@@ -255,18 +260,16 @@ function handleToolResult(data) {
     const contentDiv = document.getElementById(`content-${currentStreamId}`);
     if (!contentDiv) return;
     
-    // Truncate long results
+    // Truncate long results - shorter max for cleaner UI
     let resultText = data.result || '';
-    const maxLen = 200;
+    const maxLen = 120;
     if (resultText.length > maxLen) {
-        resultText = resultText.substring(0, 80) + ' ... ' + resultText.substring(resultText.length - 80);
+        resultText = resultText.substring(0, 50) + ' ... ' + resultText.substring(resultText.length - 30);
     }
     
     const resultDiv = document.createElement('div');
     resultDiv.className = 'stream-block result';
-    resultDiv.innerHTML = `
-        <pre><code>${escapeHtml(resultText)}</code></pre>
-    `;
+    resultDiv.innerHTML = `<pre><code>${escapeHtml(resultText)}</code></pre>`;
     
     // Insert before final response
     const finalDiv = contentDiv.querySelector('.final-response');
@@ -290,27 +293,19 @@ function handlePermissionRequest(data) {
     const riskClass = `risk-${data.risk_level}`;
     const riskText = data.risk_level.charAt(0).toUpperCase() + data.risk_level.slice(1);
     
+    // Format input compactly
+    const inputStr = formatToolInput(data.tool_input);
+    
     const permDiv = document.createElement('div');
     permDiv.id = `perm-${data.request_id}`;
     permDiv.className = 'permission-request';
     permDiv.innerHTML = `
-        <div class="permission-title">
-            <span>[P]</span>
-            <span>Permission Required</span>
+        <div class="permission-header">
+            <span class="perm-icon">[P]</span>
+            <span class="perm-tool">${escapeHtml(data.tool_name)}</span>
+            <span class="risk-badge ${riskClass}">${riskText}</span>
         </div>
-        <div class="permission-info">
-            <div class="permission-row">
-                <span class="permission-label">Tool:</span>
-                <span class="permission-value">${escapeHtml(data.tool_name)}</span>
-            </div>
-            <div class="permission-row">
-                <span class="permission-label">Risk:</span>
-                <span class="risk-badge ${riskClass}">${riskText}</span>
-            </div>
-            <div class="permission-input">
-                <pre>${escapeHtml(JSON.stringify(data.tool_input, null, 2))}</pre>
-            </div>
-        </div>
+        <div class="permission-input-compact">${escapeHtml(inputStr)}</div>
         <div class="permission-actions">
             <button class="perm-btn deny" onclick="respondPermission('${data.request_id}', false, false)">Deny</button>
             <button class="perm-btn allow-once" onclick="respondPermission('${data.request_id}', true, false)">Allow Once</button>

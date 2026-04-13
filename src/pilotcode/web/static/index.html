@@ -37,7 +37,7 @@
         
         /* Chat Area */
         .chat-area { flex: 1; overflow-y: auto; padding: 24px; }
-        .messages-container { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+        .messages-container { max-width: 900px; margin: 0; display: flex; flex-direction: column; gap: 12px; }
         
         /* Welcome */
         .welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 48px 24px; min-height: 60%; }
@@ -68,97 +68,66 @@
         .user-query { 
             background: #f0f9ff; 
             border-left: 3px solid #0ea5e9;
-            padding: 12px 16px;
-            border-radius: 0 8px 8px 0;
-            margin: 8px 0;
+            padding: 10px 14px;
+            border-radius: 0 6px 6px 0;
+            margin: 6px 0 12px 0;
             font-size: 14px;
         }
         
-        /* Stream blocks with icons */
+        /* Stream blocks */
         .stream-block { 
-            margin: 8px 0; 
-            padding: 12px 16px; 
-            border-radius: 8px;
-            font-size: 14px;
-            border-left: 3px solid;
-            position: relative;
-        }
-        .stream-block::before {
-            position: absolute;
-            left: -24px;
-            top: 12px;
-            font-size: 14px;
+            margin: 6px 0; 
+            padding: 8px 12px; 
+            border-radius: 6px;
+            font-size: 13px;
+            border-left: 2px solid;
         }
         .stream-block.thinking { 
             background: #fafafa; 
             border-color: #999; 
             color: #666; 
         }
-        .stream-block.thinking::before { content: "💭"; }
-        .stream-block.tool { 
-            background: #fefce8; 
-            border-color: #eab308; 
-        }
-        .stream-block.tool::before { content: "[T]"; }
         .stream-block.result { 
             background: #f0fdf4; 
             border-color: #22c55e; 
         }
-        .stream-block.result::before { content: "✓"; }
-        .stream-block.permission { 
-            background: #fff7ed; 
-            border-color: #f97316; 
-        }
-        .stream-block.permission::before { content: "[P]"; }
-        .stream-block .label { 
-            font-size: 11px; 
-            font-weight: 600; 
-            text-transform: uppercase; 
-            margin-bottom: 4px; 
-            opacity: 0.7; 
-            letter-spacing: 0.5px;
-        }
+        .stream-block pre { margin: 0; font-family: 'Fira Code', monospace; overflow-x: auto; }
         
         /* Final response */
-        .final-response { margin-top: 8px; line-height: 1.7; }
-        .final-response pre { background: #f5f5f5; padding: 16px; border-radius: 8px; overflow-x: auto; margin: 12px 0; }
+        .final-response { margin-top: 12px; line-height: 1.6; font-size: 14px; }
+        .final-response pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
         .final-response code { font-family: 'Fira Code', monospace; font-size: 13px; }
-        .final-response p { margin: 8px 0; }
-        .final-response ul, .final-response ol { margin: 8px 0; padding-left: 24px; }
-        .final-response li { margin: 4px 0; }
+        .final-response p { margin: 6px 0; }
+        .final-response ul, .final-response ol { margin: 6px 0; padding-left: 20px; }
+        .final-response li { margin: 3px 0; }
         .final-response strong { font-weight: 600; }
         .final-response a { color: #2563eb; text-decoration: none; }
         .final-response a:hover { text-decoration: underline; }
         
         /* Tool Call Block */
-        .tool-call { margin: 12px 0; border: 1px solid #e5e5e5; border-radius: 8px; overflow: hidden; }
-        .tool-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #f5f5f5; font-size: 13px; cursor: pointer; }
+        .tool-call { margin: 8px 0; border: 1px solid #e5e5e5; border-radius: 6px; overflow: hidden; font-size: 13px; }
+        .tool-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: #f5f5f5; cursor: pointer; }
         .tool-header:hover { background: #eee; }
-        .tool-header .icon { font-size: 14px; }
-        .tool-content { padding: 12px; font-size: 13px; background: #fff; }
+        .tool-header .icon { font-size: 12px; color: #666; }
+        .tool-content { padding: 10px; background: #fff; }
         .tool-content.hidden { display: none; }
-        .tool-content pre { overflow-x: auto; font-family: 'Fira Code', monospace; background: #f9f9f9; padding: 8px; border-radius: 4px; }
+        .tool-content pre { overflow-x: auto; font-family: 'Fira Code', monospace; background: #f9f9f9; padding: 8px; border-radius: 4px; font-size: 12px; }
         
-        /* Permission Block */
-        .permission-request { margin: 12px 0; padding: 16px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; }
-        .permission-title { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 12px; color: #9a3412; }
-        .permission-info { margin-bottom: 16px; font-size: 14px; }
-        .permission-row { display: flex; gap: 8px; margin-bottom: 4px; }
-        .permission-label { color: #666; min-width: 50px; }
-        .permission-value { font-weight: 500; }
-        .risk-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        /* Permission Block - Compact */
+        .permission-request { margin: 8px 0; padding: 12px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; }
+        .permission-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .perm-icon { font-size: 12px; color: #9a3412; }
+        .perm-tool { font-weight: 600; color: #9a3412; }
+        .risk-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: auto; }
         .risk-low { background: #dcfce7; color: #166534; }
         .risk-medium { background: #fef9c3; color: #854d0e; }
         .risk-high { background: #fee2e2; color: #991b1b; }
         .risk-critical { background: #fecaca; color: #7f1d1d; }
-        .permission-input { margin-top: 8px; padding: 8px; background: #fff; border-radius: 4px; font-size: 12px; overflow-x: auto; }
-        .permission-input pre { margin: 0; font-family: 'Fira Code', monospace; }
-        .permission-actions { display: flex; gap: 12px; }
-        .perm-btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 14px; font-weight: 500; cursor: pointer; }
+        .permission-input-compact { margin: 8px 0; padding: 8px; background: #fff; border-radius: 4px; font-size: 13px; font-family: 'Fira Code', monospace; color: #444; overflow-x: auto; white-space: nowrap; }
+        .permission-actions { display: flex; gap: 8px; }
+        .perm-btn { padding: 6px 12px; border-radius: 6px; border: none; font-size: 13px; font-weight: 500; cursor: pointer; }
         .perm-btn.deny { background: #f5f5f5; color: #666; }
         .perm-btn.deny:hover { background: #fee2e2; color: #991b1b; }
-        .perm-btn.allow { background: #111; color: #fff; }
-        .perm-btn.allow:hover { opacity: 0.9; }
         .perm-btn.allow-once { background: #3b82f6; color: #fff; }
         .perm-btn.allow-once:hover { opacity: 0.9; }
         .perm-btn.allow-session { background: #111; color: #fff; }
