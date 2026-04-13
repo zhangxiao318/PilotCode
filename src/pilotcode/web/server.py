@@ -265,12 +265,14 @@ class WebSocketManager:
                                 "content": thinking_content
                             })
                     
-                    # Handle streaming content - skip for internal continue queries
+                    # Handle streaming content
                     elif hasattr(msg, 'content') and msg.content and isinstance(msg.content, str):
                         if result.is_complete:
+                            # Store complete content - will be sent after tools or immediately if no tools
                             full_content = msg.content
                         elif not is_continue_query:
-                            # Only send new content (avoid duplicates)
+                            # Stream incremental content for user queries only
+                            # Skip streaming for continue queries to avoid showing internal prompts
                             content = msg.content
                             if len(content) > sent_content_length:
                                 new_content = content[sent_content_length:]
@@ -303,6 +305,26 @@ class WebSocketManager:
                                 "chunk": new_content
                             })
                         full_content = ""
+                    break
+                
+                # Check if we've reached max iterations
+                if iteration >= max_iterations:
+                    print(f"[Query] Reached max iterations ({max_iterations}), forcing end")
+                    if full_content:
+                        if len(full_content) > sent_content_length:
+                            new_content = full_content[sent_content_length:]
+                            await self.send_to_client(websocket, {
+                                "type": "streaming_chunk",
+                                "stream_id": stream_id,
+                                "chunk": new_content
+                            })
+                    # Send a message indicating max iterations reached
+                    else:
+                        await self.send_to_client(websocket, {
+                            "type": "streaming_chunk",
+                            "stream_id": stream_id,
+                            "chunk": "\n\n[Reached maximum tool call limit. Analysis may be incomplete.]"
+                        })
                     break
                 
                 # Send final content for user-facing queries (not the final response)
