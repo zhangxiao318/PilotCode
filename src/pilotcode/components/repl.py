@@ -474,6 +474,10 @@ async def run_headless_with_planning(
 ) -> dict[str, Any]:
     """Run headless mode with automatic task planning, execution, and verification.
 
+    Args:
+        max_iterations: Maximum tool-call rounds PER PLAN ITEM during execution.
+            The total execution budget is multiplied by the number of planned items.
+
     Workflow:
         1. Planning: Generate a structured plan (JSON) from the prompt
         2. Execution: Run the main task with the plan injected
@@ -547,9 +551,15 @@ Requirements:
             prompt, auto_allow=auto_allow, json_mode=json_mode, max_iterations=max_iterations, cwd=effective_cwd
         )
 
-    print(f"[PLAN] {len(plan.get('files_to_modify', []))} files identified")
-    for item in plan.get("files_to_modify", []):
+    plan_items = plan.get('files_to_modify', [])
+    print(f"[PLAN] {len(plan_items)} files identified")
+    for item in plan_items:
         print(f"  - {item.get('file')}: {item.get('change')}")
+
+    # Scale execution budget per plan item
+    num_plan_items = len(plan_items)
+    execution_max_iterations = max(max_iterations, num_plan_items * max_iterations) if num_plan_items > 0 else max_iterations
+    print(f"[EXEC] Budget: {execution_max_iterations} tool-call rounds ({max_iterations} per plan item × {num_plan_items} items)")
 
     # Step 2-4: Execution + Verification loop
     execution_prompt_base = f"""\
@@ -574,7 +584,7 @@ CRITICAL WORKFLOW:
             current_prompt,
             auto_allow=auto_allow,
             json_mode=False,
-            max_iterations=max_iterations,
+            max_iterations=execution_max_iterations,
             cwd=effective_cwd,
         )
         best_result = exec_result
