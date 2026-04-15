@@ -207,29 +207,28 @@ def main(
     if prompt is not None:
         import asyncio
 
-        mode = asyncio.run(classify_task_complexity(prompt))
-        if mode == "PLAN":
-            console.print("[dim]⚡ Task classified as complex — enabling planning and verification mode[/dim]")
-            asyncio.run(
-                run_headless_with_planning(
+        async def _run_headless():
+            mode = await classify_task_complexity(prompt)
+            if mode == "PLAN":
+                console.print("[dim]⚡ Task classified as complex — enabling planning and verification mode[/dim]")
+                return await run_headless_with_planning(
                     prompt,
                     auto_allow=auto_allow,
                     json_mode=json_mode,
                     max_iterations=max_iterations,
                     cwd=cwd,
                 )
-            )
-        else:
-            console.print("[dim]⚡ Task classified as simple — running in direct execution mode[/dim]")
-            asyncio.run(
-                run_headless(
+            else:
+                console.print("[dim]⚡ Task classified as simple — running in direct execution mode[/dim]")
+                return await run_headless(
                     prompt,
                     auto_allow=auto_allow,
                     json_mode=json_mode,
                     max_iterations=max_iterations,
                     cwd=cwd,
                 )
-            )
+
+        asyncio.run(_run_headless())
         raise typer.Exit()
 
     if web:
