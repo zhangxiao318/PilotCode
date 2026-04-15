@@ -97,14 +97,12 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
 
 
 def run_pilotcode(
-    cwd: str, prompt: str, max_iterations: int = DEFAULT_MAX_ITERATIONS, plan_and_verify: bool = True
+    cwd: str, prompt: str, max_iterations: int = DEFAULT_MAX_ITERATIONS
 ) -> tuple[int, str]:
     """Run PilotCode in headless mode on the given prompt."""
-    plan_flag = "--plan-and-verify" if plan_and_verify else ""
     cmd = (
         f"python3 -m pilotcode main "
         f"--skip-config-check --auto-allow --max-iterations {max_iterations} "
-        f"{plan_flag} "
         f"-p {shlex.quote(prompt)}"
     )
     rc, stdout, stderr = run_cmd(cmd, cwd=cwd, timeout=900)
@@ -201,14 +199,14 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
             KEY_PREDICTION: "",
         }
 
-    # Run PilotCode with built-in plan-and-verify
+    # Run PilotCode (automatically selects planning mode based on task complexity)
     prompt = PILOTCODE_PROMPT_TEMPLATE.format(
         problem_statement=problem_statement.replace('"', '\\"'),
         cwd=work_dir,
         repo=repo,
         version=instance.get("version", ""),
     )
-    rc, output = run_pilotcode(work_dir, prompt, plan_and_verify=True)
+    rc, output = run_pilotcode(work_dir, prompt)
     print(output)
     if rc != 0:
         print(f"[WARNING] PilotCode exited with code {rc} for {instance_id}")

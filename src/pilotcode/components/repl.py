@@ -24,6 +24,7 @@ from ..state.store import Store, set_global_store
 from ..utils.config import get_global_config
 from ..types.message import AssistantMessage, ToolUseMessage
 from ..permissions import get_tool_executor
+from ..utils.model_client import get_model_client, Message
 
 
 class REPL:
@@ -252,6 +253,55 @@ def run_repl(auto_allow: bool = False, max_iterations: int | None = None) -> Non
     """
     repl = REPL(auto_allow=auto_allow, max_iterations=max_iterations)
     asyncio.run(repl.run())
+
+
+async def classify_task_complexity(prompt: str) -> str:
+    """Use a lightweight LLM call to classify whether the task needs planning.
+
+    Returns:
+        "PLAN" if the task likely involves multiple files or complex logic.
+        "DIRECT" for simple, localized tasks.
+    """
+    classifier_prompt = (
+        "You are a task router. Based on the user request, decide if this task "
+        "requires multi-step planning before execution.\n\n"
+        "User request:\n"
+        f"{prompt}\n\n"
+        "Answer with ONLY one word: PLAN or DIRECT.\n"
+        "- PLAN: The task likely involves multiple files, complex logic, debugging "
+        "across the codebase, or bug fixing.\n"
+        "- DIRECT: The task is simple, localized, or can be done in a single edit."
+    )
+
+    client = get_model_client()
+    messages = [
+        Message(role="system", content="You classify coding tasks. Reply with exactly one word: PLAN or DIRECT."),
+        Message(role="user", content=classifier_prompt),
+    ]
+
+    try:
+        chunks = []
+        async for chunk in client.chat_completion(
+            messages=messages,
+            tools=None,
+            temperature=0.0,
+            stream=False,
+        ):
+            chunks.append(chunk)
+
+        if not chunks:
+            return "PLAN"
+
+        content = chunks[0].get("choices", [{}])[0].get("delta", {}).get("content", "")
+        content = content.strip().upper()
+
+        if "DIRECT" in content:
+            return "DIRECT"
+        # Default to PLAN for any uncertainty
+        return "PLAN"
+    except Exception:
+        # If classification fails, default to planning mode to be safe
+        return "PLAN"
 
 
 async def run_headless(
