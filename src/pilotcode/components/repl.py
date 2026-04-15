@@ -6,7 +6,7 @@ import os
 import re
 import subprocess
 import sys
-from typing import Any
+from typing import Any, Callable
 
 from rich.console import Console
 from rich.panel import Panel
@@ -311,6 +311,7 @@ async def run_headless(
     max_iterations: int = 25,
     initial_messages: list | None = None,
     cwd: str | None = None,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Run a single prompt in headless mode and return structured output.
 
@@ -392,7 +393,11 @@ async def run_headless(
                     tool_progress = f"[turn {turn}/{max_iterations}]"
                     if len(pending_tools) > 1:
                         tool_progress += f" [tool {tool_idx}/{len(pending_tools)}]"
-                    print(f"[T] {tool_progress} {tool_msg.name}", flush=True)
+                    progress_msg = f"[T] {tool_progress} {tool_msg.name}"
+                    if progress_callback:
+                        progress_callback(progress_msg)
+                    else:
+                        print(progress_msg, flush=True)
                 context = ToolUseContext(
                     get_app_state=store.get_state, set_app_state=lambda f: store.set_state(f)
                 )
@@ -471,6 +476,7 @@ async def run_headless_with_planning(
     max_iterations: int = 25,
     cwd: str | None = None,
     max_plan_attempts: int = 3,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Run headless mode with automatic task planning, execution, and verification.
 
@@ -509,6 +515,12 @@ async def run_headless_with_planning(
 
     effective_cwd = cwd if cwd else str(os.getcwd())
 
+    def _log(msg: str) -> None:
+        if progress_callback:
+            progress_callback(msg)
+        else:
+            print(msg)
+
     # Step 1: Planning
     planning_prompt = f"""\
 You are analyzing a task. Create a precise, structured plan for completing it.
@@ -546,20 +558,20 @@ Requirements:
     )
     plan = _extract_json(plan_result.get("response", ""))
     if plan is None:
-        print("[PLAN] Could not parse plan, falling back to direct execution")
+        _log("[PLAN] Could not parse plan, falling back to direct execution")
         return await run_headless(
             prompt, auto_allow=auto_allow, json_mode=json_mode, max_iterations=max_iterations, cwd=effective_cwd
         )
 
     plan_items = plan.get('files_to_modify', [])
-    print(f"[PLAN] {len(plan_items)} files identified")
+    _log(f"[PLAN] {len(plan_items)} files identified")
     for item in plan_items:
-        print(f"  - {item.get('file')}: {item.get('change')}")
+        _log(f"  - {item.get('file')}: {item.get('change')}")
 
     # Scale execution budget per plan item
     num_plan_items = len(plan_items)
     execution_max_iterations = max(max_iterations, num_plan_items * max_iterations) if num_plan_items > 0 else max_iterations
-    print(f"[EXEC] Budget: {execution_max_iterations} tool-call rounds ({max_iterations} per plan item × {num_plan_items} items)")
+    _log(f"[EXEC] Budget: {execution_max_iterations} tool-call rounds ({max_iterations} per plan item × {num_plan_items} items)")
 
     # Step 2-4: Execution + Verification loop
     execution_prompt_base = f"""\
@@ -579,7 +591,7 @@ CRITICAL WORKFLOW:
     best_result = None
 
     for attempt in range(1, max_plan_attempts + 1):
-        print(f"\n[EXEC] Attempt {attempt}/{max_plan_attempts}")
+        _log(f"[EXEC] Attempt {attempt}/{max_plan_attempts}")
         exec_result = await run_headless(
             current_prompt,
             auto_allow=auto_allow,
@@ -633,7 +645,7 @@ Output ONLY the JSON object.
         )
         verification = _extract_json(verify_result.get("response", ""))
         if verification is None:
-            print("[VERIFY] Could not parse verification, assuming complete")
+            _log("[VERIFY] Could not parse verification, assuming complete")
             break
 
         print(f"[VERIFY] complete={verification.get('complete')}, summary={verification.get('summary')}")
@@ -641,7 +653,7 @@ Output ONLY the JSON object.
             print(f"  - MISSING: {missing.get('file')}: {missing.get('issue')}")
 
         if verification.get("complete", True):
-            print("[VERIFY] Fix verified as complete")
+            _log("[VERIFY] Fix verified as complete")
             break
         else:
             missing = verification.get("missing_changes", [])
@@ -651,10 +663,10 @@ Output ONLY the JSON object.
                     extra += f"- {m.get('file')}: {m.get('issue')}\n"
                 current_prompt = execution_prompt_base + extra
             else:
-                print("[VERIFY] No specific missing items listed, using best effort")
+                _log("[VERIFY] No specific missing items listed, using best effort")
                 break
     else:
-        print(f"[WARN] Max plan attempts ({max_plan_attempts}) reached")
+        _log(f"[WARN] Max plan attempts ({max_plan_attempts}) reached")
 
     if json_mode:
         import json as json_mod

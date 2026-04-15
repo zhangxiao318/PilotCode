@@ -219,6 +219,7 @@ class WebSocketManager:
             from pilotcode.tools.base import ToolUseContext
             from pilotcode.permissions import get_tool_executor
             from pilotcode.permissions.permission_manager import get_permission_manager, PermissionLevel
+            from pilotcode.components.repl import classify_task_complexity, run_headless_with_planning
             
             # Send streaming start
             await self.send_to_client(websocket, {
@@ -226,6 +227,39 @@ class WebSocketManager:
                 "stream_id": stream_id,
                 "message": query
             })
+            
+            # Auto-detect task complexity
+            mode = await classify_task_complexity(query)
+            if mode == "PLAN":
+                await self.send_to_client(websocket, {
+                    "type": "system",
+                    "stream_id": stream_id,
+                    "content": "Task classified as complex — enabling planning and verification mode",
+                })
+
+                async def send_progress(msg: str):
+                    await self.send_to_client(websocket, {
+                        "type": "planning_progress",
+                        "stream_id": stream_id,
+                        "content": msg,
+                    })
+
+                def progress_callback(msg: str):
+                    asyncio.create_task(send_progress(msg))
+
+                result = await run_headless_with_planning(
+                    query,
+                    auto_allow=False,
+                    max_iterations=25,
+                    cwd=self.cwd,
+                    progress_callback=progress_callback,
+                )
+                await self.send_to_client(websocket, {
+                    "type": "streaming_complete",
+                    "stream_id": stream_id,
+                    "content": result.get("response", ""),
+                })
+                return
             
             # Create store
             store = Store(get_default_app_state())

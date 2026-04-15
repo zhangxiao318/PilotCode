@@ -25,6 +25,7 @@ except ImportError:
 
 from pilotcode.permissions import get_tool_executor
 from pilotcode.state.app_state import AppState
+from pilotcode.components.repl import classify_task_complexity, run_headless_with_planning
 
 
 class UIMessageType(Enum):
@@ -126,6 +127,28 @@ class TUIController:
         if not self.query_engine:
             yield UIMessage(type=UIMessageType.ERROR, content="Query engine not initialized")
             return
+
+        # Auto-detect task complexity for the first user message
+        if len(self.query_engine.messages) == 0:
+            mode = await classify_task_complexity(text)
+            if mode == "PLAN":
+                yield UIMessage(
+                    type=UIMessageType.SYSTEM,
+                    content="Task classified as complex — enabling planning and verification mode",
+                )
+                result = await run_headless_with_planning(
+                    text,
+                    auto_allow=self.auto_allow,
+                    max_iterations=self.max_iterations,
+                    cwd=self.get_app_state().cwd if self.get_app_state else None,
+                    progress_callback=lambda msg: print(msg, flush=True),
+                )
+                yield UIMessage(
+                    type=UIMessageType.ASSISTANT,
+                    content=result.get("response", ""),
+                    is_complete=True,
+                )
+                return
 
         iteration = 0
         current_prompt = text
