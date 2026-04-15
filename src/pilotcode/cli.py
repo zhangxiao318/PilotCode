@@ -5,7 +5,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from .components.repl import run_repl, run_headless
+from .components.repl import run_repl, run_headless, run_headless_with_planning
 from .version import __version__
 from .utils.config import is_configured, get_config_manager
 from .utils.configure import run_configure_wizard, format_model_list, get_available_model_names
@@ -181,6 +181,9 @@ def main(
     daemon: bool = typer.Option(
         False, "--daemon", help="Run in daemon mode (stdio) for VS Code integration"
     ),
+    plan_and_verify: bool = typer.Option(
+        False, "--plan-and-verify", help="Enable planning and verification loop for complex tasks"
+    ),
 ):
     """PilotCode - Python rewrite of Claude Code."""
 
@@ -207,11 +210,22 @@ def main(
     if prompt is not None:
         import asyncio
 
-        asyncio.run(
-            run_headless(
-                prompt, auto_allow=auto_allow, json_mode=json_mode, max_iterations=max_iterations
+        if plan_and_verify:
+            asyncio.run(
+                run_headless_with_planning(
+                    prompt,
+                    auto_allow=auto_allow,
+                    json_mode=json_mode,
+                    max_iterations=max_iterations,
+                    cwd=cwd,
+                )
             )
-        )
+        else:
+            asyncio.run(
+                run_headless(
+                    prompt, auto_allow=auto_allow, json_mode=json_mode, max_iterations=max_iterations
+                )
+            )
         raise typer.Exit()
 
     if web:

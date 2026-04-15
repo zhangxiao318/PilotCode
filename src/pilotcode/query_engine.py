@@ -263,7 +263,18 @@ Your response MUST include:
    - `Bash(command="python -m pytest")`
    - Or run the appropriate test command
 
-DON'T STOP after reading files. You MUST execute the code to test it!"""
+DON'T STOP after reading files. You MUST execute the code to test it!
+
+## Code Editing Best Practices (CRITICAL)
+
+When editing code files, you MUST follow these rules to avoid syntax errors and incomplete fixes:
+
+1. **EXACT MATCH for FileEdit** - The `old_string` parameter must match the file content EXACTLY, including all spaces, tabs, and newlines. If unsure, read the file again.
+2. **Verify indentation** - Python is indentation-sensitive. Double-check that your replacement maintains or correctly changes the indentation level.
+3. **Validate Python syntax after editing** - After any `.py` file edit, immediately run `Bash(command="python -m py_compile <filepath>")` to verify the file is syntactically valid.
+4. **Use checklists for multi-file changes** - If a task requires changes in multiple files, explicitly list the files, edit them one by one, and check each off before declaring completion.
+5. **Review with git diff** - Before finishing, run `Bash(command="git diff")` to review all changes and ensure nothing was accidentally modified or left out.
+6. **Rollback on failure** - If a syntax check fails or an edit looks wrong, fix it immediately. Do not leave broken code in the workspace."""
 
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to API format."""

@@ -1,7 +1,10 @@
 """REPL for PilotCode - Programming Assistant with Tool Support."""
 
 import asyncio
+import json
 import os
+import re
+import subprocess
 import sys
 from typing import Any
 
@@ -409,3 +412,192 @@ async def run_headless(
         print(response_text)
 
     return output
+
+
+async def run_headless_with_planning(
+    prompt: str,
+    auto_allow: bool = False,
+    json_mode: bool = False,
+    max_iterations: int = 25,
+    cwd: str | None = None,
+    max_plan_attempts: int = 3,
+) -> dict[str, Any]:
+    """Run headless mode with automatic task planning, execution, and verification.
+
+    Workflow:
+        1. Planning: Generate a structured plan (JSON) from the prompt
+        2. Execution: Run the main task with the plan injected
+        3. Verification: Check if all planned changes are complete
+        4. Loop: If incomplete, retry execution with missing items highlighted
+    """
+
+    def _extract_json(text: str) -> dict | None:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            return None
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            return None
+
+    def _get_git_diff(work_dir: str) -> str:
+        try:
+            result = subprocess.run(
+                ["git", "diff"],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return result.stdout if result.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    effective_cwd = cwd if cwd else str(os.getcwd())
+
+    # Step 1: Planning
+    planning_prompt = f"""\
+You are analyzing a task. Create a precise, structured plan for completing it.
+
+Task:
+{prompt}
+
+Instructions:
+1. Explore the workspace if needed using available tools.
+2. Identify EVERY file that needs to be changed.
+3. For each file, describe the exact change needed in one sentence.
+4. Output your final answer as a JSON object with this exact structure:
+
+{{
+  "files_to_modify": [
+    {{
+      "file": "relative/path/to/file.py",
+      "change": "Brief description of the exact change"
+    }}
+  ],
+  "reasoning": "One-paragraph summary of the strategy"
+}}
+
+Requirements:
+- ONLY include files that MUST be changed.
+- Output ONLY the JSON object, with no markdown or extra text.
+"""
+
+    plan_result = await run_headless(
+        planning_prompt,
+        auto_allow=auto_allow,
+        json_mode=False,
+        max_iterations=20,
+        cwd=effective_cwd,
+    )
+    plan = _extract_json(plan_result.get("response", ""))
+    if plan is None:
+        print("[PLAN] Could not parse plan, falling back to direct execution")
+        return await run_headless(
+            prompt, auto_allow=auto_allow, json_mode=json_mode, max_iterations=max_iterations, cwd=effective_cwd
+        )
+
+    print(f"[PLAN] {len(plan.get('files_to_modify', []))} files identified")
+    for item in plan.get("files_to_modify", []):
+        print(f"  - {item.get('file')}: {item.get('change')}")
+
+    # Step 2-4: Execution + Verification loop
+    execution_prompt_base = f"""\
+{prompt}
+
+Planned Changes:
+{json.dumps(plan, indent=2)}
+
+CRITICAL WORKFLOW:
+1. Edit files ONE AT A TIME according to the plan.
+2. After each Python file edit, run `python -m py_compile <filepath>`.
+3. After all edits, run `git diff` to verify completeness.
+4. Only declare completion when the checklist is fully satisfied.
+"""
+
+    current_prompt = execution_prompt_base
+    best_result = None
+
+    for attempt in range(1, max_plan_attempts + 1):
+        print(f"\n[EXEC] Attempt {attempt}/{max_plan_attempts}")
+        exec_result = await run_headless(
+            current_prompt,
+            auto_allow=auto_allow,
+            json_mode=False,
+            max_iterations=max_iterations,
+            cwd=effective_cwd,
+        )
+        best_result = exec_result
+
+        # Step 3: Verification
+        current_diff = _get_git_diff(effective_cwd)
+        verification_prompt = f"""\
+We attempted to fix a task. Review the current state and determine if it is complete.
+
+Task:
+{prompt}
+
+Planned Changes:
+{json.dumps(plan, indent=2)}
+
+Current git diff:
+```diff
+{current_diff}
+```
+
+Task:
+1. Compare the git diff against the planned changes.
+2. Identify any missing or incorrect modifications.
+3. Output ONLY a JSON object:
+
+{{
+  "complete": true or false,
+  "missing_changes": [
+    {{
+      "file": "relative/path/to/file.py",
+      "issue": "What is missing or wrong"
+    }}
+  ],
+  "summary": "Brief assessment"
+}}
+
+Output ONLY the JSON object.
+"""
+
+        verify_result = await run_headless(
+            verification_prompt,
+            auto_allow=auto_allow,
+            json_mode=False,
+            max_iterations=15,
+            cwd=effective_cwd,
+        )
+        verification = _extract_json(verify_result.get("response", ""))
+        if verification is None:
+            print("[VERIFY] Could not parse verification, assuming complete")
+            break
+
+        print(f"[VERIFY] complete={verification.get('complete')}, summary={verification.get('summary')}")
+        for missing in verification.get("missing_changes", []):
+            print(f"  - MISSING: {missing.get('file')}: {missing.get('issue')}")
+
+        if verification.get("complete", True):
+            print("[VERIFY] Fix verified as complete")
+            break
+        else:
+            missing = verification.get("missing_changes", [])
+            if missing:
+                extra = "\n\nREMINDERS FROM PREVIOUS ATTEMPT:\n"
+                for m in missing:
+                    extra += f"- {m.get('file')}: {m.get('issue')}\n"
+                current_prompt = execution_prompt_base + extra
+            else:
+                print("[VERIFY] No specific missing items listed, using best effort")
+                break
+    else:
+        print(f"[WARN] Max plan attempts ({max_plan_attempts}) reached")
+
+    if json_mode:
+        import json as json_mod
+        print(json_mod.dumps(best_result, indent=2, default=str))
+
+    return best_result

@@ -119,6 +119,21 @@ async def edit_file_content(
         # Write back
         path.write_text(new_content, encoding="utf-8")
 
+        # Validate Python syntax and rollback if invalid
+        if path.suffix == ".py":
+            import py_compile
+            try:
+                py_compile.compile(str(path), doraise=True)
+            except py_compile.PyCompileError as e:
+                # Rollback to original content
+                path.write_text(original_content, encoding="utf-8")
+                return FileEditOutput(
+                    file_path=str(path),
+                    replacements_made=0,
+                    original_content=original_content,
+                    error=f"Edit introduced Python syntax error, change rolled back: {e}",
+                )
+
         return FileEditOutput(
             file_path=str(path),
             replacements_made=replacements_made,

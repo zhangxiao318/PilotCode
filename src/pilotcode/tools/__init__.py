@@ -24,6 +24,7 @@ from .bash_tool import BashTool  # noqa: F401
 from .file_read_tool import FileReadTool  # noqa: F401
 from .file_write_tool import FileWriteTool  # noqa: F401
 from .file_edit_tool import FileEditTool  # noqa: F401
+from .apply_patch_tool import ApplyPatchTool  # noqa: F401
 from .glob_tool import GlobTool  # noqa: F401
 from .grep_tool import GrepTool  # noqa: F401
 from .ask_user_tool import AskUserQuestionTool  # noqa: F401
