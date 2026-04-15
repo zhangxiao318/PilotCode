@@ -274,7 +274,8 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 3. **Validate Python syntax after editing** - After any `.py` file edit, immediately run `Bash(command="python -m py_compile <filepath>")` to verify the file is syntactically valid.
 4. **Use checklists for multi-file changes** - If a task requires changes in multiple files, explicitly list the files, edit them one by one, and check each off before declaring completion.
 5. **Review with git diff** - Before finishing, run `Bash(command="git diff")` to review all changes and ensure nothing was accidentally modified or left out.
-6. **Rollback on failure** - If a syntax check fails or an edit looks wrong, fix it immediately. Do not leave broken code in the workspace."""
+6. **Rollback on failure** - If a syntax check fails or an edit looks wrong, fix it immediately. Do not leave broken code in the workspace.
+7. **Test local changes with correct import path** - When running tests after editing source code (especially for libraries with a `src/` layout), ensure the local modified version is loaded instead of a system-installed package. Use `PYTHONPATH=src python -m pytest` or `python -m pip install -e .` before testing."""
 
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to API format."""
