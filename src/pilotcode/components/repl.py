@@ -555,12 +555,13 @@ Requirements:
         json_mode=False,
         max_iterations=20,
         cwd=effective_cwd,
+        progress_callback=progress_callback,
     )
     plan = _extract_json(plan_result.get("response", ""))
     if plan is None:
         _log("[PLAN] Could not parse plan, falling back to direct execution")
         return await run_headless(
-            prompt, auto_allow=auto_allow, json_mode=json_mode, max_iterations=max_iterations, cwd=effective_cwd
+            prompt, auto_allow=auto_allow, json_mode=json_mode, max_iterations=max_iterations, cwd=effective_cwd, progress_callback=progress_callback
         )
 
     plan_items = plan.get('files_to_modify', [])
@@ -598,6 +599,7 @@ CRITICAL WORKFLOW:
             json_mode=False,
             max_iterations=execution_max_iterations,
             cwd=effective_cwd,
+            progress_callback=progress_callback,
         )
         best_result = exec_result
 
@@ -642,6 +644,7 @@ Output ONLY the JSON object.
             json_mode=False,
             max_iterations=15,
             cwd=effective_cwd,
+            progress_callback=progress_callback,
         )
         verification = _extract_json(verify_result.get("response", ""))
         if verification is None:

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 from pathlib import Path
 
-from ..components.repl import run_headless
+from ..components.repl import run_headless, classify_task_complexity, run_headless_with_planning
 from ..services.session_persistence import (
     get_session_persistence,
     save_session as persist_save,
@@ -144,16 +144,36 @@ class SessionManager:
 
         # Execute query (outside lock to allow concurrent queries on different sessions)
         try:
-            result = await run_headless(
-                prompt=query,
-                auto_allow=session.auto_allow,
-                json_mode=True,
-                max_iterations=session.max_iterations,
-                # Pass existing messages as context
-                initial_messages=session.messages,
-                # Use effective cwd for tool execution
-                cwd=effective_cwd,
-            )
+            if not session.messages:
+                mode = await classify_task_complexity(query)
+                if mode == "PLAN":
+                    result = await run_headless_with_planning(
+                        prompt=query,
+                        auto_allow=session.auto_allow,
+                        json_mode=True,
+                        max_iterations=session.max_iterations,
+                        cwd=effective_cwd,
+                        progress_callback=lambda msg: None,
+                    )
+                else:
+                    result = await run_headless(
+                        prompt=query,
+                        auto_allow=session.auto_allow,
+                        json_mode=True,
+                        max_iterations=session.max_iterations,
+                        cwd=effective_cwd,
+                    )
+            else:
+                result = await run_headless(
+                    prompt=query,
+                    auto_allow=session.auto_allow,
+                    json_mode=True,
+                    max_iterations=session.max_iterations,
+                    # Pass existing messages as context
+                    initial_messages=session.messages,
+                    # Use effective cwd for tool execution
+                    cwd=effective_cwd,
+                )
 
             # Update session messages with new conversation
             if "messages" in result:

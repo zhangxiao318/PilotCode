@@ -31,6 +31,7 @@ from pilotcode.services.session_context import (  # noqa: E402
     reset_session_context,
 )
 from pilotcode.services.context_compression import get_context_compressor  # noqa: E402
+from pilotcode.components.repl import classify_task_complexity, run_headless_with_planning  # noqa: E402
 
 
 @dataclass
@@ -417,6 +418,30 @@ class SimpleCLI:
                     # Handle web command specially - exit after starting server
                     if result == "__EXIT_TUI__":
                         return False
+                return True
+
+        # Auto-detect task complexity for the first user message
+        if len(self.query_engine.messages) == 0:
+            mode = await classify_task_complexity(text)
+            if mode == "PLAN":
+                print()
+                print("⚡ Task classified as complex — enabling planning and verification mode")
+                print()
+                result = await run_headless_with_planning(
+                    text,
+                    auto_allow=self.auto_allow,
+                    max_iterations=self.max_iterations,
+                    cwd=self.store.get_state().cwd,
+                    progress_callback=print,
+                )
+                # Update query engine messages from result
+                if "messages" in result:
+                    self.query_engine.messages = result["messages"]
+                print()
+                print("📝 Response:")
+                print(result.get("response", ""))
+                print()
+                self.session_context.update_from_message(text, result.get("response", ""))
                 return True
 
         print()
