@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import py_compile
 import re
 import subprocess
 import sys
@@ -190,6 +191,23 @@ class REPL:
                     result_content = exec_result.message
                     self.console.print(f"[red]✗ {exec_result.message}[/red]")
 
+                    # --- Environment diagnosis (interactive REPL mode) ---
+                    from ..utils.env_diagnosis import (
+                        looks_like_environment_error,
+                        diagnose_and_fix_environment,
+                    )
+                    if looks_like_environment_error(result_content):
+                        fixed = await diagnose_and_fix_environment(
+                            result_content,
+                            self.store.get_state().cwd,
+                            auto_allow=self.auto_allow,
+                            interactive=True,
+                        )
+                        if fixed:
+                            result_content += "\n[ENV FIX APPLIED] Environment issue was diagnosed and fixed automatically. You may retry the previous step."
+                        else:
+                            result_content += "\n[ENV FIX FAILED] Could not fix the environment issue automatically. You may need to fix it manually."
+
                 # Add to query engine history
                 self.query_engine.add_tool_result(
                     tool_msg.tool_use_id, result_content, is_error=not exec_result.success
@@ -198,7 +216,13 @@ class REPL:
                 sys.stdout.flush()
 
             # Continue the conversation with tool results
-            prompt = "Please continue based on the tool results above."
+            remaining = max_iterations - iteration
+            if remaining <= 5:
+                prompt = f"URGENT: You have only {remaining} tool-call rounds left. If you know the fix, APPLY IT NOW. If not, make your best edit and declare completion."
+            elif remaining <= 15:
+                prompt = f"REMINDER: {remaining} tool-call rounds remain. Focus on making the actual code changes, not further reading."
+            else:
+                prompt = "Please continue based on the tool results above."
 
         if iteration >= self.max_iterations:
             self.console.print(
@@ -255,16 +279,170 @@ def run_repl(auto_allow: bool = False, max_iterations: int | None = None) -> Non
     asyncio.run(repl.run())
 
 
-async def classify_task_complexity(prompt: str) -> str:
-    """Use a lightweight LLM call to classify whether the task needs planning.
+def assess_project_complexity(cwd: str) -> dict[str, Any]:
+    """Quickly assess codebase size and language complexity via shell commands.
+
+    Returns dict with file_count, language_scores, loc_estimate, complexity_score.
+    """
+    result: dict[str, Any] = {
+        "file_count": 0,
+        "language_scores": {},
+        "loc_estimate": 0,
+        "complexity_score": 0.0,
+    }
+
+    try:
+        # Count total source files (exclude common non-source dirs)
+        cmd = (
+            f"find '{cwd}' -maxdepth 3 -type f "
+            r"\( -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.jsx' -o -name '*.tsx' "
+            r"-o -name '*.java' -o -name '*.cpp' -o -name '*.cc' -o -name '*.c' -o -name '*.h' "
+            r"-o -name '*.go' -o -name '*.rs' -o -name '*.rb' \) "
+            r"! -path '*/node_modules/*' ! -path '*/.git/*' ! -path '*/__pycache__/*' "
+            r"! -path '*/venv/*' ! -path '*/.venv/*' ! -path '*/build/*' "
+            r"| wc -l"
+        )
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+        file_count = int(proc.stdout.strip()) if proc.returncode == 0 else 0
+        result["file_count"] = file_count
+
+        # Language breakdown with weights (higher = more complex)
+        lang_weights = {
+            ".py": 1.0,
+            ".js": 1.0,
+            ".ts": 1.2,
+            ".jsx": 1.2,
+            ".tsx": 1.2,
+            ".java": 1.3,
+            ".go": 1.1,
+            ".rb": 1.0,
+            ".rs": 1.4,
+            ".cpp": 1.5,
+            ".cc": 1.5,
+            ".c": 1.3,
+            ".h": 1.0,
+            ".hpp": 1.5,
+        }
+        lang_scores: dict[str, int] = {}
+        for ext in lang_weights:
+            cmd = f"find '{cwd}' -maxdepth 3 -type f -name '*{ext}' ! -path '*/node_modules/*' ! -path '*/.git/*' | wc -l"
+            proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+            cnt = int(proc.stdout.strip()) if proc.returncode == 0 else 0
+            if cnt > 0:
+                lang_scores[ext.lstrip('.')] = cnt
+        result["language_scores"] = lang_scores
+
+        # LOC estimate via wc -l on top-level source files (fast approximation)
+        cmd = (
+            f"find '{cwd}' -maxdepth 3 -type f "
+            r"\( -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.java' "
+            r"-o -name '*.cpp' -o -name '*.cc' -o -name '*.c' -o -name '*.go' -o -name '*.rs' \) "
+            r"! -path '*/node_modules/*' ! -path '*/.git/*' ! -path '*/__pycache__/*' "
+            r"-exec cat {{}} + 2>/dev/null | wc -l"
+        )
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+        loc = int(proc.stdout.strip()) if proc.returncode == 0 else 0
+        result["loc_estimate"] = loc
+
+        # Compute a composite complexity score
+        complexity = 0.0
+        if file_count > 500:
+            complexity += 2.0
+        elif file_count > 200:
+            complexity += 1.5
+        elif file_count > 50:
+            complexity += 0.8
+        else:
+            complexity += 0.3
+
+        if loc > 100000:
+            complexity += 2.0
+        elif loc > 30000:
+            complexity += 1.0
+        elif loc > 10000:
+            complexity += 0.5
+
+        for ext, cnt in lang_scores.items():
+            weight = lang_weights.get('.' + ext, 1.0)
+            if cnt > 50:
+                complexity += 0.5 * weight
+            elif cnt > 10:
+                complexity += 0.2 * weight
+
+        result["complexity_score"] = round(complexity, 2)
+    except Exception:
+        # If assessment fails, return conservative defaults
+        pass
+
+    return result
+
+
+def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> float:
+    """Compute a composite complexity score (0-10 scale)."""
+    score = project_stats.get("complexity_score", 0.0)
+
+    prompt_lower = prompt.lower()
+
+    # Task-type keywords
+    hard_keywords = [
+        "refactor", "architecture", "restructure", "redesign",
+        "implement", "add support", "introduce",
+        "debug", "fix bug", "bug report", "regression",
+        "cross-file", "multiple files", "across the codebase",
+    ]
+    medium_keywords = [
+        "update", "modify", "change behavior", "enhance",
+        "improve", "optimize", "performance",
+    ]
+    easy_keywords = [
+        "rename", "move", "extract", "simple", "single file",
+        "update docstring", "add comment", "fix typo",
+    ]
+
+    for kw in hard_keywords:
+        if kw in prompt_lower:
+            score += 1.5
+            break
+    for kw in medium_keywords:
+        if kw in prompt_lower:
+            score += 0.8
+            break
+    for kw in easy_keywords:
+        if kw in prompt_lower:
+            score -= 0.5
+            break
+
+    # SWE-bench specific signals
+    if "swe-bench" in prompt_lower or "test_" in prompt_lower or "tests/" in prompt_lower:
+        score += 1.0
+
+    return score
+
+
+async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
+    """Use project scale + LLM to classify whether the task needs planning.
 
     Returns:
         "PLAN" if the task likely involves multiple files or complex logic.
         "DIRECT" for simple, localized tasks.
     """
+    effective_cwd = cwd if cwd else str(os.getcwd())
+    project_stats = assess_project_complexity(effective_cwd)
+    composite_score = _compute_task_complexity(prompt, project_stats)
+
+    # Fast path: very small projects with low scores -> DIRECT
+    if composite_score < 1.5 and project_stats.get("file_count", 0) < 30:
+        return "DIRECT"
+
+    # Fast path: large projects or high scores -> PLAN without LLM overhead
+    if composite_score >= 3.0 or project_stats.get("file_count", 0) > 150:
+        return "PLAN"
+
+    # Use LLM as a tie-breaker for mid-range scores
     classifier_prompt = (
         "You are a task router. Based on the user request, decide if this task "
         "requires multi-step planning before execution.\n\n"
+        f"Project stats: {json.dumps(project_stats)}\n\n"
         "User request:\n"
         f"{prompt}\n\n"
         "Answer with ONLY one word: PLAN or DIRECT.\n"
@@ -297,10 +475,8 @@ async def classify_task_complexity(prompt: str) -> str:
 
         if "DIRECT" in content:
             return "DIRECT"
-        # Default to PLAN for any uncertainty
         return "PLAN"
     except Exception:
-        # If classification fails, default to planning mode to be safe
         return "PLAN"
 
 
@@ -346,7 +522,11 @@ async def run_headless(
 
     # Load initial messages if provided (for session continuity)
     if initial_messages:
-        query_engine.messages = initial_messages
+        from ..types.message import deserialize_messages
+        if isinstance(initial_messages[0], dict):
+            query_engine.messages = deserialize_messages(initial_messages)
+        else:
+            query_engine.messages = initial_messages
 
     tool_executor = get_tool_executor()
 
@@ -368,7 +548,7 @@ async def run_headless(
             turn += 1
             pending_tools: list[ToolUseMessage] = []
 
-            async for result in query_engine.submit_message(current_prompt):
+            async for result in query_engine.submit_message(current_prompt, options={"temperature": 0.0}):
                 msg = result.message
                 if isinstance(msg, AssistantMessage):
                     if isinstance(msg.content, str):
@@ -412,6 +592,24 @@ async def run_headless(
                 else:
                     result_content = exec_result.message
                     success = False
+
+                    # --- Environment diagnosis (headless mode) ---
+                    from pilotcode.utils.env_diagnosis import (
+                        looks_like_environment_error,
+                        diagnose_and_fix_environment,
+                    )
+                    if looks_like_environment_error(result_content):
+                        fixed = await diagnose_and_fix_environment(
+                            result_content,
+                            working_dir,
+                            auto_allow=auto_allow,
+                            progress_callback=progress_callback,
+                            interactive=False,
+                        )
+                        if fixed:
+                            result_content += "\n[ENV FIX APPLIED] Environment issue was diagnosed and fixed automatically. You may retry the previous step."
+                        else:
+                            result_content += "\n[ENV FIX FAILED] Could not fix the environment issue automatically."
 
                 tool_calls_log.append(
                     {
@@ -492,13 +690,27 @@ async def run_headless_with_planning(
     """
 
     def _extract_json(text: str) -> dict | None:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if not match:
-            return None
+        text = text.strip()
+        # 1. Try the whole text as JSON
         try:
-            return json.loads(match.group())
+            return json.loads(text)
         except json.JSONDecodeError:
-            return None
+            pass
+        # 2. Try extracting from markdown code block
+        code_block_match = re.search(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
+        if code_block_match:
+            try:
+                return json.loads(code_block_match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+        # 3. Fall back to first { ... } pair
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+        return None
 
     def _get_git_diff(work_dir: str) -> str:
         try:
@@ -523,45 +735,75 @@ async def run_headless_with_planning(
 
     # Step 1: Planning
     planning_prompt = f"""\
-You are analyzing a task. Create a precise, structured plan for completing it.
+You are analyzing a bug-fixing task. Create a concise plan BEFORE writing any code.
 
 Task:
 {prompt}
 
 Instructions:
-1. Explore the workspace if needed using available tools.
-2. Identify EVERY file that needs to be changed.
-3. For each file, describe the exact change needed in one sentence.
-4. Output your final answer as a JSON object with this exact structure:
+1. Use AT MOST 3-5 quick tool calls (Grep/Glob/FileRead) to locate the bug and confirm key files.
+2. DO NOT deeply explore unrelated code. Stop as soon as you know what needs to change.
+3. Output your final answer as a JSON object with this exact structure:
 
 {{
+  "analysis": {{
+    "root_cause": "One-sentence description of the true root cause",
+    "affected_call_sites": [
+      "file.py:line_or_function"
+    ],
+    "relevant_tests": [
+      "path/to/test_file.py"
+    ]
+  }},
   "files_to_modify": [
     {{
       "file": "relative/path/to/file.py",
       "change": "Brief description of the exact change"
     }}
   ],
+  "risks": [
+    "Potential risk or side effect"
+  ],
   "reasoning": "One-paragraph summary of the strategy"
 }}
 
 Requirements:
 - ONLY include files that MUST be changed.
+- affected_call_sites MUST list every place that calls or uses the changed code.
 - Output ONLY the JSON object, with no markdown or extra text.
+- You have a budget of 12 tool-call rounds for planning. Use them sparingly.
 """
 
     plan_result = await run_headless(
         planning_prompt,
         auto_allow=auto_allow,
         json_mode=False,
-        max_iterations=20,
+        max_iterations=12,
         cwd=effective_cwd,
         progress_callback=progress_callback,
     )
     plan = _extract_json(plan_result.get("response", ""))
     if plan is None:
         _log("[PLAN] Could not parse plan, falling back to direct execution")
+        fallback_budget = max(45, max_iterations)
+        # Carry over planning discoveries so execution doesn't re-explore from scratch
+        planning_summary = plan_result.get("response", "").strip()
+        enriched_prompt = f"""\
+{prompt}
+
+--- Planning Phase Discoveries ---
+{planning_summary}
+
+--- Instruction ---
+Based on the discoveries above, proceed DIRECTLY to implement the fix. Do NOT repeat the same exploration. Make the code changes immediately.
+"""
         return await run_headless(
-            prompt, auto_allow=auto_allow, json_mode=json_mode, max_iterations=max_iterations, cwd=effective_cwd, progress_callback=progress_callback
+            enriched_prompt,
+            auto_allow=auto_allow,
+            json_mode=json_mode,
+            max_iterations=fallback_budget,
+            cwd=effective_cwd,
+            progress_callback=progress_callback,
         )
 
     plan_items = plan.get('files_to_modify', [])
@@ -569,10 +811,10 @@ Requirements:
     for item in plan_items:
         _log(f"  - {item.get('file')}: {item.get('change')}")
 
-    # Scale execution budget per plan item
+    # Scale execution budget per plan item (generous cap)
     num_plan_items = len(plan_items)
-    execution_max_iterations = max(max_iterations, num_plan_items * max_iterations) if num_plan_items > 0 else max_iterations
-    _log(f"[EXEC] Budget: {execution_max_iterations} tool-call rounds ({max_iterations} per plan item × {num_plan_items} items)")
+    execution_max_iterations = max(max_iterations, num_plan_items * 20) if num_plan_items > 0 else max_iterations
+    _log(f"[EXEC] Budget: {execution_max_iterations} tool-call rounds for {num_plan_items} planned items")
 
     # Step 2-4: Execution + Verification loop
     execution_prompt_base = f"""\
@@ -582,17 +824,27 @@ Planned Changes:
 {json.dumps(plan, indent=2)}
 
 CRITICAL WORKFLOW:
-1. Edit files ONE AT A TIME according to the plan.
-2. After each Python file edit, run `python -m py_compile <filepath>`.
-3. After all edits, run `git diff` to verify completeness.
-4. Only declare completion when the checklist is fully satisfied.
+1. Use at most 3 quick Grep calls to confirm call sites. DO NOT over-explore.
+2. Edit files ONE AT A TIME according to the plan. Do NOT read unnecessary files.
+3. After each Python file edit, run `python -m py_compile <filepath>`.
+4. After all edits, run `git diff` to verify completeness.
+5. Run the relevant tests to verify the fix works and does not break existing functionality.
+6. If tests fail, STOP. Analyze the root cause and revise the fix. Do NOT declare completion until tests pass.
+7. Only declare completion when the checklist is fully satisfied.
+
+IMPORTANT: You have a finite budget of tool-call rounds. Make the actual code changes as early as possible. Reading and analysis should be brief.
 """
 
     current_prompt = execution_prompt_base
     best_result = None
 
-    for attempt in range(1, max_plan_attempts + 1):
-        _log(f"[EXEC] Attempt {attempt}/{max_plan_attempts}")
+    effective_max_attempts = max_plan_attempts
+    attempt = 0
+    previous_missing_count: int | None = None
+
+    while attempt < effective_max_attempts:
+        attempt += 1
+        _log(f"[EXEC] Attempt {attempt}/{effective_max_attempts}")
         exec_result = await run_headless(
             current_prompt,
             auto_allow=auto_allow,
@@ -621,8 +873,10 @@ Current git diff:
 
 Task:
 1. Compare the git diff against the planned changes.
-2. Identify any missing or incorrect modifications.
-3. Output ONLY a JSON object:
+2. Check for ANY unintended modifications (changes to files not in the plan).
+3. Verify that all call sites identified in the plan are properly handled.
+4. Identify any missing or incorrect modifications.
+5. Output ONLY a JSON object:
 
 {{
   "complete": true or false,
@@ -631,6 +885,9 @@ Task:
       "file": "relative/path/to/file.py",
       "issue": "What is missing or wrong"
     }}
+  ],
+  "unintended_changes": [
+    "file.py - description of change that was not planned"
   ],
   "summary": "Brief assessment"
 }}
@@ -651,16 +908,24 @@ Output ONLY the JSON object.
             _log("[VERIFY] Could not parse verification, assuming complete")
             break
 
+        missing = verification.get("missing_changes", [])
         print(f"[VERIFY] complete={verification.get('complete')}, summary={verification.get('summary')}")
-        for missing in verification.get("missing_changes", []):
-            print(f"  - MISSING: {missing.get('file')}: {missing.get('issue')}")
+        for m in missing:
+            print(f"  - MISSING: {m.get('file')}: {m.get('issue')}")
 
         if verification.get("complete", True):
             _log("[VERIFY] Fix verified as complete")
             break
         else:
-            missing = verification.get("missing_changes", [])
             if missing:
+                current_missing = len(missing)
+                # If we're making progress, grant extra attempts
+                if previous_missing_count is not None and current_missing < previous_missing_count:
+                    if effective_max_attempts < max(5, max_plan_attempts):
+                        effective_max_attempts += 1
+                        _log(f"[VERIFY] Progress detected ({previous_missing_count} -> {current_missing} missing). Extending budget to {effective_max_attempts}.")
+                previous_missing_count = current_missing
+
                 extra = "\n\nREMINDERS FROM PREVIOUS ATTEMPT:\n"
                 for m in missing:
                     extra += f"- {m.get('file')}: {m.get('issue')}\n"
@@ -669,7 +934,336 @@ Output ONLY the JSON object.
                 _log("[VERIFY] No specific missing items listed, using best effort")
                 break
     else:
-        _log(f"[WARN] Max plan attempts ({max_plan_attempts}) reached")
+        _log(f"[WARN] Max plan attempts ({effective_max_attempts}) reached")
+
+    if json_mode:
+        import json as json_mod
+        print(json_mod.dumps(best_result, indent=2, default=str))
+
+    return best_result
+
+
+# ---------------------------------------------------------------------------
+# Persistent headless execution: auto-retry when patch is empty or has syntax errors
+# ---------------------------------------------------------------------------
+
+_EMPTY_PATCH_PROMPT = """\
+Your previous attempt did NOT produce any code changes (git diff is empty).
+
+This means you either:
+- Did not make any file edits
+- Made edits but then reverted them
+- Failed to locate the correct file to change
+
+CRITICAL: You MUST make actual code changes. Do NOT just analyze and describe the fix.
+
+Requirements:
+1. Re-read the bug report carefully.
+2. Use Grep/FileRead to locate the exact bug location.
+3. Apply FileEdit to FIX the code.
+4. Run `git diff` to confirm the patch is non-empty.
+5. If you are unsure, make the most reasonable fix you can and declare completion.
+"""
+
+_SYNTAX_ERROR_PROMPT = """\
+Your previous fix was applied but it introduces SYNTAX ERRORS:
+
+{errors}
+
+This means your edit corrupted the source file. You MUST fix the syntax before anything else.
+
+Requirements:
+1. Read the EXACT current state of the file(s) you modified.
+2. Identify where the syntax error was introduced (mismatched brackets, wrong indentation, duplicate keywords, etc.).
+3. Apply a CORRECTED edit that fixes the syntax while preserving the intended logic.
+4. Run `python3 -m py_compile <filepath>` to verify the syntax is valid.
+5. Run `git diff` to confirm your changes.
+"""
+
+_REVIEW_PROMPT = """\
+You have produced a patch. Review it for COMPLETENESS before finishing.
+
+Task:
+1. Run `git diff` to see exactly what you changed.
+2. For every file you modified, check if there are OTHER methods or call sites that should also be updated.
+   - If you added a helper method, did you update all places that use the old behavior?
+   - If you changed an API, did you update related methods (deconstruct, formfield, check, etc.)?
+3. Run `python3 -m py_compile` on all modified Python files.
+4. If anything is missing or broken, apply the fixes NOW.
+
+Do NOT declare completion until you are confident the patch is complete and correct.
+"""
+
+
+def _get_git_diff(work_dir: str) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "diff"],
+            cwd=work_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.stdout if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _check_patch_syntax(work_dir: str, patch: str) -> tuple[bool, str]:
+    """Check modified Python files for syntax errors. Returns (ok, error_message)."""
+    if not patch:
+        return True, ""
+    files = set(re.findall(r'^diff --git a/(.+?) b/', patch, re.MULTILINE))
+    errors = []
+    for f in files:
+        if not f.endswith('.py'):
+            continue
+        filepath = os.path.join(work_dir, f)
+        if not os.path.exists(filepath):
+            continue
+        try:
+            py_compile.compile(filepath, doraise=True)
+        except py_compile.PyCompileError as e:
+            errors.append(f"{f}: {e}")
+    if errors:
+        return False, "\n".join(errors)
+    return True, ""
+
+
+def _is_patch_trivial(work_dir: str, patch: str) -> bool:
+    """Heuristic: detect if a patch is just a minor tweak when a structural fix may be needed."""
+    if not patch:
+        return True
+    lines = patch.splitlines()
+    code_lines = [l for l in lines if (l.startswith('+') or l.startswith('-')) and not l.startswith(('+++', '---'))]
+    if len(code_lines) <= 3:
+        return True
+
+    added = [l for l in code_lines if l.startswith('+')]
+    has_new_import = any('import ' in l or 'from ' in l for l in added)
+    has_new_symbol = any('def ' in l or 'class ' in l for l in added)
+    has_signature_change = any('def ' in l for l in code_lines)
+    has_new_file = bool(len(set(re.findall(r'^diff --git a/(.+?) b/', patch, re.MULTILINE))) > 1)
+
+    if has_new_import or has_new_symbol or has_signature_change or has_new_file:
+        return False
+    return len(code_lines) <= 12
+
+
+def _compress_messages_for_retry(
+    messages: list[dict[str, Any]],
+    round_idx: int,
+    patch_len: int,
+    syntax_ok: bool,
+    syntax_errors: str,
+    improved: bool,
+) -> list[dict[str, Any]]:
+    """Compress a long conversation into a minimal history with a failure summary.
+
+    Keeps only the system message and a synthesized user message that tells the LLM
+    what was attempted in the previous round and why it failed, so the next round
+    starts with clean context but retains the lesson.
+    """
+    if not messages:
+        return []
+
+    # Keep the first system message if present
+    compressed = []
+    first = messages[0]
+    if isinstance(first, dict) and first.get("type") == "system":
+        compressed.append(first)
+    elif hasattr(first, "type") and getattr(first, "type", None) == "system":
+        compressed.append(first)
+
+    # Build a concise failure summary
+    if patch_len == 0:
+        outcome = "EMPTY PATCH"
+    elif not syntax_ok:
+        outcome = "SYNTAX ERROR"
+    else:
+        outcome = "INCOMPLETE FIX"
+
+    summary_lines = [
+        f"[Round {round_idx} Summary]",
+        f"Attempt outcome: {outcome}",
+    ]
+    if patch_len > 0:
+        summary_lines.append(f"Patch size: {patch_len} chars")
+    if not syntax_ok:
+        summary_lines.append(f"Syntax issues: {syntax_errors[:500]}")
+    if improved:
+        summary_lines.append("Progress was made compared to the previous round.")
+    else:
+        summary_lines.append("No clear progress compared to the previous round.")
+
+    summary_lines.append(
+        "You must now produce a CORRECT and COMPLETE fix. Avoid repeating the same mistakes."
+    )
+
+    summary_text = "\n".join(summary_lines)
+
+    if compressed:
+        msg_type = "user"
+        if isinstance(compressed[0], dict):
+            compressed.append({"type": msg_type, "content": summary_text})
+        else:
+            from ..types.message import UserMessage
+            compressed.append(UserMessage(content=summary_text))
+    else:
+        from ..types.message import UserMessage
+        compressed.append(UserMessage(content=summary_text))
+
+    return compressed
+
+
+async def run_headless_with_feedback(
+    prompt: str,
+    auto_allow: bool = False,
+    json_mode: bool = False,
+    max_iterations: int = 25,
+    max_rounds: int = 3,
+    cwd: str | None = None,
+    progress_callback: Callable[[str], None] | None = None,
+    use_planning: bool = False,
+) -> dict[str, Any]:
+    """Run headless mode with automatic continuation on empty patch or syntax errors.
+
+    After each round, we check:
+      1. Is the git diff non-empty?
+      2. Do the modified Python files compile?
+      3. Is the patch making progress compared to the previous round?
+    If checks fail, we feed the issue back to the LLM and run another round.
+    If patch is improving, we extend the budget automatically.
+    """
+    effective_cwd = cwd if cwd else str(os.getcwd())
+    best_result: dict[str, Any] = {"response": "", "tool_calls": [], "success": True, "messages": []}
+    current_prompt = prompt
+    messages: list[dict[str, Any]] | None = None
+
+    effective_max_rounds = max_rounds
+    round_idx = 0
+    previous_patch_len = 0
+    previous_syntax_ok = True
+
+    while round_idx < effective_max_rounds:
+        round_idx += 1
+        if progress_callback:
+            progress_callback(f"[PERSIST] Round {round_idx}/{effective_max_rounds} starting")
+        else:
+            print(f"[PERSIST] Round {round_idx}/{effective_max_rounds} starting", flush=True)
+
+        if use_planning:
+            result = await run_headless_with_planning(
+                current_prompt,
+                auto_allow=auto_allow,
+                json_mode=False,
+                max_iterations=max_iterations,
+                cwd=effective_cwd,
+                progress_callback=progress_callback,
+            )
+        else:
+            result = await run_headless(
+                current_prompt,
+                auto_allow=auto_allow,
+                json_mode=False,
+                max_iterations=max_iterations,
+                initial_messages=messages,
+                cwd=effective_cwd,
+                progress_callback=progress_callback,
+            )
+
+        best_result = result
+        messages = result.get("messages")
+
+        patch = _get_git_diff(effective_cwd)
+        patch_len = len(patch)
+        syntax_ok, syntax_errors = _check_patch_syntax(effective_cwd, patch)
+
+        # Detect improvement vs previous round
+        improved = False
+        if patch_len > previous_patch_len * 1.2:
+            improved = True
+        if not previous_syntax_ok and syntax_ok:
+            improved = True
+
+        previous_patch_len = patch_len
+        previous_syntax_ok = syntax_ok
+
+        # Check 1: empty patch
+        if not patch:
+            if round_idx >= effective_max_rounds:
+                break
+            if improved and effective_max_rounds < max(5, max_rounds):
+                effective_max_rounds += 1
+                if progress_callback:
+                    progress_callback("[PERSIST] Response improved but still empty — extending budget")
+                else:
+                    print("[PERSIST] Response improved but still empty — extending budget", flush=True)
+            if progress_callback:
+                progress_callback("[PERSIST] Empty patch detected — continuing")
+            else:
+                print("[PERSIST] Empty patch detected — continuing", flush=True)
+            messages = _compress_messages_for_retry(
+                messages or [], round_idx, patch_len, syntax_ok, syntax_errors, improved
+            )
+            current_prompt = _EMPTY_PATCH_PROMPT
+            continue
+
+        # Check 2: syntax errors
+        if not syntax_ok:
+            if round_idx >= effective_max_rounds:
+                break
+            if improved and effective_max_rounds < max(5, max_rounds):
+                effective_max_rounds += 1
+                if progress_callback:
+                    progress_callback("[PERSIST] Progress on syntax — extending budget")
+                else:
+                    print("[PERSIST] Progress on syntax — extending budget", flush=True)
+            if progress_callback:
+                progress_callback("[PERSIST] Syntax errors detected — continuing")
+            else:
+                print("[PERSIST] Syntax errors detected — continuing", flush=True)
+            messages = _compress_messages_for_retry(
+                messages or [], round_idx, patch_len, syntax_ok, syntax_errors, improved
+            )
+            current_prompt = _SYNTAX_ERROR_PROMPT.format(errors=syntax_errors)
+            continue
+
+        # Check 3: review round (give LLM a chance to self-correct incomplete patches)
+        if round_idx < effective_max_rounds:
+            if progress_callback:
+                progress_callback("[PERSIST] Patch syntax OK — triggering review round")
+            else:
+                print("[PERSIST] Patch syntax OK — triggering review round", flush=True)
+            messages = _compress_messages_for_retry(
+                messages or [], round_idx, patch_len, syntax_ok, syntax_errors, improved
+            )
+            current_prompt = _REVIEW_PROMPT
+            continue
+
+        # All checks passed
+        if progress_callback:
+            progress_callback(f"[PERSIST] Patch valid ({len(patch)} chars) — stopping")
+        else:
+            print(f"[PERSIST] Patch valid ({len(patch)} chars) — stopping", flush=True)
+        break
+
+    # Planning fallback: trivial patch for a task that likely needs structural change
+    final_patch = _get_git_diff(effective_cwd)
+    if final_patch and _is_patch_trivial(effective_cwd, final_patch) and not use_planning:
+        if progress_callback:
+            progress_callback("[PERSIST] Patch looks trivial for this task — falling back to planning mode")
+        else:
+            print("[PERSIST] Patch looks trivial for this task — falling back to planning mode", flush=True)
+        plan_result = await run_headless_with_planning(
+            prompt,
+            auto_allow=auto_allow,
+            json_mode=False,
+            max_iterations=max_iterations,
+            cwd=effective_cwd,
+            progress_callback=progress_callback,
+        )
+        best_result = plan_result
 
     if json_mode:
         import json as json_mod

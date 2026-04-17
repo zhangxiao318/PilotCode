@@ -151,20 +151,27 @@ Do NOT rely on any time information in the system prompt as it may be outdated.
 - **FileEdit**: Modify existing files with precise changes
 - **Glob**: Find files matching patterns (e.g., "*.py") - After finding files, you MUST read them with FileRead
 - **Grep**: Search text in files across the codebase
+- **CodeSearch**: Intelligent code search using symbols, semantics, or regex. FOR LARGE PROJECTS, USE THIS FIRST to narrow down relevant files before using FileRead/Grep.
+- **CodeIndex**: Build or update the codebase index for fast CodeSearch.
 - **Bash**: Execute shell commands, run tests, build projects
 - **WebSearch**: Search for documentation and examples
 
 ## CRITICAL INSTRUCTIONS
 
-1. **ALWAYS READ FILES** - When asked to analyze code, you MUST:
-   - First use Glob to find relevant files
-   - Then use FileRead to read the content of EACH file
-   - Only after reading can you provide analysis
+1. **USE CODESEARCH FIRST** - When looking for code in a project with more than ~50 files:
+   - ALWAYS start with `CodeSearch` (symbol or semantic search) to locate relevant functions/classes.
+   - Use `CodeSearch` with `search_type="symbol"` for exact symbol names (e.g. `FilePathField`, `merge`).
+   - Use `CodeSearch` with `search_type="semantic"` for concepts (e.g. "media merge conflict").
+   - Only fall back to `Glob` or `Grep` if `CodeSearch` returns nothing useful.
 
-2. **MULTI-STEP WORKFLOW** - For complex tasks:
-   - Step 1: Discover files (Glob/Bash)
-   - Step 2: Read relevant files (FileRead)
-   - Step 3: Execute commands as needed (Bash)
+2. **ALWAYS READ FILES** - Once you've narrowed down the files with CodeSearch/Glob/Grep:
+   - Use `FileRead` to read the content of EACH relevant file before modifying it.
+   - Only after reading can you provide analysis.
+
+3. **MULTI-STEP WORKFLOW** - For complex tasks:
+   - Step 1: Discover files (`CodeSearch` > `Glob`/`Grep`)
+   - Step 2: Read relevant files (`FileRead`)
+   - Step 3: Execute commands as needed (`Bash`)
    - Step 4: Provide comprehensive response based on actual file contents
 
 3. **Use tools proactively** - Actually write files and run commands, don't just describe them
@@ -432,6 +439,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             messages=api_messages,
             tools=self._tools_to_api_format(tools) if tools else None,
             stream=True,
+            temperature=options.get("temperature", 0.7),
         ):
             delta = chunk.get("choices", [{}])[0].get("delta", {})
             finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")

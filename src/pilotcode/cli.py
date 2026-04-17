@@ -5,7 +5,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from .components.repl import run_repl, run_headless, run_headless_with_planning, classify_task_complexity
+from .components.repl import run_repl, run_headless, run_headless_with_planning, run_headless_with_feedback, classify_task_complexity
 from .version import __version__
 from .utils.config import is_configured, get_config_manager
 from .utils.configure import run_configure_wizard, format_model_list, get_available_model_names
@@ -181,6 +181,9 @@ def main(
     daemon: bool = typer.Option(
         False, "--daemon", help="Run in daemon mode (stdio) for VS Code integration"
     ),
+    planning: bool = typer.Option(
+        True, "--planning/--no-planning", help="Enable automatic planning mode for complex tasks (default: True)"
+    ),
 ):
     """PilotCode - Python rewrite of Claude Code."""
 
@@ -208,24 +211,29 @@ def main(
         import asyncio
 
         async def _run_headless():
-            mode = await classify_task_complexity(prompt)
+            if planning:
+                mode = await classify_task_complexity(prompt, cwd=cwd)
+            else:
+                mode = "DIRECT"
             if mode == "PLAN":
                 console.print("[dim]⚡ Task classified as complex — enabling planning and verification mode[/dim]")
-                return await run_headless_with_planning(
+                return await run_headless_with_feedback(
                     prompt,
                     auto_allow=auto_allow,
                     json_mode=json_mode,
                     max_iterations=max_iterations,
                     cwd=cwd,
+                    use_planning=True,
                 )
             else:
-                console.print("[dim]⚡ Task classified as simple — running in direct execution mode[/dim]")
-                return await run_headless(
+                console.print("[dim]⚡ Task classified as simple — running in direct execution mode with feedback[/dim]")
+                return await run_headless_with_feedback(
                     prompt,
                     auto_allow=auto_allow,
                     json_mode=json_mode,
                     max_iterations=max_iterations,
                     cwd=cwd,
+                    use_planning=False,
                 )
 
         asyncio.run(_run_headless())

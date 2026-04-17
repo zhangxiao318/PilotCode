@@ -287,27 +287,15 @@ class VectorStore:
 
     def _save_vector_to_disk(self, vector: EmbeddingVector) -> None:
         """Save vector to disk."""
-        try:
-            file_path = self._store_dir / f"{vector.id}.json.gz"
-            with gzip.open(file_path, "wt", encoding="utf-8") as f:
-                json.dump(vector.to_dict(), f)
-        except Exception as e:
-            print(f"Error saving vector: {e}")
+        # Disabled: per-vector disk I/O is too slow for large codebases.
+        # Vectors are kept in memory; persistence is handled at the indexer level.
+        pass
 
     def _load_from_disk(self) -> None:
         """Load vectors from disk."""
-        if not self._store_dir.exists():
-            return
-
-        for file_path in self._store_dir.glob("*.json.gz"):
-            try:
-                with gzip.open(file_path, "rt", encoding="utf-8") as f:
-                    data = json.load(f)
-
-                vector = EmbeddingVector.from_dict(data)
-                self.vectors[vector.id] = vector
-            except Exception:
-                continue
+        # Disabled: loading thousands of per-vector files is too slow.
+        # Vectors are kept in memory only for the current session.
+        pass
 
 
 class EmbeddingService:

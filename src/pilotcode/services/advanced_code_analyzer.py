@@ -142,7 +142,7 @@ class ASTCodeAnalyzer:
             if isinstance(base, ast.Name):
                 class_info.bases.append(base.id)
             elif isinstance(base, ast.Attribute):
-                class_info.bases.append(f"{base.value.id}.{base.attr}")
+                class_info.bases.append(self._get_annotation_name(base))
 
         # Extract decorators
         for decorator in node.decorator_list:

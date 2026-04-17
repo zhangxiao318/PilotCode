@@ -88,6 +88,14 @@ async def code_search_call(
     # Get codebase indexer
     indexer = get_codebase_indexer()
 
+    # Auto-index if empty so the user doesn't need to call CodeIndex first
+    stats = indexer.get_stats()
+    if stats.total_files == 0:
+        try:
+            await indexer.index_codebase(incremental=True)
+        except Exception:
+            pass  # Continue even if auto-index fails
+
     # Build search query
     search_query = SearchQuery(
         text=input_data.query,

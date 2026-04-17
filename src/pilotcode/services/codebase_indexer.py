@@ -199,6 +199,16 @@ class CodebaseIndexer:
         # Event callbacks
         self._on_index_progress: Optional[Callable[[str, int, int], None]] = None
 
+        # Persistent cache path
+        self._cache_path = self.root_path / ".pilotcode_index_cache.json"
+
+        # Try to load cached index
+        try:
+            if self._cache_path.exists():
+                self.import_index(str(self._cache_path))
+        except Exception:
+            pass  # Ignore cache load errors
+
     def set_progress_callback(self, callback: Callable[[str, int, int], None]) -> None:
         """Set callback for indexing progress: (file_path, current, total)."""
         self._on_index_progress = callback
@@ -245,6 +255,12 @@ class CodebaseIndexer:
             self._stats.total_files = len(self._indexed_files)
             self._stats.total_symbols = len(self._symbol_indexer._index.symbols)
             self._stats.last_indexed = time.time()
+
+            # Persist index to disk for reuse across subprocesses
+            try:
+                self.export_index(str(self._cache_path))
+            except Exception:
+                pass  # Ignore cache write errors
 
             return self._stats
 
@@ -821,6 +837,13 @@ class CodebaseIndexer:
 
         Path(output_path).write_text(json.dumps(data, indent=2))
 
+        # Also export symbol index
+        symbol_cache_path = str(Path(output_path).with_suffix(".symbols.json"))
+        try:
+            self._symbol_indexer.export_index(symbol_cache_path)
+        except Exception:
+            pass
+
     def import_index(self, input_path: str) -> None:
         """Import index from file."""
         data = json.loads(Path(input_path).read_text())
@@ -832,6 +855,14 @@ class CodebaseIndexer:
         self._stats.total_files = stats.get("total_files", 0)
         self._stats.total_symbols = stats.get("total_symbols", 0)
         self._stats.last_indexed = stats.get("last_indexed", 0)
+
+        # Also import symbol index
+        symbol_cache_path = str(Path(input_path).with_suffix(".symbols.json"))
+        try:
+            if Path(symbol_cache_path).exists():
+                self._symbol_indexer.import_index(symbol_cache_path)
+        except Exception:
+            pass
 
 
 # Global indexer instances (per root path)
