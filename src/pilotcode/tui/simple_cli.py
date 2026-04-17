@@ -31,7 +31,7 @@ from pilotcode.services.session_context import (  # noqa: E402
     reset_session_context,
 )
 from pilotcode.services.context_compression import get_context_compressor  # noqa: E402
-from pilotcode.components.repl import classify_task_complexity, run_headless_with_planning  # noqa: E402
+from pilotcode.components.repl import classify_task_complexity  # noqa: E402
 
 
 @dataclass
@@ -425,24 +425,10 @@ class SimpleCLI:
             mode = await classify_task_complexity(text)
             if mode == "PLAN":
                 print()
-                print("⚡ Task classified as complex — enabling planning and verification mode")
+                print("⚡ Task classified as complex — I'll break this down into steps and work through it interactively.")
                 print()
-                result = await run_headless_with_planning(
-                    text,
-                    auto_allow=self.auto_allow,
-                    max_iterations=self.max_iterations,
-                    cwd=self.store.get_state().cwd,
-                    progress_callback=print,
-                )
-                # Update query engine messages from result
-                if "messages" in result:
-                    self.query_engine.messages = result["messages"]
-                print()
-                print("📝 Response:")
-                print(result.get("response", ""))
-                print()
-                self.session_context.update_from_message(text, result.get("response", ""))
-                return True
+                # Continue with normal streaming interaction so the CLI stays
+                # responsive and the user can see real-time progress.
 
         print()
         print("🤖 Thinking...")

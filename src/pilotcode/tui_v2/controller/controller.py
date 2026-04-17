@@ -25,7 +25,7 @@ except ImportError:
 
 from pilotcode.permissions import get_tool_executor
 from pilotcode.state.app_state import AppState
-from pilotcode.components.repl import classify_task_complexity, run_headless_with_planning
+from pilotcode.components.repl import classify_task_complexity
 
 
 class UIMessageType(Enum):
@@ -134,21 +134,10 @@ class TUIController:
             if mode == "PLAN":
                 yield UIMessage(
                     type=UIMessageType.SYSTEM,
-                    content="Task classified as complex — enabling planning and verification mode",
+                    content="Task classified as complex — I'll break this down into steps and work through it interactively.",
                 )
-                result = await run_headless_with_planning(
-                    text,
-                    auto_allow=self.auto_allow,
-                    max_iterations=self.max_iterations,
-                    cwd=self.get_app_state().cwd if self.get_app_state else None,
-                    progress_callback=lambda msg: print(msg, flush=True),
-                )
-                yield UIMessage(
-                    type=UIMessageType.ASSISTANT,
-                    content=result.get("response", ""),
-                    is_complete=True,
-                )
-                return
+                # In TUI mode we continue with normal streaming interaction so the UI
+                # stays responsive and the user can see progress in real time.
 
         iteration = 0
         current_prompt = text
