@@ -236,7 +236,10 @@ def main(
                     use_planning=False,
                 )
 
-        asyncio.run(_run_headless())
+        try:
+            asyncio.run(_run_headless())
+        except KeyboardInterrupt:
+            print("\nInterrupted. Goodbye! 👋")
         raise typer.Exit()
 
     if web:
@@ -306,7 +309,10 @@ def main(
         from .tui_v2.app import EnhancedApp
 
         app_tui = EnhancedApp(auto_allow=auto_allow, max_iterations=max_iterations)
-        app_tui.run()
+        try:
+            app_tui.run()
+        except KeyboardInterrupt:
+            print("\nGoodbye! 👋")
     else:
         # Show banner for REPL mode
         banner = f"""
@@ -318,7 +324,10 @@ def main(
         console.print(Panel(banner, border_style="cyan"))
 
         # Start REPL with options
-        run_repl(auto_allow=auto_allow, max_iterations=max_iterations)
+        try:
+            run_repl(auto_allow=auto_allow, max_iterations=max_iterations)
+        except KeyboardInterrupt:
+            print("\nGoodbye! 👋")
 
 
 @app.command()

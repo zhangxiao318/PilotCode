@@ -276,7 +276,10 @@ def run_repl(auto_allow: bool = False, max_iterations: int | None = None) -> Non
         max_iterations: Maximum tool execution rounds per query (default: 25)
     """
     repl = REPL(auto_allow=auto_allow, max_iterations=max_iterations)
-    asyncio.run(repl.run())
+    try:
+        asyncio.run(repl.run())
+    except KeyboardInterrupt:
+        print("\nGoodbye! 👋")
 
 
 def assess_project_complexity(cwd: str) -> dict[str, Any]:
