@@ -46,5 +46,8 @@ websockets>=12.0.0
 # HTTP server
 aiohttp>=3.9.0
 
+# Web browser automation (optional)
+playwright>=1.40.0
+
 # Validation (optional, for input validation)
 # zod  # Not available on PyPI, uses type hints instead

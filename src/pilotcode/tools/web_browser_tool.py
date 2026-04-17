@@ -80,12 +80,24 @@ async def get_or_create_session(headless: bool = True) -> BrowserSession:
             raise ImportError("playwright is required. Install with: pip install playwright")
 
         p = await async_playwright().start()
-        browser = await p.chromium.launch(headless=headless)
+        browser = await p.chromium.launch(
+            headless=headless,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+            ],
+        )
         context = await browser.new_context(
             viewport={"width": 1280, "height": 720},
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            locale="zh-CN",
         )
         page = await context.new_page()
+        # Hide navigator.webdriver to avoid bot detection
+        await page.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
 
         _browser_session = BrowserSession(browser=browser, context=context, page=page)
 
