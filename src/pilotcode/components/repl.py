@@ -889,7 +889,9 @@ Requirements:
         plan = _extract_json(plan_text)
 
     if plan is None:
-        _log("[PLAN] Could not parse plan, falling back to direct execution")
+        _log(f"[PLAN] Could not parse plan. Raw text ({len(plan_text)} chars):")
+        _log(plan_text[:1000])
+        _log("[PLAN] Falling back to direct execution")
         fallback_budget = max(45, max_iterations)
         enriched_prompt = f"""\
 {prompt}
