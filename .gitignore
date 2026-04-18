@@ -51,3 +51,13 @@ TEMP_*
 DOCUMENTS_*_REPORT.md
 share_*.json
 uv.lock
+
+# SWE-bench evaluation artifacts
+logs/
+predictions_*.jsonl
+pilotcode.*.json
+gold.pilotcode_*.json
+run_single_instance.py
+setup_cache_env.sh
+batch_instances.txt
+src/pilotcode/utils/env_diagnosis.py
