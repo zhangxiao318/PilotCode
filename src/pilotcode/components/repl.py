@@ -492,6 +492,40 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
         return "PLAN"
 
 
+async def _generate_structured_output(
+    system_prompt: str,
+    user_prompt: str,
+    progress_callback: Callable[[str], None] | None = None,
+) -> str:
+    """Generate structured text output directly from the LLM without tool calls.
+
+    Use this for Plan and Verify phases where the model should ONLY output
+    structured text (e.g. JSON) and must NOT explore the codebase further.
+    """
+    if progress_callback:
+        progress_callback("[LLM] Sending structured output request (no tools)")
+
+    client = get_model_client()
+    messages = [
+        Message(role="system", content=system_prompt),
+        Message(role="user", content=user_prompt),
+    ]
+
+    response_text = ""
+    async for chunk in client.chat_completion(
+        messages=messages,
+        tools=None,
+        temperature=0.0,
+        stream=False,
+    ):
+        delta = chunk.get("choices", [{}])[0].get("delta", {})
+        content = delta.get("content", "")
+        if content:
+            response_text += content
+
+    return response_text.strip()
+
+
 async def run_headless(
     prompt: str,
     auto_allow: bool = False,
@@ -847,16 +881,12 @@ Requirements:
 - affected_call_sites MUST list every place that calls or uses the changed code.
 - Output ONLY the JSON object, with no markdown or extra text.
 """
-        plan_result = await run_headless(
-            plan_prompt,
-            auto_allow=auto_allow,
-            json_mode=False,
-            max_iterations=15,
-            cwd=effective_cwd,
+        plan_text = await _generate_structured_output(
+            system_prompt="You are a software architect. Output ONLY a JSON object. No markdown, no explanations outside the JSON.",
+            user_prompt=plan_prompt,
             progress_callback=progress_callback,
-            read_only=True,
         )
-        plan = _extract_json(plan_result.get("response", ""))
+        plan = _extract_json(plan_text)
 
     if plan is None:
         _log("[PLAN] Could not parse plan, falling back to direct execution")
@@ -1000,16 +1030,12 @@ Verification Steps:
 
 Output ONLY the JSON object.
 """
-        verify_result = await run_headless(
-            verification_prompt,
-            auto_allow=auto_allow,
-            json_mode=False,
-            max_iterations=15,
-            cwd=effective_cwd,
+        verify_text = await _generate_structured_output(
+            system_prompt="You are a verification specialist. Output ONLY a JSON object. No markdown, no explanations outside the JSON.",
+            user_prompt=verification_prompt,
             progress_callback=progress_callback,
-            read_only=True,
         )
-        verification = _extract_json(verify_result.get("response", ""))
+        verification = _extract_json(verify_text)
         if verification is None:
             _log("[VERIFY] Could not parse verification, assuming complete")
             break
@@ -1165,8 +1191,8 @@ def _extract_discoveries_from_messages(messages: list[dict[str, Any]]) -> str:
         return ""
     discoveries: list[str] = []
     for msg in messages:
-        msg_type = msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
-        if msg_type in ("tool", "tool_result"):
+        role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+        if role == "tool":
             name = msg.get("name", "") if isinstance(msg, dict) else getattr(msg, "name", "")
             content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
             if name in ("FileRead", "Grep", "CodeSearch", "Glob"):
