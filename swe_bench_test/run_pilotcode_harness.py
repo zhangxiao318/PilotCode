@@ -481,6 +481,18 @@ def review_patch_locally(work_dir: str, patch: str, plan: dict | None = None) ->
         if not call_sites:
             issues.append("Plan has no affected_call_sites — verify the fix handles all callers.")
 
+        # 3e. Check patch size is reasonable (not bloated with unrelated changes)
+        # Estimate expected patch size: ~150 chars per planned file + 100 per hunk
+        hunks = len(re.findall(r'^@@ ', patch, re.MULTILINE))
+        expected_min = max(50, len(planned_files) * 50)
+        expected_max = max(500, len(planned_files) * 300 + hunks * 200)
+        if len(patch) > expected_max:
+            issues.append(f"Patch is suspiciously large ({len(patch)}b > expected ~{expected_max}b). Likely contains unrelated changes like docstrings, whitespace, or double-escaped strings.")
+
+        # 3f. Check for common anti-patterns in patch
+        if '\\\\' in patch:
+            issues.append("Patch contains double-escaped backslashes (\\\\) — likely FileEdit escaping bug. Use single backslashes.")
+
     else:
         # General review without plan
         for f in modified_files:

@@ -34,9 +34,25 @@ ENV_ERROR_SIGNATURES = [
 ]
 
 
+# Signatures that indicate a TEST failure, not an environment issue
+TEST_FAILURE_SIGNATURES = [
+    "FAILED",
+    "passed,",
+    "failed,",
+    "ERROR collecting",
+    "AssertionError",
+    "assert ",
+    "_pytest",
+]
+
+
 def looks_like_environment_error(output: str) -> bool:
     """Heuristic to decide whether a failure is caused by the environment."""
     if not output:
+        return False
+    # If output clearly looks like pytest results, skip diagnosis
+    test_fail_count = sum(1 for sig in TEST_FAILURE_SIGNATURES if sig in output)
+    if test_fail_count >= 2:
         return False
     for sig in ENV_ERROR_SIGNATURES:
         if sig in output:

@@ -1105,13 +1105,14 @@ Planned changes detail:
 CRITICAL WORKFLOW:
 1. Read each planned file ONCE, then edit it immediately. NO additional exploration.
 2. ONLY use FileEdit on files in the "Files to modify" list above.
-3. After editing a Python file, run `python3 -m py_compile <filepath>`.
-4. After all edits, run `git diff` to verify ONLY planned files were changed.
-5. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
+3. When using FileEdit, copy the EXACT old_string from the file. Do NOT double-escape backslashes (e.g., use `\s` not `\\s`, use `\n` not `\\n`).
+4. After editing a Python file, run `python3 -m py_compile <filepath>`.
+5. After all edits, run `git diff` to verify ONLY planned files were changed.
+6. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
    - If tests fail due to MISSING C extensions, ImportError, or broken local environment, DO NOT keep retrying. 
    - Just verify your changes with `git diff` and declare completion.
-6. If tests fail due to actual logic bugs in YOUR changes, STOP and revise.
-7. Only declare completion when the fix is verified.
+7. If tests fail due to actual logic bugs in YOUR changes, STOP and revise.
+8. Only declare completion when the fix is verified.
 
 CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste turns reading files not in the plan.
 """
@@ -1207,9 +1208,16 @@ Output ONLY the JSON object.
                         _log(f"[VERIFY] Progress detected ({previous_missing_count} -> {current_missing} missing). Extending budget to {effective_max_attempts}.")
                 previous_missing_count = current_missing
 
-                extra = "\n\nREMINDERS FROM PREVIOUS ATTEMPT:\n"
+                extra = "\n\n=== CRITICAL: PREVIOUS ATTEMPT FAILED VERIFICATION ===\n"
+                extra += "You MUST fix ALL of the following issues in this attempt. Do NOT ignore them.\n\n"
                 for m in missing:
-                    extra += f"- {m.get('file')}: {m.get('issue')}\n"
+                    extra += f"- FIX REQUIRED in {m.get('file')}: {m.get('issue')}\n"
+                unintended = verification.get("unintended_changes", [])
+                if unintended:
+                    extra += "\n- REMOVE these unintended changes:\n"
+                    for u in unintended:
+                        extra += f"  - {u}\n"
+                extra += "\nBefore declaring completion, ensure ALL verification issues are resolved.\n"
                 current_prompt = execution_prompt_base + extra
             else:
                 _log("[VERIFY] No specific missing items listed, using best effort")
