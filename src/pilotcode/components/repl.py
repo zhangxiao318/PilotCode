@@ -1054,25 +1054,44 @@ Proceed DIRECTLY to implement the fix. Make the code changes immediately.
     execution_max_iterations = max(max_iterations, num_plan_items * 20) if num_plan_items > 0 else max_iterations
     _log(f"[AGENT] Phase 3/4: Executing fix (budget: {execution_max_iterations} turns)")
 
+    planned_files = [item.get("file") for item in plan_items if item.get("file")]
+    planned_files_str = "\n".join(f"  - {f}" for f in planned_files) if planned_files else "  (none specified)"
+    call_sites = plan.get("analysis", {}).get("affected_call_sites", [])
+    call_sites_str = "\n".join(f"  - {s}" for s in call_sites) if call_sites else "  (none specified)"
+    relevant_tests = plan.get("analysis", {}).get("relevant_tests", [])
+    tests_str = "\n".join(f"  - {t}" for t in relevant_tests) if relevant_tests else "  (none specified)"
+
     execution_prompt_base = f"""\
 {prompt}
 
 Exploration Context:
 {explore_summary[:2000]}
 
-Planned Changes:
+=== AUTHORIZED PLAN — FOLLOW EXACTLY ===
+You MUST only modify files listed below. Do NOT create new files or modify unrelated files.
+
+Files to modify:
+{planned_files_str}
+
+Affected call sites to verify:
+{call_sites_str}
+
+Relevant tests to run:
+{tests_str}
+
+Planned changes detail:
 {json.dumps(plan, indent=2)}
 
 CRITICAL WORKFLOW:
-1. Use at most 3 quick Grep calls to confirm call sites. DO NOT over-explore.
-2. Edit files ONE AT A TIME according to the plan. Do NOT read unnecessary files.
-3. After each Python file edit, run `python -m py_compile <filepath>`.
-4. After all edits, run `git diff` to verify completeness.
-5. Run the relevant tests to verify the fix works and does not break existing functionality.
-6. If tests fail, STOP. Analyze the root cause and revise the fix. Do NOT declare completion until tests pass.
-7. Only declare completion when the checklist is fully satisfied.
+1. Read each planned file ONCE, then edit it immediately. NO additional exploration.
+2. ONLY use FileEdit on files in the "Files to modify" list above.
+3. After editing a Python file, run `python3 -m py_compile <filepath>`.
+4. After all edits, run `git diff` to verify ONLY planned files were changed.
+5. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
+6. If tests fail, STOP and revise. Do NOT declare completion until tests pass.
+7. Only declare completion when the fix is verified.
 
-IMPORTANT: You have a finite budget of tool-call rounds. Make the actual code changes as early as possible. Reading and analysis should be brief.
+CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste turns reading files not in the plan.
 """
 
     current_prompt = execution_prompt_base
@@ -1100,8 +1119,9 @@ IMPORTANT: You have a finite budget of tool-call rounds. Make the actual code ch
         # ========================================================================
         _log("[AGENT] Phase 4/4: Verifying fix (read-only)")
         current_diff = _get_git_diff(effective_cwd)
+        planned_files = [item.get("file") for item in plan_items if item.get("file")]
         verification_prompt = f"""\
-You are a verification specialist. Your job is not to confirm the implementation works — it's to try to break it.
+You are a verification specialist. Focus ONLY on the planned files listed below.
 
 === CRITICAL: READ-ONLY MODE — NO FILE MODIFICATIONS ===
 You CANNOT modify any files in the project directory.
@@ -1109,19 +1129,22 @@ You CANNOT modify any files in the project directory.
 Task:
 {prompt}
 
+Planned files to check:
+{chr(10).join(planned_files) if planned_files else "(none specified)"}
+
 Planned Changes:
 {json.dumps(plan, indent=2)}
 
-Current git diff:
+Current git diff (ONLY check files in the plan):
 ```diff
 {current_diff}
 ```
 
-Verification Steps:
-1. Compare the git diff against the planned changes.
-2. Check for ANY unintended modifications (changes to files not in the plan).
-3. Verify that all call sites identified in the plan are properly handled.
-4. Identify any missing or incorrect modifications.
+Verification Steps (FOCUS on planned files only):
+1. Were ALL planned files modified correctly?
+2. Were any planned files NOT modified (missing changes)?
+3. Were any NON-planned files modified (unintended changes)?
+4. Were the call sites from the plan properly handled?
 5. Output ONLY a JSON object:
 
 {{
@@ -1171,6 +1194,11 @@ Output ONLY the JSON object.
                 break
     else:
         _log(f"[WARN] Max plan attempts ({effective_max_attempts}) reached")
+
+    # Attach plan to result so callers (e.g. harness) can use it for review/test focus
+    if best_result is not None and isinstance(best_result, dict):
+        best_result["plan"] = plan
+        best_result["explore_summary"] = explore_summary
 
     if json_mode:
         import json as json_mod

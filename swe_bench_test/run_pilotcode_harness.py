@@ -191,6 +191,40 @@ def run_pilotcode(
     return rc, full_output
 
 
+def run_pilotcode_direct(
+    cwd: str, prompt: str, max_iterations: int = DEFAULT_MAX_ITERATIONS, planning: bool = False
+) -> tuple[int, str, dict | None]:
+    """Run PilotCode directly (bypass CLI) for full result access including plan.
+
+    Returns (exit_code, output_text, result_dict). result_dict is None on failure.
+    """
+    import asyncio
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+    from pilotcode.components.repl import run_headless_with_planning
+
+    async def _run():
+        return await run_headless_with_planning(
+            prompt,
+            auto_allow=True,
+            max_iterations=max_iterations,
+            cwd=cwd,
+            progress_callback=lambda msg: print(msg, flush=True),
+        )
+
+    try:
+        result = asyncio.run(_run())
+        output = result.get("response", "")
+        # Include tool call summary in output
+        tool_calls = result.get("tool_calls", [])
+        if tool_calls:
+            output += f"\n\n[TOOLS] {len(tool_calls)} tool calls executed."
+        return 0, output, result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return 1, str(e), None
+
+
 def get_git_diff(cwd: str) -> str:
     """Get unified git diff from cwd."""
     rc, stdout, _ = run_cmd("git diff", cwd=cwd)
@@ -357,6 +391,28 @@ Original Bug Report:
 {problem_statement}
 """
 
+REVIEW_REDESIGN_PROMPT_TEMPLATE = """\
+A code review of your patch identified the following issues (tests could not be run locally):
+
+{issues}
+
+You MUST address ALL issues before declaring completion.
+
+Requirements:
+1. Re-read the file(s) you modified to understand each issue.
+2. Apply corrected edits that fix every issue while preserving the intended bug fix.
+3. Run `git diff` to verify the patch is non-empty and correct.
+4. Run `python3 -m py_compile <file>` on any modified Python files to verify syntax.
+
+Previous patch (for reference only):
+```diff
+{patch}
+```
+
+Original Bug Report:
+{problem_statement}
+"""
+
 
 def check_patch_syntax(work_dir: str, patch: str) -> tuple[bool, str]:
     """Check modified Python files for syntax errors. Returns (ok, error_message)."""
@@ -378,6 +434,80 @@ def check_patch_syntax(work_dir: str, patch: str) -> tuple[bool, str]:
     if errors:
         return False, "\n".join(errors)
     return True, ""
+
+
+def review_patch_locally(work_dir: str, patch: str, plan: dict | None = None) -> tuple[bool, list[str]]:
+    """Static review of patch when tests cannot be run. Returns (passed, list_of_issues).
+
+    Focuses on plan files when a plan is provided, otherwise does general checks.
+    """
+    issues: list[str] = []
+
+    # 1. Trivial patch check
+    if not patch or len(patch.strip()) < 20:
+        issues.append("Patch is empty or too small (likely incomplete).")
+        return False, issues
+
+    # 2. Extract modified files
+    modified_files = set(re.findall(r'^diff --git a/(.+?) b/', patch, re.MULTILINE))
+    if not modified_files:
+        issues.append("Patch contains no diff hunks.")
+        return False, issues
+
+    # 3. If plan is provided, do plan-focused review
+    if plan:
+        planned_files = {item.get("file", "") for item in plan.get("files_to_modify", []) if item.get("file")}
+        planned_files.discard("")
+
+        # 3a. Check all planned files were modified
+        missing_planned = planned_files - modified_files
+        if missing_planned:
+            issues.append(f"Planned files NOT modified: {', '.join(sorted(missing_planned))}")
+
+        # 3b. Check for unintended modifications
+        extra = modified_files - planned_files
+        if extra:
+            issues.append(f"Unintended file modifications (not in plan): {', '.join(sorted(extra))}")
+
+        # 3c. Check planned files exist
+        for f in planned_files & modified_files:
+            full = os.path.join(work_dir, f)
+            if not os.path.exists(full):
+                issues.append(f"Planned file does not exist in repo: {f}")
+
+        # 3d. Check call sites were considered
+        call_sites = plan.get("analysis", {}).get("affected_call_sites", [])
+        if not call_sites:
+            issues.append("Plan has no affected_call_sites — verify the fix handles all callers.")
+
+    else:
+        # General review without plan
+        for f in modified_files:
+            full = os.path.join(work_dir, f)
+            if not os.path.exists(full):
+                issues.append(f"Modified file does not exist: {f}")
+
+    # 4. Detect test file modifications (always check)
+    test_files = {f for f in modified_files if "/tests/" in f or "/test_" in f}
+    if test_files:
+        issues.append(f"Patch modifies test files which may conflict with SWE-bench test_patch: {', '.join(sorted(test_files))}")
+
+    # 5. Detect trivial hunks (only whitespace/blank changes)
+    for hunk in re.split(r'^diff --git a/', patch, flags=re.MULTILINE)[1:]:
+        code_lines = [
+            ln for ln in hunk.splitlines()
+            if ln.startswith(("+", "-")) and not ln.startswith(("+++", "---"))
+        ]
+        meaningful = [
+            ln for ln in code_lines
+            if len(ln.strip()) > 3 and ln.strip() not in ("+", "-", "+ ", "- ")
+        ]
+        if not meaningful and code_lines:
+            fname_match = re.search(r'^\S+\s+b/(.+)', hunk)
+            fname = fname_match.group(1) if fname_match else "unknown"
+            issues.append(f"File {fname}: patch appears to contain only whitespace/comment changes.")
+
+    return len(issues) == 0, issues
 
 
 def extract_test_errors(test_output: str, max_chars: int = 4000) -> str:
@@ -428,6 +558,8 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
 
     patch = ""
     output = ""
+    plan: dict | None = None
+    result_dict: dict | None = None
     # Classify once upfront
     import asyncio
     use_planning = asyncio.run(classify_task_complexity(prompt, cwd=work_dir)) == "PLAN"
@@ -442,7 +574,12 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
             use_planning = True
         max_iter = 45 if use_planning else DEFAULT_MAX_ITERATIONS
         try:
-            rc, output = run_pilotcode(work_dir, prompt, max_iterations=max_iter, planning=use_planning)
+            if use_planning:
+                # Direct call to capture plan for focused review/tests
+                rc, output, result_dict = run_pilotcode_direct(work_dir, prompt, max_iterations=max_iter, planning=True)
+                plan = result_dict.get("plan") if result_dict else None
+            else:
+                rc, output = run_pilotcode(work_dir, prompt, max_iterations=max_iter, planning=False)
             print(output)
             if rc != 0:
                 print(f"[WARNING] PilotCode exited with code {rc} for {instance_id}")
@@ -453,6 +590,11 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
         print(f"[INFO] Generated patch length: {len(patch)} chars (attempt {attempt + 1})")
         if patch:
             break
+
+    # Print plan summary if available
+    if plan:
+        files = [item.get("file") for item in plan.get("files_to_modify", []) if item.get("file")]
+        print(f"[PLAN] {len(files)} planned files: {', '.join(files)}")
 
     # --- Syntax check + test-feedback redesign loop ---
     if patch:
@@ -484,7 +626,34 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
 
             # 2) Run tests (skip for astropy — local env always broken)
             if repo == "astropy/astropy":
-                print(f"[SKIP] Local tests disabled for astropy instances — relying on Docker eval.")
+                print(f"[SKIP] Local tests disabled for astropy instances — running static review instead.")
+                review_ok, review_issues = review_patch_locally(work_dir, patch, plan=plan)
+                if not review_ok:
+                    print(f"[REVIEW {redesign + 1}] Issues found:")
+                    for issue in review_issues:
+                        print(f"  - {issue}")
+                    redesign_prompt = REVIEW_REDESIGN_PROMPT_TEMPLATE.format(
+                        issues="\n".join(f"- {i}" for i in review_issues),
+                        patch=patch,
+                        problem_statement=problem_statement,
+                    )
+                    run_cmd(f"git checkout {base_commit}", cwd=work_dir)
+                    try:
+                        rc, output = run_pilotcode(work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS)
+                        print(output)
+                        new_patch = get_git_diff(work_dir)
+                        if new_patch:
+                            patch = new_patch
+                            print(f"[INFO] Review redesign generated new patch ({len(patch)} chars)")
+                            continue
+                        else:
+                            print(f"[WARN] Review redesign produced empty patch, keeping previous patch.")
+                            break
+                    except subprocess.TimeoutExpired as e:
+                        print(f"[ERROR] Review redesign timed out for {instance_id}: {e}")
+                        break
+                else:
+                    print(f"[REVIEW] Patch passed static review — relying on Docker eval.")
                 break
 
             print(f"[TEST] Running tests for {instance_id} (redesign {redesign})...")
@@ -494,8 +663,34 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                 break
 
             if looks_like_environment_error(test_output):
-                print(f"[WARN] Test environment issue detected, skipping test feedback.")
-                print(f"       {test_output[:200].replace(chr(10), ' ')}")
+                print(f"[WARN] Test environment issue detected — running static review instead.")
+                review_ok, review_issues = review_patch_locally(work_dir, patch, plan=plan)
+                if not review_ok:
+                    print(f"[REVIEW {redesign + 1}] Issues found:")
+                    for issue in review_issues:
+                        print(f"  - {issue}")
+                    redesign_prompt = REVIEW_REDESIGN_PROMPT_TEMPLATE.format(
+                        issues="\n".join(f"- {i}" for i in review_issues),
+                        patch=patch,
+                        problem_statement=problem_statement,
+                    )
+                    run_cmd(f"git checkout {base_commit}", cwd=work_dir)
+                    try:
+                        rc, output = run_pilotcode(work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS)
+                        print(output)
+                        new_patch = get_git_diff(work_dir)
+                        if new_patch:
+                            patch = new_patch
+                            print(f"[INFO] Review redesign generated new patch ({len(patch)} chars)")
+                            continue
+                        else:
+                            print(f"[WARN] Review redesign produced empty patch, keeping previous patch.")
+                            break
+                    except subprocess.TimeoutExpired as e:
+                        print(f"[ERROR] Review redesign timed out for {instance_id}: {e}")
+                        break
+                else:
+                    print(f"[REVIEW] Patch passed static review — relying on Docker eval.")
                 break
 
             print(f"[REDESIGN {redesign + 1}] Tests failed. Feeding errors back to LLM...")
