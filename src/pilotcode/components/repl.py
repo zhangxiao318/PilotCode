@@ -1143,6 +1143,15 @@ CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste t
         _log("[AGENT] Phase 4/4: Verifying fix (read-only)")
         current_diff = _get_git_diff(effective_cwd)
         planned_files = [item.get("file") for item in plan_items if item.get("file")]
+
+        # Compute diff stats for quality checks
+        diff_hunks = len(re.findall(r'^@@ ', current_diff, re.MULTILINE))
+        diff_lines = current_diff.count('\n')
+        has_double_escape = '\\\\' in current_diff
+        # Count docstring/comment/whitespace-only changes
+        docstring_changes = len(re.findall(r'^[\+\-].*"""|^[\+\-].*# ', current_diff, re.MULTILINE))
+        whitespace_changes = len(re.findall(r'^[\+\-]\s*$|^[\+\-]\s+$', current_diff, re.MULTILINE))
+
         verification_prompt = f"""\
 You are a verification specialist. Focus ONLY on the planned files listed below.
 
@@ -1163,12 +1172,21 @@ Current git diff (ONLY check files in the plan):
 {current_diff}
 ```
 
+Diff Stats:
+- Total lines changed: {diff_lines}
+- Hunks: {diff_hunks}
+- Docstring/comment only changes: {docstring_changes}
+- Whitespace-only changes: {whitespace_changes}
+- Double-escaped backslashes detected: {'YES — CRITICAL BUG' if has_double_escape else 'No'}
+
 Verification Steps (FOCUS on planned files only):
 1. Were ALL planned files modified correctly?
 2. Were any planned files NOT modified (missing changes)?
 3. Were any NON-planned files modified (unintended changes)?
 4. Were the call sites from the plan properly handled?
-5. Output ONLY a JSON object:
+5. Is the diff suspiciously large with many docstring/whitespace changes? If so, list them as unintended_changes.
+6. Are there double-escaped backslashes (\\\\) in the diff? If yes, mark complete=false and report it.
+7. Output ONLY a JSON object:
 
 {{
   "complete": true or false,
