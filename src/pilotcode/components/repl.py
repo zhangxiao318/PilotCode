@@ -1105,13 +1105,14 @@ Planned changes detail:
 CRITICAL WORKFLOW:
 1. Read each planned file ONCE, then edit it immediately. NO additional exploration.
 2. ONLY use FileEdit on files in the "Files to modify" list above.
-3. After editing a Python file, run `python3 -m py_compile <filepath>`.
-4. After all edits, run `git diff` to verify ONLY planned files were changed.
-5. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
+3. When using FileEdit, copy the EXACT old_string from the file. Do NOT double-escape backslashes (e.g., use `\s` not `\\s`, use `\n` not `\\n`).
+4. After editing a Python file, run `python3 -m py_compile <filepath>`.
+5. After all edits, run `git diff` to verify ONLY planned files were changed.
+6. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
    - If tests fail due to MISSING C extensions, ImportError, or broken local environment, DO NOT keep retrying. 
    - Just verify your changes with `git diff` and declare completion.
-6. If tests fail due to actual logic bugs in YOUR changes, STOP and revise.
-7. Only declare completion when the fix is verified.
+7. If tests fail due to actual logic bugs in YOUR changes, STOP and revise.
+8. Only declare completion when the fix is verified.
 
 CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste turns reading files not in the plan.
 """
@@ -1142,6 +1143,15 @@ CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste t
         _log("[AGENT] Phase 4/4: Verifying fix (read-only)")
         current_diff = _get_git_diff(effective_cwd)
         planned_files = [item.get("file") for item in plan_items if item.get("file")]
+
+        # Compute diff stats for quality checks
+        diff_hunks = len(re.findall(r'^@@ ', current_diff, re.MULTILINE))
+        diff_lines = current_diff.count('\n')
+        has_double_escape = '\\\\' in current_diff
+        # Count docstring/comment/whitespace-only changes
+        docstring_changes = len(re.findall(r'^[\+\-].*"""|^[\+\-].*# ', current_diff, re.MULTILINE))
+        whitespace_changes = len(re.findall(r'^[\+\-]\s*$|^[\+\-]\s+$', current_diff, re.MULTILINE))
+
         verification_prompt = f"""\
 You are a verification specialist. Focus ONLY on the planned files listed below.
 
@@ -1162,12 +1172,21 @@ Current git diff (ONLY check files in the plan):
 {current_diff}
 ```
 
+Diff Stats:
+- Total lines changed: {diff_lines}
+- Hunks: {diff_hunks}
+- Docstring/comment only changes: {docstring_changes}
+- Whitespace-only changes: {whitespace_changes}
+- Double-escaped backslashes detected: {'YES — CRITICAL BUG' if has_double_escape else 'No'}
+
 Verification Steps (FOCUS on planned files only):
 1. Were ALL planned files modified correctly?
 2. Were any planned files NOT modified (missing changes)?
 3. Were any NON-planned files modified (unintended changes)?
 4. Were the call sites from the plan properly handled?
-5. Output ONLY a JSON object:
+5. Is the diff suspiciously large with many docstring/whitespace changes? If so, list them as unintended_changes.
+6. Are there double-escaped backslashes (\\\\) in the diff? If yes, mark complete=false and report it.
+7. Output ONLY a JSON object:
 
 {{
   "complete": true or false,
@@ -1207,9 +1226,16 @@ Output ONLY the JSON object.
                         _log(f"[VERIFY] Progress detected ({previous_missing_count} -> {current_missing} missing). Extending budget to {effective_max_attempts}.")
                 previous_missing_count = current_missing
 
-                extra = "\n\nREMINDERS FROM PREVIOUS ATTEMPT:\n"
+                extra = "\n\n=== CRITICAL: PREVIOUS ATTEMPT FAILED VERIFICATION ===\n"
+                extra += "You MUST fix ALL of the following issues in this attempt. Do NOT ignore them.\n\n"
                 for m in missing:
-                    extra += f"- {m.get('file')}: {m.get('issue')}\n"
+                    extra += f"- FIX REQUIRED in {m.get('file')}: {m.get('issue')}\n"
+                unintended = verification.get("unintended_changes", [])
+                if unintended:
+                    extra += "\n- REMOVE these unintended changes:\n"
+                    for u in unintended:
+                        extra += f"  - {u}\n"
+                extra += "\nBefore declaring completion, ensure ALL verification issues are resolved.\n"
                 current_prompt = execution_prompt_base + extra
             else:
                 _log("[VERIFY] No specific missing items listed, using best effort")
