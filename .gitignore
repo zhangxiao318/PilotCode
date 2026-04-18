@@ -57,6 +57,8 @@ logs/
 predictions_*.jsonl
 pilotcode.*.json
 gold.pilotcode_*.json
+pilotcode_v2.*.json
+SWE_BENCH_TEST_REPORT.md
 run_single_instance.py
 setup_cache_env.sh
 batch_instances.txt
