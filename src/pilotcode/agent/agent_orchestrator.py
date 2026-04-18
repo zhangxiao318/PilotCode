@@ -530,29 +530,46 @@ Previous discussion:
         lines = [line.strip() for line in decomposition.split("\n") if line.strip()]
         return [line for line in lines if line and not line.startswith(("```", "["))]
 
-    async def _run_agent_task(self, agent: SubAgent, prompt: str) -> str:
-        """Run a single agent task with basic tool support."""
+    async def _run_agent_task(
+        self,
+        agent: SubAgent,
+        prompt: str,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> str:
+        """Run a single agent task with tool support and allowed_tools filtering."""
         import json
-        from ..permissions.tool_executor import ToolExecutor
         from ..tools.registry import get_tool_by_name
+        from ..utils.model_client import Message as MCMessage
 
         client = get_model_client()
-        ToolExecutor()
         ctx = ToolUseContext()
 
+        # Build tool list from allowed_tools
+        all_tools = []
+        for tool_name in agent.definition.allowed_tools:
+            tool = get_tool_by_name(tool_name)
+            if tool:
+                all_tools.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema.model_json_schema(),
+                })
+
         messages = [
-            {"role": "system", "content": agent.definition.system_prompt},
-            {"role": "user", "content": prompt},
+            MCMessage(role="system", content=agent.definition.system_prompt),
+            MCMessage(role="user", content=prompt),
         ]
 
         agent.status = AgentStatus.RUNNING
-        max_iterations = 15  # Increased from 5 to allow more complex tasks
+        max_iterations = agent.definition.max_turns
 
         try:
             for _ in range(max_iterations):
                 agent.turns += 1
                 response = None
-                async for chunk in client.chat_completion(messages, stream=False):
+                async for chunk in client.chat_completion(
+                    messages, tools=all_tools, stream=False
+                ):
                     response = chunk
 
                 if not response:
@@ -563,20 +580,45 @@ Previous discussion:
                 finish_reason = choice.get("finish_reason")
 
                 content = delta.get("content", "")
-                if content:
+                tool_calls_raw = delta.get("tool_calls")
+
+                # Build assistant message with content and/or tool_calls
+                assistant_msg = MCMessage(role="assistant", content=content or None)
+                if tool_calls_raw:
+                    assistant_msg.tool_calls = []
+                    for tc in tool_calls_raw:
+                        fn = tc.get("function", {})
+                        assistant_msg.tool_calls.append(
+                            {
+                                "id": tc.get("id", ""),
+                                "type": "function",
+                                "function": {
+                                    "name": fn.get("name", ""),
+                                    "arguments": fn.get("arguments", "{}"),
+                                },
+                            }
+                        )
+                messages.append(assistant_msg)
+
+                if content and not tool_calls_raw:
+                    # Plain text response (no tool calls) — agent is done
                     agent.status = AgentStatus.COMPLETED
+                    agent.output = content
                     return content
 
-                tool_calls = delta.get("tool_calls")
-                if tool_calls and finish_reason == "tool_calls":
+                if tool_calls_raw:
                     # Execute tool calls and feed results back
-                    for tc in tool_calls:
+                    for tc in tool_calls_raw:
                         fn = tc.get("function", {})
                         tool_name = fn.get("name", "")
+                        tool_call_id = tc.get("id", "")
                         try:
                             args = json.loads(fn.get("arguments", "{}"))
                         except json.JSONDecodeError:
                             args = {}
+
+                        if progress_callback:
+                            progress_callback(f"  [agent {agent.definition.name}] {tool_name}")
 
                         tool = get_tool_by_name(tool_name)
                         if tool and tool.name in agent.definition.allowed_tools:
@@ -592,15 +634,18 @@ Previous discussion:
                                 else (result.error or "Error")
                             )
                         else:
-                            result_text = f"Tool {tool_name} not available or not allowed"
+                            result_text = (
+                                f"Tool '{tool_name}' is not available or not allowed "
+                                f"for this agent. Allowed tools: {agent.definition.allowed_tools}"
+                            )
 
                         messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": tc.get("id", ""),
-                                "name": tool_name,
-                                "content": result_text,
-                            }
+                            MCMessage(
+                                role="tool",
+                                content=result_text,
+                                tool_call_id=tool_call_id,
+                                name=tool_name,
+                            )
                         )
                     continue
 
@@ -608,13 +653,14 @@ Previous discussion:
                 break
 
             agent.status = AgentStatus.COMPLETED
-            return ""
-        except Exception:
+            return agent.output or ""
+        except Exception as e:
             import traceback
 
             traceback.print_exc()
             agent.status = AgentStatus.FAILED
-            return f"[Agent {agent.agent_id} would process: {prompt[:100]}...]"
+            agent.error = str(e)
+            return f"[Agent {agent.agent_id} failed: {e}]"
 
 
 # Global orchestrator

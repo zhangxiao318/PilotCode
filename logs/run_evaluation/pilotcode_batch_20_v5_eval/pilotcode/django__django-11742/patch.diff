@@ -1,0 +1,64 @@
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index 9ce46e3..1bacbce 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -955,6 +955,7 @@ class CharField(Field):
+         return [
+             *super().check(**kwargs),
+             *self._check_max_length_attribute(**kwargs),
++            *self._check_choices_max_length(**kwargs),
+         ]
+ 
+     def _check_max_length_attribute(self, **kwargs):
+@@ -978,6 +979,51 @@ class CharField(Field):
+         else:
+             return []
+ 
++    def _check_choices_max_length(self, **kwargs):
++        if not self.choices:
++            return []
++
++        def get_longest_choice_length(choices):
++            """Get the length of the longest choice value (not display name)."""
++            longest = 0
++            for choice_group in choices:
++                try:
++                    group_name, group_choices = choice_group
++                except (TypeError, ValueError):
++                    # No groups, choices in the form [value, display]
++                    value, human_name = group_name, group_choices
++                    longest = max(longest, len(str(value)))
++                    continue
++
++                # Handle nested choices like [('OK', 'Good'), ('Longer', 'Longer')]
++                if isinstance(group_choices, (list, tuple)):
++                    for choice in group_choices:
++                        if isinstance(choice, (list, tuple)) and len(choice) >= 2:
++                            value, human_name = choice[0], choice[1]
++                            longest = max(longest, len(str(value)))
++                else:
++                    if isinstance(group_choices, (list, tuple)):
++                        for choice in group_choices:
++                            if isinstance(choice, (list, tuple)) and len(choice) >= 2:
++                                value, human_name = choice[0], choice[1]
++                                longest = max(longest, len(str(value)))
++                        else:
++                            for value, human_name in group_choices:
++                                longest = max(longest, len(str(value)))
++                        longest = max(longest, len(str(value)))
++            return longest
++
++        longest_choice_length = get_longest_choice_length(self.choices)
++        if self.max_length < longest_choice_length:
++            return [
++                checks.Error(
++                    "'max_length' is too small to fit the longest value "                    "in 'choices' (%d characters)." % longest_choice_length,
++                    obj=self,
++                    id='fields.E009',
++                )
++            ]
++        return []
++
+     def cast_db_type(self, connection):
+         if self.max_length is None:
+             return connection.ops.cast_char_field_without_max_length

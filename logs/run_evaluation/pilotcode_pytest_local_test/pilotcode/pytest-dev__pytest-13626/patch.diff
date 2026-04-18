@@ -1,0 +1,53 @@
+diff --git a/src/_pytest/runner.py b/src/_pytest/runner.py
+index 18d3591ab..30d7043e5 100644
+--- a/src/_pytest/runner.py
++++ b/src/_pytest/runner.py
+@@ -128,24 +128,30 @@ def runtestprotocol(
+         # This only happens if the item is re-run, as is done by
+         # pytest-rerunfailures.
+         item._initrequest()  # type: ignore[attr-defined]
+-    rep = call_and_report(item, "setup", log)
+-    reports = [rep]
+-    if rep.passed:
+-        if item.config.getoption("setupshow", False):
+-            show_test_item(item)
+-        if not item.config.getoption("setuponly", False):
+-            reports.append(call_and_report(item, "call", log))
+-    # If the session is about to fail or stop, teardown everything - this is
+-    # necessary to correctly report fixture teardown errors (see #11706)
+-    if item.session.shouldfail or item.session.shouldstop:
+-        nextitem = None
+-    reports.append(call_and_report(item, "teardown", log, nextitem=nextitem))
+-    # After all teardown hooks have been called
+-    # want funcargs and request info to go away.
+-    if hasrequest:
+-        item._request = False  # type: ignore[attr-defined]
+-        item.funcargs = None  # type: ignore[attr-defined]
+-    return reports
++    try:
++        rep = call_and_report(item, "setup", log)
++        reports = [rep]
++        if rep.passed:
++            if item.config.getoption("setupshow", False):
++                show_test_item(item)
++            if not item.config.getoption("setuponly", False):
++                reports.append(call_and_report(item, "call", log))
++        # If the session is about to fail or stop, teardown everything - this is
++        # necessary to correctly report fixture teardown errors (see #11706)
++        if item.session.shouldfail or item.session.shouldstop:
++            nextitem = None
++        reports.append(call_and_report(item, "teardown", log, nextitem=nextitem))
++        # After all teardown hooks have been called
++        # want funcargs and request info to go away.
++        if hasrequest:
++            item._request = False  # type: ignore[attr-defined]
++            item.funcargs = None  # type: ignore[attr-defined]
++        return reports
++    finally:
++        # Ensure cleanup happens even if an exception is re-raised
++        if hasrequest:
++            item._request = False  # type: ignore[attr-defined]
++            item.funcargs = None  # type: ignore[attr-defined]
+ 
+ 
+ def show_test_item(item: Item) -> None:

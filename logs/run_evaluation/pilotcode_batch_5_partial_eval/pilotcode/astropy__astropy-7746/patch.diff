@@ -1,0 +1,244 @@
+diff --git a/CITATION b/CITATION
+deleted file mode 120000
+index 6f48430..0000000
+--- a/CITATION
++++ /dev/null
+@@ -1 +0,0 @@
+-astropy/CITATION
+\ No newline at end of file
+diff --git a/CITATION b/CITATION
+new file mode 100644
+index 0000000..07a41b5
+--- /dev/null
++++ b/CITATION
+@@ -0,0 +1,108 @@
++If you use Astropy for work/research presented in a publication (whether
++directly, or as a dependency to another package), we recommend and encourage
++the following acknowledgment:
++
++  This research made use of Astropy, a community-developed core Python package
++  for Astronomy (Astropy Collaboration, 2018).
++
++where (Astropy Collaboration, 2018) is a citation to this paper (currently
++under review):
++
++  http://adsabs.harvard.edu/abs/2018arXiv180102634T
++
++
++An earlier paper is also available describing the status of the package at
++the time of v0.2. If you have used Astropy for a long time, you are
++encouraged to acknowledge both papers:
++
++  This research made use of Astropy, a community-developed core Python package
++  for Astronomy (Astropy Collaboration, 2013, 2018).
++
++where (Astropy Collaboration, 2013) is a citation to this paper:
++
++  http://adsabs.harvard.edu/abs/2013A%26A...558A..33A
++
++We encourage you to also include citations to the papers in the main text
++wherever appropriate.
++
++
++Recommended BibTeX entries for the above citations are:
++
++@ARTICLE{2018arXiv180102634T,
++   author = {{The Astropy Collaboration} and {Price-Whelan}, A.~M. and {Sip{\H o}cz}, B.~M. and
++   {G{\"u}nther}, H.~M. and {Lim}, P.~L. and {Crawford}, S.~M. and
++   {Conseil}, S. and {Shupe}, D.~L. and {Craig}, M.~W. and {Dencheva}, N. and
++   {Ginsburg}, A. and {VanderPlas}, J.~T. and {Bradley}, L.~D. and
++   {P{\'e}rez-Su{\'a}rez}, D. and {de Val-Borro}, M. and {Aldcroft}, T.~L. and
++   {Cruz}, K.~L. and {Robitaille}, T.~P. and {Tollerud}, E.~J. and
++   {Ardelean}, C. and {Babej}, T. and {Bachetti}, M. and {Bakanov}, A.~V. and
++   {Bamford}, S.~P. and {Barentsen}, G. and {Barmby}, P. and {Baumbach}, A. and
++   {Berry}, K.~L. and {Biscani}, F. and {Boquien}, M. and {Bostroem}, K.~A. and
++   {Bouma}, L.~G. and {Brammer}, G.~B. and {Bray}, E.~M. and {Breytenbach}, H. and
++   {Buddelmeijer}, H. and {Burke}, D.~J. and {Calderone}, G. and
++   {Cano Rodr{\'{\i}}guez}, J.~L. and {Cara}, M. and {Cardoso}, J.~V.~M. and
++   {Cheedella}, S. and {Copin}, Y. and {Crichton}, D. and {D{\'A}vella}, D. and
++   {Deil}, C. and {Depagne}, {\'E}. and {Dietrich}, J.~P. and {Donath}, A. and
++   {Droettboom}, M. and {Earl}, N. and {Erben}, T. and {Fabbro}, S. and
++   {Ferreira}, L.~A. and {Finethy}, T. and {Fox}, R.~T. and {Garrison}, L.~H. and
++   {Gibbons}, S.~L.~J. and {Goldstein}, D.~A. and {Gommers}, R. and
++   {Greco}, J.~P. and {Greenfield}, P. and {Groener}, A.~M. and
++   {Grollier}, F. and {Hagen}, A. and {Hirst}, P. and {Homeier}, D. and
++   {Horton}, A.~J. and {Hosseinzadeh}, G. and {Hu}, L. and {Hunkeler}, J.~S. and
++   {Ivezi{\'c}}, {\v Z}. and {Jain}, A. and {Jenness}, T. and {Kanarek}, G. and
++   {Kendrew}, S. and {Kern}, N.~S. and {Kerzendorf}, W.~E. and
++   {Khvalko}, A. and {King}, J. and {Kirkby}, D. and {Kulkarni}, A.~M. and
++   {Kumar}, A. and {Lee}, A. and {Lenz}, D. and {Littlefair}, S.~P. and
++   {Ma}, Z. and {Macleod}, D.~M. and {Mastropietro}, M. and {McCully}, C. and
++   {Montagnac}, S. and {Morris}, B.~M. and {Mueller}, M. and {Mumford}, S.~J. and
++   {Muna}, D. and {Murphy}, N.~A. and {Nelson}, S. and {Nguyen}, G.~H. and
++   {Ninan}, J.~P. and {N{\"o}the}, M. and {Ogaz}, S. and {Oh}, S. and
++   {Parejko}, J.~K. and {Parley}, N. and {Pascual}, S. and {Patil}, R. and
++   {Patil}, A.~A. and {Plunkett}, A.~L. and {Prochaska}, J.~X. and
++   {Rastogi}, T. and {Reddy Janga}, V. and {Sabater}, J. and {Sakurikar}, P. and
++   {Seifert}, M. and {Sherbert}, L.~E. and {Sherwood-Taylor}, H. and
++   {Shih}, A.~Y. and {Sick}, J. and {Silbiger}, M.~T. and {Singanamalla}, S. and
++   {Singer}, L.~P. and {Sladen}, P.~H. and {Sooley}, K.~A. and
++   {Sornarajah}, S. and {Streicher}, O. and {Teuben}, P. and {Thomas}, S.~W. and
++   {Tremblay}, G.~R. and {Turner}, J.~E.~H. and {Terr{\'o}n}, V. and
++   {van Kerkwijk}, M.~H. and {de la Vega}, A. and {Watkins}, L.~L. and
++   {Weaver}, B.~A. and {Whitmore}, J.~B. and {Woillez}, J. and
++   {Zabalza}, V.},
++    title = "{The Astropy Project: Building an inclusive, open-science project and status of the v2.0 core package}",
++  journal = {ArXiv e-prints},
++archivePrefix = "arXiv",
++   eprint = {1801.02634},
++ primaryClass = "astro-ph.IM",
++ keywords = {Astrophysics - Instrumentation and Methods for Astrophysics},
++     year = 2018,
++    month = jan,
++   adsurl = {http://adsabs.harvard.edu/abs/2018arXiv180102634T},
++  adsnote = {Provided by the SAO/NASA Astrophysics Data System}
++}
++
++@ARTICLE{2013A&A...558A..33A,
++   author = {{Astropy Collaboration} and {Robitaille}, T.~P. and {Tollerud}, E.~J. and
++    {Greenfield}, P. and {Droettboom}, M. and {Bray}, E. and {Aldcroft}, T. and
++    {Davis}, M. and {Ginsburg}, A. and {Price-Whelan}, A.~M. and
++    {Kerzendorf}, W.~E. and {Conley}, A. and {Crighton}, N. and
++    {Barbary}, K. and {Muna}, D. and {Ferguson}, H. and {Grollier}, F. and
++    {Parikh}, M.~M. and {Nair}, P.~H. and {Unther}, H.~M. and {Deil}, C. and
++    {Woillez}, J. and {Conseil}, S. and {Kramer}, R. and {Turner}, J.~E.~H. and
++    {Singer}, L. and {Fox}, R. and {Weaver}, B.~A. and {Zabalza}, V. and
++    {Edwards}, Z.~I. and {Azalee Bostroem}, K. and {Burke}, D.~J. and
++    {Casey}, A.~R. and {Crawford}, S.~M. and {Dencheva}, N. and
++    {Ely}, J. and {Jenness}, T. and {Labrie}, K. and {Lian Lim}, P. and
++    {Pierfederici}, F. and {Pontzen}, A. and {Ptak}, A. and {Refsdal}, B. and
++    {Servillat}, M. and {Streicher}, O.},
++    title = "{Astropy: A community Python package for astronomy}",
++  journal = {\aap},
++ keywords = {methods: data analysis, methods: miscellaneous, virtual observatory tools},
++     year = 2013,
++    month = oct,
++   volume = 558,
++      eid = {A33},
++    pages = {A33},
++      doi = {10.1051/0004-6361/201322068},
++   adsurl = {http://adsabs.harvard.edu/abs/2013A%26A...558A..33A},
++  adsnote = {Provided by the SAO/NASA Astrophysics Data System}
++}
+diff --git a/astropy/extern/configobj/configobj.py b/astropy/extern/configobj/configobj.py
+index 3e646ea..c207fd4 100755
+--- a/astropy/extern/configobj/configobj.py
++++ b/astropy/extern/configobj/configobj.py
+@@ -17,6 +17,7 @@ import os
+ import re
+ import sys
+ import collections
++from collections.abc import Mapping
+ 
+ from codecs import BOM_UTF8, BOM_UTF16, BOM_UTF16_BE, BOM_UTF16_LE
+ 
+@@ -594,7 +595,7 @@ class Section(dict):
+             if key not in self:
+                 self.sections.append(key)
+             dict.__setitem__(self, key, value)
+-        elif isinstance(value, collections.Mapping) and not unrepr:
++        elif isinstance(value, Mapping) and not unrepr:
+             # First create the new depth level,
+             # then create the section
+             if key not in self:
+@@ -801,8 +802,8 @@ class Section(dict):
+         ConfigObj({'section1': {'option1': 'False', 'subsection': {'more_options': 'False'}}})
+         """
+         for key, val in list(indict.items()):
+-            if (key in self and isinstance(self[key], collections.Mapping) and
+-                                isinstance(val, collections.Mapping)):
++            if (key in self and isinstance(self[key], Mapping) and
++                                isinstance(val, Mapping)):
+                 self[key].merge(val)
+             else:
+                 self[key] = val
+@@ -2434,7 +2435,7 @@ def flatten_errors(cfg, res, levels=None, results=None):
+     for (key, val) in list(res.items()):
+         if val == True:
+             continue
+-        if isinstance(cfg.get(key), collections.Mapping):
++        if isinstance(cfg.get(key), Mapping):
+             # Go down one level
+             levels.append(key)
+             flatten_errors(cfg[key], val, levels, results)
+diff --git a/astropy/io/fits/header.py b/astropy/io/fits/header.py
+index aa65c5c..519aa78 100644
+--- a/astropy/io/fits/header.py
++++ b/astropy/io/fits/header.py
+@@ -1976,7 +1976,7 @@ class _CardAccessor:
+         return False
+ 
+ 
+-collections.Mapping.register(_CardAccessor)
++Mapping.register(_CardAccessor)
+ collections.Sequence.register(_CardAccessor)
+ 
+ 
+diff --git a/astropy/table/operations.py b/astropy/table/operations.py
+index dea57bc..09b9de9 100644
+--- a/astropy/table/operations.py
++++ b/astropy/table/operations.py
+@@ -753,7 +753,7 @@ def _join(left, right, keys=None, join_type='inner',
+                     .format(out_name, out[out_name].__class__.__name__))
+ 
+     # If col_name_map supplied as a dict input, then update.
+-    if isinstance(_col_name_map, collections.Mapping):
++    if isinstance(_col_name_map, Mapping):
+         _col_name_map.update(col_name_map)
+ 
+     return out
+@@ -862,7 +862,7 @@ def _vstack(arrays, join_type='outer', col_name_map=None, metadata_conflicts='wa
+             idx0 = idx1
+ 
+     # If col_name_map supplied as a dict input, then update.
+-    if isinstance(_col_name_map, collections.Mapping):
++    if isinstance(_col_name_map, Mapping):
+         _col_name_map.update(col_name_map)
+ 
+     return out
+@@ -960,7 +960,7 @@ def _hstack(arrays, join_type='outer', uniq_col_name='{col_name}_{table_name}',
+                 out[out_name] = array[name][:n_rows]
+ 
+     # If col_name_map supplied as a dict input, then update.
+-    if isinstance(_col_name_map, collections.Mapping):
++    if isinstance(_col_name_map, Mapping):
+         _col_name_map.update(col_name_map)
+ 
+     return out
+diff --git a/astropy/utils/metadata.py b/astropy/utils/metadata.py
+index f5cc22a..b5cd282 100644
+--- a/astropy/utils/metadata.py
++++ b/astropy/utils/metadata.py
+@@ -374,7 +374,7 @@ class MetaData:
+     """
+     A descriptor for classes that have a ``meta`` property.
+ 
+-    This can be set to any valid `~collections.Mapping`.
++    This can be set to any valid `~Mapping`.
+ 
+     Parameters
+     ----------
+@@ -407,7 +407,7 @@ class MetaData:
+         if value is None:
+             instance._meta = OrderedDict()
+         else:
+-            if isinstance(value, collections.Mapping):
++            if isinstance(value, Mapping):
+                 if self.copy:
+                     instance._meta = deepcopy(value)
+                 else:
+diff --git a/astropy/wcs/wcs.py b/astropy/wcs/wcs.py
+index d3a06f2..c3bce26 100644
+--- a/astropy/wcs/wcs.py
++++ b/astropy/wcs/wcs.py
+@@ -1218,6 +1218,10 @@ reduce these to 2 dimensions using the naxis kwarg.
+                 raise ValueError(
+                     "Coordinate arrays are not broadcastable to each other")
+ 
++            # Handle empty arrays - return empty arrays early
++            if axes[0].size == 0:
++                return [np.array([]) for _ in range(len(axes))]
++
+             xy = np.hstack([x.reshape((x.size, 1)) for x in axes])
+ 
+             if ra_dec_order and sky == 'input':

@@ -1,12 +1,14 @@
 """REPL for PilotCode - Programming Assistant with Tool Support."""
 
 import asyncio
+import hashlib
 import json
 import os
 import py_compile
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Callable
 
 from rich.console import Console
@@ -34,7 +36,12 @@ class REPL:
     # Default max iterations for tool calls (configurable via env var)
     DEFAULT_MAX_ITERATIONS = 25
 
-    def __init__(self, auto_allow: bool = False, max_iterations: int | None = None):
+    WRITE_TOOLS = {
+        "FileEdit", "FileWrite", "ApplyPatch", "NotebookEdit",
+        "CronCreate", "CronDelete", "CronUpdate",
+    }
+
+    def __init__(self, auto_allow: bool = False, max_iterations: int | None = None, read_only: bool = False):
         self.console = Console()
         self.store = Store(get_default_app_state())
         set_global_store(self.store)
@@ -53,8 +60,10 @@ class REPL:
             message="❯ ", style=Style.from_dict({"prompt": "#00aa00 bold"})
         )
 
-        # Enable all tools
+        # Enable tools (filter out write tools in read-only mode)
         tools = get_all_tools()
+        if read_only:
+            tools = [t for t in tools if t.name not in self.WRITE_TOOLS]
         self.query_engine = QueryEngine(
             QueryEngineConfig(
                 cwd=self.store.get_state().cwd,
@@ -491,6 +500,7 @@ async def run_headless(
     initial_messages: list | None = None,
     cwd: str | None = None,
     progress_callback: Callable[[str], None] | None = None,
+    read_only: bool = False,
 ) -> dict[str, Any]:
     """Run a single prompt in headless mode and return structured output.
 
@@ -513,7 +523,13 @@ async def run_headless(
 
     working_dir = store.get_state().cwd
 
+    write_tools = {
+        "FileEdit", "FileWrite", "ApplyPatch", "NotebookEdit",
+        "CronCreate", "CronDelete", "CronUpdate",
+    }
     tools = get_all_tools()
+    if read_only:
+        tools = [t for t in tools if t.name not in write_tools]
     query_engine = QueryEngine(
         QueryEngineConfig(
             cwd=working_dir,
@@ -571,6 +587,10 @@ async def run_headless(
             if not pending_tools:
                 break
 
+            write_tool_names = {
+                "FileEdit", "FileWrite", "ApplyPatch", "NotebookEdit",
+                "CronCreate", "CronDelete", "CronUpdate",
+            }
             for tool_idx, tool_msg in enumerate(pending_tools, 1):
                 if not json_mode:
                     tool_progress = f"[turn {turn}/{max_iterations}]"
@@ -581,20 +601,30 @@ async def run_headless(
                         progress_callback(progress_msg)
                     else:
                         print(progress_msg, flush=True)
-                context = ToolUseContext(
-                    get_app_state=store.get_state, set_app_state=lambda f: store.set_state(f)
-                )
-                exec_result = await tool_executor.execute_tool_by_name(
-                    tool_msg.name, tool_msg.input, context
-                )
-                result_content = ""
-                if exec_result.success and exec_result.result:
+
+                # Enforce read-only mode at execution layer as well
+                if read_only and tool_msg.name in write_tool_names:
                     result_content = (
-                        str(exec_result.result.data) if exec_result.result.data else "Success"
+                        f"Tool '{tool_msg.name}' is not available in read-only planning mode. "
+                        "You can only use read-only tools (FileRead, Grep, Glob, CodeSearch, Bash, GitDiff, etc.)."
                     )
-                else:
-                    result_content = exec_result.message
                     success = False
+                    exec_result = None
+                else:
+                    context = ToolUseContext(
+                        get_app_state=store.get_state, set_app_state=lambda f: store.set_state(f)
+                    )
+                    exec_result = await tool_executor.execute_tool_by_name(
+                        tool_msg.name, tool_msg.input, context
+                    )
+                    result_content = ""
+                    if exec_result.success and exec_result.result:
+                        result_content = (
+                            str(exec_result.result.data) if exec_result.result.data else "Success"
+                        )
+                    else:
+                        result_content = exec_result.message
+                        success = False
 
                     # --- Environment diagnosis (headless mode) ---
                     from pilotcode.utils.env_diagnosis import (
@@ -736,66 +766,106 @@ async def run_headless_with_planning(
         else:
             print(msg)
 
-    # Step 1: Planning
-    planning_prompt = f"""\
-You are analyzing a bug-fixing task. Create a concise plan BEFORE writing any code.
+    # ========================================================================
+    # PHASE 1: EXPLORE (read-only)
+    # ========================================================================
+    _log("[AGENT] Phase 1/4: Exploring codebase (read-only)")
+    explore_prompt = f"""\
+You are an expert codebase explorer. Your job is to locate the bug and understand the relevant code.
+
+=== CRITICAL: READ-ONLY MODE — NO FILE MODIFICATIONS ===
+You CANNOT create, modify, or delete any files.
 
 Task:
 {prompt}
 
 Instructions:
-1. Use AT MOST 3-5 quick tool calls (Grep/Glob/FileRead) to locate the bug and confirm key files.
-2. DO NOT deeply explore unrelated code. Stop as soon as you know what needs to change.
-3. Output your final answer as a JSON object with this exact structure:
+1. Use Glob/Grep to find relevant files quickly.
+2. Read the key source files to understand the bug.
+3. Identify: the exact file(s), function(s), and line(s) where the bug occurs.
+4. Find all call sites that use the affected code.
+5. Locate relevant test files.
+6. Report your findings concisely but thoroughly.
 
-{{
-  "analysis": {{
-    "root_cause": "One-sentence description of the true root cause",
-    "affected_call_sites": [
-      "file.py:line_or_function"
-    ],
-    "relevant_tests": [
-      "path/to/test_file.py"
-    ]
-  }},
-  "files_to_modify": [
-    {{
-      "file": "relative/path/to/file.py",
-      "change": "Brief description of the exact change"
-    }}
-  ],
-  "risks": [
-    "Potential risk or side effect"
-  ],
-  "reasoning": "One-paragraph summary of the strategy"
-}}
-
-Requirements:
-- ONLY include files that MUST be changed.
-- affected_call_sites MUST list every place that calls or uses the changed code.
-- Output ONLY the JSON object, with no markdown or extra text.
-- You have a budget of 12 tool-call rounds for planning. Use them sparingly.
+Be efficient — use parallel tool calls where possible.
 """
-
-    plan_result = await run_headless(
-        planning_prompt,
+    explore_result = await run_headless(
+        explore_prompt,
         auto_allow=auto_allow,
         json_mode=False,
         max_iterations=12,
         cwd=effective_cwd,
         progress_callback=progress_callback,
+        read_only=True,
     )
-    plan = _extract_json(plan_result.get("response", ""))
+    explore_summary = explore_result.get("response", "").strip()
+    _log(f"[AGENT] Exploration complete ({len(explore_summary)} chars)")
+
+    # ========================================================================
+    # PHASE 2: PLAN (read-only)
+    # ========================================================================
+    _log("[AGENT] Phase 2/4: Designing implementation plan (read-only)")
+
+    # Try to load cached plan from previous round
+    cached_plan = _load_plan_from_cache(effective_cwd)
+    if cached_plan:
+        _log("[PLAN] Using cached plan from previous round")
+        plan = cached_plan
+    else:
+        plan_prompt = f"""\
+You are a software architect. Create a structured implementation plan BEFORE writing any code.
+
+=== CRITICAL: READ-ONLY MODE — NO FILE MODIFICATIONS ===
+You CANNOT create, modify, or delete any files.
+
+Task:
+{prompt}
+
+Exploration Results:
+{explore_summary}
+
+Instructions:
+1. Review the exploration results above.
+2. Output your final answer as a JSON object with this exact structure:
+
+{{
+  "analysis": {{
+    "root_cause": "One-sentence description of the true root cause",
+    "affected_call_sites": ["file.py:line_or_function"],
+    "relevant_tests": ["path/to/test_file.py"]
+  }},
+  "files_to_modify": [
+    {{"file": "relative/path/to/file.py", "change": "Brief description of the exact change"}}
+  ],
+  "risks": ["Potential risk or side effect"],
+  "reasoning": "One-paragraph summary of the strategy"
+}}
+
+Requirements:
+- ONLY include files that MUST be changed.
+- EVERY file MUST exist in the repository.
+- affected_call_sites MUST list every place that calls or uses the changed code.
+- Output ONLY the JSON object, with no markdown or extra text.
+"""
+        plan_result = await run_headless(
+            plan_prompt,
+            auto_allow=auto_allow,
+            json_mode=False,
+            max_iterations=15,
+            cwd=effective_cwd,
+            progress_callback=progress_callback,
+            read_only=True,
+        )
+        plan = _extract_json(plan_result.get("response", ""))
+
     if plan is None:
         _log("[PLAN] Could not parse plan, falling back to direct execution")
         fallback_budget = max(45, max_iterations)
-        # Carry over planning discoveries so execution doesn't re-explore from scratch
-        planning_summary = plan_result.get("response", "").strip()
         enriched_prompt = f"""\
 {prompt}
 
---- Planning Phase Discoveries ---
-{planning_summary}
+--- Exploration & Planning Phase Discoveries ---
+{explore_summary}
 
 --- Instruction ---
 Based on the discoveries above, proceed DIRECTLY to implement the fix. Do NOT repeat the same exploration. Make the code changes immediately.
@@ -809,19 +879,51 @@ Based on the discoveries above, proceed DIRECTLY to implement the fix. Do NOT re
             progress_callback=progress_callback,
         )
 
+    # Validate plan: ensure referenced files exist in the repo
+    is_valid, issues = _validate_plan(plan, effective_cwd)
+    if not is_valid:
+        for issue in issues:
+            _log(f"[PLAN VALIDATION] {issue}")
+        _log("[PLAN] Plan references non-existent files, falling back to direct execution")
+        fallback_budget = max(45, max_iterations)
+        enriched_prompt = f"""\
+{prompt}
+
+--- Exploration & Planning Phase Discoveries ---
+The planning phase identified the following potential files, but some could not be verified in the repository:
+{chr(10).join(issues)}
+
+Proceed DIRECTLY to implement the fix. Make the code changes immediately.
+"""
+        return await run_headless(
+            enriched_prompt,
+            auto_allow=auto_allow,
+            json_mode=json_mode,
+            max_iterations=fallback_budget,
+            cwd=effective_cwd,
+            progress_callback=progress_callback,
+        )
+
+    # Persist valid plan to external cache
+    _save_plan_to_cache(plan, effective_cwd)
+
     plan_items = plan.get('files_to_modify', [])
     _log(f"[PLAN] {len(plan_items)} files identified")
     for item in plan_items:
         _log(f"  - {item.get('file')}: {item.get('change')}")
 
-    # Scale execution budget per plan item (generous cap)
+    # ========================================================================
+    # PHASE 3: EXECUTION
+    # ========================================================================
     num_plan_items = len(plan_items)
     execution_max_iterations = max(max_iterations, num_plan_items * 20) if num_plan_items > 0 else max_iterations
-    _log(f"[EXEC] Budget: {execution_max_iterations} tool-call rounds for {num_plan_items} planned items")
+    _log(f"[AGENT] Phase 3/4: Executing fix (budget: {execution_max_iterations} turns)")
 
-    # Step 2-4: Execution + Verification loop
     execution_prompt_base = f"""\
 {prompt}
+
+Exploration Context:
+{explore_summary[:2000]}
 
 Planned Changes:
 {json.dumps(plan, indent=2)}
@@ -858,10 +960,16 @@ IMPORTANT: You have a finite budget of tool-call rounds. Make the actual code ch
         )
         best_result = exec_result
 
-        # Step 3: Verification
+        # ========================================================================
+        # PHASE 4: VERIFICATION (read-only)
+        # ========================================================================
+        _log("[AGENT] Phase 4/4: Verifying fix (read-only)")
         current_diff = _get_git_diff(effective_cwd)
         verification_prompt = f"""\
-We attempted to fix a task. Review the current state and determine if it is complete.
+You are a verification specialist. Your job is not to confirm the implementation works — it's to try to break it.
+
+=== CRITICAL: READ-ONLY MODE — NO FILE MODIFICATIONS ===
+You CANNOT modify any files in the project directory.
 
 Task:
 {prompt}
@@ -874,7 +982,7 @@ Current git diff:
 {current_diff}
 ```
 
-Task:
+Verification Steps:
 1. Compare the git diff against the planned changes.
 2. Check for ANY unintended modifications (changes to files not in the plan).
 3. Verify that all call sites identified in the plan are properly handled.
@@ -884,20 +992,14 @@ Task:
 {{
   "complete": true or false,
   "missing_changes": [
-    {{
-      "file": "relative/path/to/file.py",
-      "issue": "What is missing or wrong"
-    }}
+    {{"file": "relative/path/to/file.py", "issue": "What is missing or wrong"}}
   ],
-  "unintended_changes": [
-    "file.py - description of change that was not planned"
-  ],
+  "unintended_changes": ["file.py - description of change that was not planned"],
   "summary": "Brief assessment"
 }}
 
 Output ONLY the JSON object.
 """
-
         verify_result = await run_headless(
             verification_prompt,
             auto_allow=auto_allow,
@@ -905,6 +1007,7 @@ Output ONLY the JSON object.
             max_iterations=15,
             cwd=effective_cwd,
             progress_callback=progress_callback,
+            read_only=True,
         )
         verification = _extract_json(verify_result.get("response", ""))
         if verification is None:
@@ -922,7 +1025,6 @@ Output ONLY the JSON object.
         else:
             if missing:
                 current_missing = len(missing)
-                # If we're making progress, grant extra attempts
                 if previous_missing_count is not None and current_missing < previous_missing_count:
                     if effective_max_attempts < max(5, max_plan_attempts):
                         effective_max_attempts += 1
@@ -1053,6 +1155,96 @@ def _is_patch_trivial(work_dir: str, patch: str) -> bool:
     return len(code_lines) <= 12
 
 
+def _extract_discoveries_from_messages(messages: list[dict[str, Any]]) -> str:
+    """Extract key file discoveries from tool call results in messages.
+
+    Preserves critical exploration results across rounds so the model doesn't
+    lose context about which files were read and what they contained.
+    """
+    if not messages:
+        return ""
+    discoveries: list[str] = []
+    for msg in messages:
+        msg_type = msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
+        if msg_type in ("tool", "tool_result"):
+            name = msg.get("name", "") if isinstance(msg, dict) else getattr(msg, "name", "")
+            content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+            if name in ("FileRead", "Grep", "CodeSearch", "Glob"):
+                content_str = str(content)[:600].replace("\n", " ")
+                discoveries.append(f"- [{name}] {content_str}")
+    if not discoveries:
+        return ""
+    return "\n=== KEY DISCOVERIES FROM PREVIOUS ROUND ===\n" + "\n".join(discoveries[:8])
+
+
+def _get_plan_cache_path(cwd: str) -> str:
+    """Return external cache path for persisting plans outside the git workspace."""
+    cache_dir = Path.home() / ".cache" / "pilotcode" / "plans"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = hashlib.md5(cwd.encode()).hexdigest()[:16]
+    return str(cache_dir / f"{cache_key}.json")
+
+
+def _save_plan_to_cache(plan: dict, cwd: str) -> None:
+    """Persist plan to external cache so it survives across rounds."""
+    try:
+        Path(_get_plan_cache_path(cwd)).write_text(json.dumps(plan, indent=2))
+    except Exception:
+        pass
+
+
+def _load_plan_from_cache(cwd: str) -> dict | None:
+    """Load previously cached plan if available."""
+    try:
+        path = _get_plan_cache_path(cwd)
+        if os.path.exists(path):
+            return json.loads(Path(path).read_text())
+    except Exception:
+        pass
+    return None
+
+
+def _validate_plan(plan: dict, cwd: str) -> tuple[bool, list[str]]:
+    """Validate that all files referenced in the plan exist in the git repo.
+
+    Returns (is_valid, list_of_issues).
+    """
+    issues: list[str] = []
+    files_to_check: set[str] = set()
+
+    for item in plan.get("files_to_modify", []):
+        fpath = item.get("file", "")
+        if fpath:
+            files_to_check.add(fpath)
+
+    for site in plan.get("analysis", {}).get("affected_call_sites", []):
+        fpath = site.split(":")[0] if ":" in site else site
+        if fpath and not ("/tests/" in fpath or "/test_" in fpath):
+            files_to_check.add(fpath)
+
+    if not files_to_check:
+        return True, []
+
+    try:
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        tracked_files = set(result.stdout.splitlines()) if result.returncode == 0 else set()
+    except Exception:
+        tracked_files = set()
+
+    for fpath in files_to_check:
+        full_path = os.path.join(cwd, fpath)
+        if fpath not in tracked_files and not os.path.exists(full_path):
+            issues.append(f"File not found in repo: {fpath}")
+
+    return len(issues) == 0, issues
+
+
 def _compress_messages_for_retry(
     messages: list[dict[str, Any]],
     round_idx: int,
@@ -1098,6 +1290,11 @@ def _compress_messages_for_retry(
         summary_lines.append("Progress was made compared to the previous round.")
     else:
         summary_lines.append("No clear progress compared to the previous round.")
+
+    # Extract and preserve critical discoveries from tool calls
+    discoveries = _extract_discoveries_from_messages(messages)
+    if discoveries:
+        summary_lines.append(discoveries)
 
     summary_lines.append(
         "You must now produce a CORRECT and COMPLETE fix. Avoid repeating the same mistakes."

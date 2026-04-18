@@ -65,6 +65,52 @@ CRITICAL INSTRUCTIONS:
 DEFAULT_MAX_ITERATIONS = 50
 
 
+def strip_test_file_changes(patch: str) -> str:
+    """Remove diff hunks for test files from a patch.
+
+    SWE-bench applies its own test_patch after the model_patch. If the model
+    patch also modifies test files, the test_patch may fail to apply due to
+    conflicts. Stripping test file changes ensures clean eval.
+    """
+    if not patch or not patch.strip():
+        return patch
+    lines = patch.split("\n")
+    result = []
+    in_test_hunk = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("diff --git a/"):
+            # Determine file path from the b/ prefix
+            parts = line.split()
+            filepath = ""
+            for j, part in enumerate(parts):
+                if part.startswith("b/"):
+                    filepath = part[2:]
+                    break
+            in_test_hunk = (
+                "/tests/" in filepath
+                or "/test_" in filepath
+                or filepath.startswith("tests/")
+            )
+            if not in_test_hunk:
+                result.append(line)
+            i += 1
+            # Skip index line if present
+            if i < len(lines) and lines[i].startswith("index "):
+                if not in_test_hunk:
+                    result.append(lines[i])
+                i += 1
+            continue
+        if not in_test_hunk:
+            result.append(line)
+        i += 1
+    cleaned = "\n".join(result).strip()
+    if cleaned and not cleaned.endswith("\n"):
+        cleaned += "\n"
+    return cleaned
+
+
 def run_cmd(cmd: str, cwd: str | None = None, timeout: int = 300) -> tuple[int, str, str]:
     result = subprocess.run(
         cmd,
@@ -436,7 +482,11 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                     print(f"[ERROR] Syntax redesign timed out for {instance_id}: {e}")
                     break
 
-            # 2) Run tests
+            # 2) Run tests (skip for astropy — local env always broken)
+            if repo == "astropy/astropy":
+                print(f"[SKIP] Local tests disabled for astropy instances — relying on Docker eval.")
+                break
+
             print(f"[TEST] Running tests for {instance_id} (redesign {redesign})...")
             test_rc, test_output = run_instance_tests(work_dir, instance)
             if test_rc == 0:
@@ -473,10 +523,15 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
         else:
             print(f"[WARN] Max redesign attempts reached for {instance_id}")
 
+    # Strip test file changes to avoid conflicts with SWE-bench test_patch
+    cleaned_patch = strip_test_file_changes(patch)
+    if cleaned_patch != patch:
+        print(f"[INFO] Stripped test file changes from patch ({len(patch)} -> {len(cleaned_patch)} chars)")
+
     prediction = {
         KEY_INSTANCE_ID: instance_id,
         KEY_MODEL: model_name,
-        KEY_PREDICTION: patch,
+        KEY_PREDICTION: cleaned_patch,
     }
 
     return prediction

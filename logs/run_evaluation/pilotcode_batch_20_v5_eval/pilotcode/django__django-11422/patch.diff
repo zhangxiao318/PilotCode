@@ -1,0 +1,18 @@
+diff --git a/django/utils/autoreload.py b/django/utils/autoreload.py
+index 7ca0d68..4e9a2ee 100644
+--- a/django/utils/autoreload.py
++++ b/django/utils/autoreload.py
+@@ -577,9 +577,11 @@ def start_django(reloader, main_func, *args, **kwargs):
+ def run_with_reloader(main_func, *args, **kwargs):
+     signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
+     try:
++        reloader = get_reloader()
++        logger.info('Watching for file changes with %s', reloader.__class__.__name__)
++        # Watch manage.py for changes
++        reloader.watch_file(os.path.join(os.getcwd(), 'manage.py'))
+         if os.environ.get(DJANGO_AUTORELOAD_ENV) == 'true':
+-            reloader = get_reloader()
+-            logger.info('Watching for file changes with %s', reloader.__class__.__name__)
+             start_django(reloader, main_func, *args, **kwargs)
+         else:
+             exit_code = restart_with_reloader()

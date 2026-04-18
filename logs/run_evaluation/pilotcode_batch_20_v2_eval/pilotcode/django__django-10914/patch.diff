@@ -1,0 +1,48 @@
+diff --git a/docs/_theme/djangodocs-epub/static/docicons-behindscenes.png b/docs/_theme/djangodocs-epub/static/docicons-behindscenes.png
+deleted file mode 120000
+index 3f1cd17..0000000
+--- a/docs/_theme/djangodocs-epub/static/docicons-behindscenes.png
++++ /dev/null
+@@ -1 +0,0 @@
+-../../djangodocs/static/docicons-behindscenes.png
+\ No newline at end of file
+diff --git a/docs/_theme/djangodocs-epub/static/docicons-behindscenes.png b/docs/_theme/djangodocs-epub/static/docicons-behindscenes.png
+new file mode 100644
+index 0000000..4371103
+Binary files /dev/null and b/docs/_theme/djangodocs-epub/static/docicons-behindscenes.png differ
+diff --git a/docs/_theme/djangodocs-epub/static/docicons-note.png b/docs/_theme/djangodocs-epub/static/docicons-note.png
+deleted file mode 120000
+index b8193a3..0000000
+--- a/docs/_theme/djangodocs-epub/static/docicons-note.png
++++ /dev/null
+@@ -1 +0,0 @@
+-../../djangodocs/static/docicons-note.png
+\ No newline at end of file
+diff --git a/docs/_theme/djangodocs-epub/static/docicons-note.png b/docs/_theme/djangodocs-epub/static/docicons-note.png
+new file mode 100644
+index 0000000..b849019
+Binary files /dev/null and b/docs/_theme/djangodocs-epub/static/docicons-note.png differ
+diff --git a/docs/_theme/djangodocs-epub/static/docicons-philosophy.png b/docs/_theme/djangodocs-epub/static/docicons-philosophy.png
+deleted file mode 120000
+index 26d9a0c..0000000
+--- a/docs/_theme/djangodocs-epub/static/docicons-philosophy.png
++++ /dev/null
+@@ -1 +0,0 @@
+-../../djangodocs/static/docicons-philosophy.png
+\ No newline at end of file
+diff --git a/docs/_theme/djangodocs-epub/static/docicons-philosophy.png b/docs/_theme/djangodocs-epub/static/docicons-philosophy.png
+new file mode 100644
+index 0000000..a864f58
+Binary files /dev/null and b/docs/_theme/djangodocs-epub/static/docicons-philosophy.png differ
+diff --git a/docs/_theme/djangodocs-epub/static/docicons-warning.png b/docs/_theme/djangodocs-epub/static/docicons-warning.png
+deleted file mode 120000
+index 455195f..0000000
+--- a/docs/_theme/djangodocs-epub/static/docicons-warning.png
++++ /dev/null
+@@ -1 +0,0 @@
+-../../djangodocs/static/docicons-warning.png
+\ No newline at end of file
+diff --git a/docs/_theme/djangodocs-epub/static/docicons-warning.png b/docs/_theme/djangodocs-epub/static/docicons-warning.png
+new file mode 100644
+index 0000000..083704d
+Binary files /dev/null and b/docs/_theme/djangodocs-epub/static/docicons-warning.png differ

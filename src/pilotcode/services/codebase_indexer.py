@@ -199,8 +199,12 @@ class CodebaseIndexer:
         # Event callbacks
         self._on_index_progress: Optional[Callable[[str, int, int], None]] = None
 
-        # Persistent cache path
-        self._cache_path = self.root_path / ".pilotcode_index_cache.json"
+        # Persistent cache path (outside git workspace to avoid polluting diffs)
+        import hashlib
+        cache_dir = Path.home() / ".cache" / "pilotcode" / "index_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_key = hashlib.md5(str(self.root_path.resolve()).encode()).hexdigest()[:16]
+        self._cache_path = cache_dir / f"{cache_key}.json"
 
         # Try to load cached index
         try:

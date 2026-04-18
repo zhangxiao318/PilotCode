@@ -1,0 +1,14 @@
+diff --git a/django/forms/widgets.py b/django/forms/widgets.py
+index 02aa32b..40fa8eb 100644
+--- a/django/forms/widgets.py
++++ b/django/forms/widgets.py
+@@ -137,6 +137,9 @@ class Media:
+             except ValueError:
+                 # Add path to combined_list since it doesn't exist.
+                 combined_list.insert(last_insert_index, path)
++                # Update last_insert_index to the position of the newly inserted
++                # element, so that subsequent elements are inserted before it.
++                last_insert_index = len(combined_list) - 1
+             else:
+                 if index > last_insert_index:
+                     warnings.warn(

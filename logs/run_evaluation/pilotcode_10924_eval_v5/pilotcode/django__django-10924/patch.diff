@@ -1,0 +1,17 @@
+diff --git a/django/db/models/fields/__init__.py b/django/db/models/fields/__init__.py
+index 0c64748..de4a74d 100644
+--- a/django/db/models/fields/__init__.py
++++ b/django/db/models/fields/__init__.py
+@@ -1668,6 +1668,12 @@ class FilePathField(Field):
+         kwargs.setdefault('max_length', 100)
+         super().__init__(verbose_name, name, **kwargs)
+ 
++    def get_path(self):
++        """Return the path, evaluating it if it's a callable."""
++        if callable(self.path):
++            return self.path()
++        return self.path
++
+     def check(self, **kwargs):
+         return [
+             *super().check(**kwargs),
