@@ -607,9 +607,10 @@ class LoopGuard:
                 return "alternating between two tool patterns"
 
         # Rule 4: Same tool called consecutively >=5 times with different inputs
+        # Exclude FileEdit/FileWrite — editing the same file multiple times is normal
         if len(flat) >= 5:
             last5_tools = [f.split(":")[0] for f in flat[-5:]]
-            if len(set(last5_tools)) == 1:
+            if len(set(last5_tools)) == 1 and last5_tools[0] not in {"FileEdit", "FileWrite"}:
                 return f"tool '{last5_tools[0]}' called 5+ times consecutively with different inputs"
 
         return None

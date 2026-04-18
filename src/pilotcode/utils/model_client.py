@@ -1,5 +1,6 @@
 """Model client for interacting with LLM APIs."""
 
+import asyncio
 import json
 from typing import Any, AsyncIterator
 from dataclasses import dataclass
@@ -44,6 +45,11 @@ class ModelClient:
     def __init__(
         self, api_key: str | None = None, base_url: str | None = None, model: str | None = None
     ):
+        # Record the event loop this client is bound to
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
         config = get_global_config()
 
         self.api_key = api_key or config.api_key or "sk-placeholder"
@@ -192,8 +198,18 @@ def get_model_client(
     """Get or create model client.
 
     If no parameters are provided, uses configuration from settings.
+    Recreates the client if the event loop has changed (prevents 'Event loop is closed').
     """
     global _client
-    if _client is None:
+
+    # Check if we need a new client because the event loop changed
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if _client is None or getattr(_client, "_loop", None) != current_loop:
+        # Don't try to close the old async client synchronously —
+        # just let the old loop's cleanup handle it.
         _client = ModelClient(api_key, base_url, model)
     return _client
