@@ -213,7 +213,7 @@ class TestAgentParity:
     def test_all_builtin_agent_types_exist(self):
         from pilotcode.agent.agent_manager import ENHANCED_AGENT_DEFINITIONS
 
-        expected = {"coder", "debugger", "explainer", "tester", "reviewer", "planner", "explorer"}
+        expected = {"coder", "debugger", "explainer", "tester", "reviewer", "planner", "explorer", "verifier"}
         assert set(ENHANCED_AGENT_DEFINITIONS.keys()) == expected
 
     def test_agent_persistence(self):

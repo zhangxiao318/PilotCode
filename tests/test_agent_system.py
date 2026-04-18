@@ -88,7 +88,7 @@ class TestAgentDefinitions:
     """Tests for built-in agent definitions."""
 
     def test_all_seven_types_exist(self):
-        expected = {"coder", "debugger", "explainer", "tester", "reviewer", "planner", "explorer"}
+        expected = {"coder", "debugger", "explainer", "tester", "reviewer", "planner", "explorer", "verifier"}
         assert set(ENHANCED_AGENT_DEFINITIONS.keys()) == expected
 
     def test_coder_has_code_tools(self):
