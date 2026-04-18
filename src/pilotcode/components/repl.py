@@ -1,6 +1,7 @@
 """REPL for PilotCode - Programming Assistant with Tool Support."""
 
 import asyncio
+import contextvars
 import hashlib
 import json
 import os
@@ -10,6 +11,9 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Callable
+
+# Context variable to prevent nested environment-diagnosis dead loops
+_env_diagnosis_ctx: contextvars.ContextVar[bool] = contextvars.ContextVar("env_diagnosis_active", default=False)
 
 from rich.console import Console
 from rich.panel import Panel
@@ -553,6 +557,7 @@ class LoopGuard:
     def __init__(self, window_size: int = 6):
         self.window_size = window_size
         self.round_fingerprints: list[tuple[str, ...]] = []
+        self.loop_count: int = 0
 
     @staticmethod
     def _fingerprint(tool_msg: ToolUseMessage) -> str:
@@ -601,6 +606,12 @@ class LoopGuard:
             if len(uniq) == 2 and recent.count(uniq[0]) >= 2 and recent.count(uniq[1]) >= 2:
                 return "alternating between two tool patterns"
 
+        # Rule 4: Same tool called consecutively >=5 times with different inputs
+        if len(flat) >= 5:
+            last5_tools = [f.split(":")[0] for f in flat[-5:]]
+            if len(set(last5_tools)) == 1:
+                return f"tool '{last5_tools[0]}' called 5+ times consecutively with different inputs"
+
         return None
 
 
@@ -613,6 +624,7 @@ async def run_headless(
     cwd: str | None = None,
     progress_callback: Callable[[str], None] | None = None,
     read_only: bool = False,
+    disable_env_diagnosis: bool = False,
 ) -> dict[str, Any]:
     """Run a single prompt in headless mode and return structured output.
 
@@ -704,22 +716,27 @@ async def run_headless(
             # Loop detection
             loop_reason = loop_guard.record(pending_tools)
             if loop_reason:
-                warning = (
-                    f"\n\n[SYSTEM WARNING] DETECTED LOOP: {loop_reason}.\n"
-                    f"You have been repeating the same tool calls. STOP exploring and "
-                    f"produce your final answer or code changes immediately. "
-                    f"Do NOT call the same tools again."
-                )
+                loop_guard.loop_count += 1
                 if progress_callback:
-                    progress_callback(f"[LOOP GUARD] {loop_reason}")
+                    progress_callback(f"[LOOP GUARD] {loop_reason} — blocking tools")
                 else:
-                    print(f"[LOOP GUARD] {loop_reason}", flush=True)
-                # Inject warning into the last tool result so model sees it
-                if query_engine.messages:
-                    last_msg = query_engine.messages[-1]
-                    if hasattr(last_msg, "content") and isinstance(last_msg.content, str):
-                        last_msg.content += warning
-                current_prompt = prompt + warning
+                    print(f"[LOOP GUARD] {loop_reason} — blocking tools", flush=True)
+
+                # Block all pending tools immediately and force final answer
+                for tool_msg in pending_tools:
+                    forced_result = (
+                        f"[SYSTEM ERROR] LOOP DETECTED: {loop_reason}. "
+                        f"Tool execution has been blocked. You MUST provide your final answer NOW "
+                        f"without any more tool calls."
+                    )
+                    query_engine.add_tool_result(
+                        tool_msg.tool_use_id, forced_result, is_error=True
+                    )
+                current_prompt = (
+                    "CRITICAL: You are in a tool-call loop. All pending tool calls were blocked. "
+                    "Summarize what you have done so far and declare completion if the fix is applied. "
+                    "Do NOT call any more tools."
+                )
                 continue
 
             write_tool_names = {
@@ -762,7 +779,9 @@ async def run_headless(
                         success = False
 
                     # --- Environment diagnosis (headless mode) ---
-                    if env_diagnosis_count < 1:
+                    # Skip if nested inside another diagnosis (prevents recursive dead loops)
+                    already_diagnosing = _env_diagnosis_ctx.get()
+                    if not already_diagnosing and not disable_env_diagnosis and env_diagnosis_count < 1:
                         from pilotcode.utils.env_diagnosis import (
                             looks_like_environment_error,
                             diagnose_and_fix_environment,
@@ -845,6 +864,7 @@ async def run_headless_with_planning(
     cwd: str | None = None,
     max_plan_attempts: int = 3,
     progress_callback: Callable[[str], None] | None = None,
+    repo: str | None = None,
 ) -> dict[str, Any]:
     """Run headless mode with automatic task planning, execution, and verification.
 
@@ -1088,7 +1108,9 @@ CRITICAL WORKFLOW:
 3. After editing a Python file, run `python3 -m py_compile <filepath>`.
 4. After all edits, run `git diff` to verify ONLY planned files were changed.
 5. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
-6. If tests fail, STOP and revise. Do NOT declare completion until tests pass.
+   - If tests fail due to MISSING C extensions, ImportError, or broken local environment, DO NOT keep retrying. 
+   - Just verify your changes with `git diff` and declare completion.
+6. If tests fail due to actual logic bugs in YOUR changes, STOP and revise.
 7. Only declare completion when the fix is verified.
 
 CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste turns reading files not in the plan.

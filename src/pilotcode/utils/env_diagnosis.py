@@ -84,7 +84,7 @@ async def diagnose_and_fix_environment(
         True if a fix was applied and succeeded, False otherwise.
     """
     # Lazy import to avoid circular dependency
-    from pilotcode.components.repl import run_headless
+    from pilotcode.components.repl import run_headless, _env_diagnosis_ctx
 
     diag_prompt = f"""\
 An environment or build error occurred while working on the project.
@@ -110,14 +110,20 @@ Output ONLY a JSON object with this structure:
     if progress_callback:
         progress_callback("[ENV] Diagnosing environment issue...")
 
-    result = await run_headless(
-        diag_prompt,
-        auto_allow=auto_allow,
-        json_mode=False,
-        max_iterations=15,
-        cwd=work_dir,
-        progress_callback=progress_callback,
-    )
+    # Mark that we are inside an env-diagnosis session to prevent nested dead loops
+    token = _env_diagnosis_ctx.set(True)
+    try:
+        result = await run_headless(
+            diag_prompt,
+            auto_allow=auto_allow,
+            json_mode=False,
+            max_iterations=15,
+            cwd=work_dir,
+            progress_callback=progress_callback,
+            disable_env_diagnosis=True,
+        )
+    finally:
+        _env_diagnosis_ctx.reset(token)
 
     diagnosis = extract_diagnosis_json(result.get("response", ""))
     if not diagnosis:

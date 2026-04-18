@@ -192,7 +192,7 @@ def run_pilotcode(
 
 
 def run_pilotcode_direct(
-    cwd: str, prompt: str, max_iterations: int = DEFAULT_MAX_ITERATIONS, planning: bool = False
+    cwd: str, prompt: str, max_iterations: int = DEFAULT_MAX_ITERATIONS, planning: bool = False, repo: str = ""
 ) -> tuple[int, str, dict | None]:
     """Run PilotCode directly (bypass CLI) for full result access including plan.
 
@@ -209,6 +209,7 @@ def run_pilotcode_direct(
             max_iterations=max_iterations,
             cwd=cwd,
             progress_callback=lambda msg: print(msg, flush=True),
+            repo=repo,
         )
 
     try:
@@ -576,7 +577,7 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
         try:
             if use_planning:
                 # Direct call to capture plan for focused review/tests
-                rc, output, result_dict = run_pilotcode_direct(work_dir, prompt, max_iterations=max_iter, planning=True)
+                rc, output, result_dict = run_pilotcode_direct(work_dir, prompt, max_iterations=max_iter, planning=True, repo=repo)
                 plan = result_dict.get("plan") if result_dict else None
             else:
                 rc, output = run_pilotcode(work_dir, prompt, max_iterations=max_iter, planning=False)
