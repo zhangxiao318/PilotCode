@@ -92,6 +92,7 @@ class REPL:
             )
 
         self.running = True
+        self.loop_guard = LoopGuard()
 
     def print_header(self) -> None:
         """Print welcome header."""
@@ -201,21 +202,23 @@ class REPL:
                     self.console.print(f"[red]✗ {exec_result.message}[/red]")
 
                     # --- Environment diagnosis (interactive REPL mode) ---
-                    from ..utils.env_diagnosis import (
-                        looks_like_environment_error,
-                        diagnose_and_fix_environment,
-                    )
-                    if looks_like_environment_error(result_content):
-                        fixed = await diagnose_and_fix_environment(
-                            result_content,
-                            self.store.get_state().cwd,
-                            auto_allow=self.auto_allow,
-                            interactive=True,
+                    if not getattr(self, '_env_diagnosis_fired', False):
+                        from ..utils.env_diagnosis import (
+                            looks_like_environment_error,
+                            diagnose_and_fix_environment,
                         )
-                        if fixed:
-                            result_content += "\n[ENV FIX APPLIED] Environment issue was diagnosed and fixed automatically. You may retry the previous step."
-                        else:
-                            result_content += "\n[ENV FIX FAILED] Could not fix the environment issue automatically. You may need to fix it manually."
+                        if looks_like_environment_error(result_content):
+                            self._env_diagnosis_fired = True
+                            fixed = await diagnose_and_fix_environment(
+                                result_content,
+                                self.store.get_state().cwd,
+                                auto_allow=self.auto_allow,
+                                interactive=True,
+                            )
+                            if fixed:
+                                result_content += "\n[ENV FIX APPLIED] Environment issue was diagnosed and fixed automatically. You may retry the previous step."
+                            else:
+                                result_content += "\n[ENV FIX FAILED] Could not fix the environment issue automatically. You may need to fix it manually."
 
                 # Add to query engine history
                 self.query_engine.add_tool_result(
@@ -223,6 +226,21 @@ class REPL:
                 )
                 # Ensure tool output is visible
                 sys.stdout.flush()
+
+            # Loop detection
+            loop_reason = self.loop_guard.record(pending_tools)
+            if loop_reason:
+                warning = (
+                    f"[SYSTEM WARNING] DETECTED LOOP: {loop_reason}. "
+                    f"You have been repeating the same tool calls. STOP exploring and "
+                    f"produce your final answer or code changes immediately. "
+                    f"Do NOT call the same tools again."
+                )
+                self.console.print(f"[yellow]{warning}[/yellow]")
+                # Inject warning so the model sees it on the next turn
+                self.query_engine.messages.append(
+                    AssistantMessage(content=warning)
+                )
 
             # Continue the conversation with tool results
             remaining = max_iterations - iteration
@@ -526,6 +544,66 @@ async def _generate_structured_output(
     return response_text.strip()
 
 
+class LoopGuard:
+    """Detects repetitive tool-call patterns to break LLM loops.
+
+    Works across all PilotCode modes: REPL, headless, TUI, and Web.
+    """
+
+    def __init__(self, window_size: int = 6):
+        self.window_size = window_size
+        self.round_fingerprints: list[tuple[str, ...]] = []
+
+    @staticmethod
+    def _fingerprint(tool_msg: ToolUseMessage) -> str:
+        import hashlib
+        name = tool_msg.name
+        input_str = json.dumps(tool_msg.input, sort_keys=True, default=str)
+        return f"{name}:{hashlib.md5(input_str.encode()).hexdigest()[:8]}"
+
+    def record(self, tool_calls: list[ToolUseMessage]) -> str | None:
+        """Record a round and return loop reason if detected."""
+        fp = tuple(self._fingerprint(t) for t in tool_calls)
+        self.round_fingerprints.append(fp)
+        if len(self.round_fingerprints) > self.window_size:
+            self.round_fingerprints.pop(0)
+        return self._detect()
+
+    def reset(self) -> None:
+        """Clear history (e.g. when user starts a new task)."""
+        self.round_fingerprints.clear()
+
+    def _detect(self) -> str | None:
+        recent = self.round_fingerprints
+        if len(recent) < 4:
+            return None
+
+        flat = [fp for r in recent for fp in r]
+        from collections import Counter
+        counts = Counter(flat)
+
+        # Rule 1: Same single tool called repeatedly with identical input
+        for fp, cnt in counts.items():
+            if cnt >= 4:
+                return f"tool '{fp.split(':')[0]}' called {cnt} times with identical input"
+
+        # Rule 2: Exact sequence repetition (ABAB, ABCABC)
+        for period in (2, 3):
+            if len(recent) >= period * 2:
+                last = recent[-period:]
+                prev = recent[-(period * 2) : -period]
+                if last == prev:
+                    return f"repeating {period}-round tool sequence"
+
+        # Rule 3: Alternating between two patterns (A→B→A→B→A→B)
+        if len(recent) >= 4:
+            uniq = list(dict.fromkeys(recent))
+            if len(uniq) == 2 and recent.count(uniq[0]) >= 2 and recent.count(uniq[1]) >= 2:
+                return "alternating between two tool patterns"
+
+        return None
+
+
 async def run_headless(
     prompt: str,
     auto_allow: bool = False,
@@ -593,6 +671,8 @@ async def run_headless(
     tool_calls_log: list[dict[str, Any]] = []
     response_text = ""
     success = True
+    env_diagnosis_count = 0  # Limit environment diagnosis to prevent loops
+    loop_guard = LoopGuard()
 
     try:
         current_prompt = prompt
@@ -620,6 +700,27 @@ async def run_headless(
 
             if not pending_tools:
                 break
+
+            # Loop detection
+            loop_reason = loop_guard.record(pending_tools)
+            if loop_reason:
+                warning = (
+                    f"\n\n[SYSTEM WARNING] DETECTED LOOP: {loop_reason}.\n"
+                    f"You have been repeating the same tool calls. STOP exploring and "
+                    f"produce your final answer or code changes immediately. "
+                    f"Do NOT call the same tools again."
+                )
+                if progress_callback:
+                    progress_callback(f"[LOOP GUARD] {loop_reason}")
+                else:
+                    print(f"[LOOP GUARD] {loop_reason}", flush=True)
+                # Inject warning into the last tool result so model sees it
+                if query_engine.messages:
+                    last_msg = query_engine.messages[-1]
+                    if hasattr(last_msg, "content") and isinstance(last_msg.content, str):
+                        last_msg.content += warning
+                current_prompt = prompt + warning
+                continue
 
             write_tool_names = {
                 "FileEdit", "FileWrite", "ApplyPatch", "NotebookEdit",
@@ -661,22 +762,24 @@ async def run_headless(
                         success = False
 
                     # --- Environment diagnosis (headless mode) ---
-                    from pilotcode.utils.env_diagnosis import (
-                        looks_like_environment_error,
-                        diagnose_and_fix_environment,
-                    )
-                    if looks_like_environment_error(result_content):
-                        fixed = await diagnose_and_fix_environment(
-                            result_content,
-                            working_dir,
-                            auto_allow=auto_allow,
-                            progress_callback=progress_callback,
-                            interactive=False,
+                    if env_diagnosis_count < 1:
+                        from pilotcode.utils.env_diagnosis import (
+                            looks_like_environment_error,
+                            diagnose_and_fix_environment,
                         )
-                        if fixed:
-                            result_content += "\n[ENV FIX APPLIED] Environment issue was diagnosed and fixed automatically. You may retry the previous step."
-                        else:
-                            result_content += "\n[ENV FIX FAILED] Could not fix the environment issue automatically."
+                        if looks_like_environment_error(result_content):
+                            env_diagnosis_count += 1
+                            fixed = await diagnose_and_fix_environment(
+                                result_content,
+                                working_dir,
+                                auto_allow=auto_allow,
+                                progress_callback=progress_callback,
+                                interactive=False,
+                            )
+                            if fixed:
+                                result_content += "\n[ENV FIX APPLIED] Environment issue was diagnosed and fixed automatically. You may retry the previous step."
+                            else:
+                                result_content += "\n[ENV FIX FAILED] Could not fix the environment issue automatically."
 
                 tool_calls_log.append(
                     {
