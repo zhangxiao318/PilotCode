@@ -49,7 +49,7 @@ def add(a, b):
         # Run PilotCode headless
         pilotcode_cmd = (
             f"cd {repo_dir} && python3 -m pilotcode main "
-            f'--skip-config-check --auto-allow --max-iterations 15 '
+            f"--skip-config-check --auto-allow --max-iterations 15 "
             f'-p "{prompt}"'
         )
         print(f"Running: {pilotcode_cmd}")

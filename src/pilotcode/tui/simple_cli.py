@@ -425,7 +425,9 @@ class SimpleCLI:
             mode = await classify_task_complexity(text)
             if mode == "PLAN":
                 print()
-                print("⚡ Task classified as complex — I'll break this down into steps and work through it interactively.")
+                print(
+                    "⚡ Task classified as complex — I'll break this down into steps and work through it interactively."
+                )
                 print()
                 # Continue with normal streaming interaction so the CLI stays
                 # responsive and the user can see real-time progress.

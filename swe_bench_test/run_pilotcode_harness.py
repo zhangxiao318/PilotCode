@@ -30,17 +30,23 @@ import tempfile
 from pathlib import Path
 
 from swebench.harness.utils import load_swebench_dataset
-from swebench.harness.constants import KEY_INSTANCE_ID, KEY_MODEL, KEY_PREDICTION, MAP_REPO_VERSION_TO_SPECS
+from swebench.harness.constants import (
+    KEY_INSTANCE_ID,
+    KEY_MODEL,
+    KEY_PREDICTION,
+    MAP_REPO_VERSION_TO_SPECS,
+)
 
 # Import PilotCode complexity classifier for routing
 import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from pilotcode.components.repl import classify_task_complexity
 
 # Patch pytest spec to use Python 3.10 (current pytest main requires >=3.10)
-if 'pytest-dev/pytest' in MAP_REPO_VERSION_TO_SPECS:
-    for ver in MAP_REPO_VERSION_TO_SPECS['pytest-dev/pytest']:
-        MAP_REPO_VERSION_TO_SPECS['pytest-dev/pytest'][ver]['python'] = '3.10'
+if "pytest-dev/pytest" in MAP_REPO_VERSION_TO_SPECS:
+    for ver in MAP_REPO_VERSION_TO_SPECS["pytest-dev/pytest"]:
+        MAP_REPO_VERSION_TO_SPECS["pytest-dev/pytest"][ver]["python"] = "3.10"
 
 
 PILOTCODE_PROMPT_TEMPLATE = """\
@@ -89,9 +95,7 @@ def strip_test_file_changes(patch: str) -> str:
                     filepath = part[2:]
                     break
             in_test_hunk = (
-                "/tests/" in filepath
-                or "/test_" in filepath
-                or filepath.startswith("tests/")
+                "/tests/" in filepath or "/test_" in filepath or filepath.startswith("tests/")
             )
             if not in_test_hunk:
                 result.append(line)
@@ -123,7 +127,9 @@ def run_cmd(cmd: str, cwd: str | None = None, timeout: int = 300) -> tuple[int, 
     return result.returncode, result.stdout, result.stderr
 
 
-REPO_CACHE_DIR = os.environ.get("SWE_BENCH_REPO_CACHE", os.path.join(tempfile.gettempdir(), "swe-bench-work"))
+REPO_CACHE_DIR = os.environ.get(
+    "SWE_BENCH_REPO_CACHE", os.path.join(tempfile.gettempdir(), "swe-bench-work")
+)
 
 
 def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
@@ -154,7 +160,9 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
     if not os.path.exists(cache_dir):
         os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
         repo_url = f"https://github.com/{repo}.git"
-        rc, _, stderr = run_cmd(f"git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}", timeout=300)
+        rc, _, stderr = run_cmd(
+            f"git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}", timeout=300
+        )
         if rc != 0:
             print(f"[WARN] Shallow clone failed, trying full clone: {stderr}")
             rc, _, stderr = run_cmd(f"git clone {repo_url} {cache_dir}", timeout=600)
@@ -192,13 +200,18 @@ def run_pilotcode(
 
 
 def run_pilotcode_direct(
-    cwd: str, prompt: str, max_iterations: int = DEFAULT_MAX_ITERATIONS, planning: bool = False, repo: str = ""
+    cwd: str,
+    prompt: str,
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    planning: bool = False,
+    repo: str = "",
 ) -> tuple[int, str, dict | None]:
     """Run PilotCode directly (bypass CLI) for full result access including plan.
 
     Returns (exit_code, output_text, result_dict). result_dict is None on failure.
     """
     import asyncio
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
     from pilotcode.components.repl import run_headless_with_planning
 
@@ -222,6 +235,7 @@ def run_pilotcode_direct(
         return 0, output, result
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return 1, str(e), None
 
@@ -255,9 +269,7 @@ def get_test_targets_from_patch(test_patch: str, repo: str) -> list[str]:
                 seen.add(filepath)
                 # Only keep files that look like tests
                 is_test_file = (
-                    "/tests/" in filepath
-                    or "/test_" in filepath
-                    or filepath.startswith("tests/")
+                    "/tests/" in filepath or "/test_" in filepath or filepath.startswith("tests/")
                 )
                 if not is_test_file:
                     continue
@@ -311,7 +323,9 @@ def _run_tests_once(work_dir: str, instance: dict) -> tuple[int, str]:
     combined = stdout + "\n" + stderr
 
     # Fallback: try python -m pytest if pytest binary missing
-    if rc != 0 and ("pytest: command not found" in combined or "No module named 'pytest'" in combined):
+    if rc != 0 and (
+        "pytest: command not found" in combined or "No module named 'pytest'" in combined
+    ):
         test_cmd = test_cmd.replace("python3 -m pytest ", "python3 -m pytest ")
         rc, stdout, stderr = run_cmd(test_cmd, cwd=work_dir, timeout=300)
         combined = stdout + "\n" + stderr
@@ -319,14 +333,18 @@ def _run_tests_once(work_dir: str, instance: dict) -> tuple[int, str]:
     return rc, combined
 
 
-def run_instance_tests(work_dir: str, instance: dict, max_env_fix_attempts: int = 1) -> tuple[int, str]:
+def run_instance_tests(
+    work_dir: str, instance: dict, max_env_fix_attempts: int = 1
+) -> tuple[int, str]:
     """Try to run relevant tests locally in work_dir, with optional automatic environment repair."""
     for attempt in range(max_env_fix_attempts + 1):
         rc, combined = _run_tests_once(work_dir, instance)
         if rc == 0:
             return 0, combined
         if looks_like_environment_error(combined):
-            print(f"[TEST ENV] Environment error detected on test run {attempt + 1}, attempting auto-fix...")
+            print(
+                f"[TEST ENV] Environment error detected on test run {attempt + 1}, attempting auto-fix..."
+            )
             fixed = asyncio.run(
                 diagnose_and_fix_environment(
                     combined,
@@ -420,10 +438,10 @@ def check_patch_syntax(work_dir: str, patch: str) -> tuple[bool, str]:
     if not patch:
         return True, ""
     # Extract modified filenames from patch
-    files = set(re.findall(r'^diff --git a/(.+?) b/', patch, re.MULTILINE))
+    files = set(re.findall(r"^diff --git a/(.+?) b/", patch, re.MULTILINE))
     errors = []
     for f in files:
-        if not f.endswith('.py'):
+        if not f.endswith(".py"):
             continue
         filepath = os.path.join(work_dir, f)
         if not os.path.exists(filepath):
@@ -437,7 +455,9 @@ def check_patch_syntax(work_dir: str, patch: str) -> tuple[bool, str]:
     return True, ""
 
 
-def review_patch_locally(work_dir: str, patch: str, plan: dict | None = None) -> tuple[bool, list[str]]:
+def review_patch_locally(
+    work_dir: str, patch: str, plan: dict | None = None
+) -> tuple[bool, list[str]]:
     """Static review of patch when tests cannot be run. Returns (passed, list_of_issues).
 
     Focuses on plan files when a plan is provided, otherwise does general checks.
@@ -450,14 +470,16 @@ def review_patch_locally(work_dir: str, patch: str, plan: dict | None = None) ->
         return False, issues
 
     # 2. Extract modified files
-    modified_files = set(re.findall(r'^diff --git a/(.+?) b/', patch, re.MULTILINE))
+    modified_files = set(re.findall(r"^diff --git a/(.+?) b/", patch, re.MULTILINE))
     if not modified_files:
         issues.append("Patch contains no diff hunks.")
         return False, issues
 
     # 3. If plan is provided, do plan-focused review
     if plan:
-        planned_files = {item.get("file", "") for item in plan.get("files_to_modify", []) if item.get("file")}
+        planned_files = {
+            item.get("file", "") for item in plan.get("files_to_modify", []) if item.get("file")
+        }
         planned_files.discard("")
 
         # 3a. Check all planned files were modified
@@ -468,7 +490,9 @@ def review_patch_locally(work_dir: str, patch: str, plan: dict | None = None) ->
         # 3b. Check for unintended modifications
         extra = modified_files - planned_files
         if extra:
-            issues.append(f"Unintended file modifications (not in plan): {', '.join(sorted(extra))}")
+            issues.append(
+                f"Unintended file modifications (not in plan): {', '.join(sorted(extra))}"
+            )
 
         # 3c. Check planned files exist
         for f in planned_files & modified_files:
@@ -483,15 +507,19 @@ def review_patch_locally(work_dir: str, patch: str, plan: dict | None = None) ->
 
         # 3e. Check patch size is reasonable (not bloated with unrelated changes)
         # Estimate expected patch size: ~150 chars per planned file + 100 per hunk
-        hunks = len(re.findall(r'^@@ ', patch, re.MULTILINE))
+        hunks = len(re.findall(r"^@@ ", patch, re.MULTILINE))
         expected_min = max(50, len(planned_files) * 50)
         expected_max = max(500, len(planned_files) * 300 + hunks * 200)
         if len(patch) > expected_max:
-            issues.append(f"Patch is suspiciously large ({len(patch)}b > expected ~{expected_max}b). Likely contains unrelated changes like docstrings, whitespace, or double-escaped strings.")
+            issues.append(
+                f"Patch is suspiciously large ({len(patch)}b > expected ~{expected_max}b). Likely contains unrelated changes like docstrings, whitespace, or double-escaped strings."
+            )
 
         # 3f. Check for common anti-patterns in patch
-        if '\\\\' in patch:
-            issues.append("Patch contains double-escaped backslashes (\\\\) — likely FileEdit escaping bug. Use single backslashes.")
+        if "\\\\" in patch:
+            issues.append(
+                "Patch contains double-escaped backslashes (\\\\) — likely FileEdit escaping bug. Use single backslashes."
+            )
 
     else:
         # General review without plan
@@ -503,22 +531,28 @@ def review_patch_locally(work_dir: str, patch: str, plan: dict | None = None) ->
     # 4. Detect test file modifications (always check)
     test_files = {f for f in modified_files if "/tests/" in f or "/test_" in f}
     if test_files:
-        issues.append(f"Patch modifies test files which may conflict with SWE-bench test_patch: {', '.join(sorted(test_files))}")
+        issues.append(
+            f"Patch modifies test files which may conflict with SWE-bench test_patch: {', '.join(sorted(test_files))}"
+        )
 
     # 5. Detect trivial hunks (only whitespace/blank changes)
-    for hunk in re.split(r'^diff --git a/', patch, flags=re.MULTILINE)[1:]:
+    for hunk in re.split(r"^diff --git a/", patch, flags=re.MULTILINE)[1:]:
         code_lines = [
-            ln for ln in hunk.splitlines()
+            ln
+            for ln in hunk.splitlines()
             if ln.startswith(("+", "-")) and not ln.startswith(("+++", "---"))
         ]
         meaningful = [
-            ln for ln in code_lines
+            ln
+            for ln in code_lines
             if len(ln.strip()) > 3 and ln.strip() not in ("+", "-", "+ ", "- ")
         ]
         if not meaningful and code_lines:
-            fname_match = re.search(r'^\S+\s+b/(.+)', hunk)
+            fname_match = re.search(r"^\S+\s+b/(.+)", hunk)
             fname = fname_match.group(1) if fname_match else "unknown"
-            issues.append(f"File {fname}: patch appears to contain only whitespace/comment changes.")
+            issues.append(
+                f"File {fname}: patch appears to contain only whitespace/comment changes."
+            )
 
     return len(issues) == 0, issues
 
@@ -529,7 +563,10 @@ def extract_test_errors(test_output: str, max_chars: int = 4000) -> str:
     lines = test_output.split("\n")
     error_lines = []
     for line in lines:
-        if any(k in line for k in ("FAIL:", "ERROR:", "Traceback", "AssertionError", "TypeError", "ValueError")):
+        if any(
+            k in line
+            for k in ("FAIL:", "ERROR:", "Traceback", "AssertionError", "TypeError", "ValueError")
+        ):
             error_lines.append(line)
     # Also include last portion of output
     tail = "\n".join(lines[-100:])
@@ -575,6 +612,7 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
     result_dict: dict | None = None
     # Classify once upfront
     import asyncio
+
     use_planning = asyncio.run(classify_task_complexity(prompt, cwd=work_dir)) == "PLAN"
     if use_planning:
         print("📋 Task classified as complex — running in planning mode")
@@ -583,16 +621,22 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
 
     for attempt in range(2):
         if attempt > 0:
-            print(f"[RETRY] Empty patch on attempt 1, retrying {instance_id} with planning enabled...")
+            print(
+                f"[RETRY] Empty patch on attempt 1, retrying {instance_id} with planning enabled..."
+            )
             use_planning = True
         max_iter = 45 if use_planning else DEFAULT_MAX_ITERATIONS
         try:
             if use_planning:
                 # Direct call to capture plan for focused review/tests
-                rc, output, result_dict = run_pilotcode_direct(work_dir, prompt, max_iterations=max_iter, planning=True, repo=repo)
+                rc, output, result_dict = run_pilotcode_direct(
+                    work_dir, prompt, max_iterations=max_iter, planning=True, repo=repo
+                )
                 plan = result_dict.get("plan") if result_dict else None
             else:
-                rc, output = run_pilotcode(work_dir, prompt, max_iterations=max_iter, planning=False)
+                rc, output = run_pilotcode(
+                    work_dir, prompt, max_iterations=max_iter, planning=False
+                )
             print(output)
             if rc != 0:
                 print(f"[WARNING] PilotCode exited with code {rc} for {instance_id}")
@@ -623,7 +667,9 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                 )
                 run_cmd(f"git checkout {base_commit}", cwd=work_dir)
                 try:
-                    rc, output = run_pilotcode(work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS)
+                    rc, output = run_pilotcode(
+                        work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS
+                    )
                     print(output)
                     new_patch = get_git_diff(work_dir)
                     if new_patch:
@@ -631,7 +677,9 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                         print(f"[INFO] Syntax redesign generated new patch ({len(patch)} chars)")
                         continue
                     else:
-                        print(f"[WARN] Syntax redesign produced empty patch, keeping previous patch.")
+                        print(
+                            f"[WARN] Syntax redesign produced empty patch, keeping previous patch."
+                        )
                         break
                 except subprocess.TimeoutExpired as e:
                     print(f"[ERROR] Syntax redesign timed out for {instance_id}: {e}")
@@ -639,7 +687,9 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
 
             # 2) Run tests (skip for astropy — local env always broken)
             if repo == "astropy/astropy":
-                print(f"[SKIP] Local tests disabled for astropy instances — running static review instead.")
+                print(
+                    f"[SKIP] Local tests disabled for astropy instances — running static review instead."
+                )
                 review_ok, review_issues = review_patch_locally(work_dir, patch, plan=plan)
                 if not review_ok:
                     print(f"[REVIEW {redesign + 1}] Issues found:")
@@ -652,15 +702,21 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                     )
                     run_cmd(f"git checkout {base_commit}", cwd=work_dir)
                     try:
-                        rc, output = run_pilotcode(work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS)
+                        rc, output = run_pilotcode(
+                            work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS
+                        )
                         print(output)
                         new_patch = get_git_diff(work_dir)
                         if new_patch:
                             patch = new_patch
-                            print(f"[INFO] Review redesign generated new patch ({len(patch)} chars)")
+                            print(
+                                f"[INFO] Review redesign generated new patch ({len(patch)} chars)"
+                            )
                             continue
                         else:
-                            print(f"[WARN] Review redesign produced empty patch, keeping previous patch.")
+                            print(
+                                f"[WARN] Review redesign produced empty patch, keeping previous patch."
+                            )
                             break
                     except subprocess.TimeoutExpired as e:
                         print(f"[ERROR] Review redesign timed out for {instance_id}: {e}")
@@ -689,15 +745,21 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                     )
                     run_cmd(f"git checkout {base_commit}", cwd=work_dir)
                     try:
-                        rc, output = run_pilotcode(work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS)
+                        rc, output = run_pilotcode(
+                            work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS
+                        )
                         print(output)
                         new_patch = get_git_diff(work_dir)
                         if new_patch:
                             patch = new_patch
-                            print(f"[INFO] Review redesign generated new patch ({len(patch)} chars)")
+                            print(
+                                f"[INFO] Review redesign generated new patch ({len(patch)} chars)"
+                            )
                             continue
                         else:
-                            print(f"[WARN] Review redesign produced empty patch, keeping previous patch.")
+                            print(
+                                f"[WARN] Review redesign produced empty patch, keeping previous patch."
+                            )
                             break
                     except subprocess.TimeoutExpired as e:
                         print(f"[ERROR] Review redesign timed out for {instance_id}: {e}")
@@ -716,7 +778,9 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
             # Reset repo to clean state before redesign
             run_cmd(f"git checkout {base_commit}", cwd=work_dir)
             try:
-                rc, output = run_pilotcode(work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS)
+                rc, output = run_pilotcode(
+                    work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS
+                )
                 print(output)
                 new_patch = get_git_diff(work_dir)
                 if new_patch:
@@ -734,7 +798,9 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
     # Strip test file changes to avoid conflicts with SWE-bench test_patch
     cleaned_patch = strip_test_file_changes(patch)
     if cleaned_patch != patch:
-        print(f"[INFO] Stripped test file changes from patch ({len(patch)} -> {len(cleaned_patch)} chars)")
+        print(
+            f"[INFO] Stripped test file changes from patch ({len(patch)} -> {len(cleaned_patch)} chars)"
+        )
 
     prediction = {
         KEY_INSTANCE_ID: instance_id,
@@ -847,7 +913,7 @@ def main():
     print(f"[INFO] Processing {len(dataset)} remaining instances")
 
     if args.limit is not None:
-        dataset = dataset[:args.limit]
+        dataset = dataset[: args.limit]
         print(f"[INFO] Limited to first {len(dataset)} instances")
 
     # Solve instances and append predictions immediately

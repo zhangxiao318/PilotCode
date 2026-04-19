@@ -27,7 +27,7 @@ def translate_command_for_windows(command: str) -> str:
     # pwd -> cd (Windows equivalent to print working directory)
     if cmd_stripped == "pwd":
         return "cd"
-    
+
     # date -> PowerShell Get-Date (Windows date command waits for input)
     if cmd_stripped == "date":
         return "powershell -Command Get-Date -Format 'ddd MMM dd HH:mm:ss yyyy'"

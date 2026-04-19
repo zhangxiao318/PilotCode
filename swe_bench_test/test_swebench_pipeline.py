@@ -31,6 +31,7 @@ def test_swebench_imports():
         from swebench.harness.run_evaluation import main as eval_main
         from swebench.harness.utils import load_swebench_dataset
         from swebench.harness.grading import get_eval_report
+
         print("  Imports OK")
         return True
     except Exception as e:
@@ -65,7 +66,9 @@ def test_make_test_spec():
             # Expected to fail for fake commit, but we check it fails for the right reason
             error_msg = str(e).lower()
             if "commit" in error_msg or "script" in error_msg or "docker" in error_msg:
-                print(f"  make_test_spec callable (expected error for fake commit: {type(e).__name__})")
+                print(
+                    f"  make_test_spec callable (expected error for fake commit: {type(e).__name__})"
+                )
             else:
                 raise
         print("  make_test_spec OK")

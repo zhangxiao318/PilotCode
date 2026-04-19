@@ -14,15 +14,11 @@ class ApplyPatchInput(BaseModel):
     """Input for ApplyPatch tool."""
 
     patch_text: str = Field(description="Unified diff patch text to apply")
-    base_path: str = Field(
-        default=".", description="Base directory to apply the patch from"
-    )
+    base_path: str = Field(default=".", description="Base directory to apply the patch from")
     strip: int = Field(
         default=1, description="Number of leading path components to strip (default: 1)"
     )
-    dry_run: bool = Field(
-        default=False, description="If True, simulate the patch without applying"
-    )
+    dry_run: bool = Field(default=False, description="If True, simulate the patch without applying")
 
 
 class ApplyPatchOutput(BaseModel):
@@ -72,9 +68,7 @@ def _apply_patch_with_command(
             error="`patch` command not found on this system",
         )
     except Exception as e:
-        return ApplyPatchOutput(
-            success=False, output="", error=f"Exception during patch: {e}"
-        )
+        return ApplyPatchOutput(success=False, output="", error=f"Exception during patch: {e}")
 
 
 async def apply_patch_call(
@@ -100,9 +94,7 @@ async def apply_patch_call(
     return ToolResult(data=result)
 
 
-async def apply_patch_description(
-    input_data: ApplyPatchInput, options: dict[str, Any]
-) -> str:
+async def apply_patch_description(input_data: ApplyPatchInput, options: dict[str, Any]) -> str:
     """Get description for ApplyPatch."""
     mode = "dry-run" if input_data.dry_run else "apply"
     return f"🩹 {mode.capitalize()} patch ({len(input_data.patch_text)} chars)"

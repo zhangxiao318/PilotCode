@@ -36,7 +36,9 @@ def main():
 
     instance = create_instance(repo, pull)
     if not is_valid_instance(instance):
-        print("Warning: PR is not a valid SWE-bench instance (not merged or missing issue). Proceeding anyway for testing.")
+        print(
+            "Warning: PR is not a valid SWE-bench instance (not merged or missing issue). Proceeding anyway for testing."
+        )
 
     if not has_test_patch(instance):
         print("Warning: instance has no test patch")
@@ -48,7 +50,9 @@ def main():
         "base_commit": instance["base_commit"],
         "patch": instance["patch"],
         "test_patch": instance["test_patch"],
-        "problem_statement": (instance.get("problem_statement") or (pull["title"] + "\n" + (pull.get("body") or ""))),
+        "problem_statement": (
+            instance.get("problem_statement") or (pull["title"] + "\n" + (pull.get("body") or ""))
+        ),
         "hints_text": "",
         "created_at": pull["created_at"],
         "version": "",

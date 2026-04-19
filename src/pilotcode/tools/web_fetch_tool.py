@@ -38,7 +38,9 @@ async def web_fetch_call(
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         }
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=headers) as client:
+        async with httpx.AsyncClient(
+            timeout=30.0, follow_redirects=True, headers=headers
+        ) as client:
             response = await client.get(input_data.url)
             response.raise_for_status()
 

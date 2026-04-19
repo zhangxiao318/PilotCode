@@ -21,7 +21,7 @@ async def web_command(args: list[str], context: CommandContext) -> str:
     port = 8080
     host = "127.0.0.1"
     no_browser = False
-    
+
     # Parse arguments
     for i, arg in enumerate(args):
         if arg == "--port" or arg == "-p":
@@ -40,16 +40,16 @@ async def web_command(args: list[str], context: CommandContext) -> str:
                 port = int(arg.split("=")[1])
             except ValueError:
                 return f"[red]Invalid port number: {arg}[/red]"
-    
+
     # Check websockets
     try:
         import websockets
     except ImportError as e:
         return f"[red]websockets not installed: {e}[/red]\nRun: {sys.executable} -m pip install websockets"
-    
+
     # Check ports
     ws_port = port + 1
-    
+
     # Find available ports if default is taken
     original_port = port
     max_attempts = 50
@@ -59,14 +59,14 @@ async def web_command(args: list[str], context: CommandContext) -> str:
             break
         port += 2
         attempts += 1
-    
+
     if attempts >= max_attempts:
         return f"[red]Could not find available ports near {original_port}[/red]"
-    
+
     ws_port = port + 1
     url = f"http://{host}:{port}"
     ws_url = f"ws://{host}:{ws_port}"
-    
+
     # Print startup message
     print(f"""
 [green]╔══════════════════════════════════════════════════════════╗[/green]
@@ -79,17 +79,17 @@ async def web_command(args: list[str], context: CommandContext) -> str:
 
 [yellow]Starting server... Press Ctrl+C to stop[/yellow]
 """)
-    
+
     # Open browser
     if not no_browser:
         try:
             webbrowser.open(url)
         except Exception:
             pass
-    
+
     # Import and run server directly (blocking)
     from ..web.server import run_server_standalone
-    
+
     try:
         # This will block until Ctrl+C
         run_server_standalone(host, port, context.cwd)
@@ -97,7 +97,7 @@ async def web_command(args: list[str], context: CommandContext) -> str:
         print("\n[yellow]Server stopped.[/yellow]")
     except Exception as e:
         print(f"\n[red]Server error: {e}[/red]")
-    
+
     return ""
 
 

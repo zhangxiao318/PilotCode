@@ -244,7 +244,16 @@ End with a structured plan containing:
 - Verification steps
 
 Use <complete> when the plan is ready for execution.""",
-        allowed_tools=["FileRead", "Grep", "Glob", "CodeSearch", "Bash", "GitDiff", "GitLog", "GitStatus"],
+        allowed_tools=[
+            "FileRead",
+            "Grep",
+            "Glob",
+            "CodeSearch",
+            "Bash",
+            "GitDiff",
+            "GitLog",
+            "GitStatus",
+        ],
         color="cyan",
         icon="📋",
         max_turns=15,

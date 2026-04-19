@@ -122,6 +122,7 @@ async def edit_file_content(
         # Validate Python syntax and rollback if invalid
         if path.suffix == ".py":
             import py_compile
+
             try:
                 py_compile.compile(str(path), doraise=True)
             except py_compile.PyCompileError as e:

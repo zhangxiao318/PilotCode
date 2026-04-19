@@ -549,11 +549,13 @@ Previous discussion:
         for tool_name in agent.definition.allowed_tools:
             tool = get_tool_by_name(tool_name)
             if tool:
-                all_tools.append({
-                    "name": tool.name,
-                    "description": tool.description,
-                    "input_schema": tool.input_schema.model_json_schema(),
-                })
+                all_tools.append(
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "input_schema": tool.input_schema.model_json_schema(),
+                    }
+                )
 
         messages = [
             MCMessage(role="system", content=agent.definition.system_prompt),
@@ -567,9 +569,7 @@ Previous discussion:
             for _ in range(max_iterations):
                 agent.turns += 1
                 response = None
-                async for chunk in client.chat_completion(
-                    messages, tools=all_tools, stream=False
-                ):
+                async for chunk in client.chat_completion(messages, tools=all_tools, stream=False):
                     response = chunk
 
                 if not response:

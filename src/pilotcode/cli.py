@@ -5,7 +5,13 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from .components.repl import run_repl, run_headless, run_headless_with_planning, run_headless_with_feedback, classify_task_complexity
+from .components.repl import (
+    run_repl,
+    run_headless,
+    run_headless_with_planning,
+    run_headless_with_feedback,
+    classify_task_complexity,
+)
 from .version import __version__
 from .utils.config import is_configured, get_config_manager
 from .utils.configure import run_configure_wizard, format_model_list, get_available_model_names
@@ -166,12 +172,8 @@ def main(
     simple: bool = typer.Option(
         False, "--simple/--no-simple", help="Use simple CLI without TUI (default: False)"
     ),
-    web: bool = typer.Option(
-        False, "--web", help="Launch Web UI server (default: False)"
-    ),
-    web_port: int = typer.Option(
-        8080, "--web-port", help="Port for Web UI server (default: 8080)"
-    ),
+    web: bool = typer.Option(False, "--web", help="Launch Web UI server (default: False)"),
+    web_port: int = typer.Option(8080, "--web-port", help="Port for Web UI server (default: 8080)"),
     web_host: str = typer.Option(
         "127.0.0.1", "--web-host", help="Host for Web UI server (default: 127.0.0.1)"
     ),
@@ -182,7 +184,9 @@ def main(
         False, "--daemon", help="Run in daemon mode (stdio) for VS Code integration"
     ),
     planning: bool = typer.Option(
-        True, "--planning/--no-planning", help="Enable automatic planning mode for complex tasks (default: True)"
+        True,
+        "--planning/--no-planning",
+        help="Enable automatic planning mode for complex tasks (default: True)",
     ),
 ):
     """PilotCode - Python rewrite of Claude Code."""
@@ -216,7 +220,9 @@ def main(
             else:
                 mode = "DIRECT"
             if mode == "PLAN":
-                console.print("[dim]⚡ Task classified as complex — enabling planning and verification mode[/dim]")
+                console.print(
+                    "[dim]⚡ Task classified as complex — enabling planning and verification mode[/dim]"
+                )
                 return await run_headless_with_feedback(
                     prompt,
                     auto_allow=auto_allow,
@@ -226,7 +232,9 @@ def main(
                     use_planning=True,
                 )
             else:
-                console.print("[dim]⚡ Task classified as simple — running in direct execution mode with feedback[/dim]")
+                console.print(
+                    "[dim]⚡ Task classified as simple — running in direct execution mode with feedback[/dim]"
+                )
                 return await run_headless_with_feedback(
                     prompt,
                     auto_allow=auto_allow,
@@ -272,6 +280,7 @@ def main(
         ws_url = f"ws://{host}:{port + 1}"
 
         import webbrowser
+
         banner = f"""
 [bold cyan]PilotCode Web UI[/bold cyan] [dim]v{__version__}[/dim]
 
