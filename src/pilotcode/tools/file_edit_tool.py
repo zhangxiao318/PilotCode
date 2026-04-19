@@ -76,7 +76,11 @@ def _generate_unified_diff(
 async def edit_file_content(
     file_path: str, old_string: str, new_string: str, expected_replacements: int | None = None
 ) -> FileEditOutput:
-    """Edit file content with search/replace."""
+    """Edit file content with search/replace.
+    
+    Supports fuzzy matching: if the exact old_string is not found,
+    attempts to find the closest match using sequence similarity.
+    """
     path = Path(file_path).expanduser().resolve()
 
     if not path.exists():
@@ -92,11 +96,93 @@ async def edit_file_content(
         occurrences = original_content.count(old_string)
 
         if occurrences == 0:
+            # Try fuzzy matching before giving up
+            from difflib import SequenceMatcher
+            
+            def _find_best_match(content: str, target: str) -> tuple[str, float]:
+                """Find the substring in content most similar to target."""
+                target_len = len(target)
+                if target_len == 0:
+                    return "", 0.0
+                best_ratio = 0.0
+                best_match = ""
+                # Slide a window of target_len across the content
+                # Use a step size to avoid O(n^2) on huge files
+                step = max(1, target_len // 20)
+                for i in range(0, len(content) - target_len + 1, step):
+                    candidate = content[i:i + target_len]
+                    ratio = SequenceMatcher(None, target, candidate).ratio()
+                    if ratio > best_ratio:
+                        best_ratio = ratio
+                        best_match = candidate
+                        if ratio >= 0.99:
+                            break
+                # Also check a few line-aligned positions for better accuracy
+                lines = content.splitlines(keepends=True)
+                pos = 0
+                for line in lines:
+                    for offset in (0, len(line) // 4, len(line) // 2):
+                        start = pos + offset
+                        if start + target_len <= len(content):
+                            candidate = content[start:start + target_len]
+                            ratio = SequenceMatcher(None, target, candidate).ratio()
+                            if ratio > best_ratio:
+                                best_ratio = ratio
+                                best_match = candidate
+                    pos += len(line)
+                return best_match, best_ratio
+            
+            best_match, ratio = _find_best_match(original_content, old_string)
+            
+            if ratio >= 0.75:
+                # Use fuzzy match
+                fuzzy_note = f"[FUZZY MATCH] Exact string not found. Used closest match (similarity {ratio:.2f})."
+                new_content = original_content.replace(best_match, new_string, 1)
+                # Generate unified diff using the actual matched text
+                diff = _generate_unified_diff(original_content, new_content, path.name)
+                path.write_text(new_content, encoding="utf-8")
+                
+                # Validate Python syntax and rollback if invalid
+                if path.suffix == ".py":
+                    import py_compile
+                    try:
+                        py_compile.compile(str(path), doraise=True)
+                    except py_compile.PyCompileError as e:
+                        path.write_text(original_content, encoding="utf-8")
+                        return FileEditOutput(
+                            file_path=str(path),
+                            replacements_made=0,
+                            original_content=original_content,
+                            error=f"{fuzzy_note} Fuzzy match introduced Python syntax error, rolled back: {e}",
+                        )
+                
+                return FileEditOutput(
+                    file_path=str(path),
+                    replacements_made=1,
+                    original_content=original_content,
+                    new_content=new_content,
+                    diff=f"{fuzzy_note}\n{diff}",
+                )
+            
+            # Show surrounding context to help the model fix its query
+            context_snippet = ""
+            if len(old_string) > 10:
+                # Try to find a line containing part of old_string
+                search_term = old_string.strip().splitlines()[0][:40]
+                idx = original_content.find(search_term)
+                if idx != -1:
+                    start = max(0, idx - 200)
+                    end = min(len(original_content), idx + 200)
+                    context_snippet = f"\n\nNearby content:\n```\n{original_content[start:end]}\n```"
+                else:
+                    # Show first 500 chars of file as reference
+                    context_snippet = f"\n\nFile starts with:\n```\n{original_content[:500]}\n```"
+            
             return FileEditOutput(
                 file_path=str(path),
                 replacements_made=0,
                 original_content=original_content,
-                error="String not found in file",
+                error=f"String not found in file.{context_snippet}\n\nTIP: Make sure old_string matches the file content EXACTLY (including indentation and newlines). If the file was recently modified, re-read it first.",
             )
 
         if expected_replacements is not None:

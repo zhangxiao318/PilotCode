@@ -606,12 +606,28 @@ class LoopGuard:
             if len(uniq) == 2 and recent.count(uniq[0]) >= 2 and recent.count(uniq[1]) >= 2:
                 return "alternating between two tool patterns"
 
-        # Rule 4: Same tool called consecutively >=5 times with different inputs
-        # Exclude FileEdit/FileWrite — editing the same file multiple times is normal
+        # Rule 4: Same tool called consecutively >=5 times with FEW unique inputs.
+        # If all 5 calls have different parameters, it's normal exploration (e.g.
+        # reading 5 different files, grepping 5 different keywords).
+        # If only 1-2 unique parameters keep repeating, it's a loop.
+        # Exclude exploration tools entirely — they are always legitimate.
+        _exploration_tools = {
+            "FileRead", "Glob", "Grep", "CodeSearch", "CodeIndex",
+            "GitDiff", "GitStatus", "FileTree",
+        }
         if len(flat) >= 5:
-            last5_tools = [f.split(":")[0] for f in flat[-5:]]
-            if len(set(last5_tools)) == 1 and last5_tools[0] not in {"FileEdit", "FileWrite"}:
-                return f"tool '{last5_tools[0]}' called 5+ times consecutively with different inputs"
+            last5_fp = flat[-5:]
+            last5_tools = [f.split(":")[0] for f in last5_fp]
+            tool_name = last5_tools[0]
+            if (
+                len(set(last5_tools)) == 1
+                and tool_name not in _exploration_tools
+                and len(set(last5_fp)) <= 2
+            ):
+                return (
+                    f"tool '{tool_name}' called 5+ times consecutively with only "
+                    f"{len(set(last5_fp))} unique input pattern(s) — likely stuck"
+                )
 
         return None
 

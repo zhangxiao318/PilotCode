@@ -66,6 +66,7 @@ CRITICAL INSTRUCTIONS:
 4. Once you locate the bug, MAKE THE CODE EDIT IMMEDIATELY. Do NOT keep reading "just to be sure".
 5. After editing, run `git diff` to verify the patch is non-empty.
 6. If you run low on turns (past turn 35), declare completion with whatever fix you have.
+7. DO NOT modify test files. SWE-bench applies its own test patch separately. Only modify source code files that implement the actual fix.
 """
 
 DEFAULT_MAX_ITERATIONS = 50
@@ -377,7 +378,8 @@ Requirements:
 3. Identify the TRUE root cause. Your previous assumption may be wrong.
 4. Consider whether your fix introduced a regression or missed a call site.
 5. Produce a COMPLETELY REVISED fix.
-6. Run the tests again to confirm they pass before declaring completion.
+6. DO NOT modify test files. Only modify source code files that implement the actual fix.
+7. Run the tests again to confirm they pass before declaring completion.
 
 Previous patch (for reference only — do not assume it is correct):
 ```diff
@@ -399,7 +401,8 @@ Requirements:
 1. Read the EXACT current state of the file(s) you modified.
 2. Identify where the syntax error was introduced (mismatched brackets, wrong indentation, duplicate keywords, etc.).
 3. Apply a CORRECTED edit that fixes the syntax while preserving the intended logic.
-4. Run `python3 -m py_compile <file>` to verify the syntax is valid before declaring completion.
+4. DO NOT modify test files. Only modify source code files.
+5. Run `python3 -m py_compile <file>` to verify the syntax is valid before declaring completion.
 
 Previous patch (for reference only):
 ```diff
@@ -420,8 +423,9 @@ You MUST address ALL issues before declaring completion.
 Requirements:
 1. Re-read the file(s) you modified to understand each issue.
 2. Apply corrected edits that fix every issue while preserving the intended bug fix.
-3. Run `git diff` to verify the patch is non-empty and correct.
-4. Run `python3 -m py_compile <file>` on any modified Python files to verify syntax.
+3. DO NOT modify test files. Only modify source code files.
+4. Run `git diff` to verify the patch is non-empty and correct.
+5. Run `python3 -m py_compile <file>` on any modified Python files to verify syntax.
 
 Previous patch (for reference only):
 ```diff
