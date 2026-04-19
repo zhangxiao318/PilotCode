@@ -642,6 +642,7 @@ async def run_headless(
     progress_callback: Callable[[str], None] | None = None,
     read_only: bool = False,
     disable_env_diagnosis: bool = False,
+    env_diagnosis_count: int = 0,
 ) -> dict[str, Any]:
     """Run a single prompt in headless mode and return structured output.
 
@@ -700,7 +701,6 @@ async def run_headless(
     tool_calls_log: list[dict[str, Any]] = []
     response_text = ""
     success = True
-    env_diagnosis_count = 0  # Limit environment diagnosis to prevent loops
     loop_guard = LoopGuard()
 
     try:
@@ -863,6 +863,7 @@ async def run_headless(
         "tool_calls": tool_calls_log,
         "success": success,
         "messages": serializable_messages,  # Include full message history for session persistence
+        "env_diagnosis_count": env_diagnosis_count,
     }
 
     if json_mode:
@@ -971,7 +972,9 @@ Be efficient — use parallel tool calls where possible.
         cwd=effective_cwd,
         progress_callback=progress_callback,
         read_only=True,
+        env_diagnosis_count=env_diagnosis_count,
     )
+    env_diagnosis_count = explore_result.get("env_diagnosis_count", env_diagnosis_count)
     explore_summary = explore_result.get("response", "").strip()
     _log(f"[AGENT] Exploration complete ({len(explore_summary)} chars)")
 
@@ -1042,14 +1045,17 @@ Requirements:
 --- Instruction ---
 Based on the discoveries above, proceed DIRECTLY to implement the fix. Do NOT repeat the same exploration. Make the code changes immediately.
 """
-        return await run_headless(
+        fallback_result = await run_headless(
             enriched_prompt,
             auto_allow=auto_allow,
             json_mode=json_mode,
             max_iterations=fallback_budget,
             cwd=effective_cwd,
             progress_callback=progress_callback,
+            env_diagnosis_count=env_diagnosis_count,
         )
+        fallback_result["env_diagnosis_count"] = fallback_result.get("env_diagnosis_count", env_diagnosis_count)
+        return fallback_result
 
     # Validate plan: ensure referenced files exist in the repo
     is_valid, issues = _validate_plan(plan, effective_cwd)
@@ -1067,14 +1073,17 @@ The planning phase identified the following potential files, but some could not 
 
 Proceed DIRECTLY to implement the fix. Make the code changes immediately.
 """
-        return await run_headless(
+        fallback_result = await run_headless(
             enriched_prompt,
             auto_allow=auto_allow,
             json_mode=json_mode,
             max_iterations=fallback_budget,
             cwd=effective_cwd,
             progress_callback=progress_callback,
+            env_diagnosis_count=env_diagnosis_count,
         )
+        fallback_result["env_diagnosis_count"] = fallback_result.get("env_diagnosis_count", env_diagnosis_count)
+        return fallback_result
 
     # Persist valid plan to external cache
     _save_plan_to_cache(plan, effective_cwd)
@@ -1151,7 +1160,9 @@ CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste t
             max_iterations=execution_max_iterations,
             cwd=effective_cwd,
             progress_callback=progress_callback,
+            env_diagnosis_count=env_diagnosis_count,
         )
+        env_diagnosis_count = exec_result.get("env_diagnosis_count", env_diagnosis_count)
         best_result = exec_result
 
         # ========================================================================
