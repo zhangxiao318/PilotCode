@@ -15,6 +15,7 @@ class PowerShellInput(BaseModel):
     command: str = Field(description="The PowerShell command to execute")
     timeout: int = Field(default=600, description="Timeout in seconds")
     description: str | None = Field(default=None, description="Description of the command")
+    working_dir: str | None = Field(default=None, description="Working directory for the command")
 
 
 class PowerShellOutput(BaseModel):
@@ -31,7 +32,7 @@ def is_windows() -> bool:
     return sys.platform == "win32"
 
 
-async def execute_powershell(command: str, timeout: int = 600) -> PowerShellOutput:
+async def execute_powershell(command: str, timeout: int = 600, cwd: str | None = None) -> PowerShellOutput:
     """Execute a PowerShell command."""
     if not is_windows():
         # On non-Windows, try to use PowerShell Core (pwsh)
@@ -55,6 +56,7 @@ async def execute_powershell(command: str, timeout: int = 600) -> PowerShellOutp
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
             startupinfo=startupinfo,
         )
 
@@ -90,7 +92,13 @@ async def powershell_call(
     on_progress: Any,
 ) -> ToolResult[PowerShellOutput]:
     """Execute PowerShell command."""
-    result = await execute_powershell(input_data.command, timeout=input_data.timeout)
+    # Determine working directory
+    cwd = input_data.working_dir
+    if cwd is None and context.get_app_state:
+        app_state = context.get_app_state()
+        cwd = getattr(app_state, "cwd", os.getcwd())
+
+    result = await execute_powershell(input_data.command, timeout=input_data.timeout, cwd=cwd)
 
     return ToolResult(data=result)
 

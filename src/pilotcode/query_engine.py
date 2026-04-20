@@ -182,6 +182,7 @@ Do NOT rely on any time information in the system prompt as it may be outdated.
    - Do NOT just read the code and say "看起来可以运行" - actually run it!
 6. **Be specific** - Make precise, targeted file changes
 7. **Show your work** - Explain what you're doing
+8. **USE EXACT FILE PATHS** - When rewriting or updating an existing file, you MUST use the EXACT original file path. Do NOT create files with '_new', '_backup', '_fixed', or any other suffixes. Always write directly to the target file path.
 
 8. **PARALLEL TOOL CALLS** - When a user asks for multiple things in one sentence, make ALL necessary tool calls at once:
    - "查看目录并读取代码" -> Call Glob AND FileRead together

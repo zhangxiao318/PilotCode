@@ -38,7 +38,7 @@ class REPL:
     """Programming Assistant REPL with full tool support."""
 
     # Default max iterations for tool calls (configurable via env var)
-    DEFAULT_MAX_ITERATIONS = 25
+    DEFAULT_MAX_ITERATIONS = 100
 
     WRITE_TOOLS = {
         "FileEdit", "FileWrite", "ApplyPatch", "NotebookEdit",
@@ -636,7 +636,7 @@ async def run_headless(
     prompt: str,
     auto_allow: bool = False,
     json_mode: bool = False,
-    max_iterations: int = 25,
+    max_iterations: int = 100,
     initial_messages: list | None = None,
     cwd: str | None = None,
     progress_callback: Callable[[str], None] | None = None,
@@ -877,7 +877,7 @@ async def run_headless_with_planning(
     prompt: str,
     auto_allow: bool = False,
     json_mode: bool = False,
-    max_iterations: int = 25,
+    max_iterations: int = 100,
     cwd: str | None = None,
     max_plan_attempts: int = 3,
     progress_callback: Callable[[str], None] | None = None,
@@ -926,6 +926,8 @@ async def run_headless_with_planning(
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 timeout=30,
             )
             return result.stdout if result.returncode == 0 else ""
@@ -1331,6 +1333,8 @@ def _get_git_diff(work_dir: str) -> str:
             cwd=work_dir,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=30,
         )
         return result.stdout if result.returncode == 0 else ""
@@ -1544,7 +1548,7 @@ async def run_headless_with_feedback(
     prompt: str,
     auto_allow: bool = False,
     json_mode: bool = False,
-    max_iterations: int = 25,
+    max_iterations: int = 100,
     max_rounds: int = 3,
     cwd: str | None = None,
     progress_callback: Callable[[str], None] | None = None,

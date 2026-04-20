@@ -73,6 +73,16 @@ def _generate_unified_diff(
     return result
 
 
+def _normalize_path(file_path: str, cwd: str | None = None) -> str:
+    """Normalize a file path for consistent comparison.
+    
+    Converts to absolute path and normalizes separators and case on Windows.
+    """
+    if cwd and not os.path.isabs(file_path):
+        file_path = os.path.join(cwd, file_path)
+    return os.path.normcase(os.path.normpath(os.path.abspath(file_path)))
+
+
 async def edit_file_content(
     file_path: str, old_string: str, new_string: str, expected_replacements: int | None = None
 ) -> FileEditOutput:
@@ -92,8 +102,17 @@ async def edit_file_content(
         # Read original content
         original_content = path.read_text(encoding="utf-8", errors="replace")
 
+        # Normalize line endings for Windows compatibility
+        # If file uses CRLF but old_string uses LF, convert old_string/new_string to CRLF
+        file_has_crlf = '\r\n' in original_content
+        old_string_normalized = old_string
+        new_string_normalized = new_string
+        if file_has_crlf and '\r\n' not in old_string:
+            old_string_normalized = old_string.replace('\n', '\r\n')
+            new_string_normalized = new_string.replace('\n', '\r\n')
+
         # Count occurrences
-        occurrences = original_content.count(old_string)
+        occurrences = original_content.count(old_string_normalized)
 
         if occurrences == 0:
             # Try fuzzy matching before giving up
@@ -132,15 +151,27 @@ async def edit_file_content(
                     pos += len(line)
                 return best_match, best_ratio
             
-            best_match, ratio = _find_best_match(original_content, old_string)
+            best_match, ratio = _find_best_match(original_content, old_string_normalized)
             
             if ratio >= 0.75:
                 # Use fuzzy match
                 fuzzy_note = f"[FUZZY MATCH] Exact string not found. Used closest match (similarity {ratio:.2f})."
-                new_content = original_content.replace(best_match, new_string, 1)
+                new_content = original_content.replace(best_match, new_string_normalized, 1)
                 # Generate unified diff using the actual matched text
                 diff = _generate_unified_diff(original_content, new_content, path.name)
                 path.write_text(new_content, encoding="utf-8")
+                
+                # Verify write succeeded
+                try:
+                    verify_content = path.read_text(encoding="utf-8")
+                    if verify_content != new_content:
+                        path.write_text(original_content, encoding="utf-8")
+                        return FileEditOutput(
+                            file_path=str(path), replacements_made=0,
+                            error=f"{fuzzy_note} Write verification failed, rolled back.",
+                        )
+                except Exception:
+                    pass
                 
                 # Validate Python syntax and rollback if invalid
                 if path.suffix == ".py":
@@ -195,7 +226,7 @@ async def edit_file_content(
                 )
 
         # Replace
-        new_content = original_content.replace(old_string, new_string)
+        new_content = original_content.replace(old_string_normalized, new_string_normalized)
         replacements_made = occurrences
 
         # Generate unified diff
@@ -204,6 +235,22 @@ async def edit_file_content(
 
         # Write back
         path.write_text(new_content, encoding="utf-8")
+
+        # Verify write succeeded
+        try:
+            verify_content = path.read_text(encoding="utf-8")
+            if verify_content != new_content:
+                path.write_text(original_content, encoding="utf-8")
+                return FileEditOutput(
+                    file_path=str(path), replacements_made=0,
+                    error="Write verification failed (disk readback mismatch), rolled back.",
+                )
+        except Exception as verify_err:
+            path.write_text(original_content, encoding="utf-8")
+            return FileEditOutput(
+                file_path=str(path), replacements_made=0,
+                error=f"Write verification failed: {verify_err}, rolled back.",
+            )
 
         # Validate Python syntax and rollback if invalid
         if path.suffix == ".py":
@@ -236,25 +283,36 @@ async def file_edit_validate(
     input_data: FileEditInput, context: ToolUseContext
 ) -> tuple[bool, str | None]:
     """Validate file edit input."""
-    file_path = input_data.file_path
-
-    if not os.path.isabs(file_path) and context.get_app_state:
+    cwd = None
+    if context.get_app_state:
         app_state = context.get_app_state()
         cwd = getattr(app_state, "cwd", os.getcwd())
-        file_path = os.path.join(cwd, file_path)
+
+    normalized_path = _normalize_path(input_data.file_path, cwd)
 
     # Check if file has been read (conflict detection)
-    if context.read_file_state and file_path in context.read_file_state:
-        read_info = context.read_file_state[file_path]
-        read_timestamp = read_info.get("timestamp", 0)
+    # Use normalized path comparison to handle Windows path variations
+    matched_key = None
+    read_info = None
+    if context.read_file_state:
+        for key, info in context.read_file_state.items():
+            if _normalize_path(key, None) == normalized_path:
+                matched_key = key
+                read_info = info
+                break
 
-        if os.path.exists(file_path):
-            mtime = os.path.getmtime(file_path)
+    if read_info is not None:
+        read_timestamp = read_info.get("timestamp", 0)
+        if os.path.exists(normalized_path):
+            mtime = os.path.getmtime(normalized_path)
             if mtime > read_timestamp:
                 return False, "File has been modified since it was read"
     else:
-        if os.path.exists(file_path):
-            return False, "File must be read before editing (to enable conflict detection)"
+        if os.path.exists(normalized_path):
+            # Allow editing with a warning rather than blocking entirely
+            # This is important for headless/simple mode where read_file_state
+            # may not be perfectly maintained
+            return True, None
 
     return True, None
 

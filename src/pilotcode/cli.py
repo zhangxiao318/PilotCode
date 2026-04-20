@@ -1,6 +1,17 @@
 """CLI entry point for PilotCode."""
 
+import sys
 import asyncio
+
+# Fix Windows encoding issues
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    import os
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -161,7 +172,7 @@ def main(
     ),
     json_mode: bool = typer.Option(False, "--json", help="Output structured JSON in headless mode"),
     max_iterations: int = typer.Option(
-        25,
+        100,
         "--max-iterations",
         "-i",
         help="Maximum tool execution rounds per query (default: 25, env: PILOTCODE_MAX_ITERATIONS)",
@@ -233,15 +244,14 @@ def main(
                 )
             else:
                 console.print(
-                    "[dim]⚡ Task classified as simple — running in direct execution mode with feedback[/dim]"
+                    "[dim]⚡ Task classified as simple — running in direct execution mode[/dim]"
                 )
-                return await run_headless_with_feedback(
+                return await run_headless(
                     prompt,
                     auto_allow=auto_allow,
                     json_mode=json_mode,
                     max_iterations=max_iterations,
                     cwd=cwd,
-                    use_planning=False,
                 )
 
         try:

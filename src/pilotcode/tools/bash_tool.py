@@ -70,6 +70,73 @@ def translate_command_for_windows(command: str) -> str:
             text, old_char, new_char = match.groups()
             return f"powershell -Command \"echo '{text}' | ForEach-Object {{ $_ -replace '{old_char}', '{new_char}' }}\""
 
+    # rm [-rf] FILE/DIR -> del /q FILE or rmdir /s /q DIR
+    rm_match = re.match(r"^rm\s+(-\w*\s+)?(.+)$", cmd_stripped)
+    if rm_match:
+        flags = rm_match.group(1) or ""
+        target = rm_match.group(2).strip()
+        # Check if it's a directory removal
+        if "-r" in flags or "-R" in flags or "-rf" in flags or "-fr" in flags:
+            return f"rmdir /s /q {target}"
+        return f"del /q {target}"
+
+    # cp [-r] SRC DEST -> copy SRC DEST or xcopy /e /i /y SRC DEST
+    cp_match = re.match(r"^cp\s+(-\w*\s+)?(.+?)\s+(.+)$", cmd_stripped)
+    if cp_match:
+        flags = cp_match.group(1) or ""
+        src = cp_match.group(2).strip()
+        dest = cp_match.group(3).strip()
+        if "-r" in flags or "-R" in flags or "-a" in flags:
+            return f"xcopy /e /i /y {src} {dest}"
+        return f"copy /y {src} {dest}"
+
+    # mv SRC DEST -> move SRC DEST
+    mv_match = re.match(r"^mv\s+(.+?)\s+(.+)$", cmd_stripped)
+    if mv_match:
+        src = mv_match.group(1).strip()
+        dest = mv_match.group(2).strip()
+        return f"move /y {src} {dest}"
+
+    # touch FILE -> type nul > FILE
+    touch_match = re.match(r"^touch\s+(.+)$", cmd_stripped)
+    if touch_match:
+        files = touch_match.group(1)
+        # For multiple files, create each
+        return f"powershell -Command \"{'; '.join(f'New-Item -ItemType File -Path {f.strip()} -Force' for f in files.split())}\""
+
+    # mkdir [-p] DIR -> mkdir DIR (Windows mkdir doesn't have -p but creates intermediates)
+    mkdir_match = re.match(r"^mkdir\s+(-p\s+)?(.+)$", cmd_stripped)
+    if mkdir_match:
+        dirs = mkdir_match.group(2).strip()
+        return f"mkdir {dirs}"
+
+    # rmdir DIR -> rmdir /q DIR
+    rmdir_match = re.match(r"^rmdir\s+(.+)$", cmd_stripped)
+    if rmdir_match:
+        dirs = rmdir_match.group(1).strip()
+        return f"rmdir /q {dirs}"
+
+    # which CMD -> where CMD
+    which_match = re.match(r"^which\s+(.+)$", cmd_stripped)
+    if which_match:
+        cmd = which_match.group(1).strip()
+        return f"where {cmd}"
+
+    # clear -> cls
+    if cmd_stripped == "clear":
+        return "cls"
+
+    # uname -> ver
+    if cmd_stripped == "uname":
+        return "ver"
+
+    # ln -s TARGET LINK -> mklink LINK TARGET
+    ln_match = re.match(r"^ln\s+-s\s+(.+?)\s+(.+)$", cmd_stripped)
+    if ln_match:
+        target = ln_match.group(1).strip()
+        link = ln_match.group(2).strip()
+        return f"mklink {link} {target}"
+
     return command
 
 
@@ -106,6 +173,12 @@ DANGEROUS_PATTERNS = [
     (r"\bformat\s+/dev/", "format device"),
     # Remove all files in root
     (r"\brm\s+(-\w*)?-rf\s+/\s*\*", "recursive delete all files in root"),
+    # Windows dangerous patterns
+    (r"\bdel\s+(/[fqsa]\s*)+\s*C:\\\\", "recursive delete on system drive"),
+    (r"\bformat\s+[a-zA-Z]:", "format drive"),
+    (r"\brd\s+(/[sq]\s*)+\s*C:\\\\", "recursive delete on system drive"),
+    (r"\brmdir\s+(/[sq]\s*)+\s*C:\\\\", "recursive delete on system drive"),
+    (r"\bxcopy\s+/.*\s+C:\\\\.*\s+/[ey]*", "dangerous xcopy on system drive"),
 ]
 
 
@@ -167,6 +240,8 @@ async def execute_bash(
     process_env = os.environ.copy()
     if env:
         process_env.update(env)
+    # Force UTF-8 encoding for child processes
+    process_env["PYTHONIOENCODING"] = "utf-8"
 
     try:
         # Hide window on Windows
@@ -177,6 +252,8 @@ async def execute_bash(
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = 0  # SW_HIDE
+            # Set UTF-8 code page for cmd.exe to avoid GBK encoding issues
+            command = f"chcp 65001 >nul 2>&1 && {command}"
 
         # Create subprocess
         process = await asyncio.create_subprocess_shell(
@@ -192,6 +269,8 @@ async def execute_bash(
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
         # Try multiple encodings for Windows compatibility
+        # UTF-8 is tried first because we set chcp 65001 and PYTHONIOENCODING.
+        # GBK/cp936 is tried as fallback for legacy tools.
         def decode_output(data: bytes) -> str:
             for encoding in ["utf-8", "gbk", "gb2312", "cp936", "latin-1"]:
                 try:
