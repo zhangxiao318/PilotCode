@@ -1178,7 +1178,7 @@ Planned changes detail:
 CRITICAL WORKFLOW:
 1. Read each planned file ONCE, then edit it immediately. NO additional exploration.
 2. ONLY use FileEdit on files in the "Files to modify" list above.
-3. When using FileEdit, copy the EXACT old_string from the file. Do NOT double-escape backslashes (e.g., use `\s` not `\\s`, use `\n` not `\\n`).
+3. When using FileEdit, copy the EXACT old_string from the file. Do NOT double-escape backslashes (e.g., use `\\s` not `\\\\s`, use `\\n` not `\\\\n`).
 4. After editing a Python file, run `python3 -m py_compile <filepath>`.
 5. After all edits, run `git diff` to verify ONLY planned files were changed.
 6. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
