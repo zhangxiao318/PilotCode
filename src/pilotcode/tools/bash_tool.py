@@ -156,29 +156,82 @@ class BashOutput(BaseModel):
     command: str
 
 
-async def execute_bash(
-    command: str, cwd: str | None = None, timeout: int = 600, env: dict[str, str] | None = None
-) -> BashOutput:
-    """Execute a bash command."""
-    # Translate command for Windows compatibility
-    command = translate_command_for_windows(command)
+async def _read_stream(
+    stream: asyncio.StreamReader,
+    lines: list[str],
+    on_progress: Any,
+    stream_name: str,
+) -> None:
+    """Read a stream line-by-line, handling both \n and \r."""
+    buffer = b""
+    is_progress = False
+    try:
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                break
+            buffer += chunk
+            while True:
+                nl = buffer.find(b"\n")
+                cr = buffer.find(b"\r")
+                if nl == -1 and cr == -1:
+                    break
+                if nl == -1:
+                    pos, delim = cr, b"\r"
+                elif cr == -1:
+                    pos, delim = nl, b"\n"
+                else:
+                    pos, delim = (cr, b"\r") if cr < nl else (nl, b"\n")
+                line = buffer[:pos].decode("utf-8", errors="replace")
+                buffer = buffer[pos + len(delim) :]
+                if not line and delim == b"\r":
+                    continue
+                lines.append(line)
+                if on_progress:
+                    on_progress({
+                        "type": "bash_output",
+                        "stream": stream_name,
+                        "line": line,
+                        "is_progress": delim == b"\r",
+                    })
+        if buffer:
+            line = buffer.decode("utf-8", errors="replace")
+            lines.append(line)
+            if on_progress:
+                on_progress({
+                    "type": "bash_output",
+                    "stream": stream_name,
+                    "line": line,
+                    "is_progress": False,
+                })
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        pass
 
-    # Get current environment
+
+async def execute_bash(
+    command: str,
+    cwd: str | None = None,
+    timeout: int = 600,
+    env: dict[str, str] | None = None,
+    on_progress: Any = None,
+) -> BashOutput:
+    """Execute a bash command with optional real-time progress streaming."""
+    command = translate_command_for_windows(command)
     process_env = os.environ.copy()
     if env:
         process_env.update(env)
 
     try:
-        # Hide window on Windows
         import subprocess
 
         startupinfo = None
         if sys.platform == "win32":
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 0  # SW_HIDE
+            startupinfo.wShowWindow = 0
 
-        # Create subprocess
         process = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
@@ -188,35 +241,47 @@ async def execute_bash(
             startupinfo=startupinfo,
         )
 
-        # Wait for completion with timeout
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
 
-        # Try multiple encodings for Windows compatibility
-        def decode_output(data: bytes) -> str:
-            for encoding in ["utf-8", "gbk", "gb2312", "cp936", "latin-1"]:
-                try:
-                    return data.decode(encoding, errors="strict")
-                except UnicodeDecodeError:
-                    continue
-            return data.decode("utf-8", errors="replace")
-
-        return BashOutput(
-            stdout=decode_output(stdout),
-            stderr=decode_output(stderr),
-            exit_code=process.returncode or 0,
-            command=command,
+        stdout_task = asyncio.create_task(
+            _read_stream(process.stdout, stdout_lines, on_progress, "stdout")
         )
-    except asyncio.TimeoutError:
-        # Kill the process if timeout
+        stderr_task = asyncio.create_task(
+            _read_stream(process.stderr, stderr_lines, on_progress, "stderr")
+        )
+
         try:
-            process.kill()
-            await process.wait()
-        except Exception:
-            pass
+            await asyncio.wait_for(process.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            try:
+                process.kill()
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
+            for t in (stdout_task, stderr_task):
+                if not t.done():
+                    t.cancel()
+                    try:
+                        await t
+                    except asyncio.CancelledError:
+                        pass
+            return BashOutput(
+                stdout="\n".join(stdout_lines),
+                stderr=f"Command timed out after {timeout} seconds",
+                exit_code=-1,
+                command=command,
+            )
+
+        await asyncio.gather(stdout_task, stderr_task)
+
+        def decode_lines(lines: list[str]) -> str:
+            return "\n".join(lines)
+
         return BashOutput(
-            stdout="",
-            stderr=f"Command timed out after {timeout} seconds",
-            exit_code=-1,
+            stdout=decode_lines(stdout_lines),
+            stderr=decode_lines(stderr_lines),
+            exit_code=process.returncode or 0,
             command=command,
         )
     except Exception as e:
@@ -270,7 +335,9 @@ async def bash_call(
         cwd = getattr(app_state, "cwd", os.getcwd())
 
     # Execute command
-    result = await execute_bash(input_data.command, cwd=cwd, timeout=input_data.timeout)
+    result = await execute_bash(
+        input_data.command, cwd=cwd, timeout=input_data.timeout, on_progress=on_progress
+    )
 
     return ToolResult(data=result)
 

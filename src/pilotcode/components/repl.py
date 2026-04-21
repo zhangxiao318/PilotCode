@@ -190,8 +190,19 @@ class REPL:
                     set_app_state=lambda f: self.store.set_state(f),
                 )
 
+                def _on_progress(data):
+                    if isinstance(data, dict) and data.get("type") == "bash_output":
+                        line = data.get("line", "")
+                        is_progress = data.get("is_progress", False)
+                        if is_progress:
+                            import sys
+                            sys.stdout.write(f"\r{line}")
+                            sys.stdout.flush()
+                        else:
+                            self.console.print(line)
+
                 exec_result = await self.tool_executor.execute_tool_by_name(
-                    tool_msg.name, tool_msg.input, context
+                    tool_msg.name, tool_msg.input, context, on_progress=_on_progress
                 )
 
                 # Add result to conversation
@@ -783,8 +794,14 @@ async def run_headless(
                     context = ToolUseContext(
                         get_app_state=store.get_state, set_app_state=lambda f: store.set_state(f)
                     )
+                    def _on_progress_headless(data):
+                        if isinstance(data, dict) and data.get("type") == "bash_output":
+                            line = data.get("line", "")
+                            if line and progress_callback:
+                                progress_callback(f"[BASH] {line}")
+
                     exec_result = await tool_executor.execute_tool_by_name(
-                        tool_msg.name, tool_msg.input, context
+                        tool_msg.name, tool_msg.input, context, on_progress=_on_progress_headless
                     )
                     result_content = ""
                     if exec_result.success and exec_result.result:
@@ -929,9 +946,34 @@ async def run_headless_with_planning(
                 text=True,
                 timeout=30,
             )
-            return result.stdout if result.returncode == 0 else ""
+            if result.returncode == 0:
+                return result.stdout
         except Exception:
-            return ""
+            pass
+        # Auto-init git repo if not in one so git diff can track changes
+        try:
+            check = subprocess.run(
+                ["git", "rev-parse", "--git-dir"],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if check.returncode != 0:
+                subprocess.run(["git", "init"], cwd=work_dir, capture_output=True, text=True, timeout=10)
+                subprocess.run(["git", "add", "-A"], cwd=work_dir, capture_output=True, text=True, timeout=10)
+                subprocess.run(["git", "commit", "-m", "initial", "--allow-empty"], cwd=work_dir, capture_output=True, text=True, timeout=10)
+                result = subprocess.run(
+                    ["git", "diff"],
+                    cwd=work_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                return result.stdout if result.returncode == 0 else ""
+        except Exception:
+            pass
+        return ""
 
     effective_cwd = cwd if cwd else str(os.getcwd())
 
@@ -940,6 +982,9 @@ async def run_headless_with_planning(
             progress_callback(msg)
         else:
             print(msg)
+
+    # Instance-level env diagnosis counter (shared across all plan attempts)
+    env_diagnosis_count = 0
 
     # ========================================================================
     # PHASE 1: EXPLORE (read-only)
@@ -1344,9 +1389,34 @@ def _get_git_diff(work_dir: str) -> str:
             text=True,
             timeout=30,
         )
-        return result.stdout if result.returncode == 0 else ""
+        if result.returncode == 0:
+            return result.stdout
     except Exception:
-        return ""
+        pass
+    # Auto-init git repo if not in one so git diff can track changes
+    try:
+        check = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=work_dir,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if check.returncode != 0:
+            subprocess.run(["git", "init"], cwd=work_dir, capture_output=True, text=True, timeout=10)
+            subprocess.run(["git", "add", "-A"], cwd=work_dir, capture_output=True, text=True, timeout=10)
+            subprocess.run(["git", "commit", "-m", "initial", "--allow-empty"], cwd=work_dir, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                ["git", "diff"],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return result.stdout if result.returncode == 0 else ""
+    except Exception:
+        pass
+    return ""
 
 
 def _check_patch_syntax(work_dir: str, patch: str) -> tuple[bool, str]:

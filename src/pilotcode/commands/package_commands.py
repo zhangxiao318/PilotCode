@@ -16,9 +16,9 @@ Supports multiple package managers:
 
 from __future__ import annotations
 
-import os
-import subprocess
+import asyncio
 import json
+import os
 from typing import Optional
 from enum import Enum
 from dataclasses import dataclass
@@ -26,10 +26,10 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from pilotcode.types.command import CommandContext
 from pilotcode.commands.base import CommandHandler, register_command
+from pilotcode.commands.async_runner import run_command_streaming
 
 console = Console()
 
@@ -59,7 +59,6 @@ class PackageInfo:
 
 def detect_package_manager(cwd: str) -> PackageManager:
     """Detect package manager based on project files."""
-    # Check for Python
     if os.path.exists(os.path.join(cwd, "requirements.txt")):
         return PackageManager.PIP
     if os.path.exists(os.path.join(cwd, "pyproject.toml")):
@@ -69,257 +68,213 @@ def detect_package_manager(cwd: str) -> PackageManager:
     if os.path.exists(os.path.join(cwd, "Pipfile")):
         return PackageManager.PIP
 
-    # Check for Node.js
     if os.path.exists(os.path.join(cwd, "package.json")):
         if os.path.exists(os.path.join(cwd, "yarn.lock")):
             return PackageManager.YARN
         return PackageManager.NPM
 
-    # Check for Rust
     if os.path.exists(os.path.join(cwd, "Cargo.toml")):
         return PackageManager.CARGO
 
-    # Check for Go
     if os.path.exists(os.path.join(cwd, "go.mod")):
         return PackageManager.GO
 
     return PackageManager.UNKNOWN
 
 
-def run_pip_command(
+async def run_pip_command(
     command: str,
     packages: Optional[list[str]] = None,
     cwd: str = ".",
     options: Optional[list[str]] = None,
 ) -> tuple[bool, str]:
-    """Run pip command."""
+    """Run pip command asynchronously with live output."""
     cmd = ["python", "-m", "pip", command]
-
     if options:
         cmd.extend(options)
-
     if packages:
         cmd.extend(packages)
 
     try:
-        # Use shorter timeout in test environment
         timeout = 30 if os.environ.get("PYTEST_CURRENT_TEST") else 300
-        result = subprocess.run(
+        returncode, stdout, stderr = await run_command_streaming(
             cmd,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            total_timeout=timeout,
+            inactivity_timeout=30,
         )
-
-        output = result.stdout
-        if result.stderr and "WARNING" not in result.stderr:
-            output += "\n" + result.stderr
-
-        return result.returncode == 0, output
-
-    except subprocess.TimeoutExpired:
-        return False, "Command timed out after 5 minutes"
+        output = stdout
+        if stderr and "WARNING" not in stderr:
+            output += "\n" + stderr
+        return returncode == 0, output
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return False, str(e)
 
 
-def run_npm_command(
+async def run_npm_command(
     command: str,
     packages: Optional[list[str]] = None,
     cwd: str = ".",
     options: Optional[list[str]] = None,
 ) -> tuple[bool, str]:
-    """Run npm command."""
+    """Run npm command asynchronously with live output."""
     cmd = ["npm", command]
-
     if options:
         cmd.extend(options)
-
     if packages:
         cmd.extend(packages)
 
     try:
-        result = subprocess.run(
+        returncode, stdout, stderr = await run_command_streaming(
             cmd,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            total_timeout=300,
+            inactivity_timeout=30,
         )
-
-        output = result.stdout
-        if result.stderr:
-            output += "\n" + result.stderr
-
-        return result.returncode == 0, output
-
-    except subprocess.TimeoutExpired:
-        return False, "Command timed out after 5 minutes"
+        output = stdout
+        if stderr:
+            output += "\n" + stderr
+        return returncode == 0, output
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return False, str(e)
 
 
-def run_yarn_command(
+async def run_yarn_command(
     command: str,
     packages: Optional[list[str]] = None,
     cwd: str = ".",
     options: Optional[list[str]] = None,
 ) -> tuple[bool, str]:
-    """Run yarn command."""
+    """Run yarn command asynchronously with live output."""
     cmd = ["yarn", command]
-
     if options:
         cmd.extend(options)
-
     if packages:
         cmd.extend(packages)
 
     try:
-        result = subprocess.run(
+        returncode, stdout, stderr = await run_command_streaming(
             cmd,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            total_timeout=300,
+            inactivity_timeout=30,
         )
-
-        output = result.stdout
-        if result.stderr:
-            output += "\n" + result.stderr
-
-        return result.returncode == 0, output
-
-    except subprocess.TimeoutExpired:
-        return False, "Command timed out after 5 minutes"
+        output = stdout
+        if stderr:
+            output += "\n" + stderr
+        return returncode == 0, output
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return False, str(e)
 
 
-def run_cargo_command(
+async def run_cargo_command(
     command: str,
     packages: Optional[list[str]] = None,
     cwd: str = ".",
     options: Optional[list[str]] = None,
 ) -> tuple[bool, str]:
-    """Run cargo command."""
+    """Run cargo command asynchronously with live output."""
     cmd = ["cargo", command]
-
     if options:
         cmd.extend(options)
-
     if packages:
         cmd.extend(packages)
 
     try:
-        result = subprocess.run(
+        returncode, stdout, stderr = await run_command_streaming(
             cmd,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            total_timeout=300,
+            inactivity_timeout=30,
         )
-
-        output = result.stdout
-        if result.stderr:
-            output += "\n" + result.stderr
-
-        return result.returncode == 0, output
-
-    except subprocess.TimeoutExpired:
-        return False, "Command timed out after 5 minutes"
+        output = stdout
+        if stderr:
+            output += "\n" + stderr
+        return returncode == 0, output
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return False, str(e)
 
 
-def run_go_command(
+async def run_go_command(
     command: str,
     packages: Optional[list[str]] = None,
     cwd: str = ".",
     options: Optional[list[str]] = None,
 ) -> tuple[bool, str]:
-    """Run go command."""
+    """Run go command asynchronously with live output."""
     cmd = ["go", command]
-
     if options:
         cmd.extend(options)
-
     if packages:
         cmd.extend(packages)
 
     try:
-        result = subprocess.run(
+        returncode, stdout, stderr = await run_command_streaming(
             cmd,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            total_timeout=300,
+            inactivity_timeout=30,
         )
-
-        output = result.stdout
-        if result.stderr:
-            output += "\n" + result.stderr
-
-        return result.returncode == 0, output
-
-    except subprocess.TimeoutExpired:
-        return False, "Command timed out after 5 minutes"
+        output = stdout
+        if stderr:
+            output += "\n" + stderr
+        return returncode == 0, output
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return False, str(e)
 
 
-def get_installed_pip_packages(cwd: str) -> list[PackageInfo]:
+async def get_installed_pip_packages(cwd: str) -> list[PackageInfo]:
     """Get list of installed pip packages."""
     try:
-        result = subprocess.run(
+        returncode, stdout, _ = await run_command_streaming(
             ["python", "-m", "pip", "list", "--format=json"],
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=30,
+            total_timeout=30,
+            inactivity_timeout=10,
+            print_output=False,
         )
-
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
+        if returncode == 0:
+            data = json.loads(stdout)
             return [
-                PackageInfo(
-                    name=p["name"],
-                    version=p["version"],
-                    installed=True,
-                )
+                PackageInfo(name=p["name"], version=p["version"], installed=True)
                 for p in data
             ]
     except Exception:
         pass
-
     return []
 
 
-def get_installed_npm_packages(cwd: str) -> list[PackageInfo]:
+async def get_installed_npm_packages(cwd: str) -> list[PackageInfo]:
     """Get list of installed npm packages."""
     try:
-        result = subprocess.run(
+        returncode, stdout, _ = await run_command_streaming(
             ["npm", "list", "--depth=0", "--json"],
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=30,
+            total_timeout=30,
+            inactivity_timeout=10,
+            print_output=False,
         )
-
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
+        if returncode == 0:
+            data = json.loads(stdout)
             dependencies = data.get("dependencies", {})
             return [
                 PackageInfo(
-                    name=name,
-                    version=info.get("version", "unknown"),
-                    installed=True,
+                    name=name, version=info.get("version", "unknown"), installed=True
                 )
                 for name, info in dependencies.items()
             ]
     except Exception:
         pass
-
     return []
 
 
@@ -327,16 +282,7 @@ async def install_command(args: list[str], context: CommandContext) -> str:
     """Install packages.
 
     Usage: /install <package1> [package2] ... [--dev] [--global]
-
-    Automatically detects package manager based on project.
-
-    Examples:
-      /install requests
-      /install requests beautifulsoup4
-      /install lodash --dev
-      /install --global typescript
     """
-    # Skip network operations in test environment
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return "[dim]Skipping install command during pytest run[/dim]"
 
@@ -356,7 +302,6 @@ Examples:
   /install --global typescript
 """
 
-    # Parse options
     packages = []
     options = []
     dev = False
@@ -373,16 +318,13 @@ Examples:
     if not packages:
         return "[red]No packages specified[/red]"
 
-    # Detect package manager
     manager = detect_package_manager(context.cwd)
-
     if manager == PackageManager.UNKNOWN:
         return "[yellow]Could not detect package manager.[/yellow]\nSupported: pip, npm, yarn, cargo, go"
 
-    # Build options based on package manager
     if manager == PackageManager.PIP:
         if dev:
-            options.append("--dev")  # pip doesn't have dev flag, but pipenv does
+            options.append("--dev")
         if global_install:
             options.append("--user")
     elif manager in (PackageManager.NPM, PackageManager.YARN):
@@ -391,34 +333,24 @@ Examples:
         if global_install:
             options.append("--global")
 
-    # Run install
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task(f"Installing {', '.join(packages)}...", total=None)
+    console.print(f"[cyan]Installing {', '.join(packages)} via {manager.value}...[/cyan]")
 
-        if manager == PackageManager.PIP:
-            success, output = run_pip_command("install", packages, context.cwd, options)
-        elif manager == PackageManager.NPM:
-            success, output = run_npm_command("install", packages, context.cwd, options)
-        elif manager == PackageManager.YARN:
-            success, output = run_yarn_command("add", packages, context.cwd, options)
-        elif manager == PackageManager.CARGO:
-            success, output = run_cargo_command("add", packages, context.cwd, options)
-        elif manager == PackageManager.GO:
-            success, output = run_go_command("get", packages, context.cwd, options)
-        else:
-            return "[red]Unsupported package manager[/red]"
+    if manager == PackageManager.PIP:
+        success, output = await run_pip_command("install", packages, context.cwd, options)
+    elif manager == PackageManager.NPM:
+        success, output = await run_npm_command("install", packages, context.cwd, options)
+    elif manager == PackageManager.YARN:
+        success, output = await run_yarn_command("add", packages, context.cwd, options)
+    elif manager == PackageManager.CARGO:
+        success, output = await run_cargo_command("add", packages, context.cwd, options)
+    elif manager == PackageManager.GO:
+        success, output = await run_go_command("get", packages, context.cwd, options)
+    else:
+        return "[red]Unsupported package manager[/red]"
 
-        progress.update(task, completed=True)
-
-    # Display results
     if success:
         console.print(f"[green]✓ Successfully installed {len(packages)} package(s)[/green]")
         if output:
-            # Show last few lines
             lines = output.strip().split("\n")[-10:]
             console.print(Panel("\n".join(lines), title="Output", border_style="blue"))
         return ""
@@ -439,14 +371,6 @@ async def upgrade_command(args: list[str], context: CommandContext) -> str:
     """Upgrade packages.
 
     Usage: /upgrade [package1] [package2] ... [--all]
-
-    If no packages specified, shows outdated packages.
-    Use --all to upgrade all packages.
-
-    Examples:
-      /upgrade requests
-      /upgrade requests beautifulsoup4
-      /upgrade --all
     """
     if args and args[0] in ["--help", "-h"]:
         return """[bold]Upgrade Command[/bold]
@@ -462,7 +386,6 @@ Examples:
   /upgrade --all
 """
 
-    # Parse options
     packages = []
     upgrade_all = False
 
@@ -472,64 +395,50 @@ Examples:
         elif not arg.startswith("-"):
             packages.append(arg)
 
-    # Detect package manager
     manager = detect_package_manager(context.cwd)
-
     if manager == PackageManager.UNKNOWN:
         return "[yellow]Could not detect package manager[/yellow]"
 
-    # Skip network operations in test environment
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return "[dim]Skipping upgrade command during pytest run[/dim]"
 
-    # If no packages and not --all, show outdated
     if not packages and not upgrade_all:
         return await _show_outdated_packages(manager, context.cwd)
 
-    # Run upgrade
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
+    console.print(
+        f"[cyan]{'Upgrading all packages' if upgrade_all else 'Upgrading ' + ', '.join(packages)} via {manager.value}...[/cyan]"
+    )
+
+    if manager == PackageManager.PIP:
         if upgrade_all:
-            task = progress.add_task("Upgrading all packages...", total=None)
+            success, output = await run_pip_command(
+                "install", ["--upgrade"], context.cwd, ["-r", "requirements.txt"]
+            )
         else:
-            task = progress.add_task(f"Upgrading {', '.join(packages)}...", total=None)
-
-        if manager == PackageManager.PIP:
-            if upgrade_all:
-                success, output = run_pip_command(
-                    "install", ["--upgrade"], context.cwd, ["-r", "requirements.txt"]
-                )
-            else:
-                success, output = run_pip_command("install", packages, context.cwd, ["--upgrade"])
-        elif manager == PackageManager.NPM:
-            if upgrade_all:
-                success, output = run_npm_command("update", None, context.cwd)
-            else:
-                success, output = run_npm_command("update", packages, context.cwd)
-        elif manager == PackageManager.YARN:
-            if upgrade_all:
-                success, output = run_yarn_command("upgrade", None, context.cwd)
-            else:
-                success, output = run_yarn_command("upgrade", packages, context.cwd)
-        elif manager == PackageManager.CARGO:
-            if upgrade_all:
-                success, output = run_cargo_command("update", None, context.cwd)
-            else:
-                success, output = run_cargo_command("update", packages, context.cwd)
-        elif manager == PackageManager.GO:
-            if upgrade_all:
-                success, output = run_go_command("get", ["-u", "./..."], context.cwd)
-            else:
-                success, output = run_go_command("get", ["-u"] + packages, context.cwd)
+            success, output = await run_pip_command("install", packages, context.cwd, ["--upgrade"])
+    elif manager == PackageManager.NPM:
+        if upgrade_all:
+            success, output = await run_npm_command("update", None, context.cwd)
         else:
-            return "[red]Unsupported package manager[/red]"
+            success, output = await run_npm_command("update", packages, context.cwd)
+    elif manager == PackageManager.YARN:
+        if upgrade_all:
+            success, output = await run_yarn_command("upgrade", None, context.cwd)
+        else:
+            success, output = await run_yarn_command("upgrade", packages, context.cwd)
+    elif manager == PackageManager.CARGO:
+        if upgrade_all:
+            success, output = await run_cargo_command("update", None, context.cwd)
+        else:
+            success, output = await run_cargo_command("update", packages, context.cwd)
+    elif manager == PackageManager.GO:
+        if upgrade_all:
+            success, output = await run_go_command("get", ["-u", "./..."], context.cwd)
+        else:
+            success, output = await run_go_command("get", ["-u"] + packages, context.cwd)
+    else:
+        return "[red]Unsupported package manager[/red]"
 
-        progress.update(task, completed=True)
-
-    # Display results
     if success:
         if upgrade_all:
             console.print("[green]✓ All packages upgraded successfully[/green]")
@@ -554,28 +463,19 @@ Examples:
 
 async def _show_outdated_packages(manager: PackageManager, cwd: str) -> str:
     """Show outdated packages."""
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Checking for outdated packages...", total=None)
+    console.print("[cyan]Checking for outdated packages...[/cyan]")
 
-        if manager == PackageManager.PIP:
-            success, output = run_pip_command("list", None, cwd, ["--outdated"])
-        elif manager == PackageManager.NPM:
-            success, output = run_npm_command("outdated", None, cwd)
-        elif manager == PackageManager.YARN:
-            success, output = run_yarn_command("outdated", None, cwd)
-        elif manager == PackageManager.CARGO:
-            success, output = run_cargo_command(
-                "search", ["--limit", "0"], cwd
-            )  # cargo doesn't have direct outdated
-            output = "Use 'cargo update --dry-run' to see updates"
-        else:
-            return "[yellow]Outdated check not supported for this package manager[/yellow]"
-
-        progress.update(task, completed=True)
+    if manager == PackageManager.PIP:
+        success, output = await run_pip_command("list", None, cwd, ["--outdated"])
+    elif manager == PackageManager.NPM:
+        success, output = await run_npm_command("outdated", None, cwd)
+    elif manager == PackageManager.YARN:
+        success, output = await run_yarn_command("outdated", None, cwd)
+    elif manager == PackageManager.CARGO:
+        success, output = await run_cargo_command("search", ["--limit", "0"], cwd)
+        output = "Use 'cargo update --dry-run' to see updates"
+    else:
+        return "[yellow]Outdated check not supported for this package manager[/yellow]"
 
     if success:
         if output.strip():
@@ -591,12 +491,7 @@ async def uninstall_command(args: list[str], context: CommandContext) -> str:
     """Uninstall packages.
 
     Usage: /uninstall <package1> [package2] ...
-
-    Examples:
-      /uninstall requests
-      /uninstall requests beautifulsoup4
     """
-    # Skip network operations in test environment
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return "[dim]Skipping uninstall command during pytest run[/dim]"
 
@@ -615,45 +510,32 @@ Examples:
     if not packages:
         return "[red]No packages specified[/red]"
 
-    # Detect package manager
     manager = detect_package_manager(context.cwd)
-
     if manager == PackageManager.UNKNOWN:
         return "[yellow]Could not detect package manager[/yellow]"
 
-    # Confirm uninstall
     console.print("[yellow]The following packages will be uninstalled:[/yellow]")
     for pkg in packages:
         console.print(f"  - {pkg}")
 
-    # Run uninstall
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task(f"Uninstalling {', '.join(packages)}...", total=None)
+    console.print(f"[cyan]Uninstalling via {manager.value}...[/cyan]")
 
-        if manager == PackageManager.PIP:
-            success, output = run_pip_command("uninstall", packages, context.cwd, ["-y"])
-        elif manager == PackageManager.NPM:
-            success, output = run_npm_command("uninstall", packages, context.cwd)
-        elif manager == PackageManager.YARN:
-            success, output = run_yarn_command("remove", packages, context.cwd)
-        elif manager == PackageManager.CARGO:
-            success, output = run_cargo_command("remove", packages, context.cwd)
-        elif manager == PackageManager.GO:
-            # Go doesn't have a direct uninstall, use mod tidy after removing import
-            success, output = (
-                False,
-                "Go doesn't support direct package uninstall. Remove the import and run 'go mod tidy'",
-            )
-        else:
-            return "[red]Unsupported package manager[/red]"
+    if manager == PackageManager.PIP:
+        success, output = await run_pip_command("uninstall", packages, context.cwd, ["-y"])
+    elif manager == PackageManager.NPM:
+        success, output = await run_npm_command("uninstall", packages, context.cwd)
+    elif manager == PackageManager.YARN:
+        success, output = await run_yarn_command("remove", packages, context.cwd)
+    elif manager == PackageManager.CARGO:
+        success, output = await run_cargo_command("remove", packages, context.cwd)
+    elif manager == PackageManager.GO:
+        success, output = (
+            False,
+            "Go doesn't support direct package uninstall. Remove the import and run 'go mod tidy'",
+        )
+    else:
+        return "[red]Unsupported package manager[/red]"
 
-        progress.update(task, completed=True)
-
-    # Display results
     if success:
         console.print(f"[green]✓ Successfully uninstalled {len(packages)} package(s)[/green]")
         if output:
@@ -671,12 +553,7 @@ async def list_packages_command(args: list[str], context: CommandContext) -> str
     """List installed packages.
 
     Usage: /list_packages [--outdated]
-
-    Examples:
-      /list_packages
-      /list_packages --outdated
     """
-    # Skip network operations in test environment (for --outdated)
     if os.environ.get("PYTEST_CURRENT_TEST") and ("--outdated" in args or "-o" in args):
         return "[dim]Skipping list_packages --outdated during pytest run[/dim]"
 
@@ -693,30 +570,19 @@ Examples:
   /list_packages --outdated
 """
 
-    # Detect package manager
     manager = detect_package_manager(context.cwd)
-
     if manager == PackageManager.UNKNOWN:
         return "[yellow]Could not detect package manager[/yellow]"
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Listing packages...", total=None)
+    console.print("[cyan]Listing packages...[/cyan]")
 
-        # Get packages
-        if manager == PackageManager.PIP:
-            packages = get_installed_pip_packages(context.cwd)
-        elif manager == PackageManager.NPM:
-            packages = get_installed_npm_packages(context.cwd)
-        else:
-            packages = []
+    if manager == PackageManager.PIP:
+        packages = await get_installed_pip_packages(context.cwd)
+    elif manager == PackageManager.NPM:
+        packages = await get_installed_npm_packages(context.cwd)
+    else:
+        packages = []
 
-        progress.update(task, completed=True)
-
-    # Display results
     if not packages:
         return "[dim]No packages found or listing not supported for this package manager[/dim]"
 
@@ -729,7 +595,6 @@ Examples:
 
     console.print(table)
     console.print(f"\n[dim]Total: {len(packages)} packages[/dim]")
-
     return ""
 
 

@@ -106,30 +106,24 @@ class TestDetectPackageManager:
 class TestRunPipCommand:
     """Test pip command execution."""
 
-    def test_pip_command_success(self):
+    @pytest.mark.asyncio
+    async def test_pip_command_success(self):
         """Test successful pip command."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout="Successfully installed",
-                stderr="",
-            )
+        with patch("pilotcode.commands.package_commands.run_command_streaming") as mock_run:
+            mock_run.return_value = (0, "Successfully installed", "")
 
-            success, output = run_pip_command("install", ["requests"], ".")
+            success, output = await run_pip_command("install", ["requests"], ".")
 
             assert success is True
             assert "Successfully" in output
 
-    def test_pip_command_failure(self):
+    @pytest.mark.asyncio
+    async def test_pip_command_failure(self):
         """Test failed pip command."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=1,
-                stdout="",
-                stderr="ERROR: Could not find",
-            )
+        with patch("pilotcode.commands.package_commands.run_command_streaming") as mock_run:
+            mock_run.return_value = (1, "", "ERROR: Could not find")
 
-            success, output = run_pip_command("install", ["nonexistent"], ".")
+            success, output = await run_pip_command("install", ["nonexistent"], ".")
 
             assert success is False
 

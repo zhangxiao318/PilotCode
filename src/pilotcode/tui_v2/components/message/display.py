@@ -291,21 +291,29 @@ class MessageDisplay(Static):
 
         content = self.message.content or ""
 
-        # Tool messages - green dot prefix
+        # Tool messages - show tool name + key parameters
         if self.message.type == UIMessageType.TOOL_USE:
             tool_name = self.message.metadata.get("tool_name", "Tool")
             is_safe = self.message.metadata.get("is_safe", False)
             safe_marker = "✓" if is_safe else "⚠"
-            return Text(f"● {safe_marker} {tool_name}", style="green")
+            tool_input = self.message.metadata.get("tool_input", {})
+            detail = ""
+            if isinstance(tool_input, dict):
+                if "command" in tool_input:
+                    detail = f" $ {tool_input['command'][:80]}"
+                elif "file_path" in tool_input:
+                    detail = f" {tool_input['file_path'][:80]}"
+                elif "path" in tool_input:
+                    detail = f" {tool_input['path'][:80]}"
+            return Text(f"● {safe_marker} {tool_name}{detail}", style="green")
 
-        # Tool result - show output preview
+        # Tool result - show output preview (first line, first 70 chars)
         if self.message.type == UIMessageType.TOOL_RESULT:
-            # Truncate long output
             lines = content.strip().split("\n")
-            preview = lines[0][:80] if lines else ""
-            if len(lines) > 1 or len(content) > 80:
+            preview = lines[0][:70] if lines else ""
+            if len(lines) > 1 or len(content) > 70:
                 preview += " ..."
-            return Text(f"→ {preview}", style="dim")
+            return Text(f"→ {preview}", style="green")
 
         # User messages - smiley prefix
         if self.message.type == UIMessageType.USER:
@@ -404,25 +412,51 @@ class CompactToolDisplay(Static):
         color: $text-muted;
         text-style: dim;
     }
+    CompactToolDisplay:hover {
+        background: $surface-lighten-1;
+    }
     """
 
-    def __init__(self, tool_name: str, command: str, result: str, **kwargs):
+    def __init__(self, tool_name: str, command: str, result: str, full_result: str = "", **kwargs):
         super().__init__(**kwargs)
         self.tool_name = tool_name
         self.command = command
         self.result = result
+        self.full_result = full_result or result
+        self.can_focus = True
 
     def render(self) -> RenderableType:
         """Render compact tool info."""
         text = Text()
         text.append(f"$ {self.command}", style="yellow dim")
         text.append(" → ", style="dim")
-        # Show result preview
-        result_preview = self.result.strip().split("\n")[0][:60]
-        if len(self.result) > 60 or "\n" in self.result:
+        # Show result preview (first line, first 70 chars)
+        lines = self.result.strip().split("\n")
+        result_preview = lines[0][:70] if lines else ""
+        if len(lines) > 1 or len(self.result) > 70:
             result_preview += "..."
         text.append(result_preview, style="green dim")
         return text
+
+    def on_click(self, event):
+        """Handle click events - double-click opens text viewer."""
+        import time
+
+        current_time = time.time()
+
+        # Check for double click (within 500ms)
+        if hasattr(self, "_last_click_time") and (current_time - self._last_click_time) < 0.5:
+            self._open_text_viewer()
+            self._last_click_time = 0  # Reset to prevent triple-click
+        else:
+            # Single click - focus
+            self.focus()
+            self._last_click_time = current_time
+
+    def _open_text_viewer(self):
+        """Open text viewer dialog for mouse selection and copying."""
+        title = f"Tool Output ({self.tool_name}) - Double-click to select, Ctrl+C to copy"
+        self.app.push_screen(TextViewerDialog(self.full_result, title))
 
 
 class MessageList(ScrollableContainer):
@@ -469,15 +503,6 @@ class MessageList(ScrollableContainer):
                 self._streaming_message = None
                 self.scroll_end()
                 return self._messages[-1]
-
-        # Store TOOL_USE to potentially combine with result
-        if message.type == UIMessageType.TOOL_USE:
-            self._pending_tool = message
-
-        # TOOL_RESULT - check if we can combine with pending tool
-        if message.type == UIMessageType.TOOL_RESULT and self._pending_tool:
-            # For now, just show both separately with compact styling
-            self._pending_tool = None
 
         # Create new message display
         display = MessageDisplay(message)

@@ -555,8 +555,14 @@ class SimpleCLI:
                             get_app_state=self.store.get_state,
                             set_app_state=lambda f: self.store.set_state(f),
                         )
+                        def _on_progress_tui(data):
+                            if isinstance(data, dict) and data.get("type") == "bash_output":
+                                line = data.get("line", "")
+                                if line:
+                                    print(line)
+
                         result = await self.tool_executor.execute_tool_by_name(
-                            tool_name, params, ctx
+                            tool_name, params, ctx, on_progress=_on_progress_tui
                         )
 
                         # Extract output from result

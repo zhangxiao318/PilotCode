@@ -1,7 +1,8 @@
 """Coverage command implementation."""
 
-import subprocess
+import asyncio
 from .base import CommandHandler, register_command, CommandContext
+from .async_runner import run_command_streaming
 
 
 async def coverage_command(args: list[str], context: CommandContext) -> str:
@@ -10,54 +11,60 @@ async def coverage_command(args: list[str], context: CommandContext) -> str:
 
     if action == "run":
         try:
-            result = subprocess.run(
+            returncode, stdout, stderr = await run_command_streaming(
                 ["python", "-m", "pytest", "--cov=.", "--cov-report=term-missing"],
-                capture_output=True,
-                text=True,
                 cwd=context.cwd,
+                total_timeout=300,
+                inactivity_timeout=30,
             )
 
-            output = result.stdout
-            if result.stderr:
-                output += "\n" + result.stderr
+            output = stdout
+            if stderr:
+                output += "\n" + stderr
 
             return output
 
+        except asyncio.CancelledError:
+            return "Coverage run cancelled by user"
         except Exception as e:
             return f"Error: {e}"
 
     elif action == "report":
         try:
-            result = subprocess.run(
+            returncode, stdout, stderr = await run_command_streaming(
                 ["python", "-m", "coverage", "report"],
-                capture_output=True,
-                text=True,
                 cwd=context.cwd,
+                total_timeout=60,
+                inactivity_timeout=15,
             )
 
-            output = result.stdout
-            if result.stderr:
-                output += "\n" + result.stderr
+            output = stdout
+            if stderr:
+                output += "\n" + stderr
 
             return output
 
+        except asyncio.CancelledError:
+            return "Coverage report cancelled by user"
         except Exception as e:
             return f"Error: {e}"
 
     elif action == "html":
         try:
-            result = subprocess.run(
+            returncode, stdout, stderr = await run_command_streaming(
                 ["python", "-m", "coverage", "html"],
-                capture_output=True,
-                text=True,
                 cwd=context.cwd,
+                total_timeout=60,
+                inactivity_timeout=15,
             )
 
-            if result.returncode == 0:
+            if returncode == 0:
                 return "HTML coverage report generated in htmlcov/"
             else:
-                return f"Error: {result.stderr}"
+                return f"Error: {stderr}"
 
+        except asyncio.CancelledError:
+            return "Coverage HTML generation cancelled by user"
         except Exception as e:
             return f"Error: {e}"
 
