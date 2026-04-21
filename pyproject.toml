@@ -45,8 +45,8 @@ dev = [
 ]
 
 [project.scripts]
-pilotcode = "pilotcode.cli:main"
-pc = "pilotcode.cli:main"
+pilotcode = "pilotcode.cli:cli_main"
+pc = "pilotcode.cli:cli_main"
 
 [build-system]
 requires = ["hatchling"]

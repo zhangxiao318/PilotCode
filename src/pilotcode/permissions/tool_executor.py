@@ -1,7 +1,7 @@
 """Safe tool executor with permission checking."""
 
 import asyncio
-from typing import Callable
+from typing import Any, Callable
 from dataclasses import dataclass
 
 from rich.console import Console
@@ -132,6 +132,7 @@ class ToolExecutor:
         tool_input: dict,
         context: ToolUseContext,
         can_use_tool_callback: Callable | None = None,
+        on_progress: Callable[[Any], None] | None = None,
     ) -> ToolExecutionResult:
         """Execute a tool with permission checking."""
         tool_name = tool.name
@@ -199,7 +200,7 @@ class ToolExecutor:
                 context,
                 can_use_tool_callback or _default_allow_callback,
                 None,
-                lambda x: None,
+                on_progress or (lambda x: None),
             )
 
             if result.is_error:
@@ -233,6 +234,7 @@ class ToolExecutor:
         tool_name: str,
         tool_input: dict,
         context: ToolUseContext,
+        on_progress: Callable[[Any], None] | None = None,
     ) -> ToolExecutionResult:
         """Execute a tool by name with permission checking."""
         all_tools = get_all_tools()
@@ -251,7 +253,7 @@ class ToolExecutor:
                 tool_name=tool_name,
             )
 
-        return await self.execute_tool(tool, tool_input, context)
+        return await self.execute_tool(tool, tool_input, context, on_progress=on_progress)
 
 
 # Global instance

@@ -70,73 +70,6 @@ def translate_command_for_windows(command: str) -> str:
             text, old_char, new_char = match.groups()
             return f"powershell -Command \"echo '{text}' | ForEach-Object {{ $_ -replace '{old_char}', '{new_char}' }}\""
 
-    # rm [-rf] FILE/DIR -> del /q FILE or rmdir /s /q DIR
-    rm_match = re.match(r"^rm\s+(-\w*\s+)?(.+)$", cmd_stripped)
-    if rm_match:
-        flags = rm_match.group(1) or ""
-        target = rm_match.group(2).strip()
-        # Check if it's a directory removal
-        if "-r" in flags or "-R" in flags or "-rf" in flags or "-fr" in flags:
-            return f"rmdir /s /q {target}"
-        return f"del /q {target}"
-
-    # cp [-r] SRC DEST -> copy SRC DEST or xcopy /e /i /y SRC DEST
-    cp_match = re.match(r"^cp\s+(-\w*\s+)?(.+?)\s+(.+)$", cmd_stripped)
-    if cp_match:
-        flags = cp_match.group(1) or ""
-        src = cp_match.group(2).strip()
-        dest = cp_match.group(3).strip()
-        if "-r" in flags or "-R" in flags or "-a" in flags:
-            return f"xcopy /e /i /y {src} {dest}"
-        return f"copy /y {src} {dest}"
-
-    # mv SRC DEST -> move SRC DEST
-    mv_match = re.match(r"^mv\s+(.+?)\s+(.+)$", cmd_stripped)
-    if mv_match:
-        src = mv_match.group(1).strip()
-        dest = mv_match.group(2).strip()
-        return f"move /y {src} {dest}"
-
-    # touch FILE -> type nul > FILE
-    touch_match = re.match(r"^touch\s+(.+)$", cmd_stripped)
-    if touch_match:
-        files = touch_match.group(1)
-        # For multiple files, create each
-        return f"powershell -Command \"{'; '.join(f'New-Item -ItemType File -Path {f.strip()} -Force' for f in files.split())}\""
-
-    # mkdir [-p] DIR -> mkdir DIR (Windows mkdir doesn't have -p but creates intermediates)
-    mkdir_match = re.match(r"^mkdir\s+(-p\s+)?(.+)$", cmd_stripped)
-    if mkdir_match:
-        dirs = mkdir_match.group(2).strip()
-        return f"mkdir {dirs}"
-
-    # rmdir DIR -> rmdir /q DIR
-    rmdir_match = re.match(r"^rmdir\s+(.+)$", cmd_stripped)
-    if rmdir_match:
-        dirs = rmdir_match.group(1).strip()
-        return f"rmdir /q {dirs}"
-
-    # which CMD -> where CMD
-    which_match = re.match(r"^which\s+(.+)$", cmd_stripped)
-    if which_match:
-        cmd = which_match.group(1).strip()
-        return f"where {cmd}"
-
-    # clear -> cls
-    if cmd_stripped == "clear":
-        return "cls"
-
-    # uname -> ver
-    if cmd_stripped == "uname":
-        return "ver"
-
-    # ln -s TARGET LINK -> mklink LINK TARGET
-    ln_match = re.match(r"^ln\s+-s\s+(.+?)\s+(.+)$", cmd_stripped)
-    if ln_match:
-        target = ln_match.group(1).strip()
-        link = ln_match.group(2).strip()
-        return f"mklink {link} {target}"
-
     return command
 
 
@@ -173,12 +106,6 @@ DANGEROUS_PATTERNS = [
     (r"\bformat\s+/dev/", "format device"),
     # Remove all files in root
     (r"\brm\s+(-\w*)?-rf\s+/\s*\*", "recursive delete all files in root"),
-    # Windows dangerous patterns
-    (r"\bdel\s+(/[fqsa]\s*)+\s*C:\\\\", "recursive delete on system drive"),
-    (r"\bformat\s+[a-zA-Z]:", "format drive"),
-    (r"\brd\s+(/[sq]\s*)+\s*C:\\\\", "recursive delete on system drive"),
-    (r"\brmdir\s+(/[sq]\s*)+\s*C:\\\\", "recursive delete on system drive"),
-    (r"\bxcopy\s+/.*\s+C:\\\\.*\s+/[ey]*", "dangerous xcopy on system drive"),
 ]
 
 
@@ -229,33 +156,84 @@ class BashOutput(BaseModel):
     command: str
 
 
-async def execute_bash(
-    command: str, cwd: str | None = None, timeout: int = 600, env: dict[str, str] | None = None
-) -> BashOutput:
-    """Execute a bash command."""
-    # Translate command for Windows compatibility
-    command = translate_command_for_windows(command)
+async def _read_stream(
+    stream: asyncio.StreamReader,
+    lines: list[str],
+    on_progress: Any,
+    stream_name: str,
+) -> None:
+    """Read a stream line-by-line, handling both \n and \r."""
+    buffer = b""
+    is_progress = False
+    try:
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                break
+            buffer += chunk
+            while True:
+                nl = buffer.find(b"\n")
+                cr = buffer.find(b"\r")
+                if nl == -1 and cr == -1:
+                    break
+                if nl == -1:
+                    pos, delim = cr, b"\r"
+                elif cr == -1:
+                    pos, delim = nl, b"\n"
+                else:
+                    pos, delim = (cr, b"\r") if cr < nl else (nl, b"\n")
+                line = buffer[:pos].decode("utf-8", errors="replace")
+                buffer = buffer[pos + len(delim) :]
+                if not line and delim == b"\r":
+                    continue
+                lines.append(line)
+                if on_progress:
+                    on_progress({
+                        "type": "bash_output",
+                        "stream": stream_name,
+                        "line": line,
+                        "is_progress": delim == b"\r",
+                    })
+        if buffer:
+            line = buffer.decode("utf-8", errors="replace")
+            lines.append(line)
+            if on_progress:
+                on_progress({
+                    "type": "bash_output",
+                    "stream": stream_name,
+                    "line": line,
+                    "is_progress": False,
+                })
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        pass
 
-    # Get current environment
+
+async def execute_bash(
+    command: str,
+    cwd: str | None = None,
+    timeout: int = 600,
+    env: dict[str, str] | None = None,
+    on_progress: Any = None,
+) -> BashOutput:
+    """Execute a bash command with optional real-time progress streaming."""
+    command = translate_command_for_windows(command)
     process_env = os.environ.copy()
     if env:
         process_env.update(env)
-    # Force UTF-8 encoding for child processes
-    process_env["PYTHONIOENCODING"] = "utf-8"
 
     try:
-        # Hide window on Windows
         import subprocess
 
         startupinfo = None
         if sys.platform == "win32":
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 0  # SW_HIDE
+            startupinfo.wShowWindow = 0
             # Set UTF-8 code page for cmd.exe to avoid GBK encoding issues
             command = f"chcp 65001 >nul 2>&1 && {command}"
 
-        # Create subprocess
         process = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
@@ -265,37 +243,47 @@ async def execute_bash(
             startupinfo=startupinfo,
         )
 
-        # Wait for completion with timeout
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
 
-        # Try multiple encodings for Windows compatibility
-        # UTF-8 is tried first because we set chcp 65001 and PYTHONIOENCODING.
-        # GBK/cp936 is tried as fallback for legacy tools.
-        def decode_output(data: bytes) -> str:
-            for encoding in ["utf-8", "gbk", "gb2312", "cp936", "latin-1"]:
-                try:
-                    return data.decode(encoding, errors="strict")
-                except UnicodeDecodeError:
-                    continue
-            return data.decode("utf-8", errors="replace")
-
-        return BashOutput(
-            stdout=decode_output(stdout),
-            stderr=decode_output(stderr),
-            exit_code=process.returncode or 0,
-            command=command,
+        stdout_task = asyncio.create_task(
+            _read_stream(process.stdout, stdout_lines, on_progress, "stdout")
         )
-    except asyncio.TimeoutError:
-        # Kill the process if timeout
+        stderr_task = asyncio.create_task(
+            _read_stream(process.stderr, stderr_lines, on_progress, "stderr")
+        )
+
         try:
-            process.kill()
-            await process.wait()
-        except Exception:
-            pass
+            await asyncio.wait_for(process.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            try:
+                process.kill()
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
+            for t in (stdout_task, stderr_task):
+                if not t.done():
+                    t.cancel()
+                    try:
+                        await t
+                    except asyncio.CancelledError:
+                        pass
+            return BashOutput(
+                stdout="\n".join(stdout_lines),
+                stderr=f"Command timed out after {timeout} seconds",
+                exit_code=-1,
+                command=command,
+            )
+
+        await asyncio.gather(stdout_task, stderr_task)
+
+        def decode_lines(lines: list[str]) -> str:
+            return "\n".join(lines)
+
         return BashOutput(
-            stdout="",
-            stderr=f"Command timed out after {timeout} seconds",
-            exit_code=-1,
+            stdout=decode_lines(stdout_lines),
+            stderr=decode_lines(stderr_lines),
+            exit_code=process.returncode or 0,
             command=command,
         )
     except Exception as e:
@@ -349,7 +337,9 @@ async def bash_call(
         cwd = getattr(app_state, "cwd", os.getcwd())
 
     # Execute command
-    result = await execute_bash(input_data.command, cwd=cwd, timeout=input_data.timeout)
+    result = await execute_bash(
+        input_data.command, cwd=cwd, timeout=input_data.timeout, on_progress=on_progress
+    )
 
     return ToolResult(data=result)
 

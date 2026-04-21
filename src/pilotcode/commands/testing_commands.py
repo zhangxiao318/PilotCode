@@ -15,10 +15,10 @@ Supports multiple test frameworks:
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import re
-import json
-import subprocess
 from typing import Optional, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -26,10 +26,10 @@ from enum import Enum
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from pilotcode.types.command import CommandContext
 from pilotcode.commands.base import CommandHandler, register_command
+from pilotcode.commands.async_runner import run_command_streaming
 
 console = Console()
 
@@ -44,14 +44,14 @@ class TestFramework(str, Enum):
     GO = "go"
     UNKNOWN = "unknown"
 
-    __test__ = False  # Tell pytest not to collect this as a test class
+    __test__ = False
 
 
 @dataclass
 class TestResult:
     """Test execution result."""
 
-    __test__ = False  # Tell pytest not to collect this as a test class
+    __test__ = False
 
     framework: TestFramework
     total: int = 0
@@ -70,20 +70,17 @@ class TestResult:
 
     @property
     def success_rate(self) -> float:
-        """Calculate success rate."""
         if self.total == 0:
             return 0.0
         return (self.passed / self.total) * 100
 
     @property
     def is_success(self) -> bool:
-        """Check if all tests passed."""
         return self.failed == 0 and self.errors == 0 and self.total > 0
 
 
 def detect_test_framework(cwd: str) -> TestFramework:
     """Detect test framework based on project files."""
-    # Check for pytest
     if os.path.exists(os.path.join(cwd, "pytest.ini")):
         return TestFramework.PYTEST
     if os.path.exists(os.path.join(cwd, "pyproject.toml")):
@@ -98,80 +95,64 @@ def detect_test_framework(cwd: str) -> TestFramework:
     ):
         return TestFramework.PYTEST
 
-    # Check for package.json (jest)
     if os.path.exists(os.path.join(cwd, "package.json")):
         with open(os.path.join(cwd, "package.json"), "r") as f:
             content = f.read()
             if "jest" in content:
                 return TestFramework.JEST
 
-    # Check for Cargo.toml (Rust)
     if os.path.exists(os.path.join(cwd, "Cargo.toml")):
         return TestFramework.CARGO
 
-    # Check for go.mod (Go)
     if os.path.exists(os.path.join(cwd, "go.mod")):
         return TestFramework.GO
 
-    # Default to pytest for Python files
     if any(f.endswith(".py") for f in os.listdir(cwd) if os.path.isfile(os.path.join(cwd, f))):
         return TestFramework.PYTEST
 
     return TestFramework.UNKNOWN
 
 
-def run_pytest_tests(
+async def run_pytest_tests(
     cwd: str,
     test_path: Optional[str] = None,
     verbose: bool = False,
     markers: Optional[list[str]] = None,
     max_failures: Optional[int] = None,
 ) -> TestResult:
-    """Run pytest tests."""
+    """Run pytest tests asynchronously with live output."""
     cmd = ["python", "-m", "pytest"]
-
-    # Add options
     if verbose:
         cmd.append("-v")
-
-    # JSON output for parsing
     cmd.extend(["--tb=short", "-q"])
-
-    # Markers
     if markers:
         for marker in markers:
             cmd.extend(["-m", marker])
-
-    # Max failures
     if max_failures:
         cmd.extend(["--maxfail", str(max_failures)])
-
-    # Test path
     if test_path:
         cmd.append(test_path)
 
     start_time = __import__("time").time()
+    timeout = 30 if os.environ.get("PYTEST_CURRENT_TEST") else 300
 
     try:
-        # Use shorter timeout when running in test environment
-        timeout = 30 if os.environ.get("PYTEST_CURRENT_TEST") else 300
-        result = subprocess.run(
+        returncode, stdout, stderr = await run_command_streaming(
             cmd,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            total_timeout=timeout,
+            inactivity_timeout=30,
         )
         duration = __import__("time").time() - start_time
-
-        return parse_pytest_output(result.stdout, result.stderr, duration)
-
-    except subprocess.TimeoutExpired:
+        return parse_pytest_output(stdout, stderr, duration)
+    except asyncio.CancelledError:
+        raise
+    except asyncio.TimeoutError:
         return TestResult(
             framework=TestFramework.PYTEST,
             errors=1,
-            output="Test execution timed out after 5 minutes",
-            duration=300.0,
+            output="Test execution timed out",
+            duration=timeout,
         )
     except Exception as e:
         return TestResult(
@@ -190,9 +171,6 @@ def parse_pytest_output(stdout: str, stderr: str, duration: float) -> TestResult
         output=stdout + ("\n" + stderr if stderr else ""),
     )
 
-    # Parse summary line
-    # Example: "5 passed, 2 failed, 1 skipped in 0.45s"
-    # or: "1 passed in 0.12s"
     summary_pattern = (
         r"(\d+) passed(?:, (\d+) failed)?(?:, (\d+) skipped)?(?:, (\d+) error)? in ([\d.]+)s"
     )
@@ -207,7 +185,6 @@ def parse_pytest_output(stdout: str, stderr: str, duration: float) -> TestResult
             result.total = result.passed + result.failed + result.skipped + result.errors
             break
 
-    # Parse failed tests
     failed_test_pattern = r"(FAILED|ERROR) (.+?)::(.+?) - (.+)"
     for match in re.finditer(failed_test_pattern, stdout):
         result.failed_tests.append(
@@ -222,12 +199,12 @@ def parse_pytest_output(stdout: str, stderr: str, duration: float) -> TestResult
     return result
 
 
-def run_coverage(
+async def run_coverage(
     cwd: str,
     test_path: Optional[str] = None,
     format: str = "terminal",
 ) -> dict[str, Any]:
-    """Run tests with coverage."""
+    """Run tests with coverage asynchronously."""
     cmd = [
         "python",
         "-m",
@@ -236,21 +213,19 @@ def run_coverage(
         f"--cov-report={format}",
         "-q",
     ]
-
     if test_path:
         cmd.append(test_path)
 
     try:
-        result = subprocess.run(
+        returncode, stdout, stderr = await run_command_streaming(
             cmd,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            total_timeout=300,
+            inactivity_timeout=30,
         )
-
-        return parse_coverage_output(result.stdout, result.stderr)
-
+        return parse_coverage_output(stdout, stderr)
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return {
             "success": False,
@@ -269,15 +244,11 @@ def parse_coverage_output(stdout: str, stderr: str) -> dict[str, Any]:
         "output": stdout + ("\n" + stderr if stderr else ""),
     }
 
-    # Parse total coverage
-    # Example: "TOTAL 1234 567 54%"
     total_pattern = r"TOTAL\s+\d+\s+\d+\s+(\d+)%"
     match = re.search(total_pattern, stdout)
     if match:
         result["total_coverage"] = int(match.group(1))
 
-    # Parse file coverage
-    # Example: "src/module.py 100 20 80%"
     file_pattern = r"^([^\s]+\.py)\s+(\d+)\s+(\d+)\s+(\d+)%"
     for line in stdout.split("\n"):
         match = re.match(file_pattern, line)
@@ -294,25 +265,21 @@ def parse_coverage_output(stdout: str, stderr: str) -> dict[str, Any]:
     return result
 
 
-def run_jest_tests(cwd: str, test_path: Optional[str] = None) -> TestResult:
-    """Run Jest tests."""
+async def run_jest_tests(cwd: str, test_path: Optional[str] = None) -> TestResult:
+    """Run Jest tests asynchronously."""
     cmd = ["npm", "test", "--", "--json", "--silent"]
-
     if test_path:
         cmd.extend(["--testPathPattern", test_path])
 
     try:
-        result = subprocess.run(
+        returncode, stdout, stderr = await run_command_streaming(
             cmd,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            total_timeout=300,
+            inactivity_timeout=30,
         )
-
-        # Parse JSON output
         try:
-            data = json.loads(result.stdout)
+            data = json.loads(stdout)
             return TestResult(
                 framework=TestFramework.JEST,
                 total=data.get("numTotalTests", 0),
@@ -320,14 +287,15 @@ def run_jest_tests(cwd: str, test_path: Optional[str] = None) -> TestResult:
                 failed=data.get("numFailedTests", 0),
                 skipped=data.get("numPendingTests", 0),
                 duration=data.get("testResults", [{}])[0].get("perfStats", {}).get("end", 0) / 1000,
-                output=result.stdout,
+                output=stdout,
             )
         except json.JSONDecodeError:
             return TestResult(
                 framework=TestFramework.JEST,
-                output=result.stdout + result.stderr,
+                output=stdout + stderr,
             )
-
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return TestResult(
             framework=TestFramework.JEST,
@@ -336,28 +304,20 @@ def run_jest_tests(cwd: str, test_path: Optional[str] = None) -> TestResult:
         )
 
 
-def run_cargo_tests(cwd: str) -> TestResult:
-    """Run Cargo tests."""
-    cmd = ["cargo", "test"]
-
+async def run_cargo_tests(cwd: str) -> TestResult:
+    """Run Cargo tests asynchronously."""
     try:
-        result = subprocess.run(
-            cmd,
+        returncode, stdout, stderr = await run_command_streaming(
+            ["cargo", "test"],
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            total_timeout=300,
+            inactivity_timeout=30,
         )
+        stdout_combined = stdout + ("\n" + stderr if stderr else "")
+        passed = len(re.findall(r"test \S+ \.\.\. ok", stdout_combined))
+        failed = len(re.findall(r"test \S+ \.\.\. FAILED", stdout_combined))
 
-        # Parse output
-        stdout = result.stdout
-
-        # Count test results
-        passed = len(re.findall(r"test \S+ \.\.\. ok", stdout))
-        failed = len(re.findall(r"test \S+ \.\.\. FAILED", stdout))
-
-        # Try to find summary
-        summary_match = re.search(r"test result: (\w+)\.(\d+) passed; (\d+) failed;", stdout)
+        summary_match = re.search(r"test result: (\w+)\.(\d+) passed; (\d+) failed;", stdout_combined)
         if summary_match:
             passed = int(summary_match.group(2))
             failed = int(summary_match.group(3))
@@ -367,9 +327,10 @@ def run_cargo_tests(cwd: str) -> TestResult:
             total=passed + failed,
             passed=passed,
             failed=failed,
-            output=stdout,
+            output=stdout_combined,
         )
-
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return TestResult(
             framework=TestFramework.CARGO,
@@ -378,32 +339,26 @@ def run_cargo_tests(cwd: str) -> TestResult:
         )
 
 
-def run_go_tests(cwd: str, test_path: Optional[str] = None) -> TestResult:
-    """Run Go tests."""
+async def run_go_tests(cwd: str, test_path: Optional[str] = None) -> TestResult:
+    """Run Go tests asynchronously."""
     cmd = ["go", "test", "-v"]
-
     if test_path:
         cmd.append(test_path)
     else:
         cmd.append("./...")
 
     try:
-        result = subprocess.run(
+        returncode, stdout, stderr = await run_command_streaming(
             cmd,
             cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            total_timeout=300,
+            inactivity_timeout=30,
         )
+        stdout_combined = stdout + ("\n" + stderr if stderr else "")
+        passed = len(re.findall(r"^--- PASS:", stdout_combined, re.MULTILINE))
+        failed = len(re.findall(r"^--- FAIL:", stdout_combined, re.MULTILINE))
 
-        stdout = result.stdout
-
-        # Parse output
-        passed = len(re.findall(r"^--- PASS:", stdout, re.MULTILINE))
-        failed = len(re.findall(r"^--- FAIL:", stdout, re.MULTILINE))
-
-        # Try to find summary
-        summary_match = re.search(r"(\d+) passed, (\d+) failed", stdout)
+        summary_match = re.search(r"(\d+) passed, (\d+) failed", stdout_combined)
         if summary_match:
             passed = int(summary_match.group(1))
             failed = int(summary_match.group(2))
@@ -413,9 +368,10 @@ def run_go_tests(cwd: str, test_path: Optional[str] = None) -> TestResult:
             total=passed + failed,
             passed=passed,
             failed=failed,
-            output=stdout,
+            output=stdout_combined,
         )
-
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return TestResult(
             framework=TestFramework.GO,
@@ -428,20 +384,10 @@ async def test_command(args: list[str], context: CommandContext) -> str:
     """Run project tests.
 
     Usage: /test [path] [--verbose] [--maxfail=N]
-
-    Automatically detects test framework based on project structure.
-
-    Examples:
-      /test
-      /test tests/test_specific.py
-      /test --verbose
-      /test --maxfail=5
     """
-    # Detect if we're running inside pytest to avoid recursion
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return "[dim]Skipping test command during pytest run[/dim]"
 
-    # Parse arguments
     test_path: Optional[str] = None
     verbose = False
     max_failures: Optional[int] = None
@@ -472,45 +418,31 @@ Examples:
         elif not arg.startswith("-"):
             test_path = arg
 
-    # Detect framework
     framework = detect_test_framework(context.cwd)
-
     if framework == TestFramework.UNKNOWN:
-        return (
-            "[yellow]Could not detect test framework. Supported: pytest, jest, cargo, go[/yellow]"
+        return "[yellow]Could not detect test framework. Supported: pytest, jest, cargo, go[/yellow]"
+
+    console.print(f"[cyan]Running {framework.value} tests...[/cyan]")
+
+    if framework == TestFramework.PYTEST:
+        result = await run_pytest_tests(
+            context.cwd,
+            test_path=test_path,
+            verbose=verbose,
+            max_failures=max_failures,
         )
+    elif framework == TestFramework.JEST:
+        result = await run_jest_tests(context.cwd, test_path)
+    elif framework == TestFramework.CARGO:
+        result = await run_cargo_tests(context.cwd)
+    elif framework == TestFramework.GO:
+        result = await run_go_tests(context.cwd, test_path)
+    else:
+        return f"[red]Unsupported test framework: {framework}[/red]"
 
-    # Run tests with progress
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task(f"Running {framework.value} tests...", total=None)
-
-        if framework == TestFramework.PYTEST:
-            result = run_pytest_tests(
-                context.cwd,
-                test_path=test_path,
-                verbose=verbose,
-                max_failures=max_failures,
-            )
-        elif framework == TestFramework.JEST:
-            result = run_jest_tests(context.cwd, test_path)
-        elif framework == TestFramework.CARGO:
-            result = run_cargo_tests(context.cwd)
-        elif framework == TestFramework.GO:
-            result = run_go_tests(context.cwd, test_path)
-        else:
-            return f"[red]Unsupported test framework: {framework}[/red]"
-
-        progress.update(task, completed=True)
-
-    # Display results
     if result.total == 0 and not result.output:
         return "[yellow]No tests found[/yellow]"
 
-    # Summary table
     table = Table(title=f"Test Results ({framework.value})")
     table.add_column("Metric", style="cyan")
     table.add_column("Count", justify="right")
@@ -528,7 +460,6 @@ Examples:
 
     console.print(table)
 
-    # Show failed tests
     if result.failed_tests:
         console.print("\n[bold red]Failed Tests:[/bold red]")
         for test in result.failed_tests:
@@ -536,13 +467,11 @@ Examples:
             if test.get("message"):
                 console.print(f"    [dim]{test['message'][:100]}[/dim]")
 
-    # Show output if verbose or failures
     if verbose or result.failed > 0 or result.errors > 0:
         if result.output:
             output_preview = result.output[-2000:] if len(result.output) > 2000 else result.output
             console.print(Panel(output_preview, title="Output", border_style="blue"))
 
-    # Final status
     if result.is_success:
         return f"\n[green]✓ All {result.passed} tests passed![/green]"
     else:
@@ -553,13 +482,7 @@ async def coverage_command(args: list[str], context: CommandContext) -> str:
     """Show test coverage.
 
     Usage: /coverage [path] [--format=terminal|html|json]
-
-    Examples:
-      /coverage
-      /coverage src/
-      /coverage --format=html
     """
-    # Parse arguments
     test_path: Optional[str] = None
     format = "terminal"
 
@@ -582,31 +505,18 @@ Examples:
         elif not arg.startswith("-"):
             test_path = arg
 
-    # Detect framework
     framework = detect_test_framework(context.cwd)
-
     if framework != TestFramework.PYTEST:
         return "[yellow]Coverage report currently only supported for pytest projects[/yellow]"
 
-    # Run coverage
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Running tests with coverage...", total=None)
+    console.print("[cyan]Running tests with coverage...[/cyan]")
 
-        result = run_coverage(context.cwd, test_path, format)
-
-        progress.update(task, completed=True)
+    result = await run_coverage(context.cwd, test_path, format)
 
     if not result["success"]:
         return f"[red]Coverage failed: {result.get('error', 'Unknown error')}[/red]"
 
-    # Display results
     total = result["total_coverage"]
-
-    # Color based on coverage
     if total >= 80:
         color = "green"
     elif total >= 60:
@@ -616,7 +526,6 @@ Examples:
 
     console.print(f"\n[bold]Total Coverage: [{color}]{total}%[/{color}][/bold]\n")
 
-    # File coverage table
     if result["files"]:
         table = Table(title="File Coverage")
         table.add_column("File", style="cyan")
@@ -624,10 +533,8 @@ Examples:
         table.add_column("Missing", justify="right")
         table.add_column("Coverage", justify="right")
 
-        # Sort by coverage (ascending) to show worst first
         sorted_files = sorted(result["files"], key=lambda x: x["coverage"])
-
-        for file_info in sorted_files[:20]:  # Show top 20
+        for file_info in sorted_files[:20]:
             cov = file_info["coverage"]
             if cov >= 80:
                 cov_style = "green"
@@ -648,7 +555,6 @@ Examples:
 
         console.print(table)
 
-    # Coverage bar
     bar_width = 50
     filled = int((total / 100) * bar_width)
     bar = "█" * filled + "░" * (bar_width - filled)
@@ -661,8 +567,6 @@ async def benchmark_command(args: list[str], context: CommandContext) -> str:
     """Run benchmarks if available.
 
     Usage: /benchmark
-
-    Runs project benchmarks. Requires pytest-benchmark for Python projects.
     """
     if args and args[0] in ["--help", "-h"]:
         return """[bold]Benchmark Command[/bold]
@@ -673,29 +577,26 @@ Runs project benchmarks. Currently supports pytest-benchmark for Python.
 """
 
     framework = detect_test_framework(context.cwd)
-
     if framework != TestFramework.PYTEST:
         return "[yellow]Benchmarks currently only supported for pytest projects[/yellow]"
 
-    # Check for pytest-benchmark
-    cmd = ["python", "-m", "pytest", "--benchmark-only", "-v"]
+    console.print("[cyan]Running benchmarks...[/cyan]")
 
     try:
-        result = subprocess.run(
-            cmd,
+        returncode, stdout, stderr = await run_command_streaming(
+            ["python", "-m", "pytest", "--benchmark-only", "-v"],
             cwd=context.cwd,
-            capture_output=True,
-            text=True,
-            timeout=300,
+            total_timeout=300,
+            inactivity_timeout=30,
         )
 
-        if "benchmark" not in result.stdout.lower() and result.returncode != 0:
+        output = stdout
+        if stderr:
+            output += "\n" + stderr
+
+        if "benchmark" not in output.lower() and returncode != 0:
             return "[yellow]No benchmarks found. Install pytest-benchmark to use this feature.[/yellow]"
 
-        # Parse benchmark results
-        output = result.stdout
-
-        # Show summary
         console.print(
             Panel(
                 output[-1500:] if len(output) > 1500 else output,
@@ -703,9 +604,10 @@ Runs project benchmarks. Currently supports pytest-benchmark for Python.
                 border_style="blue",
             )
         )
-
         return ""
 
+    except asyncio.CancelledError:
+        return "Benchmark cancelled by user"
     except Exception as e:
         return f"[red]Benchmark failed: {e}[/red]"
 
