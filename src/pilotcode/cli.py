@@ -147,8 +147,9 @@ def _show_configuration_prompt(skip_static_check: bool = False) -> bool:
         return False
 
 
-@app.command()
+@app.callback(invoke_without_command=True)
 def main(
+    ctx: typer.Context,
     version: bool = typer.Option(False, "--version", "-v", help="Show version"),
     verbose: bool = typer.Option(False, "--verbose", help="Enable verbose mode"),
     model: str = typer.Option("default", "--model", "-m", help="Model to use"),
@@ -190,6 +191,9 @@ def main(
     ),
 ):
     """PilotCode - Python rewrite of Claude Code."""
+
+    if ctx.invoked_subcommand is not None:
+        return
 
     if daemon:
         # Run in daemon mode for VS Code (skip config check)
