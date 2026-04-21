@@ -313,7 +313,7 @@ class MessageDisplay(Static):
             preview = lines[0][:70] if lines else ""
             if len(lines) > 1 or len(content) > 70:
                 preview += " ..."
-            return Text(f"→ {preview}", style="green")
+            return Text(f"→ {preview}", style="white")
 
         # User messages - smiley prefix
         if self.message.type == UIMessageType.USER:
@@ -435,7 +435,7 @@ class CompactToolDisplay(Static):
         result_preview = lines[0][:70] if lines else ""
         if len(lines) > 1 or len(self.result) > 70:
             result_preview += "..."
-        text.append(result_preview, style="green dim")
+        text.append(result_preview, style="white dim")
         return text
 
     def on_click(self, event):
