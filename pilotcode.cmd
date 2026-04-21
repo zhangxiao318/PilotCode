@@ -24,13 +24,13 @@ if exist ".venv\Scripts\activate.bat" (
 REM Run PilotCode
 if "%~1"=="" (
     REM No arguments: start main application (default)
-    python -m pilotcode main
+    python -m pilotcode
 ) else (
     set "FIRST_ARG=%~1"
     setlocal EnableDelayedExpansion
     if "!FIRST_ARG:~0,2!"=="--" (
         REM Arguments start with -- (options): treat as 'main' command with options
-        python -m pilotcode main %*
+        python -m pilotcode %*
     ) else (
         REM Arguments start with a command: pass through as-is
         python -m pilotcode %*
