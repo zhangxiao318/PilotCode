@@ -274,6 +274,21 @@ async def execute_bash(
                 exit_code=-1,
                 command=command,
             )
+        except asyncio.CancelledError:
+            # Handle task cancellation - kill the subprocess
+            try:
+                process.kill()
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
+            for t in (stdout_task, stderr_task):
+                if not t.done():
+                    t.cancel()
+                    try:
+                        await t
+                    except asyncio.CancelledError:
+                        pass
+            raise  # Re-raise to propagate cancellation
 
         await asyncio.gather(stdout_task, stderr_task)
 

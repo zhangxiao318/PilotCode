@@ -285,6 +285,10 @@ class WebSocketManager:
             print(f"[Permission] Request {request_id} timed out")
             self.permission_manager.resolve_request(request_id, False)
             return False, False
+        except asyncio.CancelledError:
+            print(f"[Permission] Request {request_id} was cancelled")
+            self.permission_manager.resolve_request(request_id, False)
+            raise  # Re-raise to propagate cancellation
         except Exception as e:
             print(f"[Permission] Request {request_id} error: {e}")
             return False, False
@@ -321,6 +325,10 @@ class WebSocketManager:
             print(f"[Question] Request {request_id} timed out")
             self.question_manager.resolve_request(request_id, "")
             return ""
+        except asyncio.CancelledError:
+            print(f"[Question] Request {request_id} was cancelled")
+            self.question_manager.resolve_request(request_id, "")
+            raise  # Re-raise to propagate cancellation
         except Exception as e:
             print(f"[Question] Request {request_id} error: {e}")
             return ""
@@ -450,6 +458,11 @@ class WebSocketManager:
                 pending_tools = []
 
                 async for result in query_engine.submit_message(query):
+                    # Check for cancellation frequently during streaming
+                    if asyncio.current_task().cancelled():
+                        print("[Query] Task cancelled during streaming, breaking")
+                        raise asyncio.CancelledError()
+                    
                     msg = result.message
                     msg_type = msg.__class__.__name__
 
@@ -566,6 +579,11 @@ class WebSocketManager:
                 tool_executor = get_tool_executor()
 
                 for tool_msg in pending_tools:
+                    # Check for cancellation before executing each tool
+                    if asyncio.current_task().cancelled():
+                        print("[Query] Task cancelled before tool execution, breaking")
+                        raise asyncio.CancelledError()
+                    
                     # Special handling for AskUser tool in Web mode
                     if tool_msg.name == "AskUser":
                         question = tool_msg.input.get("question", "")

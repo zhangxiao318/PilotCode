@@ -442,6 +442,12 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             stream=True,
             temperature=options.get("temperature", 0.7),
         ):
+            # Check for cancellation during streaming
+            try:
+                await asyncio.sleep(0)  # Yield control to allow cancellation
+            except asyncio.CancelledError:
+                raise
+            
             delta = chunk.get("choices", [{}])[0].get("delta", {})
             finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
 
