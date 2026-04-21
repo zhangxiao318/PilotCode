@@ -77,6 +77,52 @@ class PermissionRequestManager:
         self._request_info.clear()
 
 
+class UserQuestionRequest:
+    """Stores info about a user question request."""
+
+    def __init__(self, request_id: str, question: str, options: list[str] | None):
+        self.request_id = request_id
+        self.question = question
+        self.options = options
+
+
+class UserQuestionManager:
+    """Manages pending user question requests for WebSocket clients."""
+
+    def __init__(self):
+        self._pending: Dict[str, asyncio.Future] = {}
+        self._request_info: Dict[str, UserQuestionRequest] = {}
+
+    def create_request(
+        self, question: str, options: list[str] | None = None
+    ) -> tuple[str, asyncio.Future]:
+        """Create a new user question request. Returns (request_id, future)."""
+        request_id = f"question_{uuid.uuid4().hex[:12]}"
+        future = asyncio.get_event_loop().create_future()
+        self._pending[request_id] = future
+        self._request_info[request_id] = UserQuestionRequest(
+            request_id, question, options
+        )
+        return request_id, future
+
+    def resolve_request(self, request_id: str, response: str) -> tuple[bool, UserQuestionRequest | None]:
+        """Resolve a user question request. Returns (success, request_info)."""
+        info = self._request_info.pop(request_id, None)
+        future = self._pending.pop(request_id, None)
+        if future and not future.done():
+            future.set_result(response)
+            return True, info
+        return False, info
+
+    def cancel_all(self):
+        """Cancel all pending requests."""
+        for future in self._pending.values():
+            if not future.done():
+                future.set_exception(asyncio.CancelledError("Server shutting down"))
+        self._pending.clear()
+        self._request_info.clear()
+
+
 class WebSocketManager:
     """Manage WebSocket connections and communication."""
 
@@ -84,6 +130,7 @@ class WebSocketManager:
         self.clients: Set[Any] = set()
         self.cwd: str = "."
         self.permission_manager = PermissionRequestManager()
+        self.question_manager = UserQuestionManager()
         self.current_tasks: Dict[Any, asyncio.Task] = {}  # Track current query tasks per websocket
 
     async def register(self, websocket):
@@ -97,8 +144,9 @@ class WebSocketManager:
         self.clients.discard(websocket)
         client_info = getattr(websocket, "remote_address", ("unknown", 0))
         print(f"[WebSocket] Client disconnected from {client_info}. Total: {len(self.clients)}")
-        # Cancel all pending permissions for this client
+        # Cancel all pending permissions and questions for this client
         self.permission_manager.cancel_all()
+        self.question_manager.cancel_all()
 
     async def send_to_client(self, websocket, message: dict):
         """Send message to specific client."""
@@ -181,6 +229,16 @@ class WebSocketManager:
                         "level": "session" if for_session else "once",
                     },
                 )
+
+            elif msg_type == "user_question_response":
+                request_id = data.get("request_id", "")
+                response = data.get("response", "")
+                print(f"[WebSocket] User question response received: {request_id} = {response}")
+
+                # Resolve the question request
+                success, info = self.question_manager.resolve_request(request_id, response)
+                print(f"[WebSocket] Question resolve result: success={success}, info={info}")
+
             else:
                 print(f"[WebSocket] Unknown message type: {msg_type}")
 
@@ -231,6 +289,42 @@ class WebSocketManager:
             print(f"[Permission] Request {request_id} error: {e}")
             return False, False
 
+    async def request_user_input_via_websocket(
+        self, websocket, question: str, options: list[str] | None = None
+    ) -> str:
+        """Request user input from client via WebSocket. Returns user response string."""
+        request_id, future = self.question_manager.create_request(question, options)
+
+        # Send question request to client
+        try:
+            await self.send_to_client(
+                websocket,
+                {
+                    "type": "user_question_request",
+                    "request_id": request_id,
+                    "question": question,
+                    "options": options,
+                },
+            )
+            print(f"[Question] Sent request {request_id}: {question[:50]}...")
+        except Exception as e:
+            print(f"[Question] Failed to send request: {e}")
+            self.question_manager.resolve_request(request_id, "")
+            return ""
+
+        # Wait for response with timeout
+        try:
+            response = await asyncio.wait_for(future, timeout=300.0)
+            print(f"[Question] Request {request_id} result: {response[:50]}...")
+            return response
+        except asyncio.TimeoutError:
+            print(f"[Question] Request {request_id} timed out")
+            self.question_manager.resolve_request(request_id, "")
+            return ""
+        except Exception as e:
+            print(f"[Question] Request {request_id} error: {e}")
+            return ""
+
     async def process_query(self, websocket, query: str):
         """Process user query and stream results."""
         print(f"[Query] Processing: {query[:50]}...")
@@ -243,7 +337,7 @@ class WebSocketManager:
             from pilotcode.tools.registry import get_all_tools
             from pilotcode.state.app_state import get_default_app_state
             from pilotcode.state.store import Store
-            from pilotcode.tools.base import ToolUseContext
+            from pilotcode.tools.base import ToolUseContext, ToolResult
             from pilotcode.permissions import get_tool_executor
             from pilotcode.permissions.permission_manager import (
                 get_permission_manager,
@@ -472,29 +566,64 @@ class WebSocketManager:
                 tool_executor = get_tool_executor()
 
                 for tool_msg in pending_tools:
-                    context = ToolUseContext(
-                        get_app_state=store.get_state,
-                        set_app_state=lambda f: store.set_state(f),
-                    )
+                    # Special handling for AskUser tool in Web mode
+                    if tool_msg.name == "AskUser":
+                        question = tool_msg.input.get("question", "")
+                        options = tool_msg.input.get("options")
+                        
+                        # Send tool use notification
+                        await self.send_to_client(
+                            websocket,
+                            {
+                                "type": "tool_use",
+                                "stream_id": stream_id,
+                                "tool_name": "AskUser",
+                                "tool_input": tool_msg.input,
+                            },
+                        )
+                        
+                        # Request user input via WebSocket
+                        user_response = await self.request_user_input_via_websocket(
+                            websocket, question, options
+                        )
+                        
+                        # Create tool result
+                        from pilotcode.tools.base import ToolResult
+                        from pilotcode.tools.ask_user_tool import AskUserOutput
+                        from pilotcode.permissions.tool_executor import ToolExecutionResult
+                        
+                        result_data = AskUserOutput(response=user_response, question=question)
+                        exec_result = ToolExecutionResult(
+                            success=True,
+                            result=ToolResult(data=result_data),
+                            permission_granted=True,
+                            message="Success",
+                            tool_name="AskUser",
+                        )
+                    else:
+                        context = ToolUseContext(
+                            get_app_state=store.get_state,
+                            set_app_state=lambda f: store.set_state(f),
+                        )
 
-                    async def _send_tool_progress(data):
-                        if isinstance(data, dict) and data.get("type") == "bash_output":
-                            line = data.get("line", "")
-                            if line:
-                                await self.send_to_client(
-                                    websocket,
-                                    {
-                                        "type": "tool_progress",
-                                        "stream_id": stream_id,
-                                        "tool_name": tool_msg.name,
-                                        "line": line,
-                                        "is_progress": data.get("is_progress", False),
-                                    },
-                                )
+                        async def _send_tool_progress(data):
+                            if isinstance(data, dict) and data.get("type") == "bash_output":
+                                line = data.get("line", "")
+                                if line:
+                                    await self.send_to_client(
+                                        websocket,
+                                        {
+                                            "type": "tool_progress",
+                                            "stream_id": stream_id,
+                                            "tool_name": tool_msg.name,
+                                            "line": line,
+                                            "is_progress": data.get("is_progress", False),
+                                        },
+                                    )
 
-                    exec_result = await tool_executor.execute_tool_by_name(
-                        tool_msg.name, tool_msg.input, context, on_progress=_send_tool_progress
-                    )
+                        exec_result = await tool_executor.execute_tool_by_name(
+                            tool_msg.name, tool_msg.input, context, on_progress=_send_tool_progress
+                        )
 
                     result_content = ""
                     if exec_result.success and exec_result.result:
