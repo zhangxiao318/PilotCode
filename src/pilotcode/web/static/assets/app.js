@@ -367,9 +367,20 @@ function handleUserQuestionRequest(data) {
     
     console.log('User question request:', requestId, question);
     
-    // Get the current stream content div
-    const contentDiv = document.getElementById(`content-${currentStreamId}`);
-    if (!contentDiv) return;
+    // Get the current stream content div, or create a new message if stream ended
+    let contentDiv = document.getElementById(`content-${currentStreamId}`);
+    if (!contentDiv) {
+        // Stream may have ended, create a new message container
+        const streamDiv = document.createElement('div');
+        streamDiv.id = `stream-question-${requestId}`;
+        streamDiv.className = 'message';
+        streamDiv.innerHTML = `
+            <div class="user-query">Waiting for your answer...</div>
+            <div class="stream-content" id="content-question-${requestId}"></div>
+        `;
+        messagesContainer.appendChild(streamDiv);
+        contentDiv = document.getElementById(`content-question-${requestId}`);
+    }
     
     // Create question block
     const questionDiv = document.createElement('div');
