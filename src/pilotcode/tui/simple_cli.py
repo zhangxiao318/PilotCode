@@ -180,11 +180,53 @@ class SimpleCLI:
             else:
                 return False, f"API error: {error_msg}"
 
-    def _notify_user(self, event_type: str, payload: dict) -> None:
-        """Display a system notification to the user.
+    # ------------------------------------------------------------------
+    # Four-layer rendering framework
+    # ------------------------------------------------------------------
 
-        Unified entry point for user-facing notices across all UI modes.
-        """
+    def _render_status(self, event_type: str, **kwargs) -> None:
+        """Status Layer: persistent state indicators (placeholder)."""
+        pass
+
+    def _render_conversational_assistant(self, content: str, is_complete: bool) -> None:
+        """Conversational Layer: assistant response text."""
+        if is_complete and content:
+            print()
+            print("📝 Response:")
+            print(content)
+            print()
+
+    def _render_conversational_tool_use(self, tool_name: str, tool_input: dict) -> None:
+        """Conversational Layer: tool call notification."""
+        preview = ""
+        if tool_name == "Bash":
+            preview = tool_input.get("command", "")[:40]
+        elif tool_name in ("FileRead", "FileWrite", "FileEdit"):
+            preview = tool_input.get("path", "")
+        elif tool_name == "Glob":
+            preview = tool_input.get("pattern", "")
+        else:
+            preview = str(list(tool_input.values())[0])[:40] if tool_input else ""
+        print(f"🔧 Tool requested: {tool_name}({preview})")
+
+    def _render_conversational_tool_result(self, output: str, success: bool, error_msg: str = "") -> None:
+        """Conversational Layer: tool execution result."""
+        if not success:
+            print(f"❌ Error: {error_msg}")
+            return
+        output_display = output.strip()
+        if len(output_display) > 500:
+            print(f"  Output ({len(output_display)} chars):")
+            print(f"    {output_display[:300]}...")
+            print("    ... [truncated] ...")
+            print(f"    ...{output_display[-100:]}")
+        elif len(output_display) > 100:
+            print(f"  Output: {output_display[:200]}...")
+        else:
+            print(f"  Output: {output_display}")
+
+    def _render_system(self, event_type: str, **payload) -> None:
+        """System Layer: ephemeral notices, warnings, errors."""
         if event_type == "max_iterations_reached":
             max_iters = payload.get("max_iterations", 50)
             print(
@@ -194,8 +236,25 @@ class SimpleCLI:
         elif event_type == "context_warning":
             usage_pct = payload.get("usage_pct", 0)
             print(f"\n⚠️  Context at {usage_pct}% — approaching limit.")
+        elif event_type == "error":
+            print(f"❌ Error: {payload.get('content', '')}")
+        elif event_type == "no_response":
+            print()
+            print("⚠️  No response from model. Check your API key and model configuration.")
+            print("   Run: ./pilotcode configure --show")
+            print()
         else:
             print(f"\n{payload.get('message', '')}")
+
+    def _render_interactive_permission_denied(self) -> None:
+        """Interactive Layer: permission denied feedback."""
+        print("⛔ Tool execution denied")
+
+    # ------------------------------------------------------------------
+
+    def _notify_user(self, event_type: str, payload: dict) -> None:
+        """Backward-compat shim: delegate to _render_system."""
+        self._render_system(event_type, **payload)
 
     def print_welcome(self):
         """Print welcome message and test API connection."""
@@ -497,49 +556,29 @@ class SimpleCLI:
                     elif isinstance(msg, AssistantMessage):
                         # Handle streaming vs complete message
                         if result.is_complete:
-                            # Final message: use it if non-empty and longer than accumulated
-                            # This handles case where accumulated content has more detail
                             if isinstance(msg.content, str) and msg.content:
                                 if len(msg.content) >= len(accumulated_response):
                                     accumulated_response = msg.content
-                                # else: keep accumulated content which has more detail
                                 response_received = True
                         else:
-                            # Streaming: accumulate content
                             if msg.content:
                                 accumulated_response += msg.content
                                 response_received = True
 
-                        # Only print when message is complete
+                        # -- Conversational Layer: flush assistant response --
                         if result.is_complete:
                             if accumulated_response:
-                                print()
-                                print("📝 Response:")
-                                print(accumulated_response)
-                                print()
+                                self._render_conversational_assistant(accumulated_response, is_complete=True)
                             elif not response_received and not pending_tools:
-                                # No response from model
-                                print()
-                                print(
-                                    "⚠️  No response from model. Check your API key and model configuration."
-                                )
-                                print("   Run: ./pilotcode configure --show")
-                                print()
+                                self._render_system("no_response")
 
                     elif isinstance(msg, ToolUseMessage):
                         # Collect tool use requests
                         pending_tools.append(msg)
-                        # Show tool request with key param
-                        tool_input = msg.input if isinstance(msg.input, dict) else {}
-                        if msg.name == "Bash":
-                            preview = tool_input.get("command", "")[:40]
-                        elif msg.name in ("FileRead", "FileWrite", "FileEdit"):
-                            preview = tool_input.get("path", "")
-                        elif msg.name == "Glob":
-                            preview = tool_input.get("pattern", "")
-                        else:
-                            preview = str(list(tool_input.values())[0])[:40] if tool_input else ""
-                        print(f"🔧 Tool requested: {msg.name}({preview})")
+                        # -- Conversational Layer: tool use --
+                        self._render_conversational_tool_use(
+                            msg.name, msg.input if isinstance(msg.input, dict) else {}
+                        )
 
                 # If no tools to execute, we're done
                 if not pending_tools:
@@ -552,7 +591,7 @@ class SimpleCLI:
 
                     # Ask for permission
                     if not self.ask_permission(tool_name, params):
-                        print("⛔ Tool execution denied")
+                        self._render_interactive_permission_denied()
                         self.query_engine.add_tool_result(
                             tool_msg.tool_use_id, "Tool execution denied by user", is_error=True
                         )
@@ -612,19 +651,8 @@ class SimpleCLI:
                         else:
                             output = result.message or "Tool execution failed"
 
-                        # Display output with smart truncation
-                        output_display = output.strip()
-                        if len(output_display) > 500:
-                            # For long outputs, show first 300 and last 100 chars
-                            print(f"  Output ({len(output_display)} chars):")
-                            print(f"    {output_display[:300]}...")
-                            print("    ... [truncated] ...")
-                            print(f"    ...{output_display[-100:]}")
-                        elif len(output_display) > 100:
-                            print(f"  Output: {output_display[:200]}...")
-                        else:
-                            print(f"  Output: {output_display}")
-
+                        # -- Conversational Layer: tool result --
+                        self._render_conversational_tool_result(output, success=True)
                         self.query_engine.add_tool_result(
                             tool_msg.tool_use_id, output, is_error=False
                         )
@@ -632,7 +660,7 @@ class SimpleCLI:
                         self.query_engine.add_tool_result(
                             tool_msg.tool_use_id, str(e), is_error=True
                         )
-                        print(f"❌ Error: {e}")
+                        self._render_system("error", content=str(e))
 
                 # Continue loop to get LLM response with tool results
                 # Use empty string to continue without adding new user message

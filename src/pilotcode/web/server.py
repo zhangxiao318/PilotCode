@@ -460,6 +460,34 @@ class WebSocketManager:
 
             perm_manager.set_permission_callback(web_permission_callback)
 
+            # ------------------------------------------------------------------
+            # Four-layer rendering helpers (localized to this query scope)
+            # ------------------------------------------------------------------
+            async def _render_status(event_type: str, **kwargs):
+                pass  # Placeholder for future status-bar updates
+
+            async def _render_conversational_chunk(chunk: str):
+                await self.send_to_client(
+                    websocket, {"type": "streaming_chunk", "stream_id": stream_id, "chunk": chunk}
+                )
+
+            async def _render_conversational_tool_call(tool_name: str, tool_input: dict):
+                await self.send_to_client(
+                    websocket,
+                    {"type": "tool_call", "stream_id": stream_id, "tool_name": tool_name, "tool_input": tool_input},
+                )
+
+            async def _render_system(content: str):
+                await self.send_to_client(
+                    websocket, {"type": "system", "stream_id": stream_id, "content": content}
+                )
+
+            async def _render_error(content: str):
+                await self.send_to_client(
+                    websocket, {"type": "streaming_error", "stream_id": stream_id, "error": content}
+                )
+
+            # ------------------------------------------------------------------
             # Process query
             full_content = ""
             sent_content_length = 0  # Track how much content has been sent to avoid duplicates
@@ -527,15 +555,7 @@ class WebSocketManager:
                     # Handle tool use
                     elif msg_type == "ToolUseMessage":
                         pending_tools.append(msg)
-                        await self.send_to_client(
-                            websocket,
-                            {
-                                "type": "tool_call",
-                                "stream_id": stream_id,
-                                "tool_name": msg.name,
-                                "tool_input": msg.input,
-                            },
-                        )
+                        await _render_conversational_tool_call(msg.name, msg.input)
 
                 # No more tools to execute - this is the final response
                 if not pending_tools:
@@ -568,14 +588,9 @@ class WebSocketManager:
                                     "chunk": new_content,
                                 },
                             )
-                    # Notify user via a proper system message instead of mixing into streaming chunks
-                    await self.send_to_client(
-                        websocket,
-                        {
-                            "type": "system",
-                            "stream_id": stream_id,
-                            "content": f"⏹️  Reached maximum tool iterations ({max_iterations}). Task paused. Send another message to continue.",
-                        },
+                    # -- System Layer: max iterations reached --
+                    await _render_system(
+                        f"⏹️  Reached maximum tool iterations ({max_iterations}). Task paused. Send another message to continue."
                     )
                     break
 

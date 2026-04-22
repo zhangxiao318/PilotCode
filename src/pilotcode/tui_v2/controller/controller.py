@@ -81,6 +81,60 @@ class TUIController:
 
         self._init_engine()
 
+    # ------------------------------------------------------------------
+    # Four-layer rendering helpers
+    # ------------------------------------------------------------------
+
+    def _render_status(self, event_type: str, **kwargs) -> None:
+        """Status Layer: persistent state indicators (placeholder)."""
+        pass
+
+    def _render_conversational_user(self, content: str) -> UIMessage:
+        """Conversational Layer: user input."""
+        return UIMessage(
+            type=UIMessageType.USER,
+            content=content,
+            is_complete=True,
+        )
+
+    def _render_conversational_assistant(self, content: str, is_streaming: bool, is_complete: bool) -> UIMessage:
+        """Conversational Layer: assistant response."""
+        return UIMessage(
+            type=UIMessageType.ASSISTANT,
+            content=content,
+            is_streaming=is_streaming,
+            is_complete=is_complete,
+        )
+
+    def _render_conversational_tool_use(self, tool_name: str, tool_input: dict, tool_use_id: str, iteration: int, tool_idx: int, total_tools: int) -> UIMessage:
+        """Conversational Layer: tool call notification."""
+        is_safe = self._is_safe_tool(tool_name, tool_input if isinstance(tool_input, dict) else {})
+        return UIMessage(
+            type=UIMessageType.TOOL_USE,
+            content=f"{tool_name}",
+            metadata={
+                "tool_name": tool_name,
+                "tool_input": tool_input,
+                "tool_use_id": tool_use_id,
+                "is_safe": is_safe,
+                "turn": iteration,
+                "max_turns": self.max_iterations,
+                "tool_index": tool_idx,
+                "total_tools": total_tools,
+            },
+            is_complete=False,
+        )
+
+    def _render_system(self, event_type: str, content: str = "", **kwargs) -> UIMessage:
+        """System Layer: notices, warnings, errors."""
+        return UIMessage(
+            type=UIMessageType.SYSTEM,
+            content=content,
+            is_complete=True,
+        )
+
+    # ------------------------------------------------------------------
+
     def _init_engine(self) -> None:
         """Initialize QueryEngine."""
 
@@ -173,28 +227,22 @@ class TUIController:
                 msg = result.message
 
                 if isinstance(msg, UserMessage):
-                    # User message - display it
-                    yield UIMessage(
-                        type=UIMessageType.USER,
-                        content=msg.content if isinstance(msg.content, str) else str(msg.content),
-                        is_complete=True,
+                    # -- Conversational Layer: user input --
+                    yield self._render_conversational_user(
+                        msg.content if isinstance(msg.content, str) else str(msg.content)
                     )
 
                 elif isinstance(msg, AssistantMessage):
                     # Handle streaming vs final message differently
                     if result.is_complete:
-                        # Final message: QueryEngine returns complete content
-                        # Use it directly instead of accumulating
                         accumulated_content = msg.content or accumulated_content
                     else:
-                        # Streaming: accumulate content from chunks
                         if msg.content:
                             accumulated_content += msg.content
 
-                    # Yield update for assistant messages
-                    yield UIMessage(
-                        type=UIMessageType.ASSISTANT,
-                        content=accumulated_content,
+                    # -- Conversational Layer: assistant response --
+                    yield self._render_conversational_assistant(
+                        accumulated_content,
                         is_streaming=not result.is_complete,
                         is_complete=result.is_complete,
                     )
@@ -202,26 +250,14 @@ class TUIController:
                 elif isinstance(msg, ToolUseMessage):
                     # Collect tool calls for batch processing
                     pending_tools.append(msg)
-                    # Check if tool is safe for visual indication
-                    is_safe = self._is_safe_tool(
-                        msg.name, msg.input if isinstance(msg.input, dict) else {}
-                    )
-                    # Add progress info
-                    tool_idx = len(pending_tools)
-                    yield UIMessage(
-                        type=UIMessageType.TOOL_USE,
-                        content=f"{msg.name}",
-                        metadata={
-                            "tool_name": msg.name,
-                            "tool_input": msg.input,
-                            "tool_use_id": msg.tool_use_id,
-                            "is_safe": is_safe,  # Add safety indicator
-                            "turn": iteration,
-                            "max_turns": self.max_iterations,
-                            "tool_index": tool_idx,
-                            "total_tools": len(pending_tools),
-                        },
-                        is_complete=False,
+                    # -- Conversational Layer: tool use --
+                    yield self._render_conversational_tool_use(
+                        msg.name,
+                        msg.input if isinstance(msg.input, dict) else {},
+                        msg.tool_use_id,
+                        iteration,
+                        len(pending_tools),
+                        len(pending_tools),
                     )
 
             # Process all pending tools
@@ -236,11 +272,10 @@ class TUIController:
             current_prompt = ""
             accumulated_content = ""
         else:
-            # Loop exited because max_iterations was reached (not break)
-            yield UIMessage(
-                type=UIMessageType.SYSTEM,
+            # -- System Layer: max iterations reached --
+            yield self._render_system(
+                "max_iterations_reached",
                 content=f"⏹️  Reached maximum tool iterations ({self.max_iterations}). Task paused. Send another message to continue.",
-                is_complete=True,
             )
 
     def _is_safe_tool(self, tool_name: str, params: dict) -> bool:

@@ -164,6 +164,50 @@ class REPL:
             return True
         return False
 
+    # ------------------------------------------------------------------
+    # Four-layer rendering framework
+    # ------------------------------------------------------------------
+
+    def _render_status(self, event_type: str, **kwargs) -> None:
+        """Status Layer: persistent state indicators.
+
+        Currently rendered inline via progress text; will be extended
+        to a dedicated status bar when the Status Layer is populated.
+        """
+        # Placeholder: status is currently shown via Status() spinner in process_response.
+        pass
+
+    def _render_conversational_assistant(self, content: str, is_complete: bool) -> None:
+        """Conversational Layer: assistant response text."""
+        if is_complete and content:
+            self.console.print()
+            self.console.print(Markdown(content))
+            self.console.print()
+            sys.stdout.flush()
+
+    def _render_conversational_tool_use(self, tool_name: str, tool_input: dict, iteration: int, max_iterations: int, tool_idx: int = 1, total_tools: int = 1) -> None:
+        """Conversational Layer: tool call notification."""
+        tool_progress = f"[turn {iteration}/{max_iterations}]"
+        if total_tools > 1:
+            tool_progress += f" [tool {tool_idx}/{total_tools}]"
+        self.console.print(f"\n[dim][T] {tool_progress} {tool_name}[/dim]")
+
+    def _render_conversational_tool_result(self, tool_name: str, success: bool, message: str) -> None:
+        """Conversational Layer: tool execution result."""
+        if success:
+            self.console.print(f"[dim]✓ {tool_name} completed[/dim]")
+        else:
+            self.console.print(f"[red]✗ {message}[/red]")
+
+    def _render_system(self, event_type: str, **payload) -> None:
+        """System Layer: ephemeral notices, warnings, errors.
+
+        Delegates to the unified _notify_user method for consistency.
+        """
+        self._notify_user(event_type, payload)
+
+    # ------------------------------------------------------------------
+
     async def process_response(self, prompt: str) -> None:
         """Process a prompt through the LLM with tool support."""
         full_content = ""
@@ -173,7 +217,7 @@ class REPL:
             iteration += 1
             pending_tools = []
 
-            # Show status with progress indicator
+            # -- Status Layer: show processing indicator --
             status_text = (
                 f"[cyan]Thinking...[/cyan] [dim](turn {iteration}/{self.max_iterations})[/dim]"
             )
@@ -182,49 +226,40 @@ class REPL:
                     async for result in self.query_engine.submit_message(prompt):
                         msg = result.message
 
+                        # -- Conversational Layer: assistant streaming --
                         if isinstance(msg, AssistantMessage):
                             if isinstance(msg.content, str):
                                 if result.is_complete:
-                                    # Final message: use it if non-empty, otherwise keep accumulated
-                                    # If final message is shorter than accumulated, use accumulated
-                                    # (handles case where accumulated has more detail)
                                     if msg.content and len(msg.content) >= len(full_content):
                                         full_content = msg.content
-                                    # else: keep accumulated full_content
                                 else:
-                                    # Streaming: accumulate content
                                     if msg.content:
                                         full_content += msg.content
 
+                        # -- Conversational Layer: tool use --
                         elif isinstance(msg, ToolUseMessage):
                             pending_tools.append(msg)
 
                 except Exception as e:
-                    self.console.print(f"[red]Error: {e}[/red]")
+                    # -- System Layer: error --
+                    self._render_system("error", content=str(e))
                     return
 
-            # Display the assistant's response
+            # -- Conversational Layer: flush assistant response --
             if full_content:
-                self.console.print()
-                self.console.print(Markdown(full_content))
-                full_content = ""  # Reset for next iteration
-                # Ensure output is flushed and visible before showing prompt
-                self.console.print()  # Extra blank line for readability
-                sys.stdout.flush()  # Force flush on Windows
-            # else: no content to display
+                self._render_conversational_assistant(full_content, is_complete=True)
+                full_content = ""
 
-            # Execute pending tools
+            # -- Interactive + Conversational Layer: execute tools --
             if not pending_tools:
-                # No tools to execute, we're done
                 break
 
             for tool_idx, tool_msg in enumerate(pending_tools, 1):
-                tool_progress = f"[turn {iteration}/{self.max_iterations}]"
-                if len(pending_tools) > 1:
-                    tool_progress += f" [tool {tool_idx}/{len(pending_tools)}]"
-                self.console.print(f"\n[dim][T] {tool_progress} {tool_msg.name}[/dim]")
+                self._render_conversational_tool_use(
+                    tool_msg.name, tool_msg.input, iteration, self.max_iterations,
+                    tool_idx=tool_idx, total_tools=len(pending_tools)
+                )
 
-                # Execute with permission
                 context = ToolUseContext(
                     get_app_state=self.store.get_state,
                     set_app_state=lambda f: self.store.set_state(f),
@@ -245,18 +280,20 @@ class REPL:
                     tool_msg.name, tool_msg.input, context, on_progress=_on_progress
                 )
 
-                # Add result to conversation
                 result_content = ""
                 if exec_result.success and exec_result.result:
                     result_content = (
                         str(exec_result.result.data) if exec_result.result.data else "Success"
                     )
-                    self.console.print(f"[dim]✓ {tool_msg.name} completed[/dim]")
                 else:
                     result_content = exec_result.message
-                    self.console.print(f"[red]✗ {exec_result.message}[/red]")
 
-                    # --- Environment diagnosis (interactive REPL mode) ---
+                self._render_conversational_tool_result(
+                    tool_msg.name, exec_result.success, exec_result.message
+                )
+
+                # -- System Layer: environment diagnosis --
+                if not exec_result.success:
                     if not getattr(self, '_env_diagnosis_fired', False):
                         from ..utils.env_diagnosis import (
                             looks_like_environment_error,
@@ -275,29 +312,24 @@ class REPL:
                             else:
                                 result_content += "\n[ENV FIX FAILED] Could not fix the environment issue automatically. You may need to fix it manually."
 
-                # Add to query engine history
                 self.query_engine.add_tool_result(
                     tool_msg.tool_use_id, result_content, is_error=not exec_result.success
                 )
-                # Ensure tool output is visible
                 sys.stdout.flush()
 
-            # Loop detection
+            # -- System Layer: loop detection --
             loop_reason = self.loop_guard.record(pending_tools)
             if loop_reason:
+                self._render_system("loop_detected", reason=loop_reason)
                 warning = (
                     f"[SYSTEM WARNING] DETECTED LOOP: {loop_reason}. "
                     f"You have been repeating the same tool calls. STOP exploring and "
                     f"produce your final answer or code changes immediately. "
                     f"Do NOT call the same tools again."
                 )
-                self.console.print(f"[yellow]{warning}[/yellow]")
-                # Inject warning so the model sees it on the next turn
-                self.query_engine.messages.append(
-                    AssistantMessage(content=warning)
-                )
+                self.query_engine.messages.append(AssistantMessage(content=warning))
 
-            # Continue the conversation with tool results
+            # -- Status Layer: turn budget prompts (injected into model context) --
             remaining = max_iterations - iteration
             if remaining <= 5:
                 prompt = f"URGENT: You have only {remaining} tool-call rounds left. If you know the fix, APPLY IT NOW. If not, make your best edit and declare completion."
@@ -306,11 +338,9 @@ class REPL:
             else:
                 prompt = "Please continue based on the tool results above."
 
+        # -- System Layer: max iterations reached --
         if iteration >= self.max_iterations:
-            self._notify_user(
-                "max_iterations_reached",
-                {"max_iterations": self.max_iterations},
-            )
+            self._render_system("max_iterations_reached", max_iterations=self.max_iterations)
 
         # Ensure content is visible above the prompt on Windows
         # Use standard print to ensure compatibility with prompt_toolkit
