@@ -52,28 +52,27 @@ async def status_command(args: list[str], context: CommandContext) -> str:
     if context.query_engine is not None:
         qe = context.query_engine
         msg_count = len(qe.messages)
-        if msg_count > 0:
-            from ..services.token_estimation import estimate_tokens
+        from ..services.token_estimation import estimate_tokens
 
-            total_tokens = sum(
-                estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages
-            )
-            ctx_window = get_model_context_window()
-            used_pct = total_tokens * 100 // ctx_window
-            lines.append("")
-            lines.append("Conversation Context:")
-            lines.append(f"  Messages:   {msg_count}")
-            lines.append(f"  Tokens:     {total_tokens} / {ctx_window} ({used_pct}%)")
-            lines.append(f"  Remaining:  {ctx_window - total_tokens}")
-            # Budget bar
-            bar_len = 20
-            filled = int(used_pct / 100 * bar_len)
-            bar = "█" * filled + "░" * (bar_len - filled)
-            lines.append(f"  [{bar}] {used_pct}%")
-            if used_pct >= 80:
-                lines.append(f"  ⚠️  Above 80% — auto-compression active")
-            elif used_pct >= 60:
-                lines.append(f"  ⚡ Above 60% — approaching limit")
+        total_tokens = sum(
+            estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages
+        )
+        ctx_window = get_model_context_window()
+        used_pct = total_tokens * 100 // ctx_window
+        lines.append("")
+        lines.append("Conversation Context:")
+        lines.append(f"  Messages:   {msg_count}")
+        lines.append(f"  Tokens:     {total_tokens} / {ctx_window} ({used_pct}%)")
+        lines.append(f"  Remaining:  {ctx_window - total_tokens}")
+        # Budget bar
+        bar_len = 20
+        filled = int(used_pct / 100 * bar_len)
+        bar = "█" * filled + "░" * (bar_len - filled)
+        lines.append(f"  [{bar}] {used_pct}%")
+        if used_pct >= 80:
+            lines.append(f"  ⚠️  Above 80% — auto-compression active")
+        elif used_pct >= 60:
+            lines.append(f"  ⚡ Above 60% — approaching limit")
 
     return "\n".join(lines)
 
