@@ -88,7 +88,7 @@ class SessionScreen(Screen):
 
     sidebar_visible: reactive[bool] = reactive(False)
 
-    def __init__(self, auto_allow: bool = False, max_iterations: int = 25, **kwargs):
+    def __init__(self, auto_allow: bool = False, max_iterations: int = 50, **kwargs):
         super().__init__(**kwargs)
         self.auto_allow = auto_allow
         self.max_iterations = max_iterations

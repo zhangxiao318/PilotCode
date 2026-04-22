@@ -287,7 +287,7 @@ class WebSocketManager:
                 result = await run_headless_with_planning(
                     query,
                     auto_allow=False,
-                    max_iterations=25,
+                    max_iterations=50,
                     cwd=self.cwd,
                     progress_callback=progress_callback,
                 )
@@ -339,7 +339,7 @@ class WebSocketManager:
             # Process query
             full_content = ""
             sent_content_length = 0  # Track how much content has been sent to avoid duplicates
-            max_iterations = 25
+            max_iterations = 50
             iteration = 0
             is_continue_query = False  # Track if this is an internal continuation
             consecutive_permission_denied = 0  # Track consecutive permission denials to prevent loops

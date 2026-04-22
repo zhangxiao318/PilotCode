@@ -316,7 +316,7 @@ def run_repl(auto_allow: bool = False, max_iterations: int | None = None) -> Non
 
     Args:
         auto_allow: Automatically allow all tool executions
-        max_iterations: Maximum tool execution rounds per query (default: 25)
+        max_iterations: Maximum tool execution rounds per query (default: 50)
     """
     repl = REPL(auto_allow=auto_allow, max_iterations=max_iterations)
     try:
@@ -648,7 +648,7 @@ async def run_headless(
     prompt: str,
     auto_allow: bool = False,
     json_mode: bool = False,
-    max_iterations: int = 25,
+    max_iterations: int = 50,
     initial_messages: list | None = None,
     cwd: str | None = None,
     progress_callback: Callable[[str], None] | None = None,
@@ -897,7 +897,7 @@ async def run_headless_with_planning(
     prompt: str,
     auto_allow: bool = False,
     json_mode: bool = False,
-    max_iterations: int = 25,
+    max_iterations: int = 50,
     cwd: str | None = None,
     max_plan_attempts: int = 3,
     progress_callback: Callable[[str], None] | None = None,
@@ -1627,7 +1627,7 @@ async def run_headless_with_feedback(
     prompt: str,
     auto_allow: bool = False,
     json_mode: bool = False,
-    max_iterations: int = 25,
+    max_iterations: int = 50,
     max_rounds: int = 3,
     cwd: str | None = None,
     progress_callback: Callable[[str], None] | None = None,

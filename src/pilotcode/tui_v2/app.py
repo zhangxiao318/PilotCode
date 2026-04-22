@@ -28,7 +28,7 @@ class EnhancedApp(App):
     """
 
     def __init__(
-        self, auto_allow: bool = False, theme: str = "default", max_iterations: int = 25, **kwargs
+        self, auto_allow: bool = False, theme: str = "default", max_iterations: int = 50, **kwargs
     ):
         super().__init__(**kwargs)
         self.auto_allow = auto_allow

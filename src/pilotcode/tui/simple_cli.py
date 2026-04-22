@@ -50,7 +50,7 @@ class SimpleCLI:
         self,
         model_name: str = "kimi-k2-0713-preview",
         auto_allow: bool = False,
-        max_iterations: int = 25,
+        max_iterations: int = 50,
     ):
         self.config = get_global_config()
         self.query_engine: Optional[QueryEngine] = None
@@ -604,6 +604,36 @@ class SimpleCLI:
                 # Continue loop to get LLM response with tool results
                 # Use empty string to continue without adding new user message
                 current_prompt = ""
+            else:
+                # Loop exited because max_iterations was reached (not break)
+                max_reached = True
+
+            if max_reached:
+                print(f"\n⏹️  Reached maximum tool iterations ({max_iterations}). Task paused.")
+                print("   Send another message to continue, or type /new to start fresh.")
+
+                # Attempt a final summary from the model
+                try:
+                    summary_prompt = (
+                        "The task was paused because the maximum number of tool iterations was reached. "
+                        "Please provide a brief summary of what has been accomplished so far, "
+                        "and what remains to be done."
+                    )
+                    summary_response = ""
+                    async for result in self.query_engine.submit_message(summary_prompt):
+                        msg = result.message
+                        if isinstance(msg, AssistantMessage) and not result.is_complete:
+                            summary_response += msg.content or ""
+                        elif isinstance(msg, AssistantMessage) and result.is_complete:
+                            if isinstance(msg.content, str) and len(msg.content) > len(summary_response):
+                                summary_response = msg.content
+                    if summary_response:
+                        print("\n📋 Progress summary:")
+                        print(summary_response)
+                        print()
+                except Exception:
+                    pass
+                return
 
             # Update session context with this exchange
             self.session_context.update_from_message(text, accumulated_response)

@@ -238,7 +238,7 @@ def main(
         25,
         "--max-iterations",
         "-i",
-        help="Maximum tool execution rounds per query (default: 25, env: PILOTCODE_MAX_ITERATIONS)",
+        help="Maximum tool execution rounds per query (default: 50, env: PILOTCODE_MAX_ITERATIONS)",
     ),
     tui_v2: bool = typer.Option(
         True, "--tui-v2/--no-tui-v2", help="Use TUI v2 interface (default: True)"

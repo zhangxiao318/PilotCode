@@ -62,7 +62,7 @@ class TUIController:
         get_app_state: Optional[Callable[[], AppState]] = None,
         set_app_state: Optional[Callable[[Callable[[AppState], AppState]], None]] = None,
         auto_allow: bool = False,
-        max_iterations: int = 25,
+        max_iterations: int = 50,
     ):
         self.get_app_state = get_app_state
         self.set_app_state = set_app_state
@@ -213,6 +213,13 @@ class TUIController:
             # Continue with empty prompt to get LLM response to tool results
             current_prompt = ""
             accumulated_content = ""
+        else:
+            # Loop exited because max_iterations was reached (not break)
+            yield UIMessage(
+                type=UIMessageType.ASSISTANT,
+                content=f"⏹️  Reached maximum tool iterations ({self.max_iterations}). Task paused. Send another message to continue.",
+                is_complete=True,
+            )
 
     def _is_safe_tool(self, tool_name: str, params: dict) -> bool:
         """Check if a tool operation is safe (read-only/non-destructive).

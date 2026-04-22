@@ -28,7 +28,7 @@ class Session:
     created_at: float = field(default_factory=time.time)
     last_activity: float = field(default_factory=time.time)
     auto_allow: bool = True
-    max_iterations: int = 25
+    max_iterations: int = 50
 
     def touch(self):
         """Update last activity time."""
