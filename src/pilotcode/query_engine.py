@@ -527,6 +527,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             review_text = result["review_result"]
             test_text = result["test_result"]
             issues_found = result["issues_found"]
+            redesign_prompt = result.get("redesign_prompt")
 
             review_msg_content = f"""[Auto-review result]
 
@@ -550,6 +551,12 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             review_msg = SystemMessage(content=review_msg_content)
             self.messages.append(review_msg)
             yield QueryResult(message=review_msg, is_complete=True)
+
+            # P0: If tests failed, insert explicit redesign instructions
+            if redesign_prompt and self._review_iteration_count < self.config.max_review_iterations - 1:
+                redesign_msg = SystemMessage(content=redesign_prompt)
+                self.messages.append(redesign_msg)
+                yield QueryResult(message=redesign_msg, is_complete=True)
 
             self._review_iteration_count += 1
             self._changed_files = []
