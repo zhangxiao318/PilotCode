@@ -1,40 +1,21 @@
 # /model 命令
 
-查看和管理当前 AI 模型，支持显示模型能力详情和快速切换。
+查看当前 AI 模型能力详情和所有可用模型列表。只读显示，不支持直接切换模型。
 
 ## 作用
 
 - 查看当前模型的详细能力（上下文窗口、工具支持、视觉支持等）
 - 列出所有可用模型及其上下文大小
-- 快速切换模型
-- 查看或修改 Base URL
+- 确认当前配置是否生效
 
 ## 基本用法
-
-```bash
-/model                  # 显示当前模型能力详情和可用模型列表
-/model set <name>       # 切换到指定模型
-/model url [url]        # 查看或设置 Base URL
-```
-
-## 子命令
-
-| 子命令 | 说明 |
-|--------|------|
-| (无) | 显示当前模型能力详情和所有可用模型 |
-| `set <name>` | 切换到指定模型 |
-| `url` | 查看当前 Base URL |
-| `url <url>` | 设置新的 Base URL |
-
-## 使用示例
-
-### 查看当前模型详情
 
 ```bash
 /model
 ```
 
-输出示例：
+## 输出内容
+
 ```
 Current model: deepseek
 
@@ -57,89 +38,69 @@ Available models:
   ollama          Ollama (Local)               ctx=128K
 
 Base URL: https://api.deepseek.com/v1
+
+To switch model, use: python3 -m pilotcode configure
 ```
 
-`★` 标记表示当前正在使用的模型。
-
-### 切换模型
-
-```bash
-# 切换到 Qwen
-/model set qwen
-
-# 切换到 OpenAI
-/model set openai
-
-# 切换到 DeepSeek
-/model set deepseek
-```
-
-输出示例：
-```
-Model set to: qwen (context: 256K)
-```
-
-### 查看和设置 Base URL
-
-```bash
-# 查看当前 Base URL
-/model url
-
-# 设置本地模型地址
-/model url http://localhost:11434/v1
-```
-
-## 使用场景
-
-### 场景1：对比不同模型上下文大小
-
-```bash
-/model
-# 查看各模型的 ctx 值，选择适合长文本任务的模型
-# 例如 qwen-plus (1M) 适合分析大型代码库
-```
-
-### 场景2：根据任务选择模型
-
-```bash
-# 代码生成 - DeepSeek
-/model set deepseek
-"写一个快速排序算法"
-
-# 中文理解 - Qwen
-/model set qwen
-"分析这段中文文本的情感"
-
-# 超长上下文分析 - Qwen Plus
-/model set qwen-plus
-"分析这个 50万 token 的日志文件"
-```
-
-### 场景3：本地模型调试
-
-```bash
-# 切换到本地 Ollama
-/model set ollama
-/model url http://localhost:11434/v1
-```
-
-## 模型能力字段说明
+### 字段说明
 
 | 字段 | 说明 |
 |------|------|
+| `Current model` | 当前生效的模型标识名 |
+| `Display name` | 展示名称 |
+| `API model` | 实际请求时使用的模型 ID |
+| `Provider` | 提供商类别 |
 | `Context window` | 模型支持的最大上下文 Token 数 |
 | `Max output` | 单次回复的最大输出 Token 数 |
 | `Tools` | 是否支持 Function Calling / 工具调用 |
 | `Vision` | 是否支持图片/多模态输入 |
+| `*` 标记 | 当前正在使用的模型 |
+
+## 使用场景
+
+### 场景1：确认当前模型配置
+
+```bash
+> /model
+# 检查当前使用的模型、上下文大小和能力支持
+```
+
+### 场景2：对比不同模型的上下文大小
+
+```bash
+> /model
+# 查看各模型的 ctx 值
+# 例如需要分析大型代码库时，确认是否使用了 qwen-plus (1M)
+```
+
+### 场景3：验证模型切换是否生效
+
+```bash
+# 通过 configure 向导切换模型后
+> /model
+# 确认 Current model 和 Capability 已更新
+```
+
+## 如何切换模型
+
+`/model` 命令**不支持直接切换**。如需切换模型，请使用：
+
+```bash
+# 交互式配置向导（推荐）
+python3 -m pilotcode configure
+
+# 或命令行快速配置
+python3 -m pilotcode configure --model <model_name> --api-key <key>
+```
 
 ## 注意事项
 
-1. **需要提前配置**：切换模型前需要确保该模型的 API 密钥已配置
-2. **实时切换**：切换后立即生效，无需重启
-3. **上下文自动同步**：切换模型后，所有上下文管理模块会自动使用新模型的上下文窗口大小
+1. **只读命令**：`/model` 仅展示信息，不会修改任何配置
+2. **实时反映配置**：显示的是当前生效的配置，包括通过 `configure` 或 `config --set` 修改后的值
+3. **ctx 值来源**：上下文窗口大小来自 `config/models.json` 中的静态配置
 
 ## 相关命令
 
 - `/status` - 查看当前会话 Token 使用量和模型信息
-- `/config` - 完整配置管理
-- `/compact` - 手动压缩上下文
+- `configure` - 交互式配置向导，用于切换模型
+- `config --list` - 查看完整配置和模型能力详情
