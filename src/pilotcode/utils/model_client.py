@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any, AsyncIterator
 from dataclasses import dataclass
 import httpx
@@ -186,9 +187,10 @@ class ModelClient:
     async def fetch_model_capabilities(self) -> dict[str, Any] | None:
         """Fetch model capabilities from the API.
 
-        Tries to query the /models or /models/{model_id} endpoint to get
-        actual model metadata (context window, max tokens, etc.) from the
-        server rather than relying on static configuration.
+        Probes multiple backend-specific endpoints to get actual model metadata
+        (context window, max tokens, etc.) rather than relying on static
+        configuration. Supports llama-server, vLLM, Ollama, TGI, LiteLLM,
+        and standard OpenAI-compatible endpoints.
 
         Returns:
             Dict with capability info, or None if the API doesn't expose it.
@@ -197,121 +199,224 @@ class ModelClient:
 
         cap: dict[str, Any] = {}
 
-        # Try /models/{model_id} first (OpenAI compatible)
-        model_data = None
-        for endpoint in [f"/models/{self.model}", "/models"]:
+        # Derive root URL (strip trailing /v1 so we can hit backend-specific
+        # endpoints like /props or /api/show).
+        base = str(self.client.base_url).rstrip("/")
+        root_url = base
+        if root_url.endswith("/v1"):
+            root_url = root_url[:-3]
+
+        # ------------------------------------------------------------------
+        # 1. llama.cpp / llama-server  ->  GET /props
+        #    Returns: default_generation_settings.n_ctx, model_path, etc.
+        # ------------------------------------------------------------------
+        try:
+            resp = await self.client.get(
+                f"{root_url}/props", timeout=5.0, follow_redirects=True
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                dgs = data.get("default_generation_settings", {})
+                n_ctx = dgs.get("n_ctx")
+                if n_ctx is not None:
+                    cap["context_window"] = int(n_ctx)
+                # max_tokens from params (llama-server uses -1 for infinite)
+                params = dgs.get("params", {})
+                max_tok = params.get("max_tokens", params.get("n_predict"))
+                if max_tok is not None and max_tok > 0:
+                    cap["max_tokens"] = int(max_tok)
+                # vision from modalities
+                modalities = data.get("modalities", {})
+                if "vision" in modalities:
+                    cap["supports_vision"] = bool(modalities["vision"])
+                # model path gives us display name hint
+                model_path = data.get("model_path")
+                if model_path:
+                    cap["display_name"] = Path(model_path).stem
+                cap["_backend"] = "llama-server"
+        except Exception:
+            pass
+
+        # ------------------------------------------------------------------
+        # 2. Ollama  ->  POST /api/show
+        #    Returns: model_info.{family}.context_length
+        # ------------------------------------------------------------------
+        if "context_window" not in cap:
             try:
-                resp = await self.client.get(endpoint, timeout=10.0)
+                resp = await self.client.post(
+                    f"{root_url}/api/show",
+                    json={"model": self.model},
+                    timeout=5.0,
+                    follow_redirects=True,
+                )
                 if resp.status_code == 200:
                     data = resp.json()
-                    if endpoint.endswith("/models"):
-                        # List response — find the matching model
-                        for m in data.get("data", []):
-                            if m.get("id") == self.model:
-                                model_data = m
+                    model_info = data.get("model_info", {})
+                    details = data.get("details", {})
+                    family = details.get("family", "")
+                    # Try family-specific context length key
+                    if family:
+                        ctx_key = f"{family}.context_length"
+                        val = model_info.get(ctx_key)
+                        if val is not None:
+                            cap["context_window"] = int(val)
+                    # Fallback: any key ending with context_length
+                    if "context_window" not in cap:
+                        for k, v in model_info.items():
+                            if k.endswith(".context_length") and v is not None:
+                                cap["context_window"] = int(v)
                                 break
-                        # Fallback: take first model if only one exists
-                        if model_data is None and len(data.get("data", [])) == 1:
-                            model_data = data["data"][0]
-                    else:
-                        model_data = data
-                    break
-            except (httpx.HTTPStatusError, httpx.RequestError, json.JSONDecodeError):
-                continue
-            except asyncio.TimeoutError:
-                continue
+                    # Ollama capabilities array
+                    capabilities = data.get("capabilities", [])
+                    cap["supports_vision"] = "vision" in capabilities
+                    cap["_backend"] = "ollama"
+            except Exception:
+                pass
 
-        if not model_data:
-            return None
-
-        # --- Extract context window ---
-        # Different providers use different field names
-        for key in ("context_length", "context_window", "max_model_len",
-                    "max_context_length", "num_ctx", "n_ctx"):
-            val = model_data.get(key)
-            if val is not None:
-                try:
-                    cap["context_window"] = int(val)
-                    break
-                except (ValueError, TypeError):
-                    pass
-
-        # Some providers nest it under a "meta" or "info" dict
+        # ------------------------------------------------------------------
+        # 3. LiteLLM proxy  ->  GET /model/info
+        # ------------------------------------------------------------------
         if "context_window" not in cap:
-            for nested_key in ("meta", "info", "details", "capabilities"):
-                nested = model_data.get(nested_key)
-                if isinstance(nested, dict):
+            try:
+                resp = await self.client.get(
+                    f"{root_url}/model/info", timeout=5.0, follow_redirects=True
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    mi = data.get("model_info", {})
+                    # Try exact model name, then first match
+                    info = mi.get(self.model) or next(iter(mi.values()), None)
+                    if isinstance(info, dict):
+                        ctx = info.get("max_input_tokens") or info.get("max_tokens")
+                        if ctx is not None:
+                            cap["context_window"] = int(ctx)
+                        out = info.get("max_output_tokens")
+                        if out is not None:
+                            cap["max_tokens"] = int(out)
+                        if "supports_vision" in info:
+                            cap["supports_vision"] = bool(info["supports_vision"])
+                        cap["_backend"] = "litellm"
+            except Exception:
+                pass
+
+        # ------------------------------------------------------------------
+        # 4. Standard OpenAI-compatible  ->  GET /v1/models / /models/{id}
+        #    (vLLM, TGI, SGLang, cloud providers, etc.)
+        # ------------------------------------------------------------------
+        if "context_window" not in cap or "max_tokens" not in cap:
+            model_data = None
+            for endpoint in [f"/models/{self.model}", "/models"]:
+                try:
+                    resp = await self.client.get(endpoint, timeout=5.0)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if endpoint.endswith("/models"):
+                            for m in data.get("data", []):
+                                if m.get("id") == self.model:
+                                    model_data = m
+                                    break
+                            if model_data is None and len(data.get("data", [])) == 1:
+                                model_data = data["data"][0]
+                        else:
+                            model_data = data
+                        break
+                except (httpx.HTTPStatusError, httpx.RequestError,
+                        json.JSONDecodeError, asyncio.TimeoutError):
+                    continue
+
+            if model_data:
+                # context window
+                if "context_window" not in cap:
                     for key in ("context_length", "context_window", "max_model_len",
                                 "max_context_length", "num_ctx", "n_ctx"):
-                        val = nested.get(key)
+                        val = model_data.get(key)
                         if val is not None:
                             try:
                                 cap["context_window"] = int(val)
                                 break
                             except (ValueError, TypeError):
                                 pass
-                if "context_window" in cap:
-                    break
+                    if "context_window" not in cap:
+                        for nested_key in ("meta", "info", "details", "capabilities"):
+                            nested = model_data.get(nested_key)
+                            if isinstance(nested, dict):
+                                for key in ("context_length", "context_window",
+                                            "max_model_len", "max_context_length",
+                                            "num_ctx", "n_ctx"):
+                                    val = nested.get(key)
+                                    if val is not None:
+                                        try:
+                                            cap["context_window"] = int(val)
+                                            break
+                                        except (ValueError, TypeError):
+                                            pass
+                            if "context_window" in cap:
+                                break
 
-        # --- Extract max output tokens ---
-        for key in ("max_tokens", "max_output_tokens", "max_new_tokens"):
-            val = model_data.get(key)
-            if val is not None:
-                try:
-                    cap["max_tokens"] = int(val)
-                    break
-                except (ValueError, TypeError):
-                    pass
-
-        if "max_tokens" not in cap:
-            for nested_key in ("meta", "info", "details", "capabilities"):
-                nested = model_data.get(nested_key)
-                if isinstance(nested, dict):
+                # max tokens
+                if "max_tokens" not in cap:
                     for key in ("max_tokens", "max_output_tokens", "max_new_tokens"):
-                        val = nested.get(key)
+                        val = model_data.get(key)
                         if val is not None:
                             try:
                                 cap["max_tokens"] = int(val)
                                 break
                             except (ValueError, TypeError):
                                 pass
-                if "max_tokens" in cap:
-                    break
+                    if "max_tokens" not in cap:
+                        for nested_key in ("meta", "info", "details", "capabilities"):
+                            nested = model_data.get(nested_key)
+                            if isinstance(nested, dict):
+                                for key in ("max_tokens", "max_output_tokens", "max_new_tokens"):
+                                    val = nested.get(key)
+                                    if val is not None:
+                                        try:
+                                            cap["max_tokens"] = int(val)
+                                            break
+                                        except (ValueError, TypeError):
+                                            pass
+                            if "max_tokens" in cap:
+                                break
 
-        # --- Extract tool / vision support ---
-        for key in ("supports_tools", "supports_function_calling", "tool_call"):
-            val = model_data.get(key)
-            if val is not None:
-                cap["supports_tools"] = bool(val)
-                break
-        if "supports_tools" not in cap:
-            for nested_key in ("meta", "info", "details", "capabilities"):
-                nested = model_data.get(nested_key)
-                if isinstance(nested, dict):
+                # tool / vision support
+                if "supports_tools" not in cap:
                     for key in ("supports_tools", "supports_function_calling", "tool_call"):
-                        val = nested.get(key)
+                        val = model_data.get(key)
                         if val is not None:
                             cap["supports_tools"] = bool(val)
                             break
-                if "supports_tools" in cap:
-                    break
+                    if "supports_tools" not in cap:
+                        for nested_key in ("meta", "info", "details", "capabilities"):
+                            nested = model_data.get(nested_key)
+                            if isinstance(nested, dict):
+                                for key in ("supports_tools", "supports_function_calling", "tool_call"):
+                                    val = nested.get(key)
+                                    if val is not None:
+                                        cap["supports_tools"] = bool(val)
+                                        break
+                            if "supports_tools" in cap:
+                                break
 
-        for key in ("supports_vision", "vision", "multimodal"):
-            val = model_data.get(key)
-            if val is not None:
-                cap["supports_vision"] = bool(val)
-                break
-        if "supports_vision" not in cap:
-            for nested_key in ("meta", "info", "details", "capabilities"):
-                nested = model_data.get(nested_key)
-                if isinstance(nested, dict):
+                if "supports_vision" not in cap:
                     for key in ("supports_vision", "vision", "multimodal"):
-                        val = nested.get(key)
+                        val = model_data.get(key)
                         if val is not None:
                             cap["supports_vision"] = bool(val)
                             break
-                if "supports_vision" in cap:
-                    break
+                    if "supports_vision" not in cap:
+                        for nested_key in ("meta", "info", "details", "capabilities"):
+                            nested = model_data.get(nested_key)
+                            if isinstance(nested, dict):
+                                for key in ("supports_vision", "vision", "multimodal"):
+                                    val = nested.get(key)
+                                    if val is not None:
+                                        cap["supports_vision"] = bool(val)
+                                        break
+                            if "supports_vision" in cap:
+                                break
+
+                if "_backend" not in cap:
+                    cap["_backend"] = "openai-compatible"
 
         return cap if cap else None
 
