@@ -21,7 +21,8 @@ from .utils.model_client import Message as APIMessage, ToolCall, get_model_clien
 from .services.token_estimation import get_token_estimator
 from .services.context_compression import get_context_compressor, CompressionResult
 from .services.intelligent_compact import (
-    get_intelligent_compactor,
+    IntelligentContextCompactor,
+    CompactConfig,
 )
 from .services.tool_orchestrator import get_tool_orchestrator
 from .utils.models_config import get_model_context_window
@@ -42,6 +43,7 @@ class QueryEngineConfig:
     auto_compact: bool = True
     max_tokens: int = 0  # 0 = auto-detect from model config
     cache_tool_results: bool = False
+    on_notify: Callable[[str, dict[str, Any]], None] | None = None
 
 
 @dataclass
@@ -78,7 +80,15 @@ class QueryEngine:
         # Initialize services
         self._token_estimator = get_token_estimator()
         self._context_compressor = get_context_compressor()
-        self._intelligent_compactor = get_intelligent_compactor()
+
+        # Create a dedicated compactor instance configured with our max_tokens
+        compact_config = CompactConfig()
+        if self.config.max_tokens > 0:
+            # Use max(1, ...) to avoid 0 which triggers auto-detection in the compactor
+            compact_config.compact_threshold = max(1, int(self.config.max_tokens * 0.8))
+            compact_config.critical_threshold = max(1, int(self.config.max_tokens * 0.95))
+        self._intelligent_compactor = IntelligentContextCompactor(config=compact_config)
+
         if config.cache_tool_results:
             self._tool_orchestrator = get_tool_orchestrator()
         else:
@@ -426,6 +436,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         self.messages.append(user_msg)
         yield QueryResult(message=user_msg, is_complete=False)
 
+        # Auto-compact if needed before sending to API
+        if self.config.auto_compact:
+            self.auto_compact_if_needed()
+
         # Build API messages
         api_messages = []
         if len(self.messages) == 1:
@@ -517,6 +531,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         )
         self.messages.append(tool_result_msg)
 
+        # Auto-compact if needed after adding tool results
+        if self.config.auto_compact:
+            self.auto_compact_if_needed()
+
     def abort(self) -> None:
         """Abort current query."""
         self.abort_event.set()
@@ -589,23 +607,62 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         return result
 
     def auto_compact_if_needed(self) -> bool:
-        """Auto-compact conversation if token count exceeds 80% limit.
+        """Auto-compact conversation if token count exceeds threshold.
 
         Returns True if compaction was performed.
 
-        This is the synchronous fallback that uses simple compaction.
-        For smart compression with summarization, use smart_compact().
+        Uses intelligent compaction which clears old tool result content
+        while preserving conversation structure and key context.
+        Falls back to simple compaction if intelligent compaction doesn't
+        effectively reduce token usage.
+
+        If compaction is performed and ``on_auto_compact`` is configured,
+        the callback is invoked with compaction statistics.
         """
-        token_count = self.count_tokens()
-        threshold = int(self.config.max_tokens * 0.8)
-        if token_count < threshold:
+        if not self.config.auto_compact:
             return False
 
-        # Use simple priority-based compaction
-        compressed = self._context_compressor.simple_compact(self.messages, keep_recent=6)
+        tokens_before = self.count_tokens()
+        result = self.intelligent_compact()
 
+        if result.get("compacted", False):
+            tokens_after = self.count_tokens()
+            if tokens_after < tokens_before:
+                if self.config.on_notify:
+                    self.config.on_notify(
+                        "auto_compact",
+                        {
+                            "tokens_before": tokens_before,
+                            "tokens_after": tokens_after,
+                            "tokens_saved": tokens_before - tokens_after,
+                            "tool_results_cleared": result.get("tool_results_cleared", 0),
+                            "compaction_count": result.get("compaction_count", 0),
+                            "fallback": False,
+                        },
+                    )
+                return True
+
+        # Fallback: if still over threshold, use simple compaction
+        threshold = int(self.config.max_tokens * 0.8)
+        if self.count_tokens() < threshold:
+            return False
+
+        compressed = self._context_compressor.simple_compact(self.messages, keep_recent=6)
         if len(compressed) < len(self.messages):
             self.messages = compressed
+            tokens_after = self.count_tokens()
+            if self.config.on_notify:
+                self.config.on_notify(
+                    "auto_compact",
+                    {
+                        "tokens_before": tokens_before,
+                        "tokens_after": tokens_after,
+                        "tokens_saved": tokens_before - tokens_after,
+                        "tool_results_cleared": 0,
+                        "compaction_count": self._compaction_count,
+                        "fallback": True,
+                    },
+                )
             return True
         return False
 
@@ -640,8 +697,9 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         # Perform compaction
         result = self._intelligent_compactor.compact_messages(self.messages, token_count)
 
-        # Update messages
-        self.messages = result.messages if hasattr(result, "messages") else self.messages
+        # Update messages from compaction result
+        if result.messages:
+            self.messages = list(result.messages)
 
         # Add summary as system message if we cleared content
         if result.tool_results_cleared > 0:
@@ -662,7 +720,7 @@ Errors: {len(summary.get('errors_encountered', []))}
         return {
             "compacted": True,
             "original_messages": result.original_messages,
-            "compacted_messages": result.compacted_messages,
+            "compacted_messages": len(self.messages),
             "original_tokens": result.original_tokens,
             "compacted_tokens": result.compacted_tokens,
             "tool_results_cleared": result.tool_results_cleared,

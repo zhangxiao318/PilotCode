@@ -82,12 +82,28 @@ class SimpleCLI:
             self.store = Store(app_state)
             set_global_store(self.store)
 
+            def _on_notify(event_type: str, payload: dict) -> None:
+                if event_type == "auto_compact":
+                    saved = payload.get("tokens_saved", 0)
+                    cleared = payload.get("tool_results_cleared", 0)
+                    if payload.get("fallback"):
+                        print(
+                            f"\n🔄 Auto-compacted context (fallback, ~{saved} tokens saved)"
+                        )
+                    elif cleared > 0:
+                        print(
+                            f"\n🔄 Auto-compacted context ({cleared} old tool results cleared, ~{saved} tokens saved)"
+                        )
+                    else:
+                        print(f"\n🔄 Auto-compacted context (~{saved} tokens saved)")
+
             tools = get_all_tools()
             config = QueryEngineConfig(
                 cwd=str(Path.cwd()),
                 tools=tools,
                 get_app_state=self.store.get_state,
                 set_app_state=lambda f: self.store.set_state(f),
+                on_notify=_on_notify,
             )
             self.query_engine = QueryEngine(config=config)
 

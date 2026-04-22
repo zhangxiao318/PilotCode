@@ -411,12 +411,34 @@ class WebSocketManager:
             tools = get_all_tools()
 
             # Create query engine
+            def _on_notify(event_type: str, payload: dict) -> None:
+                if event_type == "auto_compact":
+                    saved = payload.get("tokens_saved", 0)
+                    cleared = payload.get("tool_results_cleared", 0)
+                    if payload.get("fallback"):
+                        content = f"🔄 Auto-compacted context (fallback, ~{saved} tokens saved)"
+                    elif cleared > 0:
+                        content = f"🔄 Auto-compacted context ({cleared} old tool results cleared, ~{saved} tokens saved)"
+                    else:
+                        content = f"🔄 Auto-compacted context (~{saved} tokens saved)"
+                    asyncio.create_task(
+                        self.send_to_client(
+                            websocket,
+                            {
+                                "type": "system",
+                                "stream_id": stream_id,
+                                "content": content,
+                            },
+                        )
+                    )
+
             query_engine = QueryEngine(
                 QueryEngineConfig(
                     cwd=self.cwd,
                     tools=tools,
                     get_app_state=store.get_state,
                     set_app_state=lambda f: store.set_state(f),
+                    on_notify=_on_notify,
                 )
             )
 

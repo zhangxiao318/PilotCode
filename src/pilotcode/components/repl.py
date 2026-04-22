@@ -68,6 +68,23 @@ class REPL:
         tools = get_all_tools()
         if read_only:
             tools = [t for t in tools if t.name not in self.WRITE_TOOLS]
+        def _on_notify(event_type: str, payload: dict) -> None:
+            if event_type == "auto_compact":
+                saved = payload.get("tokens_saved", 0)
+                cleared = payload.get("tool_results_cleared", 0)
+                if payload.get("fallback"):
+                    self.console.print(
+                        f"[dim]🔄 Auto-compacted context (fallback, ~{saved} tokens saved)[/dim]"
+                    )
+                elif cleared > 0:
+                    self.console.print(
+                        f"[dim]🔄 Auto-compacted context ({cleared} old tool results cleared, ~{saved} tokens saved)[/dim]"
+                    )
+                else:
+                    self.console.print(
+                        f"[dim]🔄 Auto-compacted context (~{saved} tokens saved)[/dim]"
+                    )
+
         self.query_engine = QueryEngine(
             QueryEngineConfig(
                 cwd=self.store.get_state().cwd,
@@ -75,6 +92,7 @@ class REPL:
                 get_app_state=self.store.get_state,
                 set_app_state=lambda f: self.store.set_state(f),
                 auto_compact=True,
+                on_notify=_on_notify,
             )
         )
 

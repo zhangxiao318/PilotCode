@@ -76,10 +76,17 @@ class TUIController:
         # Session-level permission cache: {tool_name: allowed}
         self._session_permissions: dict[str, bool] = {}
 
+        # Pending notifications from QueryEngine (e.g., auto-compact)
+        self._pending_notifications: list[tuple[str, dict]] = []
+
         self._init_engine()
 
     def _init_engine(self) -> None:
         """Initialize QueryEngine."""
+
+        def _on_notify(event_type: str, payload: dict) -> None:
+            self._pending_notifications.append((event_type, payload))
+
         tools = get_all_tools()
         config = QueryEngineConfig(
             cwd=str(Path.cwd()),
@@ -88,6 +95,7 @@ class TUIController:
             set_app_state=self.set_app_state,
             auto_compact=True,
             max_tokens=8000,
+            on_notify=_on_notify,
         )
         self.query_engine = QueryEngine(config=config)
 
@@ -146,6 +154,20 @@ class TUIController:
         while iteration < self.max_iterations:
             iteration += 1
             pending_tools = []
+
+            # Flush any pending notifications from QueryEngine (e.g., auto-compact)
+            while self._pending_notifications:
+                event_type, payload = self._pending_notifications.pop(0)
+                if event_type == "auto_compact":
+                    saved = payload.get("tokens_saved", 0)
+                    cleared = payload.get("tool_results_cleared", 0)
+                    if payload.get("fallback"):
+                        content = f"🔄 Auto-compacted context (fallback, ~{saved} tokens saved)"
+                    elif cleared > 0:
+                        content = f"🔄 Auto-compacted context ({cleared} old tool results cleared, ~{saved} tokens saved)"
+                    else:
+                        content = f"🔄 Auto-compacted context (~{saved} tokens saved)"
+                    yield UIMessage(type=UIMessageType.SYSTEM, content=content)
 
             async for result in self.query_engine.submit_message(current_prompt):
                 msg = result.message

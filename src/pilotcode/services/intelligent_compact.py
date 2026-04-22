@@ -7,7 +7,7 @@ This module implements advanced context management:
 """
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 from datetime import datetime
 
@@ -77,6 +77,7 @@ class CompactionResult:
     tool_results_cleared: int
     summaries_generated: int
     preserved_context: dict[str, Any]
+    messages: list[Any] = field(default_factory=list)
 
 
 class IntelligentContextCompactor:
@@ -234,6 +235,7 @@ class IntelligentContextCompactor:
                 "cleared_tool_results": len(self.preserved_tool_results),
                 "compaction_time": datetime.now().isoformat(),
             },
+            messages=result_messages,
         )
 
     def generate_structured_summary(
