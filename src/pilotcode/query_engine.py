@@ -420,22 +420,30 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         return api_messages
 
     # Greeting patterns that can be handled locally without calling the API
-    _GREETING_PATTERNS = {
-        "hello", "hi", "hey", "hiya", "greetings",
+    _GREETING_PATTERNS_CN = {
         "你好", "您好", "嗨", "哈喽", "在吗", "在么",
-        "who are you", "what are you", "introduce yourself",
         "你是谁", "你叫什么", "介绍一下你自己", "你是做什么的",
     }
+    _GREETING_PATTERNS_EN = {
+        "hello", "hi", "hey", "hiya", "greetings",
+        "who are you", "what are you", "introduce yourself",
+    }
+
+    def _detect_language(self, text: str) -> str:
+        """Detect if text is primarily Chinese or English."""
+        for ch in text:
+            if "\u4e00" <= ch <= "\u9fff":
+                return "cn"
+        return "en"
 
     def _is_greeting(self, prompt: str) -> bool:
         """Check if the prompt is a simple greeting that can be handled locally."""
         text = prompt.strip().lower()
-        # Exact match or very short (<=10 chars) single-line messages
-        if text in self._GREETING_PATTERNS:
+        all_patterns = self._GREETING_PATTERNS_CN | self._GREETING_PATTERNS_EN
+        if text in all_patterns:
             return True
         if len(text) <= 10 and "\n" not in text:
-            # Check if it starts with any greeting pattern
-            for pattern in self._GREETING_PATTERNS:
+            for pattern in all_patterns:
                 if text.startswith(pattern):
                     return True
         return False
@@ -459,15 +467,27 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
         # Fast path: handle simple greetings locally without API call
         if self._is_greeting(prompt):
-            reply = (
-                "Hello! I'm **PilotCode**, your AI programming assistant.\n\n"
-                "I can help you with:\n"
-                "• Writing, reading, and editing code\n"
-                "• Analyzing and debugging programs\n"
-                "• Running shell commands and searching your codebase\n"
-                "• Planning and breaking down complex tasks\n\n"
-                "Just tell me what you'd like to work on!"
-            )
+            lang = self._detect_language(prompt)
+            if lang == "cn":
+                reply = (
+                    "你好！我是 **PilotCode**，你的 AI 编程助手。\n\n"
+                    "我可以帮你：\n"
+                    "• 编写、阅读和编辑代码\n"
+                    "• 分析和调试程序\n"
+                    "• 执行 shell 命令和搜索代码库\n"
+                    "• 规划和拆分复杂任务\n\n"
+                    "告诉我你想做什么吧！"
+                )
+            else:
+                reply = (
+                    "Hello! I'm **PilotCode**, your AI programming assistant.\n\n"
+                    "I can help you with:\n"
+                    "• Writing, reading, and editing code\n"
+                    "• Analyzing and debugging programs\n"
+                    "• Running shell commands and searching your codebase\n"
+                    "• Planning and breaking down complex tasks\n\n"
+                    "Just tell me what you'd like to work on!"
+                )
             assistant_msg = AssistantMessage(content=reply)
             self.messages.append(assistant_msg)
             yield QueryResult(message=assistant_msg, is_complete=False)
