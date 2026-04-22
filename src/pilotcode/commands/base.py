@@ -162,6 +162,21 @@ async def quit_command(args: list[str], context: CommandContext) -> str:
     raise SystemExit(0)
 
 
+async def new_command(args: list[str], context: CommandContext) -> str:
+    """Start a new conversation, clearing all history."""
+    if context.query_engine is None:
+        return "Query engine not available."
+
+    msg_count = len(context.query_engine.messages)
+    context.query_engine.clear_history()
+
+    # Reset compaction stats so the new session starts fresh
+    context.query_engine._compaction_count = 0
+    context.query_engine._last_compaction_message_count = 0
+
+    return f"🆕 New conversation started. {msg_count} previous message(s) cleared."
+
+
 async def mcp_add_command(args: list[str], context: CommandContext) -> str:
     """Add an MCP server."""
     if not args:
@@ -216,6 +231,15 @@ register_command(
 register_command(
     CommandHandler(
         name="quit", description="Exit the application", handler=quit_command, aliases=["exit", "q"]
+    )
+)
+
+register_command(
+    CommandHandler(
+        name="new",
+        description="Start a new conversation (clear history)",
+        handler=new_command,
+        aliases=["reset", "clear-history"],
     )
 )
 
