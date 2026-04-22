@@ -38,7 +38,7 @@ class REPL:
     """Programming Assistant REPL with full tool support."""
 
     # Default max iterations for tool calls (configurable via env var)
-    DEFAULT_MAX_ITERATIONS = 25
+    DEFAULT_MAX_ITERATIONS = 50
 
     WRITE_TOOLS = {
         "FileEdit", "FileWrite", "ApplyPatch", "NotebookEdit",

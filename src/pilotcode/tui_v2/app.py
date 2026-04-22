@@ -67,8 +67,8 @@ def main():
         "--max-iterations",
         "-i",
         type=int,
-        default=25,
-        help="Maximum tool execution rounds per query (default: 25, env: PILOTCODE_MAX_ITERATIONS)",
+        default=50,
+        help="Maximum tool execution rounds per query (default: 50, env: PILOTCODE_MAX_ITERATIONS)",
     )
 
     args = parser.parse_args()
