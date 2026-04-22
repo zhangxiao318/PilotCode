@@ -11,6 +11,7 @@
 | `/help` | 显示帮助信息 | [help.md](help.md) |
 | `/index` | 索引代码库 | [index.md](index.md) |
 | `/search` | 智能代码搜索 | [search.md](search.md) |
+| `/status` | 查看状态和 Token 使用量 | [status.md](status.md) |
 | `/clear` | 清除屏幕 | [clear.md](clear.md) |
 | `/quit` | 退出程序 | [quit.md](quit.md) |
 
@@ -19,7 +20,7 @@
 | 命令 | 说明 | 文档 |
 |------|------|------|
 | `/config` | 配置管理 | [config.md](config.md) |
-| `/model` | 模型设置 | [model.md](model.md) |
+| `/model` | 模型设置与能力查看 | [model.md](model.md) |
 | `/theme` | 主题切换 | [theme.md](theme.md) |
 
 ### 会话命令
@@ -27,6 +28,8 @@
 | 命令 | 说明 | 文档 |
 |------|------|------|
 | `/session` | 会话管理 | [session.md](session.md) |
+| `/new` | 开始新会话（清空历史） | [new.md](new.md) |
+| `/compact` | 压缩上下文历史 | [compact.md](compact.md) |
 | `/cost` | 用量统计 | [cost.md](cost.md) |
 
 ### Git 命令
@@ -45,15 +48,22 @@
 /search <query>          # 语义搜索
 /search -s Symbol        # 符号搜索
 
+# 状态查看
+/status                  # 查看状态和 Token 使用量
+/st                      # /status 简写
+
 # 配置管理
 /config                  # 查看配置
-/model <name>            # 切换模型
+/model                   # 查看当前模型能力详情
+/model set <name>        # 切换模型
 /theme <name>            # 切换主题
 
 # 会话管理
 /session save <name>     # 保存会话
 /session load <name>     # 加载会话
 /session list            # 列出会话
+/new                     # 开始新会话（清空历史）
+/compact                 # 压缩上下文历史
 /cost                    # 查看用量
 
 # Git 操作

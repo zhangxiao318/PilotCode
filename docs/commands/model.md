@@ -1,158 +1,145 @@
 # /model 命令
 
-快速切换和管理 AI 模型。
+查看和管理当前 AI 模型，支持显示模型能力详情和快速切换。
 
 ## 作用
 
-- 查看当前使用的模型
+- 查看当前模型的详细能力（上下文窗口、工具支持、视觉支持等）
+- 列出所有可用模型及其上下文大小
 - 快速切换模型
-- 列出可用模型
+- 查看或修改 Base URL
 
 ## 基本用法
 
 ```bash
-/model [model_name]
+/model                  # 显示当前模型能力详情和可用模型列表
+/model set <name>       # 切换到指定模型
+/model url [url]        # 查看或设置 Base URL
 ```
 
 ## 子命令
 
 | 子命令 | 说明 |
 |--------|------|
-| (无) | 显示当前模型 |
-| `<name>` | 切换到指定模型 |
-| `list` | 列出所有可用模型 |
+| (无) | 显示当前模型能力详情和所有可用模型 |
+| `set <name>` | 切换到指定模型 |
+| `url` | 查看当前 Base URL |
+| `url <url>` | 设置新的 Base URL |
 
 ## 使用示例
 
-### 查看当前模型
+### 查看当前模型详情
 
 ```bash
 /model
 ```
 
-输出：
+输出示例：
 ```
 Current model: deepseek
-Provider: deepseek
+
+Capability:
+  Display name:   DeepSeek (深度求索)
+  API model:      deepseek-chat
+  Provider:       deepseek
+  Context window: 128K
+  Max output:     8K
+  Tools:          Yes
+  Vision:         No
+
+Available models:
+  deepseek        DeepSeek (深度求索)          ctx=128K *
+  qwen            Qwen (通义千问)              ctx=256K
+  qwen-plus       Qwen Plus (通义千问 Plus)    ctx=1M
+  openai          OpenAI GPT                   ctx=128K
+  anthropic       Anthropic Claude             ctx=200K
+  moonshot        Moonshot (月之暗面)          ctx=256K
+  ollama          Ollama (Local)               ctx=128K
+
 Base URL: https://api.deepseek.com/v1
 ```
 
-### 切换到其他模型
+`★` 标记表示当前正在使用的模型。
+
+### 切换模型
 
 ```bash
 # 切换到 Qwen
-/model qwen
+/model set qwen
 
 # 切换到 OpenAI
-/model openai
+/model set openai
 
 # 切换到 DeepSeek
-/model deepseek
-```
-
-### 列出可用模型
-
-```bash
-/model list
+/model set deepseek
 ```
 
 输出示例：
 ```
-Available models:
-  - deepseek     (DeepSeek V3)
-  - qwen         (Qwen Max)
-  - qwen-plus    (Qwen Plus)
-  - openai       (GPT-4o)
-  - anthropic    (Claude 3.5 Sonnet)
-  - zhipu        (GLM-4)
-  - moonshot     (Kimi)
-  - ollama       (Local Ollama)
+Model set to: qwen (context: 256K)
 ```
 
-## 支持的模型
+### 查看和设置 Base URL
 
-### 国际模型
+```bash
+# 查看当前 Base URL
+/model url
 
-| 模型 | 描述 |
-|------|------|
-| `openai` | GPT-4o - 最强多模态模型 |
-| `openai-gpt4` | GPT-4 Turbo |
-| `anthropic` | Claude 3.5 Sonnet - 优秀代码能力 |
-| `azure` | Azure OpenAI Service |
-
-### 国内模型
-
-| 模型 | 描述 |
-|------|------|
-| `deepseek` | DeepSeek V3 - 代码能力强 |
-| `qwen` | Qwen Max - 阿里通义千问 |
-| `qwen-plus` | Qwen Plus - 性价比平衡 |
-| `zhipu` | GLM-4 - 智谱清言 |
-| `moonshot` | Kimi - 长上下文 |
-| `baichuan` | Baichuan 4 |
-| `doubao` | Doubao - 字节跳动 |
-
-### 本地模型
-
-| 模型 | 描述 |
-|------|------|
-| `ollama` | 本地 Ollama 实例 |
-| `custom` | 自定义 OpenAI 兼容端点 |
+# 设置本地模型地址
+/model url http://localhost:11434/v1
+```
 
 ## 使用场景
 
-### 场景1：对比不同模型效果
+### 场景1：对比不同模型上下文大小
 
 ```bash
-# 使用 DeepSeek 提问
-/model deepseek
-"解释 Python 装饰器"
-
-# 切换到 Qwen 对比
-/model qwen
-"解释 Python 装饰器"
+/model
+# 查看各模型的 ctx 值，选择适合长文本任务的模型
+# 例如 qwen-plus (1M) 适合分析大型代码库
 ```
 
 ### 场景2：根据任务选择模型
 
 ```bash
-# 代码生成任务 - 使用 DeepSeek
-/model deepseek
+# 代码生成 - DeepSeek
+/model set deepseek
 "写一个快速排序算法"
 
-# 中文理解任务 - 使用 Qwen
-/model qwen
+# 中文理解 - Qwen
+/model set qwen
 "分析这段中文文本的情感"
 
-# 复杂推理任务 - 使用 Claude
-/model anthropic
-"设计一个分布式系统架构"
+# 超长上下文分析 - Qwen Plus
+/model set qwen-plus
+"分析这个 50万 token 的日志文件"
 ```
 
-### 场景3：检查模型配置
+### 场景3：本地模型调试
 
 ```bash
-# 查看当前模型
-/model
-
-# 查看所有可用模型
-/model list
+# 切换到本地 Ollama
+/model set ollama
+/model url http://localhost:11434/v1
 ```
+
+## 模型能力字段说明
+
+| 字段 | 说明 |
+|------|------|
+| `Context window` | 模型支持的最大上下文 Token 数 |
+| `Max output` | 单次回复的最大输出 Token 数 |
+| `Tools` | 是否支持 Function Calling / 工具调用 |
+| `Vision` | 是否支持图片/多模态输入 |
 
 ## 注意事项
 
 1. **需要提前配置**：切换模型前需要确保该模型的 API 密钥已配置
 2. **实时切换**：切换后立即生效，无需重启
-3. **不同模型特性**：不同模型在代码能力、中文理解、价格方面有所不同
-
-## 与 /config 的区别
-
-| 命令 | 作用 | 范围 |
-|------|------|------|
-| `/model` | 快速切换模型 | 仅模型相关 |
-| `/config` | 完整配置管理 | 所有配置项 |
+3. **上下文自动同步**：切换模型后，所有上下文管理模块会自动使用新模型的上下文窗口大小
 
 ## 相关命令
 
+- `/status` - 查看当前会话 Token 使用量和模型信息
 - `/config` - 完整配置管理
-- `/cost` - 查看模型使用成本
+- `/compact` - 手动压缩上下文
