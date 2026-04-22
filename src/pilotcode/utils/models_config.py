@@ -8,6 +8,7 @@ without touching source code.
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Any
 import json
 
 
@@ -99,6 +100,59 @@ def _load_models_json() -> dict[str, ModelInfo]:
 
 # Runtime-loaded model configurations
 SUPPORTED_MODELS: dict[str, ModelInfo] = _load_models_json()
+
+
+def _get_models_json_path() -> Path | None:
+    """Return the path to the active models.json file, or None."""
+    src_dir = Path(__file__).resolve().parent.parent  # src/pilotcode
+    project_root = src_dir.parent  # project root
+    candidates = [
+        project_root / "config" / "models.json",
+        Path("config/models.json"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def update_model_in_json(model_name: str, updates: dict[str, Any]) -> bool:
+    """Update fields for a given model in models.json.
+
+    Args:
+        model_name: Key in the models.json "models" object.
+        updates: Dict of field names to new values (e.g. {"context_window": 8192}).
+
+    Returns:
+        True if the file was updated, False otherwise.
+    """
+    path = _get_models_json_path()
+    if path is None:
+        return False
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return False
+
+    models = data.get("models", {})
+    if model_name not in models:
+        return False
+
+    models[model_name].update(updates)
+
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+    except OSError:
+        return False
+
+    # Refresh in-memory cache
+    global SUPPORTED_MODELS
+    SUPPORTED_MODELS = _load_models_json()
+    return True
 
 
 def get_model_info(model_name: str) -> ModelInfo | None:

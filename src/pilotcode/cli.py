@@ -70,26 +70,49 @@ def _print_model_capability(console: Console, info, source: str = "static") -> N
     console.print(f"  [dim]Source: {source}[/dim]")
 
 
-def _print_api_capability(console: Console, caps: dict) -> None:
-    """Print model capability info from API-probed dict."""
+def _print_api_capability(console: Console, caps: dict, static_info=None) -> None:
+    """Print model capability info from API-probed dict.
+
+    If static_info (ModelInfo) is provided, values that differ from the
+    static config are highlighted in red.
+    """
+    def _val(label: str, detected: Any, static_val: Any, fmt: Callable[[Any], str] = str) -> None:
+        if detected is None:
+            return
+        text = fmt(detected)
+        if static_val is not None and detected != static_val:
+            console.print(f"  {label}: [red]{text}[/red]  [dim](config: {fmt(static_val)})[/dim]")
+        else:
+            console.print(f"  {label}: {text}")
+
     display_name = caps.get("display_name")
     if display_name:
-        console.print(f"  Display Name: {display_name}")
+        static_name = static_info.display_name if static_info else None
+        _val("Display Name", display_name, static_name)
+
     provider = caps.get("_provider")
     if provider:
-        console.print(f"  Provider:     {provider}")
+        static_provider = static_info.provider.value if static_info else None
+        _val("Provider", provider, static_provider)
+
     ctx = caps.get("context_window")
-    if ctx is not None:
-        console.print(f"  Context:      {_fmt_ctx(ctx)}")
+    static_ctx = static_info.context_window if static_info else None
+    _val("Context", ctx, static_ctx, _fmt_ctx)
+
     max_tok = caps.get("max_tokens")
-    if max_tok is not None:
-        console.print(f"  Max Tokens:   {_fmt_ctx(max_tok)}")
+    static_max = static_info.max_tokens if static_info else None
+    _val("Max Tokens", max_tok, static_max, _fmt_ctx)
+
     tools = caps.get("supports_tools")
     if tools is not None:
-        console.print(f"  Tools:        {'✓' if tools else '✗'}")
+        static_tools = static_info.supports_tools if static_info else None
+        _val("Tools", tools, static_tools, lambda x: "✓" if x else "✗")
+
     vision = caps.get("supports_vision")
     if vision is not None:
-        console.print(f"  Vision:       {'✓' if vision else '✗'}")
+        static_vision = static_info.supports_vision if static_info else None
+        _val("Vision", vision, static_vision, lambda x: "✓" if x else "✗")
+
     backend = caps.get("_backend")
     if backend:
         console.print(f"  [dim]Backend: {backend}[/dim]")
@@ -519,28 +542,49 @@ def config(
                 api_caps = asyncio.run(_probe_local())
                 if api_caps:
                     console.print("[bold]Model Capability (Runtime Detected):[/bold]")
-                    _print_api_capability(console, api_caps)
+                    _print_api_capability(console, api_caps, static_info=model_info)
 
                     # --- Detect mismatches and offer to update config ---
-                    mismatches: list[tuple[str, str, str]] = []
+                    config_mismatches: list[tuple[str, str, str]] = []
+                    model_mismatches: list[tuple[str, int, int]] = []
 
                     detected_name = api_caps.get("display_name")
                     if detected_name and detected_name != config.default_model:
-                        mismatches.append(("default_model", config.default_model or "(empty)", detected_name))
+                        config_mismatches.append(("default_model", config.default_model or "(empty)", detected_name))
 
                     detected_provider = api_caps.get("_provider")
                     if detected_provider and detected_provider != config.model_provider:
-                        mismatches.append(("model_provider", config.model_provider or "(empty)", detected_provider))
+                        config_mismatches.append(("model_provider", config.model_provider or "(empty)", detected_provider))
 
-                    if mismatches:
+                    detected_ctx = api_caps.get("context_window")
+                    if detected_ctx is not None and detected_ctx != model_info.context_window:
+                        model_mismatches.append(("context_window", model_info.context_window, detected_ctx))
+
+                    detected_max = api_caps.get("max_tokens")
+                    if detected_max is not None and detected_max != model_info.max_tokens:
+                        model_mismatches.append(("max_tokens", model_info.max_tokens, detected_max))
+
+                    if config_mismatches or model_mismatches:
                         console.print("\n[yellow]⚠ Detected mismatches with config file:[/yellow]")
-                        for key, old, new in mismatches:
+                        for key, old, new in config_mismatches:
+                            console.print(f"  {key}: {old} → {new}")
+                        for key, old, new in model_mismatches:
                             console.print(f"  {key}: {old} → {new}")
 
                         if typer.confirm("Update config to match detected values?", default=True):
-                            for key, _old, new in mismatches:
+                            # Update global config
+                            for key, _old, new in config_mismatches:
                                 setattr(config, key, new)
-                            get_config_manager().save_global_config(config)
+                            if config_mismatches:
+                                get_config_manager().save_global_config(config)
+
+                            # Update models.json
+                            if model_mismatches:
+                                from .utils.models_config import update_model_in_json
+
+                                updates = {k: v for k, _old, v in model_mismatches}
+                                update_model_in_json(config.default_model, updates)
+
                             console.print("[green]✓ Config updated.[/green]")
                 else:
                     console.print("[dim]  Local model did not expose capability metadata.[/dim]")
