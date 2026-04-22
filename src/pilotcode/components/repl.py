@@ -74,6 +74,7 @@ class REPL:
                 tools=tools,
                 get_app_state=self.store.get_state,
                 set_app_state=lambda f: self.store.set_state(f),
+                auto_compact=True,
             )
         )
 
@@ -689,6 +690,7 @@ async def run_headless(
             tools=tools,
             get_app_state=store.get_state,
             set_app_state=lambda f: store.set_state(f),
+            auto_compact=True,
         )
     )
 

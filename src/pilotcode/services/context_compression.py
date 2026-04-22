@@ -26,8 +26,15 @@ class CompressionResult:
 class ContextCompressor:
     """Compress conversation context to fit within token limits."""
 
-    def __init__(self, target_tokens: int = 3000):
-        self.target_tokens = target_tokens
+    def __init__(self, target_tokens: int = 0):
+        # Auto-detect from model config if not provided
+        if target_tokens <= 0:
+            from ..utils.models_config import get_model_context_window
+
+            ctx = get_model_context_window()
+            self.target_tokens = int(ctx * 0.7)
+        else:
+            self.target_tokens = target_tokens
         self.min_messages_to_keep = 4  # Always keep at least last 4 exchanges
 
     async def compress(

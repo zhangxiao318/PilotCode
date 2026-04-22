@@ -17,12 +17,20 @@ if TYPE_CHECKING:
 
 @dataclass
 class CompactConfig:
-    """Configuration for context compaction."""
+    """Configuration for context compaction.
 
-    # Token thresholds
-    warning_threshold: int = 100000  # Warn at 100k tokens
-    compact_threshold: int = 150000  # Compact at 150k tokens
-    critical_threshold: int = 180000  # Aggressive compact at 180k tokens
+    Token thresholds default to percentages of the model's context window.
+    """
+
+    # Token thresholds (will be overridden by model context window if 0)
+    warning_threshold: int = 0   # 0 = auto from model config
+    compact_threshold: int = 0   # 0 = auto from model config
+    critical_threshold: int = 0  # 0 = auto from model config
+
+    # Percentages of context window (used when thresholds are 0)
+    warning_pct: float = 0.75
+    compact_pct: float = 0.80
+    critical_pct: float = 0.95
 
     # Message thresholds
     min_messages_to_keep: int = 6  # Always keep last 6 exchanges
@@ -80,6 +88,22 @@ class IntelligentContextCompactor:
     def __init__(self, config: CompactConfig | None = None):
         self.config = config or CompactConfig()
         self.preserved_tool_results: dict[str, ToolResultSummary] = {}
+
+        # Resolve auto thresholds from model context window
+        if (
+            self.config.warning_threshold == 0
+            or self.config.compact_threshold == 0
+            or self.config.critical_threshold == 0
+        ):
+            from ..utils.models_config import get_model_context_window
+
+            ctx = get_model_context_window()
+            if self.config.warning_threshold == 0:
+                self.config.warning_threshold = int(ctx * self.config.warning_pct)
+            if self.config.compact_threshold == 0:
+                self.config.compact_threshold = int(ctx * self.config.compact_pct)
+            if self.config.critical_threshold == 0:
+                self.config.critical_threshold = int(ctx * self.config.critical_pct)
 
     def estimate_tokens(self, text: str) -> int:
         """Rough token estimation (1 token ≈ 4 chars for English)."""

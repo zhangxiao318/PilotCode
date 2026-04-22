@@ -24,6 +24,7 @@ from .services.intelligent_compact import (
     get_intelligent_compactor,
 )
 from .services.tool_orchestrator import get_tool_orchestrator
+from .utils.models_config import get_model_context_window
 
 
 @dataclass
@@ -38,8 +39,8 @@ class QueryEngineConfig:
     set_app_state: Callable[[Callable[[AppState], AppState]], None] | None = None
     custom_system_prompt: str | None = None
     max_turns: int = 50
-    auto_compact: bool = False
-    max_tokens: int = 4000
+    auto_compact: bool = True
+    max_tokens: int = 0  # 0 = auto-detect from model config
     cache_tool_results: bool = False
 
 
@@ -68,6 +69,11 @@ class QueryEngine:
         self.messages: list[MessageType] = []
         self.client = get_model_client()
         self.abort_event = asyncio.Event()
+
+        # Auto-detect max_tokens from model context window if not set
+        if self.config.max_tokens <= 0:
+            ctx = get_model_context_window()
+            self.config.max_tokens = ctx
 
         # Initialize services
         self._token_estimator = get_token_estimator()
@@ -547,13 +553,13 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
     async def smart_compact(self) -> CompressionResult | None:
         """Intelligently compress conversation using summarization.
 
+        Triggers at 80% of max_tokens to leave headroom.
+
         Returns compression result or None if not needed.
         """
-        if not self.config.auto_compact:
-            return None
-
         token_count = self.count_tokens()
-        if token_count < self.config.max_tokens:
+        threshold = int(self.config.max_tokens * 0.8)
+        if token_count < threshold:
             return None
 
         # Use smart compression
@@ -576,18 +582,16 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         return result
 
     def auto_compact_if_needed(self) -> bool:
-        """Auto-compact conversation if token count exceeds limit.
+        """Auto-compact conversation if token count exceeds 80% limit.
 
         Returns True if compaction was performed.
 
         This is the synchronous fallback that uses simple compaction.
         For smart compression with summarization, use smart_compact().
         """
-        if not self.config.auto_compact:
-            return False
-
         token_count = self.count_tokens()
-        if token_count < self.config.max_tokens:
+        threshold = int(self.config.max_tokens * 0.8)
+        if token_count < threshold:
             return False
 
         # Use simple priority-based compaction

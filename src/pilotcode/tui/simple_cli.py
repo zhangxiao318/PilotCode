@@ -647,35 +647,51 @@ class SimpleCLI:
                 self.query_engine.messages.insert(0, SystemMessage(content=context_msg))
 
     async def _check_and_compress_context(self):
-        """Check if context needs compression and perform it if necessary."""
-        msg_count = len(self.query_engine.messages)
+        """Check if context needs compression and perform it if necessary.
 
-        if self.session_context.should_compress_context(msg_count, self.compression_threshold):
-            print("\n🔄 Context getting long, compressing...")
+        Uses token count against the model's context window (80% threshold)
+        rather than raw message count.
+        """
+        from pilotcode.services.token_estimation import estimate_tokens
+        from pilotcode.utils.models_config import get_model_context_window
 
-            from pilotcode.services.token_estimation import estimate_tokens
+        # Calculate actual token usage
+        total_tokens = sum(
+            estimate_tokens(str(getattr(m, "content", ""))) for m in self.query_engine.messages
+        )
+        ctx_window = get_model_context_window()
+        threshold = int(ctx_window * 0.80)
 
-            # Get compressor
-            compressor = get_context_compressor()
+        if total_tokens < threshold:
+            return
 
-            # Compress messages
-            original_count = len(self.query_engine.messages)
-            self.query_engine.messages = compressor.simple_compact(
-                self.query_engine.messages, keep_recent=10  # Keep last 10 messages
-            )
-            compressed_count = len(self.query_engine.messages)
+        print(f"\n🔄 Context at {total_tokens}/{ctx_window} tokens ({total_tokens * 100 // ctx_window}%), compressing...")
 
-            # Record compression
-            self.session_context.record_compression()
+        # Get compressor
+        compressor = get_context_compressor()
 
-            # Estimate tokens saved
-            tokens_saved = estimate_tokens("dummy") * (original_count - compressed_count)
+        # Compress messages
+        original_count = len(self.query_engine.messages)
+        original_tokens = total_tokens
+        self.query_engine.messages = compressor.simple_compact(
+            self.query_engine.messages, keep_recent=10  # Keep last 10 messages
+        )
+        compressed_count = len(self.query_engine.messages)
 
-            print(
-                f"   Compressed: {original_count} -> {compressed_count} messages (~{tokens_saved} tokens saved)"
-            )
-            print("   Older messages summarized. Key context preserved.")
-            print()
+        # Record compression
+        self.session_context.record_compression()
+
+        # Estimate remaining tokens
+        remaining_tokens = sum(
+            estimate_tokens(str(getattr(m, "content", ""))) for m in self.query_engine.messages
+        )
+        tokens_saved = original_tokens - remaining_tokens
+
+        print(
+            f"   Compressed: {original_count} -> {compressed_count} messages (~{tokens_saved} tokens saved)"
+        )
+        print("   Older messages summarized. Key context preserved.")
+        print()
 
     async def run(self):
         """Main run loop."""

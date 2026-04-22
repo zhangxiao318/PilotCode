@@ -147,6 +147,44 @@ def get_default_model() -> str:
     return "deepseek"
 
 
+def get_model_context_window(model_name: str | None = None) -> int:
+    """Get the context window for a model (static config).
+
+    Args:
+        model_name: Model key. If None, uses the currently configured model.
+
+    Returns:
+        Context window size in tokens.
+    """
+    if model_name is None:
+        from .config import get_global_config
+        model_name = get_global_config().default_model
+
+    info = get_model_info(model_name)
+    if info and info.context_window > 0:
+        return info.context_window
+    return 128_000  # Safe fallback
+
+
+def get_model_max_tokens(model_name: str | None = None) -> int:
+    """Get the max output tokens for a model (static config).
+
+    Args:
+        model_name: Model key. If None, uses the currently configured model.
+
+    Returns:
+        Max output tokens.
+    """
+    if model_name is None:
+        from .config import get_global_config
+        model_name = get_global_config().default_model
+
+    info = get_model_info(model_name)
+    if info and info.max_tokens > 0:
+        return info.max_tokens
+    return 4096  # Safe fallback
+
+
 def check_api_key_configured(model_name: str) -> bool:
     """Check if API key is configured for a model."""
     import os

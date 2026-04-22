@@ -107,9 +107,9 @@ class ContextMessage:
 class ContextBudget:
     """Token budget configuration."""
 
-    max_tokens: int = 8000
-    warning_threshold: float = 0.8  # Warn at 80% capacity
-    critical_threshold: float = 0.95  # Force compact at 95% capacity
+    max_tokens: int = 0  # 0 = auto-detect from model config
+    warning_threshold: float = 0.75  # Warn at 75% capacity
+    critical_threshold: float = 0.80  # Force compact at 80% capacity
     reserved_tokens: int = 500  # Reserve for system messages
 
     @property
@@ -146,9 +146,9 @@ class ContextStats:
 class ContextConfig(BaseModel):
     """Configuration for ContextManager."""
 
-    max_tokens: int = Field(default=8000, description="Maximum tokens in context")
-    warning_threshold: float = Field(default=0.8, description="Warning threshold (0-1)")
-    critical_threshold: float = Field(default=0.95, description="Critical threshold (0-1)")
+    max_tokens: int = Field(default=0, description="Maximum tokens in context (0=auto)")
+    warning_threshold: float = Field(default=0.75, description="Warning threshold (0-1)")
+    critical_threshold: float = Field(default=0.80, description="Critical threshold (0-1)")
     reserved_tokens: int = Field(default=500, description="Reserved tokens for system")
     compact_strategy: CompactStrategy = Field(
         default=CompactStrategy.PRIORITY, description="Default compaction strategy"
@@ -185,9 +185,17 @@ class ContextManager:
 
     def __init__(self, config: Optional[ContextConfig] = None):
         self.config = config or ContextConfig()
+        # Resolve auto max_tokens from model config
+        max_tokens = self.config.max_tokens
+        if max_tokens <= 0:
+            from ..utils.models_config import get_model_context_window
+
+            max_tokens = get_model_context_window()
+            self.config.max_tokens = max_tokens
+
         self.messages: list[ContextMessage] = []
         self.budget = ContextBudget(
-            max_tokens=self.config.max_tokens,
+            max_tokens=max_tokens,
             warning_threshold=self.config.warning_threshold,
             critical_threshold=self.config.critical_threshold,
             reserved_tokens=self.config.reserved_tokens,
