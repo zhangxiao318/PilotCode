@@ -471,21 +471,21 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             if lang == "cn":
                 reply = (
                     "你好！我是 **PilotCode**，你的 AI 编程助手。\n\n"
-                    "我可以帮你：\n"
-                    "• 编写、阅读和编辑代码\n"
-                    "• 分析和调试程序\n"
-                    "• 执行 shell 命令和搜索代码库\n"
-                    "• 规划和拆分复杂任务\n\n"
+                    "我可以帮你：\n\n"
+                    "- 编写、阅读和编辑代码\n"
+                    "- 分析和调试程序\n"
+                    "- 执行 shell 命令和搜索代码库\n"
+                    "- 规划和拆分复杂任务\n\n"
                     "告诉我你想做什么吧！"
                 )
             else:
                 reply = (
                     "Hello! I'm **PilotCode**, your AI programming assistant.\n\n"
-                    "I can help you with:\n"
-                    "• Writing, reading, and editing code\n"
-                    "• Analyzing and debugging programs\n"
-                    "• Running shell commands and searching your codebase\n"
-                    "• Planning and breaking down complex tasks\n\n"
+                    "I can help you with:\n\n"
+                    "- Writing, reading, and editing code\n"
+                    "- Analyzing and debugging programs\n"
+                    "- Running shell commands and searching your codebase\n"
+                    "- Planning and breaking down complex tasks\n\n"
                     "Just tell me what you'd like to work on!"
                 )
             assistant_msg = AssistantMessage(content=reply)
