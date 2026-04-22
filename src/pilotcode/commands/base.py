@@ -1,5 +1,6 @@
 """Base command definitions and registry."""
 
+import os
 from typing import Any, Callable, Awaitable
 from dataclasses import dataclass, field
 
