@@ -32,6 +32,12 @@
 |------|------|----------|
 | [code-indexing.md](./code-indexing.md) | 代码索引与搜索 | 大型项目分析、代码查找 |
 
+### 模型与配置
+
+| 文档 | 说明 | 适用场景 |
+|------|------|----------|
+| [model-configuration.md](./model-configuration.md) | 模型配置与能力验证 | 自定义模型、本地模型部署、参数调优 |
+
 ### 系统稳定性
 
 | 文档 | 说明 | 适用场景 |
@@ -52,6 +58,7 @@
 **运维关注？**
 - 查看 [错误恢复](./error-recovery.md) 的容错机制
 - 了解 [上下文压缩](./context-compaction.md) 的成本控制
+- 配置 [模型参数](./model-configuration.md) 与本地模型探测
 
 **日常使用？**
 - 掌握 [会话管理](./session-management.md) 提高工作效率
