@@ -1,10 +1,14 @@
 """Model configuration for supported LLM providers.
 
 Supports both domestic (China) and international models.
+Model metadata is loaded from config/models.json so it can be updated
+without touching source code.
 """
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+import json
 
 
 class ModelProvider(Enum):
@@ -45,181 +49,56 @@ class ModelInfo:
         return f"{self.provider.value.upper()}_API_KEY"
 
 
-# Predefined model configurations
-SUPPORTED_MODELS: dict[str, ModelInfo] = {
-    # International Models
-    "openai": ModelInfo(
-        name="openai",
-        display_name="OpenAI GPT",
-        provider=ModelProvider.OPENAI,
-        base_url="https://api.openai.com/v1",
-        default_model="gpt-4o",
-        description="OpenAI GPT-4o - Most capable multimodal model",
-        supports_tools=True,
-        supports_vision=True,
-        max_tokens=4096,
-        context_window=128_000,
-        env_key="OPENAI_API_KEY",
-    ),
-    "openai-gpt4": ModelInfo(
-        name="openai-gpt4",
-        display_name="OpenAI GPT-4",
-        provider=ModelProvider.OPENAI,
-        base_url="https://api.openai.com/v1",
-        default_model="gpt-4-turbo",
-        description="OpenAI GPT-4 Turbo - High capability model",
-        supports_tools=True,
-        supports_vision=True,
-        max_tokens=4096,
-        context_window=128_000,
-        env_key="OPENAI_API_KEY",
-    ),
-    "anthropic": ModelInfo(
-        name="anthropic",
-        display_name="Anthropic Claude",
-        provider=ModelProvider.ANTHROPIC,
-        base_url="https://api.anthropic.com/v1",
-        default_model="claude-3-5-sonnet-20241022",
-        description="Anthropic Claude 3.5 Sonnet - Excellent coding assistant",
-        supports_tools=True,
-        supports_vision=True,
-        max_tokens=4096,
-        context_window=200_000,
-        env_key="ANTHROPIC_API_KEY",
-    ),
-    "azure": ModelInfo(
-        name="azure",
-        display_name="Azure OpenAI",
-        provider=ModelProvider.AZURE,
-        base_url="",
-        default_model="gpt-4",
-        description="Azure OpenAI Service - Enterprise grade",
-        supports_tools=True,
-        supports_vision=True,
-        max_tokens=4096,
-        context_window=128_000,
-        env_key="AZURE_OPENAI_API_KEY",
-    ),
-    # Domestic (China) Models
-    "deepseek": ModelInfo(
-        name="deepseek",
-        display_name="DeepSeek (深度求索)",
-        provider=ModelProvider.DEEPSEEK,
-        base_url="https://api.deepseek.com/v1",
-        default_model="deepseek-chat",
-        description="DeepSeek V3 - Strong coding capabilities, cost-effective",
-        supports_tools=True,
-        supports_vision=False,
-        max_tokens=4096,
-        context_window=64_000,
-        env_key="DEEPSEEK_API_KEY",
-    ),
-    "qwen": ModelInfo(
-        name="qwen",
-        display_name="Qwen (通义千问)",
-        provider=ModelProvider.QWEN,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        default_model="qwen-max",
-        description="Alibaba Qwen Max - Powerful Chinese/English model",
-        supports_tools=True,
-        supports_vision=True,
-        max_tokens=4096,
-        context_window=128_000,
-        env_key="DASHSCOPE_API_KEY",
-    ),
-    "qwen-plus": ModelInfo(
-        name="qwen-plus",
-        display_name="Qwen Plus (通义千问 Plus)",
-        provider=ModelProvider.QWEN,
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        default_model="qwen-plus",
-        description="Alibaba Qwen Plus - Balanced performance and cost",
-        supports_tools=True,
-        supports_vision=True,
-        max_tokens=4096,
-        context_window=128_000,
-        env_key="DASHSCOPE_API_KEY",
-    ),
-    "zhipu": ModelInfo(
-        name="zhipu",
-        display_name="GLM (智谱清言)",
-        provider=ModelProvider.ZHIPU,
-        base_url="https://open.bigmodel.cn/api/paas/v4",
-        default_model="glm-4",
-        description="Zhipu GLM-4 - Strong Chinese model with tool use",
-        supports_tools=True,
-        supports_vision=True,
-        max_tokens=4096,
-        context_window=128_000,
-        env_key="ZHIPU_API_KEY",
-    ),
-    "moonshot": ModelInfo(
-        name="moonshot",
-        display_name="Moonshot (月之暗面)",
-        provider=ModelProvider.MOONSHOT,
-        base_url="https://api.moonshot.cn/v1",
-        default_model="moonshot-v1-8k",
-        description="Moonshot Kimi - Long context window model",
-        supports_tools=True,
-        supports_vision=False,
-        max_tokens=4096,
-        context_window=200_000,
-        env_key="MOONSHOT_API_KEY",
-    ),
-    "baichuan": ModelInfo(
-        name="baichuan",
-        display_name="Baichuan (百川智能)",
-        provider=ModelProvider.BAICHUAN,
-        base_url="https://api.baichuan-ai.com/v1",
-        default_model="Baichuan4",
-        description="Baichuan 4 - Advanced Chinese model",
-        supports_tools=True,
-        supports_vision=False,
-        max_tokens=4096,
-        context_window=32_000,
-        env_key="BAICHUAN_API_KEY",
-    ),
-    "doubao": ModelInfo(
-        name="doubao",
-        display_name="Doubao (豆包)",
-        provider=ModelProvider.DOUBAO,
-        base_url="https://ark.cn-beijing.volces.com/api/v3",
-        default_model="doubao-pro-4k",
-        description="ByteDance Doubao - Versatile model",
-        supports_tools=True,
-        supports_vision=False,
-        max_tokens=4096,
-        context_window=128_000,
-        env_key="ARK_API_KEY",
-    ),
-    # Custom/Local
-    "custom": ModelInfo(
-        name="custom",
-        display_name="Custom/OpenAI-compatible",
-        provider=ModelProvider.CUSTOM,
-        base_url="",
-        default_model="default",
-        description="Custom OpenAI-compatible endpoint",
-        supports_tools=True,
-        supports_vision=False,
-        max_tokens=4096,
-        context_window=128_000,
-        env_key="OPENAI_API_KEY",
-    ),
-    "ollama": ModelInfo(
-        name="ollama",
-        display_name="Ollama (Local)",
-        provider=ModelProvider.CUSTOM,
-        base_url="http://localhost:11434/v1",
-        default_model="llama3.1",
-        description="Local Ollama instance",
-        supports_tools=True,
-        supports_vision=False,
-        max_tokens=4096,
-        context_window=128_000,
-        env_key="",
-    ),
-}
+def _load_models_json() -> dict[str, ModelInfo]:
+    """Load model definitions from JSON configuration file.
+
+    Searches for config/models.json relative to the project root,
+    falling back to the shipped default if the file is missing or malformed.
+    """
+    # Determine candidate paths for the JSON file
+    src_dir = Path(__file__).resolve().parent.parent  # src/pilotcode
+    project_root = src_dir.parent  # project root
+    candidates = [
+        project_root / "config" / "models.json",
+        Path("config/models.json"),
+    ]
+
+    data: dict = {}
+    for candidate in candidates:
+        if candidate.exists():
+            try:
+                with open(candidate, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                break
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    models: dict[str, ModelInfo] = {}
+    for key, raw in data.get("models", {}).items():
+        try:
+            provider = ModelProvider(raw.get("provider", "custom"))
+        except ValueError:
+            provider = ModelProvider.CUSTOM
+
+        models[key] = ModelInfo(
+            name=raw.get("name", key),
+            display_name=raw.get("display_name", key),
+            provider=provider,
+            base_url=raw.get("base_url", ""),
+            default_model=raw.get("default_model", "default"),
+            description=raw.get("description", ""),
+            supports_tools=raw.get("supports_tools", True),
+            supports_vision=raw.get("supports_vision", False),
+            max_tokens=raw.get("max_tokens", 4096),
+            context_window=raw.get("context_window", 8192),
+            env_key=raw.get("env_key", ""),
+        )
+
+    return models
+
+
+# Runtime-loaded model configurations
+SUPPORTED_MODELS: dict[str, ModelInfo] = _load_models_json()
 
 
 def get_model_info(model_name: str) -> ModelInfo | None:
