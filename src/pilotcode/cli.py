@@ -22,6 +22,62 @@ app = typer.Typer(
 console = Console()
 
 
+def _is_local_url(url: str) -> bool:
+    """Check if URL points to a local/internal model."""
+    if not url:
+        return False
+    return (
+        "localhost" in url
+        or "127.0.0.1" in url
+        or ":11434" in url
+        or url.startswith("http://192.168.")
+        or url.startswith("http://10.")
+        or url.startswith("http://172.")
+    )
+
+
+def _fmt_ctx(n: int) -> str:
+    """Format context window for display."""
+    if n >= 1_000_000:
+        return f"{n // 1_000_000}M"
+    if n >= 1_000:
+        return f"{n // 1_000}K"
+    return str(n)
+
+
+def _print_model_capability(console: Console, info, source: str = "static") -> None:
+    """Print model capability info from ModelInfo dataclass."""
+    ctx = _fmt_ctx(info.context_window)
+    max_tok = _fmt_ctx(info.max_tokens)
+    console.print(f"  Display Name: {info.display_name}")
+    console.print(f"  API Model:    {info.default_model}")
+    console.print(f"  Provider:     {info.provider.value}")
+    console.print(f"  Context:      {ctx}")
+    console.print(f"  Max Tokens:   {max_tok}")
+    console.print(f"  Tools:        {'✓' if info.supports_tools else '✗'}")
+    console.print(f"  Vision:       {'✓' if info.supports_vision else '✗'}")
+    console.print(f"  [dim]Source: {source}[/dim]")
+
+
+def _print_api_capability(console: Console, caps: dict) -> None:
+    """Print model capability info from API-probed dict."""
+    ctx = caps.get("context_window")
+    if ctx is not None:
+        console.print(f"  Context:      {_fmt_ctx(ctx)}")
+    max_tok = caps.get("max_tokens")
+    if max_tok is not None:
+        console.print(f"  Max Tokens:   {_fmt_ctx(max_tok)}")
+    tools = caps.get("supports_tools")
+    if tools is not None:
+        console.print(f"  Tools:        {'✓' if tools else '✗'}")
+    vision = caps.get("supports_vision")
+    if vision is not None:
+        console.print(f"  Vision:       {'✓' if vision else '✗'}")
+    backend = caps.get("_backend")
+    if backend:
+        console.print(f"  [dim]Backend: {backend}[/dim]")
+
+
 def check_configuration() -> bool:
     """Check if application is configured, prompt user if not.
 
@@ -50,22 +106,9 @@ def check_configuration() -> bool:
     raw_config = config_manager.load_raw_global_config()
     config_base_url = raw_config.base_url or config.base_url or ""
 
-    def is_local_url(url: str) -> bool:
-        """Check if URL points to a local/internal model."""
-        if not url:
-            return False
-        return (
-            "localhost" in url
-            or "127.0.0.1" in url
-            or ":11434" in url
-            or url.startswith("http://192.168.")
-            or url.startswith("http://10.")
-            or url.startswith("http://172.")
-        )
-
     # Skip dynamic verification for local/internal network models
     # Check both effective URL (after env override) and config file URL
-    is_local_model = is_local_url(effective_base_url) or is_local_url(config_base_url)
+    is_local_model = _is_local_url(effective_base_url) or _is_local_url(config_base_url)
 
     if is_local_model:
         display_url = effective_base_url or config_base_url
@@ -420,6 +463,9 @@ def config(
     from .utils.config import get_global_config, get_config_manager
 
     if list:
+        import asyncio
+        from .utils.models_config import get_model_info
+
         config = get_global_config()
         console.print("[bold]Global Configuration:[/bold]")
         console.print(f"  Theme: {config.theme}")
@@ -429,6 +475,39 @@ def config(
         console.print(f"  Model Provider: {config.model_provider}")
         console.print(f"  Base URL: {config.base_url or 'Default'}")
         console.print(f"  API Key: {'***set***' if config.api_key else 'Not set'}")
+
+        # --- Model capability info ---
+        model_info = get_model_info(config.default_model)
+        if model_info:
+            console.print("\n[bold]Model Capability (Static Config):[/bold]")
+            _print_model_capability(console, model_info, source="static")
+
+        # --- For local models, probe runtime info ---
+        if model_info and _is_local_url(config.base_url or model_info.base_url):
+            console.print("\n[dim]Probing local model runtime info...[/dim]")
+
+            async def _probe_local() -> dict | None:
+                from .utils.model_client import ModelClient
+
+                client = ModelClient(
+                    api_key=config.api_key or None,
+                    base_url=config.base_url or None,
+                    model=config.default_model or None,
+                )
+                try:
+                    return await client.fetch_model_capabilities()
+                finally:
+                    await client.close()
+
+            try:
+                api_caps = asyncio.run(_probe_local())
+                if api_caps:
+                    console.print("[bold]Model Capability (Runtime Detected):[/bold]")
+                    _print_api_capability(console, api_caps)
+                else:
+                    console.print("[dim]  Local model did not expose capability metadata.[/dim]")
+            except Exception as e:
+                console.print(f"[yellow]  Could not probe local model: {e}[/yellow]")
 
         config_file = get_config_manager().SETTINGS_FILE
         console.print(f"\n[dim]Config file: {config_file}[/dim]")
