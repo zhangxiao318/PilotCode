@@ -9,9 +9,8 @@ Usage:
     /index import       - Import index from file
 """
 
-import asyncio
 from pathlib import Path
-from typing import Optional, Any
+from typing import Any
 
 from .base import CommandHandler, register_command
 from ..types.command import CommandContext

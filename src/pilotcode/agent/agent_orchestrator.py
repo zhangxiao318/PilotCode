@@ -577,7 +577,6 @@ Previous discussion:
 
                 choice = response.get("choices", [{}])[0]
                 delta = choice.get("delta", {})
-                finish_reason = choice.get("finish_reason")
 
                 content = delta.get("content", "")
                 tool_calls_raw = delta.get("tool_calls")
