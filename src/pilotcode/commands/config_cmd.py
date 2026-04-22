@@ -55,11 +55,25 @@ async def config_command(args: list[str], context: CommandContext) -> str:
         setattr(config, key, new_value)
         get_config_manager().save_global_config(config)
 
+        # Hot-reload: sync to running QueryEngine if available
+        if context.query_engine and hasattr(context.query_engine, "config"):
+            qe_config = context.query_engine.config
+            if hasattr(qe_config, key):
+                setattr(qe_config, key, new_value)
+
         return f"Set {key} = {new_value}"
 
     elif action == "reset":
         default = GlobalConfig()
         get_config_manager().save_global_config(default)
+
+        # Hot-reload: sync to running QueryEngine if available
+        if context.query_engine and hasattr(context.query_engine, "config"):
+            qe_config = context.query_engine.config
+            for key in ("theme", "verbose", "auto_compact", "auto_review", "max_review_iterations"):
+                if hasattr(qe_config, key) and hasattr(default, key):
+                    setattr(qe_config, key, getattr(default, key))
+
         return "Configuration reset to defaults"
 
     else:
