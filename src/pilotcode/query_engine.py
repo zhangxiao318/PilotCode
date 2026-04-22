@@ -44,6 +44,8 @@ class QueryEngineConfig:
     max_tokens: int = 0  # 0 = auto-detect from model config
     cache_tool_results: bool = False
     on_notify: Callable[[str, dict[str, Any]], None] | None = None
+    auto_review: bool = False
+    max_review_iterations: int = 3
 
 
 @dataclass
@@ -97,6 +99,10 @@ class QueryEngine:
         # Compaction tracking
         self._last_compaction_message_count = 0
         self._compaction_count = 0
+
+        # Post-edit review tracking
+        self._changed_files: list[str] = []
+        self._review_iteration_count: int = 0
 
     def _build_system_message(self) -> SystemMessage:
         """Build system message with runtime context."""
@@ -465,6 +471,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         self.messages.append(user_msg)
         yield QueryResult(message=user_msg, is_complete=False)
 
+        # Reset review counter on new user input
+        if prompt:
+            self._review_iteration_count = 0
+
         # Fast path: handle simple greetings locally without API call
         if self._is_greeting(prompt):
             lang = self._detect_language(prompt)
@@ -497,6 +507,52 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         # Auto-compact if needed before sending to API
         if self.config.auto_compact:
             self.auto_compact_if_needed()
+
+        # Auto-review after batch edits (interactive modes only)
+        if (
+            self.config.auto_review
+            and self._changed_files
+            and self._review_iteration_count < self.config.max_review_iterations
+        ):
+            yield QueryResult(
+                message=SystemMessage(content="🔍 Auto-reviewing changes..."),
+                is_complete=False,
+            )
+
+            from .services.post_edit_validator import PostEditValidator
+
+            validator = PostEditValidator(model_client=self.client)
+            result = await validator.review_and_test(self._changed_files)
+
+            review_text = result["review_result"]
+            test_text = result["test_result"]
+            issues_found = result["issues_found"]
+
+            review_msg_content = f"""[Auto-review result]
+
+{review_text}
+
+[Test result]
+{test_text}"""
+
+            if not issues_found and result["test_env_ready"]:
+                review_msg_content += "\n\n✅ All checks passed."
+            elif not issues_found and not result["test_env_ready"]:
+                review_msg_content += "\n\n⚠️ Review passed but no test environment detected."
+            else:
+                review_msg_content += "\n\n❌ Issues found. Please fix them before proceeding."
+
+            if self._review_iteration_count >= self.config.max_review_iterations - 1:
+                review_msg_content += (
+                    "\n\n[Max review iterations reached. Manual review recommended.]"
+                )
+
+            review_msg = SystemMessage(content=review_msg_content)
+            self.messages.append(review_msg)
+            yield QueryResult(message=review_msg, is_complete=True)
+
+            self._review_iteration_count += 1
+            self._changed_files = []
 
         # Build API messages
         api_messages = []
@@ -599,10 +655,33 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                 + f"\n... [truncated, {len(content)} chars total]"
             )
 
+        # Track file changes for post-edit review
+        tool_name = ""
+        for msg in reversed(self.messages):
+            if isinstance(msg, ToolUseMessage) and msg.tool_use_id == tool_use_id:
+                tool_name = msg.name
+                break
+        if tool_name in ("FileEdit", "FileWrite", "ApplyPatch"):
+            for msg in reversed(self.messages):
+                if isinstance(msg, ToolUseMessage) and msg.tool_use_id == tool_use_id:
+                    file_path = self._extract_file_path(msg)
+                    if file_path and file_path not in self._changed_files:
+                        self._changed_files.append(file_path)
+                    break
+
         tool_result_msg = ToolResultMessage(
             tool_use_id=tool_use_id, content=content, is_error=is_error
         )
         self.messages.append(tool_result_msg)
+
+    def _extract_file_path(self, tool_msg: ToolUseMessage) -> str | None:
+        """Extract file path from FileEdit/FileWrite/ApplyPatch tool input."""
+        input_data = tool_msg.input if isinstance(tool_msg.input, dict) else {}
+        for key in ("path", "file_path", "filepath"):
+            val = input_data.get(key)
+            if val and isinstance(val, str):
+                return val
+        return None
 
     def abort(self) -> None:
         """Abort current query."""

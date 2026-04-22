@@ -29,6 +29,8 @@ class GlobalConfig:
     model_provider: str = ""
     allowed_tools: list[str] = field(default_factory=list)
     mcp_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    auto_review: bool = False
+    max_review_iterations: int = 3
 
     def __post_init__(self):
         """Validate and set defaults after initialization."""
