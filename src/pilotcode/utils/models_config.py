@@ -35,6 +35,7 @@ class ModelInfo:
     supports_tools: bool = True
     supports_vision: bool = False
     max_tokens: int = 4096
+    context_window: int = 8192
     env_key: str = ""
 
     def get_env_key(self) -> str:
@@ -57,6 +58,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
+        context_window=128_000,
         env_key="OPENAI_API_KEY",
     ),
     "openai-gpt4": ModelInfo(
@@ -69,6 +71,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
+        context_window=128_000,
         env_key="OPENAI_API_KEY",
     ),
     "anthropic": ModelInfo(
@@ -81,6 +84,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
+        context_window=200_000,
         env_key="ANTHROPIC_API_KEY",
     ),
     "azure": ModelInfo(
@@ -93,6 +97,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
+        context_window=128_000,
         env_key="AZURE_OPENAI_API_KEY",
     ),
     # Domestic (China) Models
@@ -106,6 +111,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
+        context_window=64_000,
         env_key="DEEPSEEK_API_KEY",
     ),
     "qwen": ModelInfo(
@@ -118,6 +124,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
+        context_window=128_000,
         env_key="DASHSCOPE_API_KEY",
     ),
     "qwen-plus": ModelInfo(
@@ -130,6 +137,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
+        context_window=128_000,
         env_key="DASHSCOPE_API_KEY",
     ),
     "zhipu": ModelInfo(
@@ -142,6 +150,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=True,
         max_tokens=4096,
+        context_window=128_000,
         env_key="ZHIPU_API_KEY",
     ),
     "moonshot": ModelInfo(
@@ -154,6 +163,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
+        context_window=200_000,
         env_key="MOONSHOT_API_KEY",
     ),
     "baichuan": ModelInfo(
@@ -166,6 +176,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
+        context_window=32_000,
         env_key="BAICHUAN_API_KEY",
     ),
     "doubao": ModelInfo(
@@ -178,6 +189,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
+        context_window=128_000,
         env_key="ARK_API_KEY",
     ),
     # Custom/Local
@@ -191,6 +203,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
+        context_window=128_000,
         env_key="OPENAI_API_KEY",
     ),
     "ollama": ModelInfo(
@@ -203,6 +216,7 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = {
         supports_tools=True,
         supports_vision=False,
         max_tokens=4096,
+        context_window=128_000,
         env_key="",
     ),
 }

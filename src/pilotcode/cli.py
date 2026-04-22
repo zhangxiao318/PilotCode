@@ -78,7 +78,37 @@ def check_configuration() -> bool:
         verification = asyncio.run(config_manager.verify_configuration(timeout=10.0))
 
         if verification["success"]:
-            console.print(f"[green]✓[/green] LLM ready: {verification['response'][:60]}...")
+            model_info = verification.get("model_info")
+            if model_info:
+                # Format context window nicely
+                ctx = model_info.get("context_window", 0)
+                if ctx >= 1_000_000:
+                    ctx_str = f"{ctx // 1_000_000}M"
+                elif ctx >= 1_000:
+                    ctx_str = f"{ctx // 1_000}K"
+                else:
+                    ctx_str = str(ctx)
+
+                # Format max tokens nicely
+                max_tok = model_info.get("max_tokens", 0)
+                if max_tok >= 1_000:
+                    max_tok_str = f"{max_tok // 1_000}K"
+                else:
+                    max_tok_str = str(max_tok)
+
+                console.print(
+                    f"[green]✓[/green] LLM ready: [bold cyan]{model_info.get('display_name', model_info.get('name', 'Unknown'))}[/bold cyan]"
+                )
+                console.print(
+                    f"   [dim]Model:[/dim] {model_info.get('default_model', 'N/A')}  "
+                    f"[dim]Provider:[/dim] {model_info.get('provider', 'N/A')}  "
+                    f"[dim]Context:[/dim] {ctx_str}  "
+                    f"[dim]Max tokens:[/dim] {max_tok_str}  "
+                    f"[dim]Tools:[/dim] {'✓' if model_info.get('supports_tools') else '✗'}  "
+                    f"[dim]Vision:[/dim] {'✓' if model_info.get('supports_vision') else '✗'}"
+                )
+            else:
+                console.print(f"[green]✓[/green] LLM ready: {verification['response'][:60]}...")
             return True
         else:
             console.print(

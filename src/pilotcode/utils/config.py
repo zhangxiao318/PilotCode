@@ -253,6 +253,7 @@ class ConfigManager:
             "message": "",
             "response": None,
             "error": None,
+            "model_info": None,
         }
 
         # First check if configuration exists
@@ -261,6 +262,36 @@ class ConfigManager:
             return result
 
         config = self.load_global_config()
+
+        # Gather static model info as fallback baseline
+        model_info = get_model_info(config.default_model)
+        if model_info:
+            result["model_info"] = {
+                "name": config.default_model,
+                "display_name": model_info.display_name,
+                "provider": model_info.provider.value,
+                "default_model": model_info.default_model,
+                "base_url": config.base_url or model_info.base_url,
+                "context_window": model_info.context_window,
+                "max_tokens": model_info.max_tokens,
+                "supports_tools": model_info.supports_tools,
+                "supports_vision": model_info.supports_vision,
+                "source": "static",
+            }
+        else:
+            # Unknown/custom model
+            result["model_info"] = {
+                "name": config.default_model,
+                "display_name": config.default_model,
+                "provider": "custom",
+                "default_model": config.default_model,
+                "base_url": config.base_url,
+                "context_window": 0,
+                "max_tokens": 0,
+                "supports_tools": True,
+                "supports_vision": False,
+                "source": "static",
+            }
 
         try:
             # Create client with current configuration
@@ -290,17 +321,36 @@ class ConfigManager:
                 if len(response_chunks) >= 5:
                     break
 
-            await client.close()
-
             full_response = "".join(response_chunks).strip()
 
             if full_response:
                 result["success"] = True
                 result["message"] = "LLM responded successfully"
                 result["response"] = full_response[:200]  # Truncate if too long
+
+                # After successful connectivity test, try to fetch actual
+                # model capabilities from the API (overrides static values).
+                try:
+                    api_caps = await client.fetch_model_capabilities()
+                    if api_caps:
+                        mi = result["model_info"]
+                        for key in ("context_window", "max_tokens",
+                                    "supports_tools", "supports_vision"):
+                            if key in api_caps:
+                                mi[key] = api_caps[key]
+                        mi["source"] = "api"
+                        # Update display name if the API tells us something new
+                        if "display_name" in api_caps:
+                            mi["display_name"] = api_caps["display_name"]
+                except Exception:
+                    # It's okay if the API doesn't expose model metadata;
+                    # we already have static fallback values.
+                    pass
             else:
                 result["message"] = "LLM returned empty response"
                 result["error"] = "Empty response from model"
+
+            await client.close()
 
         except asyncio.TimeoutError:
             result["message"] = f"Connection timeout after {timeout}s"

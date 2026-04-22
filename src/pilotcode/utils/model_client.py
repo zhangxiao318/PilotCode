@@ -183,6 +183,138 @@ class ModelClient:
                 ]
             }
 
+    async def fetch_model_capabilities(self) -> dict[str, Any] | None:
+        """Fetch model capabilities from the API.
+
+        Tries to query the /models or /models/{model_id} endpoint to get
+        actual model metadata (context window, max tokens, etc.) from the
+        server rather than relying on static configuration.
+
+        Returns:
+            Dict with capability info, or None if the API doesn't expose it.
+        """
+        import asyncio
+
+        cap: dict[str, Any] = {}
+
+        # Try /models/{model_id} first (OpenAI compatible)
+        model_data = None
+        for endpoint in [f"/models/{self.model}", "/models"]:
+            try:
+                resp = await self.client.get(endpoint, timeout=10.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if endpoint.endswith("/models"):
+                        # List response — find the matching model
+                        for m in data.get("data", []):
+                            if m.get("id") == self.model:
+                                model_data = m
+                                break
+                        # Fallback: take first model if only one exists
+                        if model_data is None and len(data.get("data", [])) == 1:
+                            model_data = data["data"][0]
+                    else:
+                        model_data = data
+                    break
+            except (httpx.HTTPStatusError, httpx.RequestError, json.JSONDecodeError):
+                continue
+            except asyncio.TimeoutError:
+                continue
+
+        if not model_data:
+            return None
+
+        # --- Extract context window ---
+        # Different providers use different field names
+        for key in ("context_length", "context_window", "max_model_len",
+                    "max_context_length", "num_ctx", "n_ctx"):
+            val = model_data.get(key)
+            if val is not None:
+                try:
+                    cap["context_window"] = int(val)
+                    break
+                except (ValueError, TypeError):
+                    pass
+
+        # Some providers nest it under a "meta" or "info" dict
+        if "context_window" not in cap:
+            for nested_key in ("meta", "info", "details", "capabilities"):
+                nested = model_data.get(nested_key)
+                if isinstance(nested, dict):
+                    for key in ("context_length", "context_window", "max_model_len",
+                                "max_context_length", "num_ctx", "n_ctx"):
+                        val = nested.get(key)
+                        if val is not None:
+                            try:
+                                cap["context_window"] = int(val)
+                                break
+                            except (ValueError, TypeError):
+                                pass
+                if "context_window" in cap:
+                    break
+
+        # --- Extract max output tokens ---
+        for key in ("max_tokens", "max_output_tokens", "max_new_tokens"):
+            val = model_data.get(key)
+            if val is not None:
+                try:
+                    cap["max_tokens"] = int(val)
+                    break
+                except (ValueError, TypeError):
+                    pass
+
+        if "max_tokens" not in cap:
+            for nested_key in ("meta", "info", "details", "capabilities"):
+                nested = model_data.get(nested_key)
+                if isinstance(nested, dict):
+                    for key in ("max_tokens", "max_output_tokens", "max_new_tokens"):
+                        val = nested.get(key)
+                        if val is not None:
+                            try:
+                                cap["max_tokens"] = int(val)
+                                break
+                            except (ValueError, TypeError):
+                                pass
+                if "max_tokens" in cap:
+                    break
+
+        # --- Extract tool / vision support ---
+        for key in ("supports_tools", "supports_function_calling", "tool_call"):
+            val = model_data.get(key)
+            if val is not None:
+                cap["supports_tools"] = bool(val)
+                break
+        if "supports_tools" not in cap:
+            for nested_key in ("meta", "info", "details", "capabilities"):
+                nested = model_data.get(nested_key)
+                if isinstance(nested, dict):
+                    for key in ("supports_tools", "supports_function_calling", "tool_call"):
+                        val = nested.get(key)
+                        if val is not None:
+                            cap["supports_tools"] = bool(val)
+                            break
+                if "supports_tools" in cap:
+                    break
+
+        for key in ("supports_vision", "vision", "multimodal"):
+            val = model_data.get(key)
+            if val is not None:
+                cap["supports_vision"] = bool(val)
+                break
+        if "supports_vision" not in cap:
+            for nested_key in ("meta", "info", "details", "capabilities"):
+                nested = model_data.get(nested_key)
+                if isinstance(nested, dict):
+                    for key in ("supports_vision", "vision", "multimodal"):
+                        val = nested.get(key)
+                        if val is not None:
+                            cap["supports_vision"] = bool(val)
+                            break
+                if "supports_vision" in cap:
+                    break
+
+        return cap if cap else None
+
     async def close(self) -> None:
         """Close the client."""
         await self.client.aclose()
