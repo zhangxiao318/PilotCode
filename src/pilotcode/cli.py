@@ -2,6 +2,7 @@
 
 import sys
 import asyncio
+from typing import Any, Callable
 
 # Fix Windows encoding issues
 if sys.platform == "win32":
