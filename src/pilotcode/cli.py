@@ -523,7 +523,8 @@ def config(
             _print_model_capability(console, model_info, source="static")
 
         # --- For local models, probe runtime info ---
-        if model_info and _is_local_url(config.base_url or model_info.base_url):
+        effective_url = config.base_url or (model_info.base_url if model_info else "")
+        if _is_local_url(effective_url):
             console.print("\n[dim]Probing local model runtime info...[/dim]")
 
             async def _probe_local() -> dict | None:
@@ -558,11 +559,11 @@ def config(
                         config_mismatches.append(("model_provider", config.model_provider or "(empty)", detected_provider))
 
                     detected_ctx = api_caps.get("context_window")
-                    if detected_ctx is not None and detected_ctx != model_info.context_window:
+                    if detected_ctx is not None and model_info and detected_ctx != model_info.context_window:
                         model_mismatches.append(("context_window", model_info.context_window, detected_ctx))
 
                     detected_max = api_caps.get("max_tokens")
-                    if detected_max is not None and detected_max != model_info.max_tokens:
+                    if detected_max is not None and model_info and detected_max != model_info.max_tokens:
                         model_mismatches.append(("max_tokens", model_info.max_tokens, detected_max))
 
                     if config_mismatches or model_mismatches:
