@@ -29,10 +29,51 @@ async def status_command(args: list[str], context: CommandContext) -> str:
 
     # Configuration
     from ..utils.config import get_global_config
+    from ..utils.models_config import get_model_info, get_model_context_window
 
     config = get_global_config()
     lines.append(f"Model: {config.default_model}")
+
+    # Model capability info
+    model_info = get_model_info(config.default_model)
+    if model_info:
+        ctx = model_info.context_window
+        ctx_str = f"{ctx // 1000}K" if ctx >= 1000 else str(ctx)
+        max_tok = model_info.max_tokens
+        max_tok_str = f"{max_tok // 1000}K" if max_tok >= 1000 else str(max_tok)
+        lines.append(f"  Context window: {ctx_str}")
+        lines.append(f"  Max output:     {max_tok_str}")
+        lines.append(f"  Tools:          {'Yes' if model_info.supports_tools else 'No'}")
+        lines.append(f"  Vision:         {'Yes' if model_info.supports_vision else 'No'}")
+
     lines.append(f"Theme: {config.theme}")
+
+    # Conversation context stats
+    if context.query_engine is not None:
+        qe = context.query_engine
+        msg_count = len(qe.messages)
+        if msg_count > 0:
+            from ..services.token_estimation import estimate_tokens
+
+            total_tokens = sum(
+                estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages
+            )
+            ctx_window = get_model_context_window()
+            used_pct = total_tokens * 100 // ctx_window
+            lines.append("")
+            lines.append("Conversation Context:")
+            lines.append(f"  Messages:   {msg_count}")
+            lines.append(f"  Tokens:     {total_tokens} / {ctx_window} ({used_pct}%)")
+            lines.append(f"  Remaining:  {ctx_window - total_tokens}")
+            # Budget bar
+            bar_len = 20
+            filled = int(used_pct / 100 * bar_len)
+            bar = "█" * filled + "░" * (bar_len - filled)
+            lines.append(f"  [{bar}] {used_pct}%")
+            if used_pct >= 80:
+                lines.append(f"  ⚠️  Above 80% — auto-compression active")
+            elif used_pct >= 60:
+                lines.append(f"  ⚡ Above 60% — approaching limit")
 
     return "\n".join(lines)
 
