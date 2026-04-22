@@ -330,7 +330,7 @@ Documentation: README, ARCHITECTURE, FEATURE_LIST, IMPLEMENTATION_STATUS
 python3 full_demo.py
 
 # Run CLI
-python3 -m pilotcode main
+python3 -m pilotcode
 
 # Or
 ./pilotcode.sh

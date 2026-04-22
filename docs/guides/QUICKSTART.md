@@ -30,7 +30,7 @@ pip3 install -e .
 
 **验证安装：**
 ```bash
-python3 -m pilotcode main --version
+python3 -m pilotcode --version
 ```
 
 ---
@@ -132,7 +132,7 @@ python3 -m pilotcode configure --show
 
 ```bash
 # 默认启动（推荐）
-python3 -m pilotcode main
+python3 -m pilotcode
 
 # 或使用启动脚本（Linux/macOS）
 ./pilotcode.sh
@@ -149,26 +149,26 @@ pc
 
 ```bash
 # 执行单条命令后退出
-python3 -m pilotcode main -p "分析当前目录的代码结构"
+python3 -m pilotcode -p "分析当前目录的代码结构"
 ```
 
 ### 简单 CLI 模式（无 TUI）
 
 ```bash
-python3 -m pilotcode main --simple
+python3 -m pilotcode --simple
 ```
 
 ### 其他启动选项
 
 ```bash
 # 指定工作目录
-python3 -m pilotcode main --cwd /path/to/project
+python3 -m pilotcode --cwd /path/to/project
 
 # 自动允许所有工具执行（谨慎使用）
-python3 -m pilotcode main --auto-allow
+python3 -m pilotcode --auto-allow
 
 # 显示详细日志
-python3 -m pilotcode main --verbose
+python3 -m pilotcode --verbose
 ```
 
 ---

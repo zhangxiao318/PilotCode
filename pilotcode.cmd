@@ -29,7 +29,7 @@ if "%~1"=="" (
     set "FIRST_ARG=%~1"
     setlocal EnableDelayedExpansion
     if "!FIRST_ARG:~0,2!"=="--" (
-        REM Arguments start with -- (options): treat as 'main' command with options
+        REM Arguments start with -- (options): pass through directly
         python -m pilotcode %*
     ) else (
         REM Arguments start with a command: pass through as-is

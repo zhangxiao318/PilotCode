@@ -34,7 +34,7 @@ pip3 install -e .
 python3 -m pilotcode configure
 
 # 3. Run
-python3 -m pilotcode main
+python3 -m pilotcode
 ```
 
 More ways to start:

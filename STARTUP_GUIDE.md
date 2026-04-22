@@ -22,11 +22,11 @@ chmod +x pilotcode
 export PYTHONPATH=src:$PYTHONPATH
 
 # 启动主程序
-python3 -m pilotcode main
+python3 -m pilotcode
 
 # 查看帮助
 python3 -m pilotcode --help
-python3 -m pilotcode main --help
+python3 -m pilotcode --help
 ```
 
 ### 方法 3: 直接运行 CLI
@@ -81,7 +81,7 @@ PYTHONPATH=src python3 full_demo.py
 ### 主程序选项
 
 ```bash
-python3 -m pilotcode main [OPTIONS]
+python3 -m pilotcode [OPTIONS]
 
 Options:
   -v, --version          显示版本

@@ -59,7 +59,7 @@ $env:DEEPSEEK_API_KEY = "your-api-key"
 
 ```powershell
 # 启动后使用 config 命令设置
-uv run python -m pilotcode main
+uv run python -m pilotcode
 
 # 然后在交互式界面中输入
 /config set openai.api_key your-api-key
@@ -86,10 +86,10 @@ pilotcode configure
 
 ```powershell
 # 启动交互式 CLI
-uv run python -m pilotcode main
+uv run python -m pilotcode
 
 # 或者使用短命令
-uv run pilotcode main
+uv run pilotcode
 ```
 
 ### 方式三：使用 pip 安装后运行

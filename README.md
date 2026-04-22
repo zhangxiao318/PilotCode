@@ -40,7 +40,7 @@ python3 -m pilotcode configure
 .\pilotcode.cmd
 
 # 或使用 Python 模块方式
-python3 -m pilotcode main
+python3 -m pilotcode
 ```
 
 更多启动方式：
@@ -49,10 +49,10 @@ python3 -m pilotcode main
 python3 full_demo.py
 
 # 单次命令模式
-python3 -m pilotcode main -p "分析当前目录的代码结构"
+python3 -m pilotcode -p "分析当前目录的代码结构"
 
 # 简单 CLI 模式
-python3 -m pilotcode main --simple
+python3 -m pilotcode --simple
 ```
 
 ## Model Configuration

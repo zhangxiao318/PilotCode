@@ -42,7 +42,7 @@ class PilotCodeTestSuite:
 
     def __init__(
         self,
-        pilotcode_command: str = "python -m pilotcode main --auto-allow",
+        pilotcode_command: str = "python -m pilotcode --auto-allow",
         server_command: Optional[str] = None,
         screenshots_dir: Optional[str] = None,
     ):
@@ -454,7 +454,7 @@ class PilotCodeTestSuite:
 
 # Convenience function for running tests
 async def run_pilotcode_tui_tests(
-    pilotcode_command: str = "python -m pilotcode main --auto-allow",
+    pilotcode_command: str = "python -m pilotcode --auto-allow",
     server_command: Optional[str] = None,
 ) -> Tuple[int, List[TestResult]]:
     """Run all PilotCode TUI tests.

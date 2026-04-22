@@ -40,7 +40,7 @@ python3 -m pilotcode configure
 .\pilotcode.cmd
 
 # Or using Python module
-python3 -m pilotcode main
+python3 -m pilotcode
 ```
 
 More ways to start:
@@ -49,10 +49,10 @@ More ways to start:
 python3 full_demo.py
 
 # One-shot command mode
-python3 -m pilotcode main -p "Analyze the code structure of current directory"
+python3 -m pilotcode -p "Analyze the code structure of current directory"
 
 # Simple CLI mode
-python3 -m pilotcode main --simple
+python3 -m pilotcode --simple
 ```
 
 ## Model Configuration

@@ -45,7 +45,7 @@ from pilotcode.mcp_tui_client import TUITestClient
 
 async with TUITestClient() as client:
     # Launch PilotCode
-    await client.launch_tui("python -m pilotcode main --auto-allow")
+    await client.launch_tui("python -m pilotcode --auto-allow")
     
     # Wait for welcome
     await client.expect_text("PilotCode", timeout=5)

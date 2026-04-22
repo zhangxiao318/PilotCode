@@ -190,7 +190,7 @@ def run_pilotcode(
     """Run PilotCode in headless mode on the given prompt."""
     planning_flag = "" if planning else "--no-planning"
     cmd = (
-        f"python3 -m pilotcode main "
+        f"python3 -m pilotcode "
         f"--skip-config-check --auto-allow --max-iterations {max_iterations} "
         f"{planning_flag} "
         f"-p {shlex.quote(prompt)}"

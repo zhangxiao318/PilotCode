@@ -40,7 +40,7 @@ class TUITestClient:
     Example:
         async with TUITestClient() as client:
             session = await client.launch_tui(
-                command="python -m pilotcode main --auto-allow",
+                command="python -m pilotcode --auto-allow",
                 session_id="pilotcode_test",
                 mode="buffer",
                 dimensions="120x40"
