@@ -243,7 +243,7 @@ class SimpleCLI:
         if self.auto_allow:
             print("⚠️  Auto-allow mode: All tool executions will be allowed")
             print()
-        print("Type your message or a command (press Ctrl+C to quit)")
+        print("Type your message or a command (press Ctrl+D to quit)")
         print("-" * 60)
 
     def print_help(self):

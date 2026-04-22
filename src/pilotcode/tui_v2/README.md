@@ -29,7 +29,7 @@ All internal commands work correctly:
 - And 58 more commands...
 
 ### Keyboard Shortcuts
-- `Ctrl+C` - Quit
+- `Ctrl+D` - Quit
 - `Ctrl+S` - Save session
 - `Ctrl+L` - Clear conversation
 - `Ctrl+B` - Toggle sidebar

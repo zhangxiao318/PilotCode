@@ -76,7 +76,7 @@ class SessionScreen(Screen):
     """
 
     BINDINGS = [
-        ("ctrl+c", "quit", "Quit"),
+        ("ctrl+d", "quit", "Quit"),
         ("ctrl+s", "save", "Save Session"),
         ("ctrl+l", "clear", "Clear"),
         ("f1", "help", "Help"),
@@ -167,7 +167,7 @@ class SessionScreen(Screen):
 │  /help  - Show cmds    • @filename to ref files       │
 │  /save  - Save session • Shift+Enter for new line     │
 │  /load  - Load session • Up/Down for history          │
-│  /clear - Clear history                                │
+│  /clear - Clear history • Ctrl+D to exit              │
 │  /quit  - Exit                                         │
 └────────────────────────────────────────────────────────┘"""
 
