@@ -419,6 +419,27 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
         return api_messages
 
+    # Greeting patterns that can be handled locally without calling the API
+    _GREETING_PATTERNS = {
+        "hello", "hi", "hey", "hiya", "greetings",
+        "你好", "您好", "嗨", "哈喽", "在吗", "在么",
+        "who are you", "what are you", "introduce yourself",
+        "你是谁", "你叫什么", "介绍一下你自己", "你是做什么的",
+    }
+
+    def _is_greeting(self, prompt: str) -> bool:
+        """Check if the prompt is a simple greeting that can be handled locally."""
+        text = prompt.strip().lower()
+        # Exact match or very short (<=10 chars) single-line messages
+        if text in self._GREETING_PATTERNS:
+            return True
+        if len(text) <= 10 and "\n" not in text:
+            # Check if it starts with any greeting pattern
+            for pattern in self._GREETING_PATTERNS:
+                if text.startswith(pattern):
+                    return True
+        return False
+
     async def submit_message(
         self, prompt: str, options: dict[str, Any] | None = None
     ) -> AsyncIterator[QueryResult]:
@@ -435,6 +456,23 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         user_msg = UserMessage(content=prompt)
         self.messages.append(user_msg)
         yield QueryResult(message=user_msg, is_complete=False)
+
+        # Fast path: handle simple greetings locally without API call
+        if self._is_greeting(prompt):
+            reply = (
+                "Hello! I'm **PilotCode**, your AI programming assistant.\n\n"
+                "I can help you with:\n"
+                "• Writing, reading, and editing code\n"
+                "• Analyzing and debugging programs\n"
+                "• Running shell commands and searching your codebase\n"
+                "• Planning and breaking down complex tasks\n\n"
+                "Just tell me what you'd like to work on!"
+            )
+            assistant_msg = AssistantMessage(content=reply)
+            self.messages.append(assistant_msg)
+            yield QueryResult(message=assistant_msg, is_complete=False)
+            yield QueryResult(message=assistant_msg, is_complete=True)
+            return
 
         # Auto-compact if needed before sending to API
         if self.config.auto_compact:
