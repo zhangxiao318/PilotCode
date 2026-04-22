@@ -10,7 +10,12 @@ async def remote_command(args: list[str], context: CommandContext) -> str:
         # List remotes
         try:
             result = subprocess.run(
-                ["git", "remote", "-v"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "remote", "-v"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0:
@@ -35,7 +40,12 @@ async def remote_command(args: list[str], context: CommandContext) -> str:
 
         try:
             result = subprocess.run(
-                ["git", "remote", "add", name, url], capture_output=True, text=True, cwd=context.cwd
+                ["git", "remote", "add", name, url],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0:
@@ -54,7 +64,12 @@ async def remote_command(args: list[str], context: CommandContext) -> str:
 
         try:
             result = subprocess.run(
-                ["git", "remote", "remove", name], capture_output=True, text=True, cwd=context.cwd
+                ["git", "remote", "remove", name],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0:
@@ -70,7 +85,12 @@ async def remote_command(args: list[str], context: CommandContext) -> str:
 
         try:
             result = subprocess.run(
-                ["git", "fetch", remote], capture_output=True, text=True, cwd=context.cwd
+                ["git", "fetch", remote],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0:
@@ -90,7 +110,14 @@ async def remote_command(args: list[str], context: CommandContext) -> str:
             cmd.append(branch)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=context.cwd)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
+            )
 
             if result.returncode == 0:
                 return f"Pulled from {remote}:\n{result.stdout}"
@@ -109,7 +136,14 @@ async def remote_command(args: list[str], context: CommandContext) -> str:
             cmd.append(branch)
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=context.cwd)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
+            )
 
             if result.returncode == 0:
                 return f"Pushed to {remote}:\n{result.stdout}"

@@ -11,7 +11,12 @@ async def lint_command(args: list[str], context: CommandContext) -> str:
     try:
         # Try ruff first
         result = subprocess.run(
-            ["ruff", "check", target], capture_output=True, text=True, cwd=context.cwd
+            ["ruff", "check", target],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=context.cwd,
         )
 
         output = ""
@@ -28,7 +33,12 @@ async def lint_command(args: list[str], context: CommandContext) -> str:
 
         # Try flake8
         result2 = subprocess.run(
-            ["flake8", target], capture_output=True, text=True, cwd=context.cwd
+            ["flake8", target],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=context.cwd,
         )
 
         output2 = ""

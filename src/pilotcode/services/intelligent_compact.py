@@ -23,8 +23,8 @@ class CompactConfig:
     """
 
     # Token thresholds (will be overridden by model context window if 0)
-    warning_threshold: int = 0   # 0 = auto from model config
-    compact_threshold: int = 0   # 0 = auto from model config
+    warning_threshold: int = 0  # 0 = auto from model config
+    compact_threshold: int = 0  # 0 = auto from model config
     critical_threshold: int = 0  # 0 = auto from model config
 
     # Percentages of context window (used when thresholds are 0)

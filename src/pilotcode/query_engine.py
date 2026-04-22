@@ -453,7 +453,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                 await asyncio.sleep(0)  # Yield control to allow cancellation
             except asyncio.CancelledError:
                 raise
-            
+
             delta = chunk.get("choices", [{}])[0].get("delta", {})
             finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
 
@@ -596,6 +596,9 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         This is the synchronous fallback that uses simple compaction.
         For smart compression with summarization, use smart_compact().
         """
+        if not self.config.auto_compact:
+            return False
+
         token_count = self.count_tokens()
         threshold = int(self.config.max_tokens * 0.8)
         if token_count < threshold:

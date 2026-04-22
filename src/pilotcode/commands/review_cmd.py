@@ -10,7 +10,12 @@ async def review_command(args: list[str], context: CommandContext) -> str:
         # Show diff for review
         try:
             result = subprocess.run(
-                ["git", "diff", "--cached"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "diff", "--cached"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0 and result.stdout:
@@ -22,7 +27,12 @@ async def review_command(args: list[str], context: CommandContext) -> str:
 
             # Check unstaged changes
             result = subprocess.run(
-                ["git", "diff"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "diff"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0 and result.stdout:

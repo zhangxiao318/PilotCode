@@ -245,10 +245,7 @@ async def get_installed_pip_packages(cwd: str) -> list[PackageInfo]:
         )
         if returncode == 0:
             data = json.loads(stdout)
-            return [
-                PackageInfo(name=p["name"], version=p["version"], installed=True)
-                for p in data
-            ]
+            return [PackageInfo(name=p["name"], version=p["version"], installed=True) for p in data]
     except Exception:
         pass
     return []
@@ -268,9 +265,7 @@ async def get_installed_npm_packages(cwd: str) -> list[PackageInfo]:
             data = json.loads(stdout)
             dependencies = data.get("dependencies", {})
             return [
-                PackageInfo(
-                    name=name, version=info.get("version", "unknown"), installed=True
-                )
+                PackageInfo(name=name, version=info.get("version", "unknown"), installed=True)
                 for name, info in dependencies.items()
             ]
     except Exception:

@@ -334,8 +334,12 @@ class ConfigManager:
                     api_caps = await client.fetch_model_capabilities()
                     if api_caps:
                         mi = result["model_info"]
-                        for key in ("context_window", "max_tokens",
-                                    "supports_tools", "supports_vision"):
+                        for key in (
+                            "context_window",
+                            "max_tokens",
+                            "supports_tools",
+                            "supports_vision",
+                        ):
                             if key in api_caps:
                                 mi[key] = api_caps[key]
                         mi["source"] = "api"

@@ -53,9 +53,13 @@ def test_fixtures_dir(project_root) -> Path:
 
 
 @pytest.fixture
-def temp_dir() -> Path:
-    """Create a temporary directory for test files."""
-    tmp = tempfile.mkdtemp(prefix="pilotcode_test_")
+def temp_dir(project_root) -> Path:
+    """Create a temporary directory for test files within the project."""
+    # Create tmp directory inside tests folder to stay within workspace
+    tmp_base = project_root / "tests" / "tmp"
+    tmp_base.mkdir(parents=True, exist_ok=True)
+
+    tmp = tempfile.mkdtemp(prefix="pilotcode_test_", dir=str(tmp_base))
     path = Path(tmp)
     yield path
     shutil.rmtree(tmp, ignore_errors=True)

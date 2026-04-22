@@ -321,18 +321,23 @@ class SessionScreen(Screen):
         # Find last assistant message
         if not self.message_list:
             return
-        
+
         messages = self.message_list._messages
         for msg in reversed(messages):
             if msg.type == UIMessageType.ASSISTANT:
                 content = msg.content or ""
                 if content:
                     from pilotcode.tui_v2.components.message.display import copy_to_clipboard
+
                     system_ok, used_internal, method = copy_to_clipboard(content)
                     if system_ok:
-                        self.app.notify(f"📋 Copied via {method}", severity="information", timeout=2)
+                        self.app.notify(
+                            f"📋 Copied via {method}", severity="information", timeout=2
+                        )
                     elif used_internal:
-                        self.app.notify("⚠️ Copied to internal buffer", severity="warning", timeout=2)
+                        self.app.notify(
+                            "⚠️ Copied to internal buffer", severity="warning", timeout=2
+                        )
                 return
 
     def action_save(self):

@@ -39,6 +39,7 @@ def _copy_to_clipboard_impl(text: str) -> str | None:
         # Try pyperclip first (most reliable cross-platform)
         try:
             import pyperclip
+
             pyperclip.copy(text)
             return "pyperclip"
         except ImportError:
@@ -55,16 +56,17 @@ def _copy_to_clipboard_impl(text: str) -> str | None:
                     ["powershell.exe", "-Command", ps_cmd],
                     check=True,
                     capture_output=True,
-                    timeout=5
+                    timeout=5,
                 )
                 return "powershell"
             except Exception:
                 pass
-            
+
             # Fallback: use clip.exe with UTF-16 LE (Windows native Unicode)
             try:
                 # Add BOM for UTF-16 LE to help Windows recognize encoding
                 import codecs
+
                 encoded_text = codecs.BOM_UTF16_LE + text.encode("utf-16-le")
                 subprocess.run(["clip.exe"], input=encoded_text, check=True, capture_output=True)
                 return "clip.exe (utf-16)"
@@ -652,12 +654,14 @@ class TextViewerDialog(Screen):
         text_area.focus()
         # Ignore Ctrl+C signal on Windows to prevent batch job termination
         import signal
+
         self._old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     def on_unmount(self):
         """Restore signal handler when dialog closes."""
         import signal
-        if hasattr(self, '_old_handler'):
+
+        if hasattr(self, "_old_handler"):
             signal.signal(signal.SIGINT, self._old_handler)
 
     def on_key(self, event):
@@ -665,10 +669,10 @@ class TextViewerDialog(Screen):
         # Check for Ctrl+C (different representations on different platforms)
         # Windows: ctrl+@ with character \x00, Linux/Mac: ctrl+c
         is_ctrl_c = (
-            event.key == "ctrl+c" or 
-            event.key == "ctrl+@" or 
-            event.character == "\x03" or  # ASCII ETX (Ctrl+C)
-            event.character == "\x00"     # Windows NUL from Ctrl+C
+            event.key == "ctrl+c"
+            or event.key == "ctrl+@"
+            or event.character == "\x03"  # ASCII ETX (Ctrl+C)
+            or event.character == "\x00"  # Windows NUL from Ctrl+C
         )
         if is_ctrl_c:
             # Always handle Ctrl+C as copy action, don't let it propagate

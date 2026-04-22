@@ -77,11 +77,18 @@ def translate_command_for_windows(command: str) -> str:
 # These patterns could wreck the filesystem or leak secrets
 DANGEROUS_PATTERNS = [
     # rm -rf on root directory specifically (not /tmp, /home, etc.)
-    (r"\brm\s+(-\w*)?-r\w*\s+/$", "recursive delete on root directory"),
-    (r"\brm\s+(-\w*)?-r\w*\s+~\s*$", "recursive delete on home directory"),
-    (r"\brm\s+(-\w*)?-r\w*\s+\$HOME", "recursive delete on home directory"),
-    # rm -rf / at the start or standalone
-    (r"\brm\s+(-\w*)?-rf\s+/(?:\s|$)", "force recursive delete on system directory"),
+    # Use negative lookahead to exclude /tmp, /home, etc. - only match root /
+    (r"\brm\s+(-[a-zA-Z]*)?-r\w*\s+/(?![a-zA-Z])", "recursive delete on root directory"),
+    (r"\brm\s+(-[a-zA-Z]*)?-r\w*\s+~/", "recursive delete on home directory"),
+    (r"\brm\s+(-[a-zA-Z]*)?-r\w*\s+~(?:\s|#|\||;|$)", "recursive delete on home directory"),
+    (r"\brm\s+(-[a-zA-Z]*)?-r\w*\s+\$HOME", "recursive delete on home directory"),
+    # rm -rf / with various suffixes (must be followed by space, comment, pipe, semicolon, or end)
+    (r"\brm\s+(-[a-zA-Z]*)?-rf\s+/(?:\s|#|\||;|$)", "force recursive delete on system directory"),
+    (r"\brm\s+(-[a-zA-Z]*)?-rf\s+/\*", "recursive delete all files in root"),
+    # Handle -- argument separator: rm -rf -- / (common bypass technique)
+    (r"\brm\s+(-[a-zA-Z\s]*)--\s+/(?![a-zA-Z])", "recursive delete on root directory"),
+    # Handle case where arguments after -- include root: rm -r -- -rf /
+    (r"\brm\s+(-[a-zA-Z\s]*)--\s+\S+\s+/(?![a-zA-Z])", "recursive delete on root directory"),
     # Filesystem formatting
     (r"\bmkfs\b", "format filesystem"),
     # Raw disk writes
@@ -89,24 +96,74 @@ DANGEROUS_PATTERNS = [
     (r">\s*/dev/sd[a-z]", "overwrite block device"),
     (r">\s*/dev/nvme", "overwrite block device"),
     (r">\s*/dev/hd[a-z]", "overwrite block device"),
-    # Dangerous chmod (only root directory)
-    (r"\bchmod\s+(-R\s+)?777\s+/$", "chmod 777 on root"),
-    (r"\bchmod\s+(-R\s+)?777\s*/\s*$", "chmod 777 on root"),
+    (r">\s*/dev/null\s+of=/dev/", "overwrite block device via /dev/null"),
+    # Dangerous chmod - only match root directory, not subdirectories like /tmp
+    (r"\bchmod\s+(-R\s+)?777\s+/(?![a-zA-Z0-9])", "chmod 777 on root"),
+    (r"\bchmod\s+(-R\s+)?777\s*/(?:\s|#|\||;|$)", "chmod 777 on root"),
     # Fork bomb
     (r":\(\)\s*\{.*:\|:.*\}", "fork bomb"),
-    # Piping downloads to bash
-    (r"\bcurl\b.*\|\s*(sudo\s+)?bash", "pipe curl to bash"),
-    (r"\bwget\b.*\|\s*(sudo\s+)?bash", "pipe wget to bash"),
+    (r":\s*\(\)\s*\{.*:\s*\|\s*:", "fork bomb"),
+    # Piping downloads to interpreters (variations)
+    (r"\bcurl\b.*\|\s*(sudo\s+)?(bash|sh|zsh|python|perl|ruby)", "pipe download to interpreter"),
+    (r"\bwget\b.*\|\s*(sudo\s+)?(bash|sh|zsh|python|perl|ruby)", "pipe download to interpreter"),
+    (r"\bcurl\b.*-\s*(sudo\s+)?(bash|sh|zsh|python)", "pipe curl to interpreter via -"),
     # Home directory deletion variations
-    (r"\brm\s+(-\w*)?-rf\s+~\s*$", "force recursive delete on home directory"),
-    (r"\brm\s+(-\w*)?-rf\s+~/\s*$", "force recursive delete on home directory"),
+    (r"\brm\s+(-[a-zA-Z]*)?-rf\s+~/", "force recursive delete on home directory"),
+    (r"\brm\s+(-[a-zA-Z]*)?-rf\s+~\b", "force recursive delete on home directory"),
     # System config overwrite
-    (r">\s*/etc/(?:passwd|shadow|fstab|hosts)\s*$", "overwrite critical system file"),
+    (
+        r">\s*/etc/(?:passwd|shadow|fstab|hosts|sudoers|ssh/sshd_config)\b",
+        "overwrite critical system file",
+    ),
     # Format device
     (r"\bformat\s+/dev/", "format device"),
-    # Remove all files in root
-    (r"\brm\s+(-\w*)?-rf\s+/\s*\*", "recursive delete all files in root"),
+    # mv to root or overwrite critical files
+    (r"\bmv\s+.*\s+/etc/(?:passwd|shadow)\b", "move file to critical system location"),
+    # cp to overwrite critical files
+    (r"\bcp\s+.*\s+/etc/(?:passwd|shadow)\b", "copy file to critical system location"),
+    # Indirect execution via eval
+    (r"\beval\s+.*\brm\b", "indirect rm via eval"),
+    (r"\beval\s+.*\bdd\b", "indirect dd via eval"),
+    # Systemctl dangerous operations
+    (
+        r"\bsystemctl\s+(stop|restart|disable)\s+(sshd|ssh|network|systemd|dbus)\b",
+        "stop critical system service",
+    ),
+    # Kill system processes
+    (r"\bkillall\s+(systemd|dbus|sshd|ssh)\b", "kill critical system process"),
+    (r"\bpkill\s+(systemd|dbus|sshd|ssh)\b", "kill critical system process"),
 ]
+
+
+def _normalize_command(command: str) -> str:
+    """Normalize command for safer pattern matching.
+
+    Removes common obfuscation techniques:
+    - Multiple spaces -> single space
+    - Leading/trailing whitespace
+    - Common comment patterns
+    """
+    import re
+
+    # Replace multiple spaces with single space
+    normalized = re.sub(r"\s+", " ", command)
+    # Remove shell comments (but be careful with # in strings)
+    # This is a simplified version - removes # and everything after it
+    # A more robust solution would need proper shell parsing
+    lines = []
+    for line in normalized.split("\n"):
+        # Simple comment removal - not perfect but catches common cases
+        if "#" in line:
+            # Keep # if it's in quotes (simplified check)
+            parts = line.split("#")
+            if len(parts) > 1:
+                # Check if # is likely in a string (preceded by quotes)
+                before = parts[0]
+                if before.count('"') % 2 == 0 and before.count("'") % 2 == 0:
+                    line = before
+        lines.append(line)
+    normalized = "\n".join(lines)
+    return normalized.strip()
 
 
 def check_dangerous_command(command: str) -> str | None:
@@ -118,9 +175,17 @@ def check_dangerous_command(command: str) -> str | None:
     Returns:
         Warning message if dangerous, None if safe
     """
-    for pattern, reason in DANGEROUS_PATTERNS:
-        if re.search(pattern, command, re.IGNORECASE):
-            return f"Dangerous command blocked: {reason}"
+    # Normalize command to catch obfuscated attempts
+    normalized = _normalize_command(command)
+
+    # Check both original and normalized command
+    commands_to_check = [command, normalized]
+
+    for cmd in commands_to_check:
+        for pattern, reason in DANGEROUS_PATTERNS:
+            if re.search(pattern, cmd, re.IGNORECASE):
+                return f"Dangerous command blocked: {reason}"
+
     return None
 
 
@@ -188,22 +253,26 @@ async def _read_stream(
                     continue
                 lines.append(line)
                 if on_progress:
-                    on_progress({
-                        "type": "bash_output",
-                        "stream": stream_name,
-                        "line": line,
-                        "is_progress": delim == b"\r",
-                    })
+                    on_progress(
+                        {
+                            "type": "bash_output",
+                            "stream": stream_name,
+                            "line": line,
+                            "is_progress": delim == b"\r",
+                        }
+                    )
         if buffer:
             line = buffer.decode("utf-8", errors="replace")
             lines.append(line)
             if on_progress:
-                on_progress({
-                    "type": "bash_output",
-                    "stream": stream_name,
-                    "line": line,
-                    "is_progress": False,
-                })
+                on_progress(
+                    {
+                        "type": "bash_output",
+                        "stream": stream_name,
+                        "line": line,
+                        "is_progress": False,
+                    }
+                )
     except asyncio.CancelledError:
         raise
     except Exception:

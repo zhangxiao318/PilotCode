@@ -26,7 +26,14 @@ class EnterWorktreeOutput(BaseModel):
 def run_git(args: list[str], cwd: str = ".") -> tuple[int, str, str]:
     """Run git command."""
     try:
-        result = subprocess.run(["git"] + args, capture_output=True, text=True, cwd=cwd)
+        result = subprocess.run(
+            ["git"] + args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=cwd,
+        )
         return result.returncode, result.stdout, result.stderr
     except Exception as e:
         return -1, "", str(e)

@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 # Context variable to prevent nested environment-diagnosis dead loops
-_env_diagnosis_ctx: contextvars.ContextVar[bool] = contextvars.ContextVar("env_diagnosis_active", default=False)
+_env_diagnosis_ctx: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "env_diagnosis_active", default=False
+)
 
 from rich.console import Console
 from rich.panel import Panel
@@ -41,11 +43,18 @@ class REPL:
     DEFAULT_MAX_ITERATIONS = 100
 
     WRITE_TOOLS = {
-        "FileEdit", "FileWrite", "ApplyPatch", "NotebookEdit",
-        "CronCreate", "CronDelete", "CronUpdate",
+        "FileEdit",
+        "FileWrite",
+        "ApplyPatch",
+        "NotebookEdit",
+        "CronCreate",
+        "CronDelete",
+        "CronUpdate",
     }
 
-    def __init__(self, auto_allow: bool = False, max_iterations: int | None = None, read_only: bool = False):
+    def __init__(
+        self, auto_allow: bool = False, max_iterations: int | None = None, read_only: bool = False
+    ):
         self.console = Console()
         self.store = Store(get_default_app_state())
         set_global_store(self.store)
@@ -197,6 +206,7 @@ class REPL:
                         is_progress = data.get("is_progress", False)
                         if is_progress:
                             import sys
+
                             sys.stdout.write(f"\r{line}")
                             sys.stdout.flush()
                         else:
@@ -218,11 +228,12 @@ class REPL:
                     self.console.print(f"[red]✗ {exec_result.message}[/red]")
 
                     # --- Environment diagnosis (interactive REPL mode) ---
-                    if not getattr(self, '_env_diagnosis_fired', False):
+                    if not getattr(self, "_env_diagnosis_fired", False):
                         from ..utils.env_diagnosis import (
                             looks_like_environment_error,
                             diagnose_and_fix_environment,
                         )
+
                         if looks_like_environment_error(result_content):
                             self._env_diagnosis_fired = True
                             fixed = await diagnose_and_fix_environment(
@@ -254,9 +265,7 @@ class REPL:
                 )
                 self.console.print(f"[yellow]{warning}[/yellow]")
                 # Inject warning so the model sees it on the next turn
-                self.query_engine.messages.append(
-                    AssistantMessage(content=warning)
-                )
+                self.query_engine.messages.append(AssistantMessage(content=warning))
 
             # Continue the conversation with tool results
             remaining = max_iterations - iteration
@@ -348,7 +357,15 @@ def assess_project_complexity(cwd: str) -> dict[str, Any]:
             r"! -path '*/venv/*' ! -path '*/.venv/*' ! -path '*/build/*' "
             r"| wc -l"
         )
-        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+        proc = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
         file_count = int(proc.stdout.strip()) if proc.returncode == 0 else 0
         result["file_count"] = file_count
 
@@ -372,10 +389,18 @@ def assess_project_complexity(cwd: str) -> dict[str, Any]:
         lang_scores: dict[str, int] = {}
         for ext in lang_weights:
             cmd = f"find '{cwd}' -maxdepth 3 -type f -name '*{ext}' ! -path '*/node_modules/*' ! -path '*/.git/*' | wc -l"
-            proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+            proc = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+            )
             cnt = int(proc.stdout.strip()) if proc.returncode == 0 else 0
             if cnt > 0:
-                lang_scores[ext.lstrip('.')] = cnt
+                lang_scores[ext.lstrip(".")] = cnt
         result["language_scores"] = lang_scores
 
         # LOC estimate via wc -l on top-level source files (fast approximation)
@@ -386,7 +411,15 @@ def assess_project_complexity(cwd: str) -> dict[str, Any]:
             r"! -path '*/node_modules/*' ! -path '*/.git/*' ! -path '*/__pycache__/*' "
             r"-exec cat {{}} + 2>/dev/null | wc -l"
         )
-        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+        proc = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
         loc = int(proc.stdout.strip()) if proc.returncode == 0 else 0
         result["loc_estimate"] = loc
 
@@ -409,7 +442,7 @@ def assess_project_complexity(cwd: str) -> dict[str, Any]:
             complexity += 0.5
 
         for ext, cnt in lang_scores.items():
-            weight = lang_weights.get('.' + ext, 1.0)
+            weight = lang_weights.get("." + ext, 1.0)
             if cnt > 50:
                 complexity += 0.5 * weight
             elif cnt > 10:
@@ -431,18 +464,39 @@ def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> floa
 
     # Task-type keywords
     hard_keywords = [
-        "refactor", "architecture", "restructure", "redesign",
-        "implement", "add support", "introduce",
-        "debug", "fix bug", "bug report", "regression",
-        "cross-file", "multiple files", "across the codebase",
+        "refactor",
+        "architecture",
+        "restructure",
+        "redesign",
+        "implement",
+        "add support",
+        "introduce",
+        "debug",
+        "fix bug",
+        "bug report",
+        "regression",
+        "cross-file",
+        "multiple files",
+        "across the codebase",
     ]
     medium_keywords = [
-        "update", "modify", "change behavior", "enhance",
-        "improve", "optimize", "performance",
+        "update",
+        "modify",
+        "change behavior",
+        "enhance",
+        "improve",
+        "optimize",
+        "performance",
     ]
     easy_keywords = [
-        "rename", "move", "extract", "simple", "single file",
-        "update docstring", "add comment", "fix typo",
+        "rename",
+        "move",
+        "extract",
+        "simple",
+        "single file",
+        "update docstring",
+        "add comment",
+        "fix typo",
     ]
 
     for kw in hard_keywords:
@@ -499,7 +553,10 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
 
     client = get_model_client()
     messages = [
-        Message(role="system", content="You classify coding tasks. Reply with exactly one word: PLAN or DIRECT."),
+        Message(
+            role="system",
+            content="You classify coding tasks. Reply with exactly one word: PLAN or DIRECT.",
+        ),
         Message(role="user", content=classifier_prompt),
     ]
 
@@ -574,6 +631,7 @@ class LoopGuard:
     @staticmethod
     def _fingerprint(tool_msg: ToolUseMessage) -> str:
         import hashlib
+
         name = tool_msg.name
         input_str = json.dumps(tool_msg.input, sort_keys=True, default=str)
         return f"{name}:{hashlib.md5(input_str.encode()).hexdigest()[:8]}"
@@ -597,6 +655,7 @@ class LoopGuard:
 
         flat = [fp for r in recent for fp in r]
         from collections import Counter
+
         counts = Counter(flat)
 
         # Rule 1: Same single tool called repeatedly with identical input
@@ -624,8 +683,14 @@ class LoopGuard:
         # If only 1-2 unique parameters keep repeating, it's a loop.
         # Exclude exploration tools entirely — they are always legitimate.
         _exploration_tools = {
-            "FileRead", "Glob", "Grep", "CodeSearch", "CodeIndex",
-            "GitDiff", "GitStatus", "FileTree",
+            "FileRead",
+            "Glob",
+            "Grep",
+            "CodeSearch",
+            "CodeIndex",
+            "GitDiff",
+            "GitStatus",
+            "FileTree",
         }
         if len(flat) >= 5:
             last5_fp = flat[-5:]
@@ -678,8 +743,13 @@ async def run_headless(
     working_dir = store.get_state().cwd
 
     write_tools = {
-        "FileEdit", "FileWrite", "ApplyPatch", "NotebookEdit",
-        "CronCreate", "CronDelete", "CronUpdate",
+        "FileEdit",
+        "FileWrite",
+        "ApplyPatch",
+        "NotebookEdit",
+        "CronCreate",
+        "CronDelete",
+        "CronUpdate",
     }
     tools = get_all_tools()
     if read_only:
@@ -697,6 +767,7 @@ async def run_headless(
     # Load initial messages if provided (for session continuity)
     if initial_messages:
         from ..types.message import deserialize_messages
+
         if isinstance(initial_messages[0], dict):
             query_engine.messages = deserialize_messages(initial_messages)
         else:
@@ -723,7 +794,9 @@ async def run_headless(
             turn += 1
             pending_tools: list[ToolUseMessage] = []
 
-            async for result in query_engine.submit_message(current_prompt, options={"temperature": 0.0}):
+            async for result in query_engine.submit_message(
+                current_prompt, options={"temperature": 0.0}
+            ):
                 msg = result.message
                 if isinstance(msg, AssistantMessage):
                     if isinstance(msg.content, str):
@@ -759,9 +832,7 @@ async def run_headless(
                         f"Tool execution has been blocked. You MUST provide your final answer NOW "
                         f"without any more tool calls."
                     )
-                    query_engine.add_tool_result(
-                        tool_msg.tool_use_id, forced_result, is_error=True
-                    )
+                    query_engine.add_tool_result(tool_msg.tool_use_id, forced_result, is_error=True)
                 current_prompt = (
                     "CRITICAL: You are in a tool-call loop. All pending tool calls were blocked. "
                     "Summarize what you have done so far and declare completion if the fix is applied. "
@@ -770,8 +841,13 @@ async def run_headless(
                 continue
 
             write_tool_names = {
-                "FileEdit", "FileWrite", "ApplyPatch", "NotebookEdit",
-                "CronCreate", "CronDelete", "CronUpdate",
+                "FileEdit",
+                "FileWrite",
+                "ApplyPatch",
+                "NotebookEdit",
+                "CronCreate",
+                "CronDelete",
+                "CronUpdate",
             }
             for tool_idx, tool_msg in enumerate(pending_tools, 1):
                 if not json_mode:
@@ -796,6 +872,7 @@ async def run_headless(
                     context = ToolUseContext(
                         get_app_state=store.get_state, set_app_state=lambda f: store.set_state(f)
                     )
+
                     def _on_progress_headless(data):
                         if isinstance(data, dict) and data.get("type") == "bash_output":
                             line = data.get("line", "")
@@ -817,11 +894,16 @@ async def run_headless(
                     # --- Environment diagnosis (headless mode) ---
                     # Skip if nested inside another diagnosis (prevents recursive dead loops)
                     already_diagnosing = _env_diagnosis_ctx.get()
-                    if not already_diagnosing and not disable_env_diagnosis and env_diagnosis_count < 1:
+                    if (
+                        not already_diagnosing
+                        and not disable_env_diagnosis
+                        and env_diagnosis_count < 1
+                    ):
                         from pilotcode.utils.env_diagnosis import (
                             looks_like_environment_error,
                             diagnose_and_fix_environment,
                         )
+
                         if looks_like_environment_error(result_content):
                             env_diagnosis_count += 1
                             fixed = await diagnose_and_fix_environment(
@@ -946,8 +1028,8 @@ async def run_headless_with_planning(
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
-                encoding='utf-8',
-                errors='replace',
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
             )
             if result.returncode == 0:
@@ -964,9 +1046,19 @@ async def run_headless_with_planning(
                 timeout=5,
             )
             if check.returncode != 0:
-                subprocess.run(["git", "init"], cwd=work_dir, capture_output=True, text=True, timeout=10)
-                subprocess.run(["git", "add", "-A"], cwd=work_dir, capture_output=True, text=True, timeout=10)
-                subprocess.run(["git", "commit", "-m", "initial", "--allow-empty"], cwd=work_dir, capture_output=True, text=True, timeout=10)
+                subprocess.run(
+                    ["git", "init"], cwd=work_dir, capture_output=True, text=True, timeout=10
+                )
+                subprocess.run(
+                    ["git", "add", "-A"], cwd=work_dir, capture_output=True, text=True, timeout=10
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", "initial", "--allow-empty"],
+                    cwd=work_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
                 result = subprocess.run(
                     ["git", "diff"],
                     cwd=work_dir,
@@ -1103,7 +1195,9 @@ Based on the discoveries above, proceed DIRECTLY to implement the fix. Do NOT re
             progress_callback=progress_callback,
             env_diagnosis_count=env_diagnosis_count,
         )
-        fallback_result["env_diagnosis_count"] = fallback_result.get("env_diagnosis_count", env_diagnosis_count)
+        fallback_result["env_diagnosis_count"] = fallback_result.get(
+            "env_diagnosis_count", env_diagnosis_count
+        )
         return fallback_result
 
     # Validate plan: ensure referenced files exist in the repo
@@ -1131,13 +1225,15 @@ Proceed DIRECTLY to implement the fix. Make the code changes immediately.
             progress_callback=progress_callback,
             env_diagnosis_count=env_diagnosis_count,
         )
-        fallback_result["env_diagnosis_count"] = fallback_result.get("env_diagnosis_count", env_diagnosis_count)
+        fallback_result["env_diagnosis_count"] = fallback_result.get(
+            "env_diagnosis_count", env_diagnosis_count
+        )
         return fallback_result
 
     # Persist valid plan to external cache
     _save_plan_to_cache(plan, effective_cwd)
 
-    plan_items = plan.get('files_to_modify', [])
+    plan_items = plan.get("files_to_modify", [])
     _log(f"[PLAN] {len(plan_items)} files identified")
     for item in plan_items:
         _log(f"  - {item.get('file')}: {item.get('change')}")
@@ -1146,15 +1242,23 @@ Proceed DIRECTLY to implement the fix. Make the code changes immediately.
     # PHASE 3: EXECUTION
     # ========================================================================
     num_plan_items = len(plan_items)
-    execution_max_iterations = max(max_iterations, num_plan_items * 20) if num_plan_items > 0 else max_iterations
+    execution_max_iterations = (
+        max(max_iterations, num_plan_items * 20) if num_plan_items > 0 else max_iterations
+    )
     _log(f"[AGENT] Phase 3/4: Executing fix (budget: {execution_max_iterations} turns)")
 
     planned_files = [item.get("file") for item in plan_items if item.get("file")]
-    planned_files_str = "\n".join(f"  - {f}" for f in planned_files) if planned_files else "  (none specified)"
+    planned_files_str = (
+        "\n".join(f"  - {f}" for f in planned_files) if planned_files else "  (none specified)"
+    )
     call_sites = plan.get("analysis", {}).get("affected_call_sites", [])
-    call_sites_str = "\n".join(f"  - {s}" for s in call_sites) if call_sites else "  (none specified)"
+    call_sites_str = (
+        "\n".join(f"  - {s}" for s in call_sites) if call_sites else "  (none specified)"
+    )
     relevant_tests = plan.get("analysis", {}).get("relevant_tests", [])
-    tests_str = "\n".join(f"  - {t}" for t in relevant_tests) if relevant_tests else "  (none specified)"
+    tests_str = (
+        "\n".join(f"  - {t}" for t in relevant_tests) if relevant_tests else "  (none specified)"
+    )
 
     execution_prompt_base = f"""\
 {prompt}
@@ -1222,12 +1326,12 @@ CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste t
         planned_files = [item.get("file") for item in plan_items if item.get("file")]
 
         # Compute diff stats for quality checks
-        diff_hunks = len(re.findall(r'^@@ ', current_diff, re.MULTILINE))
-        diff_lines = current_diff.count('\n')
-        has_double_escape = '\\\\' in current_diff
+        diff_hunks = len(re.findall(r"^@@ ", current_diff, re.MULTILINE))
+        diff_lines = current_diff.count("\n")
+        has_double_escape = "\\\\" in current_diff
         # Count docstring/comment/whitespace-only changes
         docstring_changes = len(re.findall(r'^[\+\-].*"""|^[\+\-].*# ', current_diff, re.MULTILINE))
-        whitespace_changes = len(re.findall(r'^[\+\-]\s*$|^[\+\-]\s+$', current_diff, re.MULTILINE))
+        whitespace_changes = len(re.findall(r"^[\+\-]\s*$|^[\+\-]\s+$", current_diff, re.MULTILINE))
 
         verification_prompt = f"""\
 You are a verification specialist. Focus ONLY on the planned files listed below.
@@ -1287,7 +1391,9 @@ Output ONLY the JSON object.
             break
 
         missing = verification.get("missing_changes", [])
-        print(f"[VERIFY] complete={verification.get('complete')}, summary={verification.get('summary')}")
+        print(
+            f"[VERIFY] complete={verification.get('complete')}, summary={verification.get('summary')}"
+        )
         for m in missing:
             print(f"  - MISSING: {m.get('file')}: {m.get('issue')}")
 
@@ -1300,7 +1406,9 @@ Output ONLY the JSON object.
                 if previous_missing_count is not None and current_missing < previous_missing_count:
                     if effective_max_attempts < max(5, max_plan_attempts):
                         effective_max_attempts += 1
-                        _log(f"[VERIFY] Progress detected ({previous_missing_count} -> {current_missing} missing). Extending budget to {effective_max_attempts}.")
+                        _log(
+                            f"[VERIFY] Progress detected ({previous_missing_count} -> {current_missing} missing). Extending budget to {effective_max_attempts}."
+                        )
                 previous_missing_count = current_missing
 
                 extra = "\n\n=== CRITICAL: PREVIOUS ATTEMPT FAILED VERIFICATION ===\n"
@@ -1312,7 +1420,9 @@ Output ONLY the JSON object.
                     extra += "\n- REMOVE these unintended changes:\n"
                     for u in unintended:
                         extra += f"  - {u}\n"
-                extra += "\nBefore declaring completion, ensure ALL verification issues are resolved.\n"
+                extra += (
+                    "\nBefore declaring completion, ensure ALL verification issues are resolved.\n"
+                )
                 current_prompt = execution_prompt_base + extra
             else:
                 _log("[VERIFY] No specific missing items listed, using best effort")
@@ -1327,6 +1437,7 @@ Output ONLY the JSON object.
 
     if json_mode:
         import json as json_mod
+
         print(json_mod.dumps(best_result, indent=2, default=str))
 
     return best_result
@@ -1391,8 +1502,8 @@ def _get_git_diff(work_dir: str) -> str:
             cwd=work_dir,
             capture_output=True,
             text=True,
-            encoding='utf-8',
-            errors='replace',
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         if result.returncode == 0:
@@ -1409,9 +1520,19 @@ def _get_git_diff(work_dir: str) -> str:
             timeout=5,
         )
         if check.returncode != 0:
-            subprocess.run(["git", "init"], cwd=work_dir, capture_output=True, text=True, timeout=10)
-            subprocess.run(["git", "add", "-A"], cwd=work_dir, capture_output=True, text=True, timeout=10)
-            subprocess.run(["git", "commit", "-m", "initial", "--allow-empty"], cwd=work_dir, capture_output=True, text=True, timeout=10)
+            subprocess.run(
+                ["git", "init"], cwd=work_dir, capture_output=True, text=True, timeout=10
+            )
+            subprocess.run(
+                ["git", "add", "-A"], cwd=work_dir, capture_output=True, text=True, timeout=10
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "initial", "--allow-empty"],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
             result = subprocess.run(
                 ["git", "diff"],
                 cwd=work_dir,
@@ -1429,10 +1550,10 @@ def _check_patch_syntax(work_dir: str, patch: str) -> tuple[bool, str]:
     """Check modified Python files for syntax errors. Returns (ok, error_message)."""
     if not patch:
         return True, ""
-    files = set(re.findall(r'^diff --git a/(.+?) b/', patch, re.MULTILINE))
+    files = set(re.findall(r"^diff --git a/(.+?) b/", patch, re.MULTILINE))
     errors = []
     for f in files:
-        if not f.endswith('.py'):
+        if not f.endswith(".py"):
             continue
         filepath = os.path.join(work_dir, f)
         if not os.path.exists(filepath):
@@ -1451,15 +1572,19 @@ def _is_patch_trivial(work_dir: str, patch: str) -> bool:
     if not patch:
         return True
     lines = patch.splitlines()
-    code_lines = [l for l in lines if (l.startswith('+') or l.startswith('-')) and not l.startswith(('+++', '---'))]
+    code_lines = [
+        l
+        for l in lines
+        if (l.startswith("+") or l.startswith("-")) and not l.startswith(("+++", "---"))
+    ]
     if len(code_lines) <= 3:
         return True
 
-    added = [l for l in code_lines if l.startswith('+')]
-    has_new_import = any('import ' in l or 'from ' in l for l in added)
-    has_new_symbol = any('def ' in l or 'class ' in l for l in added)
-    has_signature_change = any('def ' in l for l in code_lines)
-    has_new_file = bool(len(set(re.findall(r'^diff --git a/(.+?) b/', patch, re.MULTILINE))) > 1)
+    added = [l for l in code_lines if l.startswith("+")]
+    has_new_import = any("import " in l or "from " in l for l in added)
+    has_new_symbol = any("def " in l or "class " in l for l in added)
+    has_signature_change = any("def " in l for l in code_lines)
+    has_new_file = bool(len(set(re.findall(r"^diff --git a/(.+?) b/", patch, re.MULTILINE))) > 1)
 
     if has_new_import or has_new_symbol or has_signature_change or has_new_file:
         return False
@@ -1479,7 +1604,9 @@ def _extract_discoveries_from_messages(messages: list[dict[str, Any]]) -> str:
         role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
         if role == "tool":
             name = msg.get("name", "") if isinstance(msg, dict) else getattr(msg, "name", "")
-            content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+            content = (
+                msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+            )
             if name in ("FileRead", "Grep", "CodeSearch", "Glob"):
                 content_str = str(content)[:600].replace("\n", " ")
                 discoveries.append(f"- [{name}] {content_str}")
@@ -1619,9 +1746,11 @@ def _compress_messages_for_retry(
             compressed.append({"type": msg_type, "content": summary_text})
         else:
             from ..types.message import UserMessage
+
             compressed.append(UserMessage(content=summary_text))
     else:
         from ..types.message import UserMessage
+
         compressed.append(UserMessage(content=summary_text))
 
     return compressed
@@ -1647,7 +1776,12 @@ async def run_headless_with_feedback(
     If patch is improving, we extend the budget automatically.
     """
     effective_cwd = cwd if cwd else str(os.getcwd())
-    best_result: dict[str, Any] = {"response": "", "tool_calls": [], "success": True, "messages": []}
+    best_result: dict[str, Any] = {
+        "response": "",
+        "tool_calls": [],
+        "success": True,
+        "messages": [],
+    }
     current_prompt = prompt
     messages: list[dict[str, Any]] | None = None
 
@@ -1707,9 +1841,13 @@ async def run_headless_with_feedback(
             if improved and effective_max_rounds < max(5, max_rounds):
                 effective_max_rounds += 1
                 if progress_callback:
-                    progress_callback("[PERSIST] Response improved but still empty — extending budget")
+                    progress_callback(
+                        "[PERSIST] Response improved but still empty — extending budget"
+                    )
                 else:
-                    print("[PERSIST] Response improved but still empty — extending budget", flush=True)
+                    print(
+                        "[PERSIST] Response improved but still empty — extending budget", flush=True
+                    )
             if progress_callback:
                 progress_callback("[PERSIST] Empty patch detected — continuing")
             else:
@@ -1763,9 +1901,14 @@ async def run_headless_with_feedback(
     final_patch = _get_git_diff(effective_cwd)
     if final_patch and _is_patch_trivial(effective_cwd, final_patch) and not use_planning:
         if progress_callback:
-            progress_callback("[PERSIST] Patch looks trivial for this task — falling back to planning mode")
+            progress_callback(
+                "[PERSIST] Patch looks trivial for this task — falling back to planning mode"
+            )
         else:
-            print("[PERSIST] Patch looks trivial for this task — falling back to planning mode", flush=True)
+            print(
+                "[PERSIST] Patch looks trivial for this task — falling back to planning mode",
+                flush=True,
+            )
         plan_result = await run_headless_with_planning(
             prompt,
             auto_allow=auto_allow,
@@ -1778,6 +1921,7 @@ async def run_headless_with_feedback(
 
     if json_mode:
         import json as json_mod
+
         print(json_mod.dumps(best_result, indent=2, default=str))
 
     return best_result

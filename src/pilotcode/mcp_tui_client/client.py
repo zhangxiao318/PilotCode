@@ -86,12 +86,24 @@ class TUITestClient:
             Tuple of (server_command, server_type)
         """
         # Try mcp-terminator first (preferred - more modern)
-        result = subprocess.run(["which", "mcp-terminator"], capture_output=True, text=True)
+        result = subprocess.run(
+            ["which", "mcp-terminator"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if result.returncode == 0:
             return ("mcp-terminator", "terminator")
 
         # Try mcp-tui-test
-        result = subprocess.run(["which", "mcp-tui-test"], capture_output=True, text=True)
+        result = subprocess.run(
+            ["which", "mcp-tui-test"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if result.returncode == 0:
             return ("mcp-tui-test", "tui-test")
 

@@ -158,6 +158,7 @@ def get_model_context_window(model_name: str | None = None) -> int:
     """
     if model_name is None:
         from .config import get_global_config
+
         model_name = get_global_config().default_model
 
     info = get_model_info(model_name)
@@ -177,6 +178,7 @@ def get_model_max_tokens(model_name: str | None = None) -> int:
     """
     if model_name is None:
         from .config import get_global_config
+
         model_name = get_global_config().default_model
 
     info = get_model_info(model_name)

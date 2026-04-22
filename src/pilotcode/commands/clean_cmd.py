@@ -21,7 +21,9 @@ async def clean_command(args: list[str], context: CommandContext) -> str:
 
         cmd.append("-d")  # Remove untracked directories
 
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=context.cwd)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=context.cwd
+        )
 
         if result.returncode == 0:
             output = result.stdout

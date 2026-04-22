@@ -110,15 +110,20 @@ class TestBashTool:
     @pytest.mark.asyncio
     async def test_multiline_output(self, bash_tool, tool_context, allow_callback):
         """Test multiline output handling."""
+        # Use echo command for cross-platform compatibility
+        # Windows doesn't have 'seq' command
         result = await run_tool_test(
             "Bash",
-            {"command": "seq 1 5", "description": "Test multiline"},
+            {
+                "command": "echo 1 && echo 2 && echo 3 && echo 4 && echo 5",
+                "description": "Test multiline",
+            },
             tool_context,
             allow_callback,
         )
 
         assert not result.is_error
-        lines = result.data.stdout.strip().split("\n")
+        lines = [line for line in result.data.stdout.strip().split("\n") if line.strip()]
         assert len(lines) == 5
         assert "1" in lines[0]
         assert "5" in lines[-1]

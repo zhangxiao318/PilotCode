@@ -10,7 +10,12 @@ async def diff_command(args: list[str], context: CommandContext) -> str:
         # Diff specific files or commits
         try:
             result = subprocess.run(
-                ["git", "diff"] + args, capture_output=True, text=True, cwd=context.cwd
+                ["git", "diff"] + args,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0:
@@ -28,7 +33,12 @@ async def diff_command(args: list[str], context: CommandContext) -> str:
         # Show current diff
         try:
             result = subprocess.run(
-                ["git", "diff"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "diff"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0:
