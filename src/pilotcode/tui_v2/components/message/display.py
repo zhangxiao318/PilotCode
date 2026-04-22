@@ -16,60 +16,99 @@ from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
 _internal_clipboard: str = ""
 
 
-def _copy_to_clipboard_impl(text: str) -> bool:
+def _copy_to_clipboard_impl(text: str) -> str | None:
     """Copy text to system clipboard.
 
     Tries multiple methods in order:
     1. pyperclip (cross-platform)
-    2. OSC 52 (terminal clipboard - works over SSH)
-    3. xclip (Linux)
-    4. pbcopy (macOS)
-    5. clip.exe (Windows)
+    2. PowerShell Set-Clipboard (Windows)
+    3. clip.exe (Windows fallback)
+    4. xclip (Linux)
+    5. pbcopy (macOS)
+    6. OSC 52 (terminal clipboard - works over SSH)
+
+    Returns:
+        Method name if successful, None if all failed.
     """
     try:
         import subprocess
         import platform
 
-        # Try pyperclip first (most reliable)
+        system = platform.system()
+
+        # Try pyperclip first (most reliable cross-platform)
         try:
             import pyperclip
-
             pyperclip.copy(text)
-            return True
+            return "pyperclip"
         except ImportError:
             pass
 
-        # Try OSC 52 (works over SSH if terminal supports it)
-        try:
-            _osc52_copy(text)
-            return True
-        except Exception:
-            pass
+        # Windows: Try PowerShell Set-Clipboard first
+        if system == "Windows":
+            try:
+                import tempfile
+                import os
+                
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+                    f.write(text)
+                    temp_file = f.name
+                
+                # Use PowerShell to read file and set clipboard
+                ps_cmd = f"Get-Content -Path '{temp_file}' -Raw | Set-Clipboard"
+                subprocess.run(
+                    ["powershell.exe", "-Command", ps_cmd],
+                    check=True,
+                    capture_output=True,
+                    timeout=5
+                )
+                
+                os.unlink(temp_file)
+                return "powershell"
+            except Exception:
+                pass
+            
+            # Fallback to clip.exe
+            try:
+                encoded_text = text.encode("utf-16-le")
+                subprocess.run(["clip.exe"], input=encoded_text, check=True, capture_output=True)
+                return "clip.exe (utf-16)"
+            except subprocess.CalledProcessError:
+                subprocess.run(["clip.exe"], input=text.encode("utf-8"), check=True, capture_output=True)
+                return "clip.exe (utf-8)"
 
-        # Platform-specific fallbacks
-        system = platform.system()
-        try:
-            if system == "Linux":
+        # Linux: Try xclip
+        if system == "Linux":
+            try:
                 subprocess.run(
                     ["xclip", "-selection", "clipboard"],
                     input=text.encode(),
                     check=True,
                     capture_output=True,
                 )
-                return True
-            elif system == "Darwin":  # macOS
+                return "xclip"
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+
+        # macOS: Try pbcopy
+        if system == "Darwin":
+            try:
                 subprocess.run(["pbcopy"], input=text.encode(), check=True, capture_output=True)
-                return True
-            elif system == "Windows":
-                subprocess.run(["clip.exe"], input=text.encode(), check=True, capture_output=True)
-                return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
+                return "pbcopy"
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+
+        # Last resort: OSC 52 (works over SSH if terminal supports it)
+        try:
+            _osc52_copy(text)
+            return "OSC 52"
+        except Exception:
             pass
 
     except Exception:
         pass
 
-    return False
+    return None
 
 
 def _osc52_copy(text: str) -> None:
@@ -95,12 +134,13 @@ def _osc52_copy(text: str) -> None:
     sys.stdout.flush()
 
 
-def copy_to_clipboard(text: str, use_internal: bool = True) -> tuple[bool, bool]:
+def copy_to_clipboard(text: str, use_internal: bool = True) -> tuple[bool, bool, str]:
     """Copy text to clipboard.
 
     Returns:
-        (system_success, used_internal): Whether system clipboard succeeded,
-                                          and whether internal buffer was used.
+        (system_success, used_internal, method): Whether system clipboard succeeded,
+                                                  whether internal buffer was used,
+                                                  and the method used.
     """
     global _internal_clipboard
 
@@ -108,11 +148,12 @@ def copy_to_clipboard(text: str, use_internal: bool = True) -> tuple[bool, bool]
     if use_internal:
         _internal_clipboard = text
 
-    # Try system clipboard
-    if _copy_to_clipboard_impl(text):
-        return True, False
+    # Try system clipboard with method tracking
+    method = _copy_to_clipboard_impl(text)
+    if method:
+        return True, False, method
 
-    return False, use_internal
+    return False, use_internal, "internal"
 
 
 def get_internal_clipboard() -> str:
@@ -357,10 +398,10 @@ class MessageDisplay(Static):
             return
 
         content = self.message.content or ""
-        system_ok, used_internal = copy_to_clipboard(content)
+        system_ok, used_internal, method = copy_to_clipboard(content)
 
         if system_ok:
-            self.app.notify("📋 Copied to clipboard", severity="information", timeout=2)
+            self.app.notify(f"📋 Copied via {method}", severity="information", timeout=2)
         elif used_internal:
             self.app.notify(
                 "⚠️ Copied to internal buffer (clipboard unavailable)",
@@ -627,9 +668,9 @@ class TextViewerDialog(Screen):
 
     def _copy_content(self):
         """Copy content to clipboard."""
-        system_ok, used_internal = copy_to_clipboard(self.content)
+        system_ok, used_internal, method = copy_to_clipboard(self.content)
         if system_ok:
-            self.app.notify("📋 Copied to clipboard (OSC 52)", severity="information", timeout=2)
+            self.app.notify(f"📋 Copied via {method}", severity="information", timeout=2)
         elif used_internal:
             self.app.notify("⚠️ Copied to internal buffer", severity="warning", timeout=2)
         else:
