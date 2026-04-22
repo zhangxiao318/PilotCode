@@ -5,6 +5,13 @@ REM        pilotcode           # Start main application
 REM        pilotcode --tui     # Start TUI mode
 REM        pilotcode configure # Run configuration wizard
 
+REM Prevent "Terminate batch job" prompt on Ctrl+C
+SETLOCAL EnableExtensions
+IF ERRORLEVEL 1 (
+    echo ERROR: Unable to enable extensions
+    exit /b 1
+)
+
 chcp 65001 >nul
 
 REM Set UTF-8 encoding for proper international character support
@@ -22,18 +29,7 @@ if exist ".venv\Scripts\activate.bat" (
 )
 
 REM Run PilotCode
-if "%~1"=="" (
-    REM No arguments: start main application (default)
-    python -m pilotcode
-) else (
-    set "FIRST_ARG=%~1"
-    setlocal EnableDelayedExpansion
-    if "!FIRST_ARG:~0,2!"=="--" (
-        REM Arguments start with -- (options): pass through directly
-        python -m pilotcode %*
-    ) else (
-        REM Arguments start with a command: pass through as-is
-        python -m pilotcode %*
-    )
-    endlocal
-)
+python -m pilotcode %*
+
+REM Exit with Python's exit code
+EXIT /B %ERRORLEVEL%

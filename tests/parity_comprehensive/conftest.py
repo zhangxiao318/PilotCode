@@ -2,7 +2,9 @@
 
 import asyncio
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -16,6 +18,27 @@ from pilotcode.permissions.permission_manager import (
 )
 from pilotcode.tools.base import ToolResult, ToolUseContext
 from pilotcode.tools.registry import get_all_tools, get_tool_by_name
+
+
+@pytest.fixture
+def project_root() -> Path:
+    """Return the project root directory."""
+    return Path(__file__).parent.parent.parent
+
+
+@pytest.fixture
+def tmp_path(project_root) -> Path:
+    """Create a temporary directory within the project for file tests.
+
+    Overrides pytest's default tmp_path to ensure files are created within
+    the workspace for security compliance.
+    """
+    tmp_base = project_root / "tests" / "tmp"
+    tmp_base.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix="parity_test_", dir=str(tmp_base))
+    path = Path(tmp)
+    yield path
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 async def _always_allow(*args, **kwargs):

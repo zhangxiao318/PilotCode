@@ -211,9 +211,7 @@ class ModelClient:
         #    Returns: default_generation_settings.n_ctx, model_path, etc.
         # ------------------------------------------------------------------
         try:
-            resp = await self.client.get(
-                f"{root_url}/props", timeout=5.0, follow_redirects=True
-            )
+            resp = await self.client.get(f"{root_url}/props", timeout=5.0, follow_redirects=True)
             if resp.status_code == 200:
                 data = resp.json()
                 dgs = data.get("default_generation_settings", {})
@@ -320,15 +318,25 @@ class ModelClient:
                         else:
                             model_data = data
                         break
-                except (httpx.HTTPStatusError, httpx.RequestError,
-                        json.JSONDecodeError, asyncio.TimeoutError):
+                except (
+                    httpx.HTTPStatusError,
+                    httpx.RequestError,
+                    json.JSONDecodeError,
+                    asyncio.TimeoutError,
+                ):
                     continue
 
             if model_data:
                 # context window
                 if "context_window" not in cap:
-                    for key in ("context_length", "context_window", "max_model_len",
-                                "max_context_length", "num_ctx", "n_ctx"):
+                    for key in (
+                        "context_length",
+                        "context_window",
+                        "max_model_len",
+                        "max_context_length",
+                        "num_ctx",
+                        "n_ctx",
+                    ):
                         val = model_data.get(key)
                         if val is not None:
                             try:
@@ -340,9 +348,14 @@ class ModelClient:
                         for nested_key in ("meta", "info", "details", "capabilities"):
                             nested = model_data.get(nested_key)
                             if isinstance(nested, dict):
-                                for key in ("context_length", "context_window",
-                                            "max_model_len", "max_context_length",
-                                            "num_ctx", "n_ctx"):
+                                for key in (
+                                    "context_length",
+                                    "context_window",
+                                    "max_model_len",
+                                    "max_context_length",
+                                    "num_ctx",
+                                    "n_ctx",
+                                ):
                                     val = nested.get(key)
                                     if val is not None:
                                         try:
@@ -389,7 +402,11 @@ class ModelClient:
                         for nested_key in ("meta", "info", "details", "capabilities"):
                             nested = model_data.get(nested_key)
                             if isinstance(nested, dict):
-                                for key in ("supports_tools", "supports_function_calling", "tool_call"):
+                                for key in (
+                                    "supports_tools",
+                                    "supports_function_calling",
+                                    "tool_call",
+                                ):
                                     val = nested.get(key)
                                     if val is not None:
                                         cap["supports_tools"] = bool(val)

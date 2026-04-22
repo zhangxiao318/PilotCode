@@ -100,12 +100,12 @@ class UserQuestionManager:
         request_id = f"question_{uuid.uuid4().hex[:12]}"
         future = asyncio.get_event_loop().create_future()
         self._pending[request_id] = future
-        self._request_info[request_id] = UserQuestionRequest(
-            request_id, question, options
-        )
+        self._request_info[request_id] = UserQuestionRequest(request_id, question, options)
         return request_id, future
 
-    def resolve_request(self, request_id: str, response: str) -> tuple[bool, UserQuestionRequest | None]:
+    def resolve_request(
+        self, request_id: str, response: str
+    ) -> tuple[bool, UserQuestionRequest | None]:
         """Resolve a user question request. Returns (success, request_info)."""
         info = self._request_info.pop(request_id, None)
         future = self._pending.pop(request_id, None)
@@ -494,7 +494,9 @@ class WebSocketManager:
             max_iterations = 50
             iteration = 0
             is_continue_query = False  # Track if this is an internal continuation
-            consecutive_permission_denied = 0  # Track consecutive permission denials to prevent loops
+            consecutive_permission_denied = (
+                0  # Track consecutive permission denials to prevent loops
+            )
 
             while iteration < max_iterations:
                 iteration += 1
@@ -512,7 +514,7 @@ class WebSocketManager:
                     if asyncio.current_task().cancelled():
                         print("[Query] Task cancelled during streaming, breaking")
                         raise asyncio.CancelledError()
-                    
+
                     msg = result.message
                     msg_type = msg.__class__.__name__
 
@@ -619,16 +621,18 @@ class WebSocketManager:
                     if asyncio.current_task().cancelled():
                         print("[Query] Task cancelled before tool execution, breaking")
                         raise asyncio.CancelledError()
-                    
+
                     # Special handling for AskUser tool in Web mode
                     # Check both primary name and aliases
                     ask_user_aliases = {"AskUser", "ask", "question"}
-                    print(f"[AskUser] Checking tool: {tool_msg.name}, aliases: {ask_user_aliases}, match: {tool_msg.name in ask_user_aliases}")
+                    print(
+                        f"[AskUser] Checking tool: {tool_msg.name}, aliases: {ask_user_aliases}, match: {tool_msg.name in ask_user_aliases}"
+                    )
                     if tool_msg.name in ask_user_aliases:
                         question = tool_msg.input.get("question", "")
                         options = tool_msg.input.get("options")
                         print(f"[AskUser] Intercepted! Question: {question[:50]}...")
-                        
+
                         # Send tool use notification
                         await self.send_to_client(
                             websocket,
@@ -639,17 +643,17 @@ class WebSocketManager:
                                 "tool_input": tool_msg.input,
                             },
                         )
-                        
+
                         # Request user input via WebSocket
                         user_response = await self.request_user_input_via_websocket(
                             websocket, question, options
                         )
-                        
+
                         # Create tool result
                         from pilotcode.tools.base import ToolResult
                         from pilotcode.tools.ask_user_tool import AskUserOutput
                         from pilotcode.permissions.tool_executor import ToolExecutionResult
-                        
+
                         result_data = AskUserOutput(response=user_response, question=question)
                         exec_result = ToolExecutionResult(
                             success=True,
@@ -692,9 +696,14 @@ class WebSocketManager:
                     else:
                         result_content = exec_result.message
                         # Check if this is a permission denial
-                        if "Permission denied" in result_content or "permission" in result_content.lower():
+                        if (
+                            "Permission denied" in result_content
+                            or "permission" in result_content.lower()
+                        ):
                             consecutive_permission_denied += 1
-                            print(f"[Query] Permission denied count: {consecutive_permission_denied}")
+                            print(
+                                f"[Query] Permission denied count: {consecutive_permission_denied}"
+                            )
                             if consecutive_permission_denied >= 2:
                                 # Stop the loop - user has denied permission multiple times
                                 await self.send_to_client(

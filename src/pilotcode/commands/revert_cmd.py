@@ -37,7 +37,14 @@ async def revert_command(args: list[str], context: CommandContext) -> str:
                 cmd.append("--no-edit")
             cmd.append(commit)
 
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=context.cwd)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
+            )
 
             if result.returncode == 0:
                 return f"Reverted {commit}:\n{result.stdout}"

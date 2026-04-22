@@ -39,43 +39,39 @@ def _copy_to_clipboard_impl(text: str) -> str | None:
         # Try pyperclip first (most reliable cross-platform)
         try:
             import pyperclip
+
             pyperclip.copy(text)
             return "pyperclip"
         except ImportError:
             pass
 
-        # Windows: Try PowerShell Set-Clipboard first
+        # Windows: Try PowerShell Set-Clipboard with proper UTF-8 handling
         if system == "Windows":
             try:
-                import tempfile
-                import os
-                
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
-                    f.write(text)
-                    temp_file = f.name
-                
-                # Use PowerShell to read file and set clipboard
-                ps_cmd = f"Get-Content -Path '{temp_file}' -Raw | Set-Clipboard"
+                # Use PowerShell with UTF-8 encoding to set clipboard directly
+                # Escape single quotes in text for PowerShell
+                escaped_text = text.replace("'", "''")
+                ps_cmd = f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Set-Clipboard -Value '{escaped_text}'"
                 subprocess.run(
                     ["powershell.exe", "-Command", ps_cmd],
                     check=True,
                     capture_output=True,
-                    timeout=5
+                    timeout=5,
                 )
-                
-                os.unlink(temp_file)
                 return "powershell"
             except Exception:
                 pass
-            
-            # Fallback to clip.exe
+
+            # Fallback: use clip.exe with UTF-16 LE (Windows native Unicode)
             try:
-                encoded_text = text.encode("utf-16-le")
+                # Add BOM for UTF-16 LE to help Windows recognize encoding
+                import codecs
+
+                encoded_text = codecs.BOM_UTF16_LE + text.encode("utf-16-le")
                 subprocess.run(["clip.exe"], input=encoded_text, check=True, capture_output=True)
                 return "clip.exe (utf-16)"
             except subprocess.CalledProcessError:
-                subprocess.run(["clip.exe"], input=text.encode("utf-8"), check=True, capture_output=True)
-                return "clip.exe (utf-8)"
+                pass
 
         # Linux: Try xclip
         if system == "Linux":
@@ -437,7 +433,7 @@ class MessageDisplay(Static):
             return
 
         content = self.message.content or ""
-        title = f"Message ({self.message.type.value}) - Double-click to select, Ctrl+D to close"
+        title = f"Message ({self.message.type.value}) - Ctrl+C=Copy, Esc=Close"
 
         self.app.push_screen(TextViewerDialog(content, title))
 
@@ -496,7 +492,7 @@ class CompactToolDisplay(Static):
 
     def _open_text_viewer(self):
         """Open text viewer dialog for mouse selection and copying."""
-        title = f"Tool Output ({self.tool_name}) - Double-click to select, Ctrl+D to close"
+        title = f"Tool Output ({self.tool_name}) - Ctrl+C=Copy, Esc=Close"
         self.app.push_screen(TextViewerDialog(self.full_result, title))
 
 
@@ -630,7 +626,7 @@ class TextViewerDialog(Screen):
 
     BINDINGS = [
         ("escape", "close", "Close"),
-        ("ctrl+c", "copy_close", "Copy & Close"),
+        ("ctrl+c", "copy", "Copy"),
     ]
 
     def __init__(self, content: str, title: str = "Message Content", **kwargs):
@@ -656,10 +652,41 @@ class TextViewerDialog(Screen):
         """Focus the text area on mount."""
         text_area = self.query_one(TextArea)
         text_area.focus()
+        # Ignore Ctrl+C signal on Windows to prevent batch job termination
+        import signal
+
+        self._old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    def on_unmount(self):
+        """Restore signal handler when dialog closes."""
+        import signal
+
+        if hasattr(self, "_old_handler"):
+            signal.signal(signal.SIGINT, self._old_handler)
+
+    def on_key(self, event):
+        """Handle key events - prevent Ctrl+C from exiting."""
+        # Check for Ctrl+C (different representations on different platforms)
+        # Windows: ctrl+@ with character \x00, Linux/Mac: ctrl+c
+        is_ctrl_c = (
+            event.key == "ctrl+c"
+            or event.key == "ctrl+@"
+            or event.character == "\x03"  # ASCII ETX (Ctrl+C)
+            or event.character == "\x00"  # Windows NUL from Ctrl+C
+        )
+        if is_ctrl_c:
+            # Always handle Ctrl+C as copy action, don't let it propagate
+            self.action_copy()
+            event.stop()
+            event.prevent_default()
 
     def action_close(self):
         """Close the dialog."""
         self.app.pop_screen()
+
+    def action_copy(self):
+        """Copy content without closing."""
+        self._copy_content()
 
     def action_copy_close(self):
         """Copy content and close."""

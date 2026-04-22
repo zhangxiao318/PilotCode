@@ -10,7 +10,12 @@ async def git_command(args: list[str], context: CommandContext) -> str:
         # Show git status
         try:
             result = subprocess.run(
-                ["git", "status", "-sb"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "status", "-sb"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
             if result.returncode == 0:
                 return f"Git status:\n{result.stdout}"
@@ -29,9 +34,20 @@ async def git_command(args: list[str], context: CommandContext) -> str:
 
         # Stage all and commit
         try:
-            subprocess.run(["git", "add", "-A"], capture_output=True, cwd=context.cwd)
+            subprocess.run(
+                ["git", "add", "-A"],
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
+            )
             result = subprocess.run(
-                ["git", "commit", "-m", message], capture_output=True, text=True, cwd=context.cwd
+                ["git", "commit", "-m", message],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
             if result.returncode == 0:
                 return f"Committed: {result.stdout}"
@@ -43,7 +59,12 @@ async def git_command(args: list[str], context: CommandContext) -> str:
     elif action == "diff":
         try:
             result = subprocess.run(
-                ["git", "diff"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "diff"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
             if result.returncode == 0:
                 if result.stdout:
@@ -62,7 +83,12 @@ async def git_command(args: list[str], context: CommandContext) -> str:
     elif action == "log":
         try:
             result = subprocess.run(
-                ["git", "log", "--oneline", "-10"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "log", "--oneline", "-10"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
             if result.returncode == 0:
                 return f"Recent commits:\n{result.stdout}"
@@ -74,7 +100,12 @@ async def git_command(args: list[str], context: CommandContext) -> str:
     elif action == "branch":
         try:
             result = subprocess.run(
-                ["git", "branch"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "branch"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
             if result.returncode == 0:
                 return f"Branches:\n{result.stdout}"

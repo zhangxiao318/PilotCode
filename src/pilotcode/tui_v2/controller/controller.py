@@ -425,9 +425,7 @@ class TUIController:
             # direct print() would corrupt the UI. We skip real-time bash
             # progress streaming here and rely on the final tool result.
             try:
-                result = await self.tool_executor.execute_tool_by_name(
-                    tool_name, params, ctx
-                )
+                result = await self.tool_executor.execute_tool_by_name(tool_name, params, ctx)
             finally:
                 # Restore original callback
                 self.tool_executor.permission_manager.set_permission_callback(original_callback)

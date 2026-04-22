@@ -12,6 +12,15 @@ from pilotcode.tools.file_edit_tool import (
 )
 
 
+@pytest.fixture
+def temp_file_in_project(temp_dir):
+    """Create a temporary file within the project directory for testing."""
+    file_path = temp_dir / "test_edit.txt"
+    file_path.write_text("hello world\nsecond line\nthird line\n")
+    yield str(file_path)
+    # Cleanup handled by temp_dir fixture
+
+
 class TestUnifiedDiffGeneration:
     """Test unified diff generation."""
 
@@ -98,16 +107,8 @@ class TestUnifiedDiffGeneration:
 class TestEditFileContentWithDiff:
     """Test edit_file_content with diff output."""
 
-    @pytest.fixture
-    def temp_file(self):
-        """Create a temporary file for testing."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("hello world\nsecond line\nthird line\n")
-            path = f.name
-        yield path
-        os.unlink(path)
-
-    async def test_edit_generates_diff(self, temp_file):
+    async def test_edit_generates_diff(self, temp_file_in_project):
+        temp_file = temp_file_in_project
         """Test that editing generates a diff."""
         result = await edit_file_content(
             temp_file, old_string="hello world", new_string="hello Python"
@@ -120,7 +121,8 @@ class TestEditFileContentWithDiff:
         assert "-hello world" in result.diff
         assert "+hello Python" in result.diff
 
-    async def test_edit_preserves_content(self, temp_file):
+    async def test_edit_preserves_content(self, temp_file_in_project):
+        temp_file = temp_file_in_project
         """Test that editing actually modifies the file."""
         result = await edit_file_content(
             temp_file, old_string="second line", new_string="modified line"
@@ -133,7 +135,8 @@ class TestEditFileContentWithDiff:
         assert "modified line" in content
         assert "second line" not in content
 
-    async def test_edit_no_match_returns_error(self, temp_file):
+    async def test_edit_no_match_returns_error(self, temp_file_in_project):
+        temp_file = temp_file_in_project
         """Test editing with no match returns error."""
         result = await edit_file_content(
             temp_file, old_string="nonexistent string", new_string="replacement"
@@ -143,7 +146,8 @@ class TestEditFileContentWithDiff:
         assert result.error is not None
         assert result.diff is None
 
-    async def test_edit_multiple_replacements(self, temp_file):
+    async def test_edit_multiple_replacements(self, temp_file_in_project):
+        temp_file = temp_file_in_project
         """Test editing with multiple replacements."""
         # Create file with repeated content
         with open(temp_file, "w") as f:
@@ -154,7 +158,8 @@ class TestEditFileContentWithDiff:
         assert result.replacements_made == 3
         assert result.diff is not None
 
-    async def test_edit_with_expected_replacements(self, temp_file):
+    async def test_edit_with_expected_replacements(self, temp_file_in_project):
+        temp_file = temp_file_in_project
         """Test editing with expected replacements check."""
         result = await edit_file_content(
             temp_file, old_string="hello world", new_string="hello Python", expected_replacements=1
@@ -163,7 +168,8 @@ class TestEditFileContentWithDiff:
         assert result.replacements_made == 1
         assert result.error is None
 
-    async def test_edit_with_wrong_expected_replacements(self, temp_file):
+    async def test_edit_with_wrong_expected_replacements(self, temp_file_in_project):
+        temp_file = temp_file_in_project
         """Test editing with wrong expected replacements."""
         result = await edit_file_content(
             temp_file,
@@ -175,14 +181,13 @@ class TestEditFileContentWithDiff:
         assert result.replacements_made == 0
         assert "Expected 5 occurrences" in result.error
 
-    async def test_edit_nonexistent_file(self):
+    async def test_edit_nonexistent_file(self, temp_dir):
         """Test editing a nonexistent file."""
-        result = await edit_file_content(
-            "/nonexistent/path/file.txt", old_string="old", new_string="new"
-        )
+        nonexistent = temp_dir / "nonexistent" / "file.txt"
+        result = await edit_file_content(str(nonexistent), old_string="old", new_string="new")
 
         assert result.replacements_made == 0
-        assert "File not found" in result.error
+        assert "File not found" in result.error or "does not exist" in result.error
 
 
 class TestFileEditOutput:

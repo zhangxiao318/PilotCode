@@ -32,7 +32,9 @@ def is_windows() -> bool:
     return sys.platform == "win32"
 
 
-async def execute_powershell(command: str, timeout: int = 600, cwd: str | None = None) -> PowerShellOutput:
+async def execute_powershell(
+    command: str, timeout: int = 600, cwd: str | None = None
+) -> PowerShellOutput:
     """Execute a PowerShell command."""
     if not is_windows():
         # On non-Windows, try to use PowerShell Core (pwsh)

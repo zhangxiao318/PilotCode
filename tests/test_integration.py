@@ -231,14 +231,16 @@ class TestToolInputNormalization:
     """Tests that tool inputs are normalized correctly."""
 
     @pytest.mark.asyncio
-    async def test_path_to_file_path_mapping(self, auto_allow_permissions):
+    async def test_path_to_file_path_mapping(self, auto_allow_permissions, project_root):
         """LLM may send 'path' instead of 'file_path' for file tools."""
         from pilotcode.permissions.tool_executor import ToolExecutor
         from pilotcode.tools.base import ToolUseContext
-        import tempfile
+        import shutil
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            test_path = tmpdir + "/norm_test.txt"
+        tmpdir = project_root / "tests" / "tmp" / "test_integration_norm"
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            test_path = str(tmpdir / "norm_test.txt")
             executor = ToolExecutor()
             ctx = ToolUseContext()
 
@@ -257,3 +259,5 @@ class TestToolInputNormalization:
             )
             assert result2.success  # ToolExecutionResult has success
             assert "normalized" in str(result2.result.data)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)

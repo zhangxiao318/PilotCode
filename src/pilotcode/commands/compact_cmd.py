@@ -15,9 +15,7 @@ async def compact_command(args: list[str], context: CommandContext) -> str:
 
     # Stats before
     msg_before = len(qe.messages)
-    tokens_before = sum(
-        estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages
-    )
+    tokens_before = sum(estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages)
 
     if msg_before == 0:
         return "No messages to compact."
@@ -36,9 +34,7 @@ async def compact_command(args: list[str], context: CommandContext) -> str:
 
     # Stats after
     msg_after = len(qe.messages)
-    tokens_after = sum(
-        estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages
-    )
+    tokens_after = sum(estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages)
     after_pct = tokens_after * 100 // ctx_window
 
     lines = [

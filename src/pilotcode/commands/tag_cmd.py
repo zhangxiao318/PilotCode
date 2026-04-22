@@ -10,7 +10,12 @@ async def tag_command(args: list[str], context: CommandContext) -> str:
         # List tags
         try:
             result = subprocess.run(
-                ["git", "tag", "-l"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "tag", "-l"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0:
@@ -38,6 +43,8 @@ async def tag_command(args: list[str], context: CommandContext) -> str:
                 ["git", "tag", "-a", tag_name, "-m", message],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 cwd=context.cwd,
             )
 
@@ -57,7 +64,12 @@ async def tag_command(args: list[str], context: CommandContext) -> str:
 
         try:
             result = subprocess.run(
-                ["git", "tag", "-d", tag_name], capture_output=True, text=True, cwd=context.cwd
+                ["git", "tag", "-d", tag_name],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0:
@@ -71,7 +83,12 @@ async def tag_command(args: list[str], context: CommandContext) -> str:
     elif action == "push":
         try:
             result = subprocess.run(
-                ["git", "push", "origin", "--tags"], capture_output=True, text=True, cwd=context.cwd
+                ["git", "push", "origin", "--tags"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=context.cwd,
             )
 
             if result.returncode == 0:

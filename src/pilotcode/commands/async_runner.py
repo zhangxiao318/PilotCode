@@ -177,13 +177,9 @@ async def run_command_streaming(
     watchdog_task = asyncio.create_task(_watchdog())
 
     try:
-        returncode = await asyncio.wait_for(
-            process.wait(), timeout=total_timeout
-        )
+        returncode = await asyncio.wait_for(process.wait(), timeout=total_timeout)
     except asyncio.TimeoutError:
-        console.print(
-            f"[red]✗ 命令总超时（>{total_timeout}s），正在终止进程…[/red]"
-        )
+        console.print(f"[red]✗ 命令总超时（>{total_timeout}s），正在终止进程…[/red]")
         try:
             process.kill()
             await asyncio.wait_for(process.wait(), timeout=5.0)

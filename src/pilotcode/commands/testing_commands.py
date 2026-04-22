@@ -317,7 +317,9 @@ async def run_cargo_tests(cwd: str) -> TestResult:
         passed = len(re.findall(r"test \S+ \.\.\. ok", stdout_combined))
         failed = len(re.findall(r"test \S+ \.\.\. FAILED", stdout_combined))
 
-        summary_match = re.search(r"test result: (\w+)\.(\d+) passed; (\d+) failed;", stdout_combined)
+        summary_match = re.search(
+            r"test result: (\w+)\.(\d+) passed; (\d+) failed;", stdout_combined
+        )
         if summary_match:
             passed = int(summary_match.group(2))
             failed = int(summary_match.group(3))
@@ -420,7 +422,9 @@ Examples:
 
     framework = detect_test_framework(context.cwd)
     if framework == TestFramework.UNKNOWN:
-        return "[yellow]Could not detect test framework. Supported: pytest, jest, cargo, go[/yellow]"
+        return (
+            "[yellow]Could not detect test framework. Supported: pytest, jest, cargo, go[/yellow]"
+        )
 
     console.print(f"[cyan]Running {framework.value} tests...[/cyan]")
 

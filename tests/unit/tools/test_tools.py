@@ -61,10 +61,14 @@ class TestFileTools:
     """Tests for file tools."""
 
     @pytest.mark.asyncio
-    async def test_file_write_and_read(self):
+    async def test_file_write_and_read(self, project_root):
         """Test file write and read cycle."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            test_file = os.path.join(tmpdir, "test.txt")
+        import shutil
+
+        tmpdir = project_root / "tests" / "tmp" / "test_tools_write_read"
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        try:
+            test_file = str(tmpdir / "test.txt")
             test_content = "Hello, World!"
 
             # Write file
@@ -96,6 +100,8 @@ class TestFileTools:
 
             assert not read_result.is_error
             assert test_content in read_result.data.content
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 class TestGlobTool:

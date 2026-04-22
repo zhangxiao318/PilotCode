@@ -10,7 +10,14 @@ async def format_command(args: list[str], context: CommandContext) -> str:
 
     try:
         # Try black first
-        result = subprocess.run(["black", target], capture_output=True, text=True, cwd=context.cwd)
+        result = subprocess.run(
+            ["black", target],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=context.cwd,
+        )
 
         if result.returncode == 0:
             return f"Formatted with black:\n{result.stdout or 'Done'}"

@@ -76,7 +76,8 @@ class SessionScreen(Screen):
     """
 
     BINDINGS = [
-        ("ctrl+d", "quit", "Quit"),
+        ("ctrl+q", "quit", "Quit"),
+        ("ctrl+c", "copy", "Copy"),
         ("ctrl+s", "save", "Save Session"),
         ("ctrl+l", "clear", "Clear"),
         ("f1", "help", "Help"),
@@ -167,7 +168,7 @@ class SessionScreen(Screen):
 │  /help  - Show cmds    • @filename to ref files       │
 │  /save  - Save session • Shift+Enter for new line     │
 │  /load  - Load session • Up/Down for history          │
-│  /clear - Clear history • Ctrl+D to exit              │
+│  /clear - Clear history • Ctrl+Q to exit              │
 │  /quit  - Exit                                         │
 └────────────────────────────────────────────────────────┘"""
 
@@ -314,6 +315,30 @@ class SessionScreen(Screen):
     def action_quit(self):
         """Quit the application."""
         self.app.exit()
+
+    def action_copy(self):
+        """Copy last assistant message to clipboard (prevents Ctrl+C from exiting)."""
+        # Find last assistant message
+        if not self.message_list:
+            return
+
+        messages = self.message_list._messages
+        for msg in reversed(messages):
+            if msg.type == UIMessageType.ASSISTANT:
+                content = msg.content or ""
+                if content:
+                    from pilotcode.tui_v2.components.message.display import copy_to_clipboard
+
+                    system_ok, used_internal, method = copy_to_clipboard(content)
+                    if system_ok:
+                        self.app.notify(
+                            f"📋 Copied via {method}", severity="information", timeout=2
+                        )
+                    elif used_internal:
+                        self.app.notify(
+                            "⚠️ Copied to internal buffer", severity="warning", timeout=2
+                        )
+                return
 
     def action_save(self):
         """Save session."""

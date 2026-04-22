@@ -13,6 +13,44 @@ from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
 
+def _is_path_within_workspace(file_path: str, cwd: str | None = None) -> tuple[bool, str]:
+    """Check if a file path is within the workspace directory.
+
+    Returns:
+        (is_valid, error_message): True if path is safe, False with error message if outside workspace
+    """
+    try:
+        # Reject obvious path traversal and Windows absolute paths on Unix
+        if ".." in file_path:
+            return False, f"Access denied: Path traversal detected in '{file_path}'."
+
+        raw_path = Path(file_path).expanduser()
+
+        # On non-Windows, a path like C:/Windows/... is NOT absolute but looks
+        # like a Windows absolute path.  Resolve() would prepend cwd, making it
+        # appear inside the workspace.  Reject it outright.
+        if ":" in file_path and not file_path.startswith("~/"):
+            return False, f"Access denied: Invalid absolute path '{file_path}'."
+
+        # Resolve to absolute path
+        path = raw_path.resolve()
+
+        # Get workspace directory
+        workspace = Path(cwd or os.getcwd()).expanduser().resolve()
+
+        # Check if path is within workspace
+        try:
+            path.relative_to(workspace)
+            return True, ""
+        except ValueError:
+            return (
+                False,
+                f"Access denied: Path '{path}' is outside workspace '{workspace}'. Only files within the workspace can be written.",
+            )
+    except Exception as e:
+        return False, f"Path validation error: {e}"
+
+
 class FileWriteInput(BaseModel):
     """Input for FileWrite tool."""
 
@@ -34,12 +72,29 @@ class FileWriteOutput(BaseModel):
     error: str | None = None
 
 
-async def write_file_atomic(file_path: str, content: str, append: bool = False) -> FileWriteOutput:
+async def write_file_atomic(
+    file_path: str, content: str, append: bool = False, cwd: str | None = None
+) -> FileWriteOutput:
     """Write file atomically using temp file and rename."""
+    # Security check: validate path is within workspace
+    is_valid, error_msg = _is_path_within_workspace(file_path, cwd)
+    if not is_valid:
+        return FileWriteOutput(file_path=file_path, bytes_written=0, created=False, error=error_msg)
+
     path = Path(file_path).expanduser().resolve()
 
-    # Ensure parent directory exists
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # Ensure parent directory exists (but check it's within workspace)
+    parent = path.parent
+    try:
+        parent.relative_to(Path(cwd or os.getcwd()).expanduser().resolve())
+        parent.mkdir(parents=True, exist_ok=True)
+    except ValueError:
+        return FileWriteOutput(
+            file_path=str(path),
+            bytes_written=0,
+            created=False,
+            error=f"Access denied: Parent directory '{parent}' is outside workspace.",
+        )
 
     created = not path.exists()
     previous_size = path.stat().st_size if path.exists() else None
@@ -135,13 +190,18 @@ async def file_write_call(
                 file_path="", bytes_written=0, error="Missing required field: file_path (or path)"
             )
         )
+
+    # Get workspace directory for security check
+    cwd = os.getcwd()
     if not os.path.isabs(file_path) and context.get_app_state:
         app_state = context.get_app_state()
         cwd = getattr(app_state, "cwd", os.getcwd())
         file_path = os.path.join(cwd, file_path)
 
-    # Write file
-    result = await write_file_atomic(file_path, input_data.content, append=input_data.append)
+    # Write file with workspace restriction
+    result = await write_file_atomic(
+        file_path, input_data.content, append=input_data.append, cwd=cwd
+    )
 
     # Add file to read_file_state so it can be edited immediately
     # This allows the AI to edit files it just created

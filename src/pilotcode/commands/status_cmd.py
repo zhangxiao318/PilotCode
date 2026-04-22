@@ -12,7 +12,12 @@ async def status_command(args: list[str], context: CommandContext) -> str:
     # Git status
     try:
         result = subprocess.run(
-            ["git", "status", "-sb"], capture_output=True, text=True, cwd=context.cwd
+            ["git", "status", "-sb"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=context.cwd,
         )
 
         if result.returncode == 0:
@@ -54,9 +59,7 @@ async def status_command(args: list[str], context: CommandContext) -> str:
         msg_count = len(qe.messages)
         from ..services.token_estimation import estimate_tokens
 
-        total_tokens = sum(
-            estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages
-        )
+        total_tokens = sum(estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages)
         ctx_window = get_model_context_window()
         used_pct = total_tokens * 100 // ctx_window
         lines.append("")

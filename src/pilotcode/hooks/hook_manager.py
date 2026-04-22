@@ -131,6 +131,7 @@ class HookManager:
             except Exception as e:
                 # Log error but continue with other hooks
                 import logging
+
                 logging.getLogger("pilotcode.hooks").warning(
                     "Hook error (%s): %s", hook_type.name, e, exc_info=True
                 )

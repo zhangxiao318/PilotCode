@@ -22,7 +22,9 @@ async def doctor_command(args: list[str], context: CommandContext) -> str:
 
     # Check git
     try:
-        result = subprocess.run(["git", "--version"], capture_output=True, text=True)
+        result = subprocess.run(
+            ["git", "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace"
+        )
         git_ok = result.returncode == 0
         git_version = result.stdout.strip() if git_ok else "Not found"
     except Exception:

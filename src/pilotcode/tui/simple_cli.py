@@ -335,7 +335,7 @@ class SimpleCLI:
         if self.auto_allow:
             print("⚠️  Auto-allow mode: All tool executions will be allowed")
             print()
-        print("Type your message or a command (press Ctrl+D to quit)")
+        print("Type your message or a command (press Ctrl+Q to quit)")
         print("-" * 60)
 
     def print_help(self):
@@ -653,6 +653,7 @@ class SimpleCLI:
                             get_app_state=self.store.get_state,
                             set_app_state=lambda f: self.store.set_state(f),
                         )
+
                         def _on_progress_tui(data):
                             if isinstance(data, dict) and data.get("type") == "bash_output":
                                 line = data.get("line", "")
@@ -714,7 +715,9 @@ class SimpleCLI:
                         if isinstance(msg, AssistantMessage) and not result.is_complete:
                             summary_response += msg.content or ""
                         elif isinstance(msg, AssistantMessage) and result.is_complete:
-                            if isinstance(msg.content, str) and len(msg.content) > len(summary_response):
+                            if isinstance(msg.content, str) and len(msg.content) > len(
+                                summary_response
+                            ):
                                 summary_response = msg.content
                     if summary_response:
                         print("\n📋 Progress summary:")
@@ -784,7 +787,9 @@ class SimpleCLI:
         if total_tokens < threshold:
             return
 
-        print(f"\n🔄 Context at {total_tokens}/{ctx_window} tokens ({total_tokens * 100 // ctx_window}%), compressing...")
+        print(
+            f"\n🔄 Context at {total_tokens}/{ctx_window} tokens ({total_tokens * 100 // ctx_window}%), compressing..."
+        )
 
         # Get compressor
         compressor = get_context_compressor()

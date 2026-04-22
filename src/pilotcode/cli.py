@@ -10,6 +10,7 @@ if sys.platform == "win32":
     except Exception:
         pass
     import os
+
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 import typer

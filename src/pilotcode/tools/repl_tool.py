@@ -56,7 +56,14 @@ async def repl_call(
         # Run the code
         cmd = [config["command"]] + config["args"] + [input_data.code]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=input_data.timeout)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=input_data.timeout,
+        )
 
         return ToolResult(
             data=REPLOutput(
