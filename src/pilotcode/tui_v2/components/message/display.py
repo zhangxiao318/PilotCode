@@ -437,7 +437,7 @@ class MessageDisplay(Static):
             return
 
         content = self.message.content or ""
-        title = f"Message ({self.message.type.value}) - Ctrl+C=Copy, Ctrl+D/Esc=Close"
+        title = f"Message ({self.message.type.value}) - Ctrl+C=Copy, Esc=Close"
 
         self.app.push_screen(TextViewerDialog(content, title))
 
@@ -496,7 +496,7 @@ class CompactToolDisplay(Static):
 
     def _open_text_viewer(self):
         """Open text viewer dialog for mouse selection and copying."""
-        title = f"Tool Output ({self.tool_name}) - Ctrl+C=Copy, Ctrl+D/Esc=Close"
+        title = f"Tool Output ({self.tool_name}) - Ctrl+C=Copy, Esc=Close"
         self.app.push_screen(TextViewerDialog(self.full_result, title))
 
 
@@ -630,7 +630,6 @@ class TextViewerDialog(Screen):
 
     BINDINGS = [
         ("escape", "close", "Close"),
-        ("ctrl+d", "close", "Close"),
         ("ctrl+c", "copy", "Copy"),
     ]
 
