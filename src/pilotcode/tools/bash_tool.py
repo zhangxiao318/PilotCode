@@ -371,6 +371,50 @@ def bash_user_facing_name(input_data: BashInput) -> str:
 
 def is_read_only_command(command: str) -> bool:
     """Check if command is read-only (doesn't modify files)."""
+    cmd_lower = command.strip().lower()
+
+    # Destructive substrings that override safe command prefixes
+    destructive_markers = [
+        # find destructive actions
+        " -delete",
+        " -exec",
+        " -ok",
+        # git branch destructive actions
+        "git branch -d",
+        "git branch -m",
+        "git branch -c",
+        "git branch --delete",
+        "git branch --move",
+        "git branch --copy",
+        # output redirection (overwrite / append)
+        " > ",
+        " >> ",
+        " 1> ",
+        " 2> ",
+        " &> ",
+        " >| ",
+        # piped to destructive commands
+        "| xargs rm",
+        "| xargs mv",
+        "| xargs cp",
+        "| sh",
+        "| bash",
+        # command chaining with destructive commands
+        "; rm ",
+        "; mv ",
+        "; cp ",
+        "; chmod ",
+        "; chown ",
+        "&& rm ",
+        "&& mv ",
+        "&& cp ",
+        "&& chmod ",
+        "&& chown ",
+    ]
+    for marker in destructive_markers:
+        if marker in cmd_lower:
+            return False
+
     # List of read-only commands/patterns
     read_only_patterns = [
         "ls",
@@ -387,6 +431,7 @@ def is_read_only_command(command: str) -> bool:
         "more",
         "grep",
         "find",
+        "wc",
         "which",
         "ps",
         "top",
@@ -409,7 +454,6 @@ def is_read_only_command(command: str) -> bool:
         "wget --spider",
     ]
 
-    cmd_lower = command.strip().lower()
     for pattern in read_only_patterns:
         if cmd_lower.startswith(pattern.lower()):
             return True

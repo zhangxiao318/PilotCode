@@ -520,20 +520,31 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             self.messages.append(tool_use_msg)
             yield QueryResult(message=tool_use_msg, is_complete=False)
 
+    # Threshold for truncating individual tool results at ingestion time.
+    # Results longer than this are truncated to _TOOL_RESULT_TRUNC_LEN.
+    _TOOL_RESULT_MAX_LEN: int = 4000
+    _TOOL_RESULT_TRUNC_LEN: int = 2000
+
     def add_tool_result(self, tool_use_id: str, content: str, is_error: bool = False) -> None:
         """Add a tool result to the conversation history.
+
+        Long results (>4KB) are truncated to ~2KB to prevent a single
+        tool output from exploding the context window.  The full result
+        is still available locally (e.g. in tool orchestrator cache).
 
         Call this after executing a tool, then call submit_message again
         to let the LLM continue with the tool result.
         """
+        if isinstance(content, str) and len(content) > self._TOOL_RESULT_MAX_LEN:
+            content = (
+                content[: self._TOOL_RESULT_TRUNC_LEN]
+                + f"\n... [truncated, {len(content)} chars total]"
+            )
+
         tool_result_msg = ToolResultMessage(
             tool_use_id=tool_use_id, content=content, is_error=is_error
         )
         self.messages.append(tool_result_msg)
-
-        # Auto-compact if needed after adding tool results
-        if self.config.auto_compact:
-            self.auto_compact_if_needed()
 
     def abort(self) -> None:
         """Abort current query."""
@@ -622,6 +633,11 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         if not self.config.auto_compact:
             return False
 
+        # Cooldown: don't re-compact if no new messages since last compaction
+        current_msg_count = len(self.messages)
+        if current_msg_count <= self._last_compaction_message_count:
+            return False
+
         tokens_before = self.count_tokens()
         result = self.intelligent_compact()
 
@@ -640,6 +656,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                             "fallback": False,
                         },
                     )
+                self._last_compaction_message_count = len(self.messages)
                 return True
 
         # Fallback: if still over threshold, use simple compaction
@@ -663,6 +680,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                         "fallback": True,
                     },
                 )
+            self._last_compaction_message_count = len(self.messages)
             return True
         return False
 

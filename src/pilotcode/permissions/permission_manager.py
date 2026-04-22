@@ -75,6 +75,10 @@ class PermissionManager:
         "FileRead",
         "Glob",
         "Grep",
+        "Ripgrep",
+        "CodeSearch",
+        "CodeContext",
+        "CodeIndex",
         "WebSearch",
         "WebFetch",
         "GitStatus",
@@ -92,6 +96,8 @@ class PermissionManager:
         "Config",
         "ToolSearch",
         "Brief",
+        "AskUser",
+        "Sleep",
     }
 
     # Tools that can modify files

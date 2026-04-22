@@ -131,7 +131,7 @@ class InlinePermissionRequest(Vertical):
 
         # Options - keyboard only
         yield Static(
-            "[1] Allow once  [2] Allow for this session  [3] Reject  [4] Reject, tell the model what to do instead",
+            "[1] Allow once  [2] Allow for this session  [3] Reject  [4] Reject and stop current task",
             classes="options",
         )
 
@@ -243,7 +243,7 @@ class InlinePermissionRequest(Vertical):
                 PermissionAction.ALLOW: "✓ Allowed (once)",
                 PermissionAction.ALLOW_SESSION: "✓ Allowed for this session",
                 PermissionAction.DENY: "✗ Rejected",
-                PermissionAction.DENY_SESSION: "✗ Rejected, telling model...",
+                PermissionAction.DENY_SESSION: "✗ Rejected, task stopped.",
             }
             self.mount(Static(action_names[action], classes="answered"))
         except Exception:

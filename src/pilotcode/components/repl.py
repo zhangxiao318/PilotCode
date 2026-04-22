@@ -254,6 +254,7 @@ class REPL:
             if not pending_tools:
                 break
 
+            permission_denied = False
             for tool_idx, tool_msg in enumerate(pending_tools, 1):
                 self._render_conversational_tool_use(
                     tool_msg.name, tool_msg.input, iteration, self.max_iterations,
@@ -279,6 +280,17 @@ class REPL:
                 exec_result = await self.tool_executor.execute_tool_by_name(
                     tool_msg.name, tool_msg.input, context, on_progress=_on_progress
                 )
+
+                # -- Permission denied: stop remaining tools and abort turn --
+                if not exec_result.permission_granted:
+                    self.query_engine.add_tool_result(
+                        tool_msg.tool_use_id,
+                        "Tool execution denied by user",
+                        is_error=True,
+                    )
+                    self.console.print("[red]⛔ Tool execution denied by user. Task stopped.[/red]")
+                    permission_denied = True
+                    break
 
                 result_content = ""
                 if exec_result.success and exec_result.result:
@@ -316,6 +328,9 @@ class REPL:
                     tool_msg.tool_use_id, result_content, is_error=not exec_result.success
                 )
                 sys.stdout.flush()
+
+            if permission_denied:
+                break
 
             # -- System Layer: loop detection --
             loop_reason = self.loop_guard.record(pending_tools)

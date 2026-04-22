@@ -280,17 +280,18 @@ class TestQueryEngineNotify:
         assert "compaction_count" in payload and isinstance(payload["compaction_count"], int)
         assert "fallback" in payload and isinstance(payload["fallback"], bool)
 
-    def test_on_notify_called_via_add_tool_result(self, notify_engine):
-        """on_notify should be called when auto_compact triggers inside add_tool_result."""
-        # Pre-fill with enough messages to be near the limit
+    def test_on_notify_called_via_auto_compact_if_needed(self, notify_engine):
+        """on_notify should be called when auto_compact triggers via auto_compact_if_needed."""
+        # Pre-fill with enough messages to exceed the tiny max_tokens=1 limit
         for i in range(10):
             notify_engine.messages.append(
                 UserMessage(content=f"Message number {i} with lots of token content here")
             )
 
-        notify_engine.add_tool_result("tool-1", "A" * 5000, is_error=False)
+        # Directly trigger compaction
+        notify_engine.auto_compact_if_needed()
 
-        # Should have triggered compaction due to the large tool result
+        # Auto-compact should have triggered the notify callback
         self.mock_notify.assert_called_once()
         event_type, payload = self.mock_notify.call_args[0]
         assert event_type == "auto_compact"

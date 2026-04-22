@@ -28,6 +28,13 @@ from pilotcode.state.app_state import AppState
 from pilotcode.components.repl import classify_task_complexity
 
 
+class ToolDeniedError(Exception):
+    """Raised when user denies a tool execution. Stops the current tool batch."""
+    def __init__(self, message: str, stop_task: bool = True):
+        super().__init__(message)
+        self.stop_task = stop_task
+
+
 class UIMessageType(Enum):
     """UI message types."""
 
@@ -75,6 +82,9 @@ class TUIController:
 
         # Session-level permission cache: {tool_name: allowed}
         self._session_permissions: dict[str, bool] = {}
+
+        # Flag to abort the current turn when user denies a tool
+        self._abort_current_turn: bool = False
 
         # Pending notifications from QueryEngine (e.g., auto-compact)
         self._pending_notifications: list[tuple[str, dict]] = []
@@ -264,9 +274,23 @@ class TUIController:
             if not pending_tools:
                 break
 
-            for tool_msg in pending_tools:
-                async for ui_msg in self._execute_tool(tool_msg):
-                    yield ui_msg
+            try:
+                for tool_msg in pending_tools:
+                    async for ui_msg in self._execute_tool(tool_msg):
+                        yield ui_msg
+            except ToolDeniedError as e:
+                # User denied a tool; stop executing remaining tools in this batch
+                if e.stop_task:
+                    self._abort_current_turn = True
+                    yield UIMessage(
+                        type=UIMessageType.SYSTEM,
+                        content="⛔ Tool execution denied by user. Task stopped.",
+                    )
+                    break
+                # Otherwise just skip remaining tools and let LLM respond to the error
+
+            if self._abort_current_turn:
+                break
 
             # Continue with empty prompt to get LLM response to tool results
             current_prompt = ""
@@ -286,14 +310,14 @@ class TUIController:
         - File reading operations
         - Information queries
         """
+        from pilotcode.permissions.permission_manager import PermissionManager
+
+        if tool_name in PermissionManager.READONLY_TOOLS:
+            return True
+
         if tool_name == "Bash":
             command = params.get("command", "")
             return is_read_only_command(command)
-
-        # Add other safe tool checks here
-        # Example: FileRead is always safe
-        # if tool_name == "FileRead":
-        #     return True
 
         return False
 
@@ -363,6 +387,24 @@ class TUIController:
             # Update session cache if user chose "Allow for this session"
             if isinstance(result, PermissionResult) and result.for_session:
                 self._session_permissions[tool_name] = result.allowed
+
+            # If user denied, stop here and do not execute this tool or subsequent ones
+            if isinstance(result, PermissionResult) and not result.allowed:
+                self.query_engine.add_tool_result(
+                    tool_msg.tool_use_id,
+                    "Tool execution denied by user. Proceed with your alternative read-only approach immediately without explaining your plan first.",
+                    is_error=True,
+                )
+                yield UIMessage(
+                    type=UIMessageType.TOOL_RESULT,
+                    content="Denied (user)",
+                    metadata={"tool_name": tool_name, "error": True},
+                    is_complete=True,
+                )
+                # Option 3 (DENY) = skip this batch but let LLM try alternate approaches
+                # Option 4 (DENY_SESSION) = stop the entire task
+                stop_task = result.for_session
+                raise ToolDeniedError(f"User denied tool: {tool_name}", stop_task=stop_task)
 
         # Execute the tool
         try:

@@ -357,9 +357,29 @@ class SimpleCLI:
         print("  • Context compresses automatically when it gets too long")
         print()
 
+    def _is_safe_tool(self, tool_name: str, params: dict) -> bool:
+        """Check if a tool operation is safe (read-only/non-destructive)."""
+        from pilotcode.permissions.permission_manager import PermissionManager
+
+        if tool_name in PermissionManager.READONLY_TOOLS:
+            return True
+
+        if tool_name == "Bash":
+            try:
+                from pilotcode.tools.bash_tool import is_read_only_command
+                command = params.get("command", "")
+                return is_read_only_command(command)
+            except ImportError:
+                pass
+
+        return False
+
     def ask_permission(self, tool_name: str, params: dict) -> bool:
         """Ask user for permission to execute a tool."""
         if self.auto_allow:
+            return True
+
+        if self._is_safe_tool(tool_name, params):
             return True
 
         print()
@@ -585,6 +605,7 @@ class SimpleCLI:
                     break
 
                 # Execute all pending tools
+                permission_denied = False
                 for tool_msg in pending_tools:
                     tool_name = tool_msg.name
                     params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
@@ -593,9 +614,14 @@ class SimpleCLI:
                     if not self.ask_permission(tool_name, params):
                         self._render_interactive_permission_denied()
                         self.query_engine.add_tool_result(
-                            tool_msg.tool_use_id, "Tool execution denied by user", is_error=True
+                            tool_msg.tool_use_id,
+                            "Tool execution denied by user. Proceed with your alternative read-only approach immediately without explaining your plan first.",
+                            is_error=True,
                         )
-                        continue
+                        permission_denied = True
+                        break
+
+                    # Execute tool
 
                     # Execute tool
                     # Format tool description based on tool type
