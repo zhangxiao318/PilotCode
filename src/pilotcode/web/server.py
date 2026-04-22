@@ -585,9 +585,13 @@ class WebSocketManager:
                         raise asyncio.CancelledError()
                     
                     # Special handling for AskUser tool in Web mode
-                    if tool_msg.name == "AskUser":
+                    # Check both primary name and aliases
+                    ask_user_aliases = {"AskUser", "ask", "question"}
+                    print(f"[AskUser] Checking tool: {tool_msg.name}, aliases: {ask_user_aliases}, match: {tool_msg.name in ask_user_aliases}")
+                    if tool_msg.name in ask_user_aliases:
                         question = tool_msg.input.get("question", "")
                         options = tool_msg.input.get("options")
+                        print(f"[AskUser] Intercepted! Question: {question[:50]}...")
                         
                         # Send tool use notification
                         await self.send_to_client(
