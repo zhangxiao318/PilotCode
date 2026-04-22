@@ -198,16 +198,20 @@ class SimpleCLI:
 
     def _render_conversational_tool_use(self, tool_name: str, tool_input: dict) -> None:
         """Conversational Layer: tool call notification."""
-        preview = ""
+        desc = ""
         if tool_name == "Bash":
-            preview = tool_input.get("command", "")[:40]
+            desc = tool_input.get("command", "N/A")[:50]
         elif tool_name in ("FileRead", "FileWrite", "FileEdit"):
-            preview = tool_input.get("path", "")
+            desc = tool_input.get("path", "N/A")
         elif tool_name == "Glob":
-            preview = tool_input.get("pattern", "")
+            desc = f"pattern={tool_input.get('pattern', 'N/A')}"
+        elif tool_name == "Grep":
+            desc = f"searching '{tool_input.get('pattern', 'N/A')}'"
+        elif tool_name == "AskUser":
+            desc = f"asking: {tool_input.get('question', 'N/A')[:40]}"
         else:
-            preview = str(list(tool_input.values())[0])[:40] if tool_input else ""
-        print(f"🔧 Tool requested: {tool_name}({preview})")
+            desc = str(list(tool_input.values())[0])[:50] if tool_input else "N/A"
+        print(f"🔧 Executing {tool_name}: {desc}")
 
     def _render_conversational_tool_result(self, output: str, success: bool, error_msg: str = "") -> None:
         """Conversational Layer: tool execution result."""
@@ -620,31 +624,6 @@ class SimpleCLI:
                         )
                         permission_denied = True
                         break
-
-                    # Execute tool
-
-                    # Execute tool
-                    # Format tool description based on tool type
-                    if tool_name == "Bash":
-                        desc = params.get("command", "N/A")
-                    elif tool_name == "FileRead":
-                        desc = f"reading {params.get('path', 'N/A')}"
-                    elif tool_name == "FileWrite":
-                        desc = f"writing {params.get('path', 'N/A')}"
-                    elif tool_name == "FileEdit":
-                        desc = f"editing {params.get('path', 'N/A')}"
-                    elif tool_name == "Glob":
-                        desc = f"pattern={params.get('pattern', 'N/A')}"
-                    elif tool_name == "Grep":
-                        desc = f"searching '{params.get('pattern', 'N/A')}'"
-                    elif tool_name == "AskUser":
-                        desc = f"asking: {params.get('question', 'N/A')[:40]}"
-                    else:
-                        # Generic: show first param value
-                        first_param = list(params.values())[0] if params else "N/A"
-                        desc = str(first_param)[:50]
-
-                    print(f"🔧 Executing {tool_name}: {desc[:50]}...")
 
                     try:
                         from pilotcode.tools.base import ToolUseContext
