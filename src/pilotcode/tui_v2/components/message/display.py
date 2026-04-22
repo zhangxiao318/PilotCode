@@ -656,6 +656,15 @@ class TextViewerDialog(Screen):
         """Focus the text area on mount."""
         text_area = self.query_one(TextArea)
         text_area.focus()
+        # Ignore Ctrl+C signal on Windows to prevent batch job termination
+        import signal
+        self._old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    def on_unmount(self):
+        """Restore signal handler when dialog closes."""
+        import signal
+        if hasattr(self, '_old_handler'):
+            signal.signal(signal.SIGINT, self._old_handler)
 
     def on_key(self, event):
         """Handle key events - prevent Ctrl+C from exiting."""
