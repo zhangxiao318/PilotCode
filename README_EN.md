@@ -57,7 +57,7 @@ python3 -m pilotcode --simple
 
 ## Model Configuration
 
-PilotCode supports both international and domestic (China) language models. Model parameters are managed via `config/models.json` and can be dynamically verified at runtime. See [Model Configuration & Capability Verification](docs/features/model-configuration_en.md) for details.
+PilotCode supports both international and domestic (China) language models. Model parameters are managed via `config/models.json` and can be dynamically verified at runtime. See [Model Configuration & Capability Verification](docs/features/model-configuration.md) for details.
 
 You can configure the model through:
 
