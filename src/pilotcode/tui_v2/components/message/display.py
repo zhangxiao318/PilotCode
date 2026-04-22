@@ -668,12 +668,19 @@ class TextViewerDialog(Screen):
 
     def on_key(self, event):
         """Handle key events - prevent Ctrl+C from exiting."""
-        if event.key == "ctrl+c":
+        # Check for Ctrl+C (different representations on different platforms)
+        # Windows: ctrl+@ with character \x00, Linux/Mac: ctrl+c
+        is_ctrl_c = (
+            event.key == "ctrl+c" or 
+            event.key == "ctrl+@" or 
+            event.character == "\x03" or  # ASCII ETX (Ctrl+C)
+            event.character == "\x00"     # Windows NUL from Ctrl+C
+        )
+        if is_ctrl_c:
             # Always handle Ctrl+C as copy action, don't let it propagate
             self.action_copy()
             event.stop()
             event.prevent_default()
-        # Other keys propagate normally (no super().on_key() needed)
 
     def action_close(self):
         """Close the dialog."""
