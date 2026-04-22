@@ -231,6 +231,8 @@ async def execute_bash(
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = 0
+            # Set UTF-8 code page for cmd.exe to avoid GBK encoding issues
+            command = f"chcp 65001 >nul 2>&1 && {command}"
 
         process = await asyncio.create_subprocess_shell(
             command,
@@ -272,6 +274,21 @@ async def execute_bash(
                 exit_code=-1,
                 command=command,
             )
+        except asyncio.CancelledError:
+            # Handle task cancellation - kill the subprocess
+            try:
+                process.kill()
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
+            for t in (stdout_task, stderr_task):
+                if not t.done():
+                    t.cancel()
+                    try:
+                        await t
+                    except asyncio.CancelledError:
+                        pass
+            raise  # Re-raise to propagate cancellation
 
         await asyncio.gather(stdout_task, stderr_task)
 

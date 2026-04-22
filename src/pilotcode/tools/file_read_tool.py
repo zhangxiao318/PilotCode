@@ -99,7 +99,9 @@ async def file_read_call(
     if context.read_file_state is not None:
         import time
 
-        context.read_file_state[file_path] = {
+        # Use normalized absolute path as key to ensure consistent matching with FileEdit
+        normalized_key = os.path.normcase(os.path.normpath(os.path.abspath(file_path)))
+        context.read_file_state[normalized_key] = {
             "timestamp": time.time(),
             "mtime": os.path.getmtime(file_path) if os.path.exists(file_path) else None,
         }

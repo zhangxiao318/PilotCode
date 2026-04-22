@@ -128,6 +128,9 @@ function handleMessage(data) {
         case 'permission_result':
             handlePermissionResult(data);
             break;
+        case 'user_question_request':
+            handleUserQuestionRequest(data);
+            break;
     }
 }
 
@@ -353,6 +356,91 @@ function handlePermissionResult(data) {
         } else {
             actions.innerHTML = `<span style="color: #991b1b; font-weight: 500;">✗ Denied</span>`;
         }
+    }
+}
+
+// Handle user question request
+function handleUserQuestionRequest(data) {
+    const requestId = data.request_id;
+    const question = data.question;
+    const options = data.options;
+    
+    console.log('User question request:', requestId, question);
+    
+    // Get the current stream content div, or create a new message if stream ended
+    let contentDiv = document.getElementById(`content-${currentStreamId}`);
+    if (!contentDiv) {
+        // Stream may have ended, create a new message container
+        const streamDiv = document.createElement('div');
+        streamDiv.id = `stream-question-${requestId}`;
+        streamDiv.className = 'message';
+        streamDiv.innerHTML = `
+            <div class="user-query">Waiting for your answer...</div>
+            <div class="stream-content" id="content-question-${requestId}"></div>
+        `;
+        messagesContainer.appendChild(streamDiv);
+        contentDiv = document.getElementById(`content-question-${requestId}`);
+    }
+    
+    // Create question block
+    const questionDiv = document.createElement('div');
+    questionDiv.id = `question-${requestId}`;
+    questionDiv.className = 'user-question-request';
+    questionDiv.style.cssText = 'margin: 12px 0; padding: 12px; background: #eff6ff; border: 1px solid #3b82f6; border-radius: 6px;';
+    
+    let optionsHtml = '';
+    if (options && options.length > 0) {
+        optionsHtml = '<div style="margin: 8px 0;">';
+        options.forEach((option, index) => {
+            optionsHtml += `<div style="margin: 4px 0; color: #374151;">${index + 1}. ${escapeHtml(option)}</div>`;
+        });
+        optionsHtml += '</div>';
+    }
+    
+    questionDiv.innerHTML = `
+        <div style="font-weight: 600; color: #1e40af; margin-bottom: 8px;">[Q] ${escapeHtml(question)}</div>
+        ${optionsHtml}
+        <div class="question-actions" style="margin-top: 12px;">
+            <input type="text" id="question-input-${requestId}" 
+                   style="width: 70%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; margin-right: 8px;"
+                   placeholder="Your answer..." 
+                   onkeypress="if(event.key==='Enter') respondUserQuestion('${requestId}')">
+            <button onclick="respondUserQuestion('${requestId}')" 
+                    style="padding: 6px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Send
+            </button>
+        </div>
+    `;
+    
+    contentDiv.appendChild(questionDiv);
+    scrollToBottom();
+    
+    // Focus the input
+    setTimeout(() => {
+        const input = document.getElementById(`question-input-${requestId}`);
+        if (input) input.focus();
+    }, 100);
+}
+
+// Respond to user question
+function respondUserQuestion(requestId) {
+    const input = document.getElementById(`question-input-${requestId}`);
+    if (!input) return;
+    
+    const response = input.value.trim();
+    if (!response) return;
+    
+    console.log('Responding to question:', requestId, response);
+    sendMessage({
+        type: 'user_question_response',
+        request_id: requestId,
+        response: response
+    });
+    
+    // Update UI to show response sent
+    const questionDiv = document.getElementById(`question-${requestId}`);
+    if (questionDiv) {
+        questionDiv.innerHTML = `<div style="color: #166534; font-weight: 500;">✓ Answered: ${escapeHtml(response)}</div>`;
     }
 }
 
