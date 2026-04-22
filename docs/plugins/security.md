@@ -1,5 +1,14 @@
 # Security - 安全与信任管理
 
+安全模块涵盖两个层面：
+
+1. **插件安全** — 插件的签名验证、信任管理和发布者验证
+2. **工具执行安全** — AI 调用工具时的权限控制、只读判断和危险命令拦截
+
+---
+
+## 插件安全
+
 安全模块提供插件的签名验证、信任管理和发布者验证功能，确保插件来源可信、内容完整。
 
 ---
@@ -455,6 +464,53 @@ async def secure_install(plugin_spec: str):
 
 ---
 
+## 工具执行安全
+
+除插件安全外，PilotCode 在 AI 调用工具时也有一套运行时安全机制：
+
+### 安全工具白名单 (`SAFE_TOOLS`)
+
+`PermissionManager` 维护了一个 `SAFE_TOOLS` 集合，包含不会修改用户代码或系统的工具：
+
+```python
+SAFE_TOOLS = {
+    "FileRead", "Glob", "Grep", "Ripgrep",
+    "GitStatus", "GitDiff", "GitLog", "GitBranch",
+    "TaskGet", "TaskList", "TaskOutput",
+    "ListMcpResources", "ReadMcpResource",
+    "CodeSearch", "CodeContext", "CodeIndex",
+    "AskUser", "Sleep", "TodoWrite",
+    "WebSearch", "WebFetch",
+    # ...
+}
+```
+
+这些工具在执行时**不需要用户确认**，保证流畅的只读交互体验。
+
+### Bash 安全性
+
+`Bash` 工具不走白名单，而是单独通过 `is_read_only_command()` 判断：
+- **前缀白名单**：`ls`, `cat`, `grep`, `wc`, `git status` 等
+- **破坏性标记黑名单**：`>`, `>>`, `| xargs rm`, `find -delete`, `&& rm` 等
+
+详见 [Bash 工具文档](../tools/bash.md)。
+
+### 权限拒绝与任务终止
+
+当用户拒绝一个非安全工具时，系统提供两个选项：
+
+| 选项 | 行为 |
+|------|------|
+| **Reject** | 仅跳过当前工具批次，允许 LLM 换方式继续 |
+| **Reject and stop current task** | 终止整个当前任务循环，不再给 LLM 继续机会 |
+
+拒绝后，系统会向 LLM 发送指令：
+> "Proceed with your alternative read-only approach immediately without explaining your plan first."
+
+这确保 LLM 不会浪费时间解释被拒绝的计划，而是立即尝试替代方案。
+
+---
+
 ## 安全最佳实践
 
 1. **始终验证签名**：生产环境要求所有插件签名
@@ -470,3 +526,4 @@ async def secure_install(plugin_spec: str):
 
 - [插件核心管理](./core.md)
 - [企业策略](./policy.md)
+- [Bash 工具安全](../tools/bash.md)

@@ -84,4 +84,4 @@ python3 -m pilotcode configure --model <model_name> --api-key <key>
 
 - `/status` - 查看当前会话 Token 使用量和模型信息
 - `configure` - 交互式配置向导，用于切换模型
-- `config --list` - 查看完整配置和模型能力详情
+- `config --list` - 查看完整配置和模型能力详情（支持本地模型运行时探测、provider 自动推断、差异高亮与交互更新）

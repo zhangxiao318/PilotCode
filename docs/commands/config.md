@@ -16,6 +16,8 @@
 
 ## 子命令
 
+### REPL 斜杠命令 (`/config`)
+
 | 子命令 | 说明 |
 |--------|------|
 | (无) | 显示当前配置 |
@@ -23,9 +25,16 @@
 | `get <key>` | 获取配置项 |
 | `reset` | 重置为默认配置 |
 
+### CLI 命令 (`python3 -m pilotcode config`)
+
+| 选项 | 说明 |
+|------|------|
+| `--list` / `-l` | 查看完整配置和模型能力（含本地模型运行时探测） |
+| `--set <key> --value <val>` | 修改配置项 |
+
 ## 使用示例
 
-### 查看当前配置
+### 查看当前配置（REPL）
 
 ```bash
 /config
@@ -43,6 +52,19 @@
   "base_url": "https://api.deepseek.com/v1"
 }
 ```
+
+### 查看完整配置和模型能力（CLI）
+
+```bash
+python3 -m pilotcode config --list
+```
+
+输出包含：
+- **Global Configuration** — 当前全局配置
+- **Model Capability (Static Config)** — 来自 `config/models.json` 的静态配置
+- **Model Capability (Runtime Detected)** — 本地模型的运行时探测结果（如果是本地地址）
+
+本地模型探测时，若探测值与静态配置不一致，会以**红色高亮**显示差异，并交互式提示是否更新配置。
 
 ### 设置配置项
 

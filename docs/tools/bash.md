@@ -14,7 +14,7 @@
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
 | `command` | string | ✅ | 要执行的命令 |
-| `timeout` | integer | ❌ | 超时时间（秒），默认 300 |
+| `timeout` | integer | ❌ | 超时时间（秒），默认 600 |
 
 ## 使用示例
 
@@ -94,7 +94,35 @@ drwxrwxr-x  5 user user  4096  4月 10 09:00 ..
 -rw-rw-r--  1 user user  2456  4月 12 09:30 README.md
 ```
 
-## 安全提示
+## 安全机制
+
+### 只读命令自动判断 (`is_read_only_command`)
+
+系统通过前缀白名单 + 破坏性标记黑名单双重检查来判断命令是否安全：
+
+**只读前缀白名单**：`ls`, `cat`, `echo`, `pwd`, `head`, `tail`, `grep`, `find`, `wc`, `git status`, `git log`, `git diff` 等
+
+**破坏性标记黑名单**（覆盖安全前缀）：
+- `find -delete` / `find -exec rm`
+- 重定向符：`>`, `>>`, `1>`, `2>`
+- 管道危险组合：`| xargs rm/mv/cp`, `| sh`, `| bash`
+- 链式命令：`; rm `, `&& rm `, `; chmod ` 等
+- `git branch -d/-m/-c`
+
+如果命令被判定为只读，工具执行时**不会弹出权限确认框**。
+
+### 危险命令拦截 (`check_dangerous_command`)
+
+对于不在白名单中的命令，系统会进一步检查是否包含危险模式：
+
+| 危险级别 | 示例 | 行为 |
+|----------|------|------|
+| 高危 | `rm -rf /`, `mkfs.*`, `dd if=/dev/zero` | 拒绝执行 |
+| 中危 | `rm -rf *`, `> important.file` | 需要确认 |
+
+可通过 `BashInput` 的 `force=True` 参数强制绕过危险命令检查（仅限确认后使用）。
+
+### 安全提示
 
 1. **危险命令会提示**：删除、格式化等危险操作需要确认
 2. **只读命令自动允许**：ls, cat, pwd 等自动执行
