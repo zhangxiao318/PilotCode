@@ -231,6 +231,7 @@ class ModelClient:
                 model_path = data.get("model_path")
                 if model_path:
                     cap["display_name"] = Path(model_path).stem
+                cap["_provider"] = "custom"
                 cap["_backend"] = "llama-server"
         except Exception:
             pass
@@ -267,6 +268,12 @@ class ModelClient:
                     # Ollama capabilities array
                     capabilities = data.get("capabilities", [])
                     cap["supports_vision"] = "vision" in capabilities
+                    # display name from Ollama details
+                    details = data.get("details", {})
+                    ollama_name = details.get("name") or details.get("model")
+                    if ollama_name:
+                        cap["display_name"] = ollama_name
+                    cap["_provider"] = "ollama"
                     cap["_backend"] = "ollama"
             except Exception:
                 pass
@@ -431,6 +438,12 @@ class ModelClient:
                                         break
                             if "supports_vision" in cap:
                                 break
+
+                # display name from model id
+                if model_data and "display_name" not in cap:
+                    model_id = model_data.get("id")
+                    if model_id:
+                        cap["display_name"] = model_id
 
                 if "_backend" not in cap:
                     cap["_backend"] = "openai-compatible"

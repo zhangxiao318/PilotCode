@@ -72,6 +72,12 @@ def _print_model_capability(console: Console, info, source: str = "static") -> N
 
 def _print_api_capability(console: Console, caps: dict) -> None:
     """Print model capability info from API-probed dict."""
+    display_name = caps.get("display_name")
+    if display_name:
+        console.print(f"  Display Name: {display_name}")
+    provider = caps.get("_provider")
+    if provider:
+        console.print(f"  Provider:     {provider}")
     ctx = caps.get("context_window")
     if ctx is not None:
         console.print(f"  Context:      {_fmt_ctx(ctx)}")
@@ -514,6 +520,28 @@ def config(
                 if api_caps:
                     console.print("[bold]Model Capability (Runtime Detected):[/bold]")
                     _print_api_capability(console, api_caps)
+
+                    # --- Detect mismatches and offer to update config ---
+                    mismatches: list[tuple[str, str, str]] = []
+
+                    detected_name = api_caps.get("display_name")
+                    if detected_name and detected_name != config.default_model:
+                        mismatches.append(("default_model", config.default_model or "(empty)", detected_name))
+
+                    detected_provider = api_caps.get("_provider")
+                    if detected_provider and detected_provider != config.model_provider:
+                        mismatches.append(("model_provider", config.model_provider or "(empty)", detected_provider))
+
+                    if mismatches:
+                        console.print("\n[yellow]⚠ Detected mismatches with config file:[/yellow]")
+                        for key, old, new in mismatches:
+                            console.print(f"  {key}: {old} → {new}")
+
+                        if typer.confirm("Update config to match detected values?", default=True):
+                            for key, _old, new in mismatches:
+                                setattr(config, key, new)
+                            get_config_manager().save_global_config(config)
+                            console.print("[green]✓ Config updated.[/green]")
                 else:
                     console.print("[dim]  Local model did not expose capability metadata.[/dim]")
             except Exception as e:
