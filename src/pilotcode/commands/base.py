@@ -152,8 +152,6 @@ async def help_command(args: list[str], context: CommandContext) -> str:
 
 async def clear_command(args: list[str], context: CommandContext) -> str:
     """Clear screen."""
-    import os
-
     os.system("clear" if os.name != "nt" else "cls")
     return "Screen cleared."
 
@@ -197,8 +195,6 @@ async def mcp_remove_command(args: list[str], context: CommandContext) -> str:
 
 async def resume_command(args: list[str], context: CommandContext) -> str:
     """Resume a saved session."""
-    import os
-
     session_path = os.path.join(context.cwd, ".pilotcode_session.json")
     if args:
         session_path = args[0] if os.path.isabs(args[0]) else os.path.join(context.cwd, args[0])
