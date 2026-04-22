@@ -11,6 +11,32 @@ from .config import get_global_config
 from .models_config import get_model_info
 
 
+# Provider inference keywords mapped to canonical provider names
+_PROVIDER_KEYWORDS: dict[str, str] = {
+    "qwen": "qwen",
+    "deepseek": "deepseek",
+    "glm": "zhipu",
+    "moonshot": "moonshot",
+    "baichuan": "baichuan",
+    "doubao": "doubao",
+    "llama": "custom",
+    "mistral": "custom",
+    "phi": "custom",
+    "gemma": "custom",
+    "yi": "custom",
+    "command": "custom",
+}
+
+
+def _infer_provider(name: str) -> str | None:
+    """Infer provider from model name or path."""
+    lowered = name.lower()
+    for keyword, provider in _PROVIDER_KEYWORDS.items():
+        if keyword in lowered:
+            return provider
+    return None
+
+
 @dataclass
 class ToolCall:
     """A tool call from the model."""
@@ -231,7 +257,11 @@ class ModelClient:
                 model_path = data.get("model_path")
                 if model_path:
                     cap["display_name"] = Path(model_path).stem
-                cap["_provider"] = "custom"
+                    inferred = _infer_provider(cap["display_name"])
+                    if inferred:
+                        cap["_provider"] = inferred
+                if "_provider" not in cap:
+                    cap["_provider"] = "custom"
                 cap["_backend"] = "llama-server"
         except Exception:
             pass
@@ -447,6 +477,12 @@ class ModelClient:
 
                 if "_backend" not in cap:
                     cap["_backend"] = "openai-compatible"
+
+        # Fallback provider inference from display name
+        if "_provider" not in cap and cap.get("display_name"):
+            inferred = _infer_provider(cap["display_name"])
+            if inferred:
+                cap["_provider"] = inferred
 
         return cap if cap else None
 
