@@ -143,6 +143,19 @@ class REPL:
             self.console.print(
                 f"[yellow]⚠️  Context at {usage_pct}% — approaching limit.[/yellow]"
             )
+        elif event_type == "permission_denied":
+            self.console.print(
+                "[red]⛔ Tool execution denied by user. Task stopped.[/red]"
+            )
+        elif event_type == "loop_detected":
+            reason = payload.get("reason", "unknown")
+            warning = (
+                f"[SYSTEM WARNING] DETECTED LOOP: {reason}. "
+                "You have been repeating the same tool calls. STOP exploring and "
+                "produce your final answer or code changes immediately. "
+                "Do NOT call the same tools again."
+            )
+            self.console.print(f"[yellow]{warning}[/yellow]")
         else:
             # Generic fallback
             self.console.print(f"[dim]{payload.get('message', '')}[/dim]")
@@ -298,7 +311,7 @@ class REPL:
                         "Tool execution denied by user",
                         is_error=True,
                     )
-                    self.console.print("[red]⛔ Tool execution denied by user. Task stopped.[/red]")
+                    self._render_system("permission_denied")
                     permission_denied = True
                     break
 
@@ -307,10 +320,14 @@ class REPL:
                     result_content = (
                         str(exec_result.result.data) if exec_result.result.data else "Success"
                     )
-                    self.console.print(f"[dim]✓ {tool_msg.name} completed[/dim]")
+                    self._render_conversational_tool_result(
+                        tool_msg.name, success=True, message="completed"
+                    )
                 else:
                     result_content = exec_result.message
-                    self.console.print(f"[red]✗ {exec_result.message}[/red]")
+                    self._render_conversational_tool_result(
+                        tool_msg.name, success=False, message=exec_result.message
+                    )
 
                     # --- Environment diagnosis (interactive REPL mode) ---
                     if not getattr(self, "_env_diagnosis_fired", False):
@@ -350,7 +367,6 @@ class REPL:
                     f"produce your final answer or code changes immediately. "
                     f"Do NOT call the same tools again."
                 )
-                self.console.print(f"[yellow]{warning}[/yellow]")
                 # Inject warning so the model sees it on the next turn
                 self.query_engine.messages.append(AssistantMessage(content=warning))
 
