@@ -664,9 +664,7 @@ class TextViewerDialog(Screen):
             self.action_copy()
             event.stop()
             event.prevent_default()
-        else:
-            # Let other keys propagate normally
-            super().on_key(event)
+        # Other keys propagate normally (no super().on_key() needed)
 
     def action_close(self):
         """Close the dialog."""
