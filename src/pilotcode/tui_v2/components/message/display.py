@@ -44,38 +44,32 @@ def _copy_to_clipboard_impl(text: str) -> str | None:
         except ImportError:
             pass
 
-        # Windows: Try PowerShell Set-Clipboard first
+        # Windows: Try PowerShell Set-Clipboard with proper UTF-8 handling
         if system == "Windows":
             try:
-                import tempfile
-                import os
-                
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
-                    f.write(text)
-                    temp_file = f.name
-                
-                # Use PowerShell to read file and set clipboard
-                ps_cmd = f"Get-Content -Path '{temp_file}' -Raw | Set-Clipboard"
+                # Use PowerShell with UTF-8 encoding to set clipboard directly
+                # Escape single quotes in text for PowerShell
+                escaped_text = text.replace("'", "''")
+                ps_cmd = f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Set-Clipboard -Value '{escaped_text}'"
                 subprocess.run(
                     ["powershell.exe", "-Command", ps_cmd],
                     check=True,
                     capture_output=True,
                     timeout=5
                 )
-                
-                os.unlink(temp_file)
                 return "powershell"
             except Exception:
                 pass
             
-            # Fallback to clip.exe
+            # Fallback: use clip.exe with UTF-16 LE (Windows native Unicode)
             try:
-                encoded_text = text.encode("utf-16-le")
+                # Add BOM for UTF-16 LE to help Windows recognize encoding
+                import codecs
+                encoded_text = codecs.BOM_UTF16_LE + text.encode("utf-16-le")
                 subprocess.run(["clip.exe"], input=encoded_text, check=True, capture_output=True)
                 return "clip.exe (utf-16)"
             except subprocess.CalledProcessError:
-                subprocess.run(["clip.exe"], input=text.encode("utf-8"), check=True, capture_output=True)
-                return "clip.exe (utf-8)"
+                pass
 
         # Linux: Try xclip
         if system == "Linux":
