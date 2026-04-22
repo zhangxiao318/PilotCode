@@ -117,6 +117,27 @@ class REPL:
         self.running = True
         self.loop_guard = LoopGuard()
 
+    def _notify_user(self, event_type: str, payload: dict) -> None:
+        """Display a system notification to the user.
+
+        Unified entry point for user-facing notices (e.g., max iterations,
+        context warnings) across all UI modes.
+        """
+        if event_type == "max_iterations_reached":
+            max_iters = payload.get("max_iterations", self.DEFAULT_MAX_ITERATIONS)
+            self.console.print(
+                f"[yellow]⏹️  Reached maximum tool iterations ({max_iters}). "
+                f"Task paused. Send another message to continue.[/yellow]"
+            )
+        elif event_type == "context_warning":
+            usage_pct = payload.get("usage_pct", 0)
+            self.console.print(
+                f"[yellow]⚠️  Context at {usage_pct}% — approaching limit.[/yellow]"
+            )
+        else:
+            # Generic fallback
+            self.console.print(f"[dim]{payload.get('message', '')}[/dim]")
+
     def print_header(self) -> None:
         """Print welcome header."""
         self.console.print(
@@ -286,11 +307,9 @@ class REPL:
                 prompt = "Please continue based on the tool results above."
 
         if iteration >= self.max_iterations:
-            self.console.print(
-                f"[yellow]⚠️ Reached maximum tool execution rounds ({self.max_iterations})[/yellow]"
-            )
-            self.console.print(
-                "[dim]💡 Tip: Set PILOTCODE_MAX_ITERATIONS=50 to increase limit[/dim]"
+            self._notify_user(
+                "max_iterations_reached",
+                {"max_iterations": self.max_iterations},
             )
 
         # Ensure content is visible above the prompt on Windows

@@ -180,6 +180,23 @@ class SimpleCLI:
             else:
                 return False, f"API error: {error_msg}"
 
+    def _notify_user(self, event_type: str, payload: dict) -> None:
+        """Display a system notification to the user.
+
+        Unified entry point for user-facing notices across all UI modes.
+        """
+        if event_type == "max_iterations_reached":
+            max_iters = payload.get("max_iterations", 50)
+            print(
+                f"\n⏹️  Reached maximum tool iterations ({max_iters}). "
+                f"Task paused. Send another message to continue."
+            )
+        elif event_type == "context_warning":
+            usage_pct = payload.get("usage_pct", 0)
+            print(f"\n⚠️  Context at {usage_pct}% — approaching limit.")
+        else:
+            print(f"\n{payload.get('message', '')}")
+
     def print_welcome(self):
         """Print welcome message and test API connection."""
         print("=" * 60)
@@ -625,8 +642,10 @@ class SimpleCLI:
                 max_reached = True
 
             if max_reached:
-                print(f"\n⏹️  Reached maximum tool iterations ({max_iterations}). Task paused.")
-                print("   Send another message to continue, or type /new to start fresh.")
+                self._notify_user(
+                    "max_iterations_reached",
+                    {"max_iterations": max_iterations},
+                )
 
                 # Attempt a final summary from the model
                 try:

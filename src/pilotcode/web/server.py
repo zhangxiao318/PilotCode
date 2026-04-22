@@ -568,16 +568,15 @@ class WebSocketManager:
                                     "chunk": new_content,
                                 },
                             )
-                    # Send a message indicating max iterations reached
-                    else:
-                        await self.send_to_client(
-                            websocket,
-                            {
-                                "type": "streaming_chunk",
-                                "stream_id": stream_id,
-                                "chunk": "\n\n[Reached maximum tool call limit. Analysis may be incomplete.]",
-                            },
-                        )
+                    # Notify user via a proper system message instead of mixing into streaming chunks
+                    await self.send_to_client(
+                        websocket,
+                        {
+                            "type": "system",
+                            "stream_id": stream_id,
+                            "content": f"⏹️  Reached maximum tool iterations ({max_iterations}). Task paused. Send another message to continue.",
+                        },
+                    )
                     break
 
                 # Send final content for user-facing queries (not the final response)

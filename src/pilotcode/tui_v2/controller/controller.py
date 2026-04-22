@@ -238,7 +238,7 @@ class TUIController:
         else:
             # Loop exited because max_iterations was reached (not break)
             yield UIMessage(
-                type=UIMessageType.ASSISTANT,
+                type=UIMessageType.SYSTEM,
                 content=f"⏹️  Reached maximum tool iterations ({self.max_iterations}). Task paused. Send another message to continue.",
                 is_complete=True,
             )
