@@ -204,5 +204,119 @@ class TestQueryEngineIntegration:
             assert any(r.message for r in results)
 
 
+class TestQueryEngineNotify:
+    """Tests for the unified on_notify callback mechanism."""
+
+    @pytest.fixture
+    def notify_engine(self, app_store):
+        """Create a QueryEngine with a mock on_notify callback."""
+        self.mock_notify = MagicMock()
+        config = QueryEngineConfig(
+            cwd="/tmp",
+            tools=[],
+            get_app_state=app_store.get_state,
+            set_app_state=lambda f: app_store.set_state(f),
+            auto_compact=True,
+            max_tokens=1,  # Very low threshold to force compaction
+            on_notify=self.mock_notify,
+        )
+        return QueryEngine(config=config)
+
+    def test_on_notify_called_when_auto_compact_triggers(self, notify_engine):
+        """on_notify should be called when auto_compact triggers."""
+        # Add enough messages to exceed the tiny max_tokens=1 limit
+        for i in range(10):
+            notify_engine.messages.append(
+                UserMessage(content=f"This is a longer message number {i} with many tokens")
+            )
+
+        compacted = notify_engine.auto_compact_if_needed()
+
+        assert compacted is True
+        self.mock_notify.assert_called_once()
+        args = self.mock_notify.call_args[0]
+        assert args[0] == "auto_compact"
+        assert "tokens_before" in args[1]
+        assert "tokens_after" in args[1]
+        assert "tokens_saved" in args[1]
+
+    def test_on_notify_not_called_when_no_compaction_needed(self, app_store):
+        """on_notify should NOT be called when token count is below threshold."""
+        mock_notify = MagicMock()
+        config = QueryEngineConfig(
+            cwd="/tmp",
+            tools=[],
+            get_app_state=app_store.get_state,
+            set_app_state=lambda f: app_store.set_state(f),
+            auto_compact=True,
+            max_tokens=100000,  # Very high threshold
+            on_notify=mock_notify,
+        )
+        engine = QueryEngine(config=config)
+        engine.messages.append(UserMessage(content="Short msg"))
+
+        compacted = engine.auto_compact_if_needed()
+
+        assert compacted is False
+        mock_notify.assert_not_called()
+
+    def test_on_notify_payload_structure(self, notify_engine):
+        """Verify the payload structure sent to on_notify."""
+        for i in range(10):
+            notify_engine.messages.append(
+                UserMessage(content=f"Message number {i} with content")
+            )
+
+        notify_engine.auto_compact_if_needed()
+
+        assert self.mock_notify.call_count == 1
+        event_type, payload = self.mock_notify.call_args[0]
+        assert event_type == "auto_compact"
+        assert isinstance(payload, dict)
+        assert "tokens_before" in payload and isinstance(payload["tokens_before"], int)
+        assert "tokens_after" in payload and isinstance(payload["tokens_after"], int)
+        assert "tokens_saved" in payload and isinstance(payload["tokens_saved"], int)
+        assert "tool_results_cleared" in payload and isinstance(payload["tool_results_cleared"], int)
+        assert "compaction_count" in payload and isinstance(payload["compaction_count"], int)
+        assert "fallback" in payload and isinstance(payload["fallback"], bool)
+
+    def test_on_notify_called_via_add_tool_result(self, notify_engine):
+        """on_notify should be called when auto_compact triggers inside add_tool_result."""
+        # Pre-fill with enough messages to be near the limit
+        for i in range(10):
+            notify_engine.messages.append(
+                UserMessage(content=f"Message number {i} with lots of token content here")
+            )
+
+        notify_engine.add_tool_result("tool-1", "A" * 5000, is_error=False)
+
+        # Should have triggered compaction due to the large tool result
+        self.mock_notify.assert_called_once()
+        event_type, payload = self.mock_notify.call_args[0]
+        assert event_type == "auto_compact"
+        assert payload["tokens_saved"] >= 0
+
+    def test_on_notify_disabled_when_auto_compact_false(self, app_store):
+        """on_notify should NOT be called when auto_compact is disabled."""
+        mock_notify = MagicMock()
+        config = QueryEngineConfig(
+            cwd="/tmp",
+            tools=[],
+            get_app_state=app_store.get_state,
+            set_app_state=lambda f: app_store.set_state(f),
+            auto_compact=False,
+            max_tokens=1,
+            on_notify=mock_notify,
+        )
+        engine = QueryEngine(config=config)
+        for i in range(10):
+            engine.messages.append(UserMessage(content=f"Long message {i}"))
+
+        compacted = engine.auto_compact_if_needed()
+
+        assert compacted is False
+        mock_notify.assert_not_called()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
