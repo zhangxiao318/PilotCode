@@ -432,6 +432,9 @@ class WebSocketManager:
                         )
                     )
 
+            from pilotcode.utils.config import get_global_config
+
+            global_cfg = get_global_config()
             query_engine = QueryEngine(
                 QueryEngineConfig(
                     cwd=self.cwd,
@@ -439,6 +442,8 @@ class WebSocketManager:
                     get_app_state=store.get_state,
                     set_app_state=lambda f: store.set_state(f),
                     on_notify=_on_notify,
+                    auto_review=global_cfg.auto_review,
+                    max_review_iterations=global_cfg.max_review_iterations,
                 )
             )
 

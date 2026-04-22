@@ -98,12 +98,15 @@ class SimpleCLI:
                         print(f"\n🔄 Auto-compacted context (~{saved} tokens saved)")
 
             tools = get_all_tools()
+            global_cfg = get_global_config()
             config = QueryEngineConfig(
                 cwd=str(Path.cwd()),
                 tools=tools,
                 get_app_state=self.store.get_state,
                 set_app_state=lambda f: self.store.set_state(f),
                 on_notify=_on_notify,
+                auto_review=global_cfg.auto_review,
+                max_review_iterations=global_cfg.max_review_iterations,
             )
             self.query_engine = QueryEngine(config=config)
 
@@ -427,12 +430,15 @@ class SimpleCLI:
                 # Re-initialize to clear history
                 from pilotcode.query_engine import QueryEngineConfig
 
+                global_cfg = get_global_config()
                 self.query_engine = QueryEngine(
                     config=QueryEngineConfig(
                         cwd=str(Path.cwd()),
                         tools=self.query_engine.config.tools,
                         get_app_state=self.store.get_state,
                         set_app_state=lambda f: self.store.set_state(f),
+                        auto_review=global_cfg.auto_review,
+                        max_review_iterations=global_cfg.max_review_iterations,
                     )
                 )
             # Reset session context

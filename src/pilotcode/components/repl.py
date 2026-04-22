@@ -94,6 +94,7 @@ class REPL:
                         f"[dim]🔄 Auto-compacted context (~{saved} tokens saved)[/dim]"
                     )
 
+        global_cfg = get_global_config()
         self.query_engine = QueryEngine(
             QueryEngineConfig(
                 cwd=self.store.get_state().cwd,
@@ -102,6 +103,8 @@ class REPL:
                 set_app_state=lambda f: self.store.set_state(f),
                 auto_compact=True,
                 on_notify=_on_notify,
+                auto_review=global_cfg.auto_review,
+                max_review_iterations=global_cfg.max_review_iterations,
             )
         )
 
@@ -853,6 +856,7 @@ async def run_headless(
     tools = get_all_tools()
     if read_only:
         tools = [t for t in tools if t.name not in write_tools]
+    global_cfg = get_global_config()
     query_engine = QueryEngine(
         QueryEngineConfig(
             cwd=working_dir,
@@ -860,6 +864,8 @@ async def run_headless(
             get_app_state=store.get_state,
             set_app_state=lambda f: store.set_state(f),
             auto_compact=True,
+            auto_review=global_cfg.auto_review,
+            max_review_iterations=global_cfg.max_review_iterations,
         )
     )
 

@@ -152,6 +152,9 @@ class TUIController:
             self._pending_notifications.append((event_type, payload))
 
         tools = get_all_tools()
+        from pilotcode.utils.config import get_global_config
+
+        global_cfg = get_global_config()
         config = QueryEngineConfig(
             cwd=str(Path.cwd()),
             tools=tools,
@@ -160,6 +163,8 @@ class TUIController:
             auto_compact=True,
             max_tokens=8000,
             on_notify=_on_notify,
+            auto_review=global_cfg.auto_review,
+            max_review_iterations=global_cfg.max_review_iterations,
         )
         self.query_engine = QueryEngine(config=config)
 
