@@ -312,7 +312,7 @@ class TUIController:
         """
         from pilotcode.permissions.permission_manager import PermissionManager
 
-        if tool_name in PermissionManager.READONLY_TOOLS:
+        if tool_name in PermissionManager.SAFE_TOOLS:
             return True
 
         if tool_name == "Bash":

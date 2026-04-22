@@ -70,8 +70,8 @@ class PermissionManager:
     - Risk-based permission prompts
     """
 
-    # Tools that are always safe (read-only)
-    READONLY_TOOLS = {
+    # Tools that are always safe (read-only or harmless writes)
+    SAFE_TOOLS = {
         "FileRead",
         "Glob",
         "Grep",
@@ -98,6 +98,7 @@ class PermissionManager:
         "Brief",
         "AskUser",
         "Sleep",
+        "TodoWrite",
     }
 
     # Tools that can modify files
