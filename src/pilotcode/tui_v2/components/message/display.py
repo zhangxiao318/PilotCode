@@ -657,6 +657,17 @@ class TextViewerDialog(Screen):
         text_area = self.query_one(TextArea)
         text_area.focus()
 
+    def on_key(self, event):
+        """Handle key events - prevent Ctrl+C from exiting."""
+        if event.key == "ctrl+c":
+            # Always handle Ctrl+C as copy action, don't let it propagate
+            self.action_copy()
+            event.stop()
+            event.prevent_default()
+        else:
+            # Let other keys propagate normally
+            super().on_key(event)
+
     def action_close(self):
         """Close the dialog."""
         self.app.pop_screen()
