@@ -1,11 +1,10 @@
 # /model 命令
 
-查看当前 AI 模型能力详情和所有可用模型列表。只读显示，不支持直接切换模型。
+查看当前 AI 模型的能力详情。只读显示，不支持切换模型。
 
 ## 作用
 
-- 查看当前模型的详细能力（上下文窗口、工具支持、视觉支持等）
-- 列出所有可用模型及其上下文大小
+- 查看当前模型的详细能力（上下文窗口、最大输出、工具支持、视觉支持等）
 - 确认当前配置是否生效
 
 ## 基本用法
@@ -28,15 +27,6 @@ Capability:
   Tools:          Yes
   Vision:         No
 
-Available models:
-  deepseek        DeepSeek (深度求索)          ctx=128K *
-  qwen            Qwen (通义千问)              ctx=256K
-  qwen-plus       Qwen Plus (通义千问 Plus)    ctx=1M
-  openai          OpenAI GPT                   ctx=128K
-  anthropic       Anthropic Claude             ctx=200K
-  moonshot        Moonshot (月之暗面)          ctx=256K
-  ollama          Ollama (Local)               ctx=128K
-
 Base URL: https://api.deepseek.com/v1
 
 To switch model, use: python3 -m pilotcode configure
@@ -54,7 +44,6 @@ To switch model, use: python3 -m pilotcode configure
 | `Max output` | 单次回复的最大输出 Token 数 |
 | `Tools` | 是否支持 Function Calling / 工具调用 |
 | `Vision` | 是否支持图片/多模态输入 |
-| `*` 标记 | 当前正在使用的模型 |
 
 ## 使用场景
 
@@ -65,15 +54,7 @@ To switch model, use: python3 -m pilotcode configure
 # 检查当前使用的模型、上下文大小和能力支持
 ```
 
-### 场景2：对比不同模型的上下文大小
-
-```bash
-> /model
-# 查看各模型的 ctx 值
-# 例如需要分析大型代码库时，确认是否使用了 qwen-plus (1M)
-```
-
-### 场景3：验证模型切换是否生效
+### 场景2：验证模型切换是否生效
 
 ```bash
 # 通过 configure 向导切换模型后
