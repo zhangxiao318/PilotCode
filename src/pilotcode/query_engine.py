@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import re
+import uuid
 from typing import Any, AsyncIterator, Callable
 from dataclasses import dataclass, field
 
@@ -306,6 +308,70 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 5. **Review with git diff** - Before finishing, run `Bash(command="git diff")` to review all changes and ensure nothing was accidentally modified or left out.
 6. **Rollback on failure** - If a syntax check fails or an edit looks wrong, fix it immediately. Do not leave broken code in the workspace.
 7. **Test local changes with correct import path** - When running tests after editing source code (especially for libraries with a `src/` layout), ensure the local modified version is loaded instead of a system-installed package. Use `PYTHONPATH=src python -m pytest` or `python -m pip install -e .` before testing."""
+
+    def _parse_content_tool_calls(self, content: str) -> list[dict[str, Any]]:
+        """Parse XML/pseudo-XML tool calls embedded in assistant content.
+
+        Some local models (vLLM, Ollama with certain backends) output tool calls
+        as pseudo-XML in the content field instead of using the standard
+        OpenAI 'tool_calls' delta field. This method extracts them as a fallback.
+
+        Supports formats like:
+          <tool_call><function=Bash><parameter=command>ls</parameter></function></tool_call>
+          <tool_call><name>Bash</name><arguments>{"command":"ls"}</arguments></tool_call>
+
+        Returns list of dicts with 'name' and 'arguments' keys.
+        """
+        tool_calls: list[dict[str, Any]] = []
+
+        # Pattern 1: <tool_call>...<function=Name>...<parameter=key>value</parameter>...</function>...</tool_call>
+        pattern = r"<tool_call>\s*<function=(\w+)>\s*(.*?)\s*</function>\s*</tool_call>"
+        for match in re.finditer(pattern, content, re.DOTALL):
+            tool_name = match.group(1)
+            params_block = match.group(2)
+
+            arguments: dict[str, Any] = {}
+            param_pattern = r"<parameter=(\w+)>(.*?)</parameter>"
+            for pmatch in re.finditer(param_pattern, params_block, re.DOTALL):
+                arguments[pmatch.group(1)] = pmatch.group(2).strip()
+
+            if tool_name:
+                tool_calls.append({"name": tool_name, "arguments": arguments})
+
+        # Pattern 2: <tool_call>...</tool_call> with <name> and <arguments> children
+        if not tool_calls:
+            pattern2 = (
+                r"<tool_call>\s*<name>(\w+)</name>\s*<arguments>(.*?)</arguments>\s*</tool_call>"
+            )
+            for match in re.finditer(pattern2, content, re.DOTALL):
+                tool_name = match.group(1)
+                args_text = match.group(2).strip()
+                try:
+                    arguments = json.loads(args_text)
+                except json.JSONDecodeError:
+                    arguments = {"raw": args_text}
+                if tool_name:
+                    tool_calls.append({"name": tool_name, "arguments": arguments})
+
+        return tool_calls
+
+    def _remove_xml_tool_calls(self, content: str) -> str:
+        """Remove XML/pseudo-XML tool call blocks from content."""
+        # Pattern 1
+        cleaned = re.sub(
+            r"<tool_call>\s*<function=\w+>\s*.*?\s*</function>\s*</tool_call>",
+            "",
+            content,
+            flags=re.DOTALL,
+        )
+        # Pattern 2
+        cleaned = re.sub(
+            r"<tool_call>\s*<name>\w+</name>\s*<arguments>.*?</arguments>\s*</tool_call>",
+            "",
+            cleaned,
+            flags=re.DOTALL,
+        )
+        return cleaned.strip()
 
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to API format."""
@@ -633,6 +699,18 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
             if finish_reason:
                 break
+
+        # Fallback: parse XML-style tool calls from content if API didn't return standard tool_calls
+        if not current_tool_call and accumulated_content:
+            xml_tools = self._parse_content_tool_calls(accumulated_content)
+            if xml_tools:
+                accumulated_content = self._remove_xml_tool_calls(accumulated_content)
+                for i, tc in enumerate(xml_tools):
+                    current_tool_call[i] = {
+                        "id": f"xml_tool_{i}_{uuid.uuid4().hex[:6]}",
+                        "name": tc["name"],
+                        "arguments": json.dumps(tc["arguments"]),
+                    }
 
         # Final assistant message
         if accumulated_content:

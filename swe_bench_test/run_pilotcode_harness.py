@@ -164,13 +164,12 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
         # Temporarily disable proxy for git operations (network may be unstable)
         env_no_proxy = "GIT_CONFIG_GLOBAL=/dev/null"
         rc, _, stderr = run_cmd(
-            f"{env_no_proxy} git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}", timeout=60
+            f"{env_no_proxy} git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}",
+            timeout=60,
         )
         if rc != 0:
             print(f"[WARN] Shallow clone failed: {stderr}")
-            rc, _, stderr = run_cmd(
-                f"{env_no_proxy} git clone {repo_url} {cache_dir}", timeout=120
-            )
+            rc, _, stderr = run_cmd(f"{env_no_proxy} git clone {repo_url} {cache_dir}", timeout=120)
             if rc != 0:
                 print(f"[WARN] Full clone failed: {stderr}")
                 # Fallback: try to reuse any existing repo for the same project

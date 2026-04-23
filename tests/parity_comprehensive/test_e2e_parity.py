@@ -98,9 +98,9 @@ class TestE2EConversation:
             async for result in engine.submit_message("Run command"):
                 if isinstance(result.message, ToolUseMessage):
                     t.append(result.message)
-            assert len(t) == 1 and t[0].name == expected_tool, (
-                f"Expected {expected_tool}, got {[m.name for m in t]}"
-            )
+            assert (
+                len(t) == 1 and t[0].name == expected_tool
+            ), f"Expected {expected_tool}, got {[m.name for m in t]}"
             r = await executor.execute_tool_by_name(t[0].name, t[0].input, ctx)
             assert r.success
             engine.add_tool_result(t[0].tool_use_id, str(r.result.data))
