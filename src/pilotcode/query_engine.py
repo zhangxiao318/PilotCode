@@ -641,27 +641,15 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             self.messages.append(tool_use_msg)
             yield QueryResult(message=tool_use_msg, is_complete=False)
 
-    # Threshold for truncating individual tool results at ingestion time.
-    # Results longer than this are truncated to _TOOL_RESULT_TRUNC_LEN.
-    _TOOL_RESULT_MAX_LEN: int = 4000
-    _TOOL_RESULT_TRUNC_LEN: int = 2000
-
     def add_tool_result(self, tool_use_id: str, content: str, is_error: bool = False) -> None:
         """Add a tool result to the conversation history.
 
-        Long results (>4KB) are truncated to ~2KB to prevent a single
-        tool output from exploding the context window.  The full result
-        is still available locally (e.g. in tool orchestrator cache).
+        Full tool results are preserved; context compaction (if enabled)
+        is handled in submit_message() before sending to the API.
 
         Call this after executing a tool, then call submit_message again
         to let the LLM continue with the tool result.
         """
-        if isinstance(content, str) and len(content) > self._TOOL_RESULT_MAX_LEN:
-            content = (
-                content[: self._TOOL_RESULT_TRUNC_LEN]
-                + f"\n... [truncated, {len(content)} chars total]"
-            )
-
         # Track file changes for post-edit review
         tool_name = ""
         for msg in reversed(self.messages):
@@ -786,6 +774,9 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         current_msg_count = len(self.messages)
         if current_msg_count <= self._last_compaction_message_count:
             return False
+
+        # DEBUG: print actual values when compaction is triggered
+        print(f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} max_tokens={self.config.max_tokens} msg_count={current_msg_count} last_compacted_at={self._last_compaction_message_count}")
 
         tokens_before = self.count_tokens()
         result = self.intelligent_compact()
