@@ -62,33 +62,50 @@ async def workflow_command(args: list[str], context: CommandContext) -> str:
     elif action == "sequential":
         """Run sequential workflow."""
         if len(args) < 2:
-            return "Usage: /workflow sequential '<prompt>'"
+            return "Usage: /workflow sequential '<prompt>' [--agents <types>]"
 
-        prompt = " ".join(args[1:])
+        # Parse --agents parameter
+        prompt_parts = []
+        agent_types = ["planner", "coder", "reviewer"]
+        i = 1
+        while i < len(args):
+            if args[i] == "--agents" and i + 1 < len(args):
+                agent_types = [a.strip() for a in args[i + 1].split(",")]
+                i += 2
+            else:
+                prompt_parts.append(args[i])
+                i += 1
 
-        # Create steps for different agent types
-        steps = [
-            WorkflowStep(
-                step_id="plan",
-                agent_type="planner",
-                prompt=f"Create a plan for: {prompt}",
-                output_key="plan",
-            ),
-            WorkflowStep(
-                step_id="execute",
-                agent_type="coder",
-                prompt=f"Execute this plan: {{{{plan}}}}\n\nOriginal task: {prompt}",
-                depends_on=["plan"],
-                output_key="result",
-            ),
-            WorkflowStep(
-                step_id="review",
-                agent_type="reviewer",
-                prompt=f"Review this result: {{{{result}}}}\n\nOriginal task: {prompt}",
-                depends_on=["execute"],
-                output_key="review",
-            ),
-        ]
+        prompt = " ".join(prompt_parts)
+        if not prompt:
+            return "Usage: /workflow sequential '<prompt>' [--agents <types>]"
+
+        # Build steps from specified agent types
+        steps = []
+        for idx, agent_type in enumerate(agent_types):
+            step_id = f"step_{idx}"
+            depends_on = [f"step_{idx - 1}"] if idx > 0 else []
+            if idx == 0:
+                step_prompt = f"Create a plan for: {prompt}"
+                output_key = "plan"
+            elif idx == len(agent_types) - 1:
+                prev_key = f"step_{idx - 1}"
+                step_prompt = f"Review this result: {{{{{prev_key}}}}}\n\nOriginal task: {prompt}"
+                output_key = "review"
+            else:
+                prev_key = f"step_{idx - 1}"
+                step_prompt = f"Execute this plan: {{{{{prev_key}}}}}\n\nOriginal task: {prompt}"
+                output_key = f"result_{idx}"
+
+            steps.append(
+                WorkflowStep(
+                    step_id=step_id,
+                    agent_type=agent_type,
+                    prompt=step_prompt,
+                    depends_on=depends_on,
+                    output_key=output_key,
+                )
+            )
 
         console.print("[bold green]Running sequential workflow...[/bold green]")
 
@@ -107,10 +124,23 @@ async def workflow_command(args: list[str], context: CommandContext) -> str:
     elif action == "parallel":
         """Run parallel workflow with multiple agents."""
         if len(args) < 2:
-            return "Usage: /workflow parallel '<prompt>' [agent_types...]"
+            return "Usage: /workflow parallel '<prompt>' [--agents <types>]"
 
-        prompt = args[1]
-        agent_types = args[2:] if len(args) > 2 else ["coder", "debugger", "reviewer"]
+        # Parse --agents parameter
+        prompt_parts = []
+        agent_types = ["coder", "debugger", "reviewer"]
+        i = 1
+        while i < len(args):
+            if args[i] == "--agents" and i + 1 < len(args):
+                agent_types = [a.strip() for a in args[i + 1].split(",")]
+                i += 2
+            else:
+                prompt_parts.append(args[i])
+                i += 1
+
+        prompt = " ".join(prompt_parts)
+        if not prompt:
+            return "Usage: /workflow parallel '<prompt>' [--agents <types>]"
 
         steps = [
             WorkflowStep(
@@ -141,16 +171,39 @@ async def workflow_command(args: list[str], context: CommandContext) -> str:
     elif action == "supervisor":
         """Run supervisor-worker pattern."""
         if len(args) < 2:
-            return "Usage: /workflow supervisor '<task>' [worker_types...]"
+            return "Usage: /workflow supervisor '<task>' [--supervisor <type>] [--workers <types>]"
 
-        task = args[1]
-        worker_types = args[2:] if len(args) > 2 else ["coder", "debugger"]
+        # Parse --supervisor and --workers parameters
+        task_parts = []
+        supervisor_type = "planner"
+        worker_types = None
+        i = 1
+        while i < len(args):
+            if args[i] == "--supervisor" and i + 1 < len(args):
+                supervisor_type = args[i + 1]
+                i += 2
+            elif args[i] == "--workers" and i + 1 < len(args):
+                worker_types = [w.strip() for w in args[i + 1].split(",")]
+                i += 2
+            else:
+                task_parts.append(args[i])
+                i += 1
+
+        task = " ".join(task_parts)
+        if not task:
+            return "Usage: /workflow supervisor '<task>' [--supervisor <type>] [--workers <types>]"
+
+        if worker_types is None:
+            worker_types = ["coder", "debugger"]
 
         console.print(
-            f"[bold green]Running supervisor workflow with {len(worker_types)} workers...[/bold green]"
+            f"[bold green]Running supervisor workflow with {len(worker_types)} workers "
+            f"(supervisor: {supervisor_type})...[/bold green]"
         )
 
-        result = await orchestrator.run_supervisor(task, worker_types)
+        result = await orchestrator.run_supervisor(
+            task, worker_types, supervisor_type=supervisor_type
+        )
 
         if result.status == AgentStatus.COMPLETED:
             console.print("\n[bold]Final Answer:[/bold]")
@@ -163,12 +216,30 @@ async def workflow_command(args: list[str], context: CommandContext) -> str:
     elif action == "debate":
         """Run debate between agents."""
         if len(args) < 2:
-            return "Usage: /workflow debate '<topic>' [rounds]"
+            return "Usage: /workflow debate '<topic>' [--agents <types>] [--rounds <n>]"
 
-        topic = args[1]
-        rounds = int(args[2]) if len(args) > 2 else 3
-
+        # Parse --agents and --rounds parameters
+        topic_parts = []
         agent_types = ["explainer", "reviewer", "planner"]
+        rounds = 3
+        i = 1
+        while i < len(args):
+            if args[i] == "--agents" and i + 1 < len(args):
+                agent_types = [a.strip() for a in args[i + 1].split(",")]
+                i += 2
+            elif args[i] == "--rounds" and i + 1 < len(args):
+                try:
+                    rounds = int(args[i + 1])
+                except ValueError:
+                    pass
+                i += 2
+            else:
+                topic_parts.append(args[i])
+                i += 1
+
+        topic = " ".join(topic_parts)
+        if not topic:
+            return "Usage: /workflow debate '<topic>' [--agents <types>] [--rounds <n>]"
 
         console.print(f"[bold green]Starting debate on: {topic}[/bold green]")
         console.print(f"Participants: {', '.join(agent_types)}")
@@ -219,10 +290,10 @@ async def workflow_command(args: list[str], context: CommandContext) -> str:
 Available actions:
   /workflow                    - List workflows
   /workflow create <name> <desc> - Create workflow
-  /workflow sequential '<prompt>' - Run sequential workflow
-  /workflow parallel '<prompt>' [types...] - Run parallel workflow
-  /workflow supervisor '<task>' [workers...] - Run supervisor workflow
-  /workflow debate '<topic>' [rounds] - Run debate
+  /workflow sequential '<prompt>' [--agents <types>] - Run sequential workflow
+  /workflow parallel '<prompt>' [--agents <types>] - Run parallel workflow
+  /workflow supervisor '<task>' [--supervisor <type>] [--workers <types>] - Run supervisor workflow
+  /workflow debate '<topic>' [--agents <types>] [--rounds <n>] - Run debate
   /workflow show <id>          - Show workflow details"""
 
 
