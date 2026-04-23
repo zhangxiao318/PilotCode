@@ -479,7 +479,12 @@ class WebSocketManager:
             async def _render_conversational_tool_call(tool_name: str, tool_input: dict):
                 await self.send_to_client(
                     websocket,
-                    {"type": "tool_call", "stream_id": stream_id, "tool_name": tool_name, "tool_input": tool_input},
+                    {
+                        "type": "tool_call",
+                        "stream_id": stream_id,
+                        "tool_name": tool_name,
+                        "tool_input": tool_input,
+                    },
                 )
 
             async def _render_system(content: str):

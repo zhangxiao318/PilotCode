@@ -427,12 +427,26 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
     # Greeting patterns that can be handled locally without calling the API
     _GREETING_PATTERNS_CN = {
-        "你好", "您好", "嗨", "哈喽", "在吗", "在么",
-        "你是谁", "你叫什么", "介绍一下你自己", "你是做什么的",
+        "你好",
+        "您好",
+        "嗨",
+        "哈喽",
+        "在吗",
+        "在么",
+        "你是谁",
+        "你叫什么",
+        "介绍一下你自己",
+        "你是做什么的",
     }
     _GREETING_PATTERNS_EN = {
-        "hello", "hi", "hey", "hiya", "greetings",
-        "who are you", "what are you", "introduce yourself",
+        "hello",
+        "hi",
+        "hey",
+        "hiya",
+        "greetings",
+        "who are you",
+        "what are you",
+        "introduce yourself",
     }
 
     def _detect_language(self, text: str) -> str:
@@ -553,7 +567,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             yield QueryResult(message=review_msg, is_complete=True)
 
             # P0: If tests failed, insert explicit redesign instructions
-            if redesign_prompt and self._review_iteration_count < self.config.max_review_iterations - 1:
+            if (
+                redesign_prompt
+                and self._review_iteration_count < self.config.max_review_iterations - 1
+            ):
                 redesign_msg = SystemMessage(content=redesign_prompt)
                 self.messages.append(redesign_msg)
                 yield QueryResult(message=redesign_msg, is_complete=True)
@@ -776,7 +793,9 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             return False
 
         # DEBUG: print actual values when compaction is triggered
-        print(f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} max_tokens={self.config.max_tokens} msg_count={current_msg_count} last_compacted_at={self._last_compaction_message_count}")
+        print(
+            f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} max_tokens={self.config.max_tokens} msg_count={current_msg_count} last_compacted_at={self._last_compaction_message_count}"
+        )
 
         tokens_before = self.count_tokens()
         result = self.intelligent_compact()

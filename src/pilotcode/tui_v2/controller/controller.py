@@ -30,6 +30,7 @@ from pilotcode.components.repl import classify_task_complexity
 
 class ToolDeniedError(Exception):
     """Raised when user denies a tool execution. Stops the current tool batch."""
+
     def __init__(self, message: str, stop_task: bool = True):
         super().__init__(message)
         self.stop_task = stop_task
@@ -107,7 +108,9 @@ class TUIController:
             is_complete=True,
         )
 
-    def _render_conversational_assistant(self, content: str, is_streaming: bool, is_complete: bool) -> UIMessage:
+    def _render_conversational_assistant(
+        self, content: str, is_streaming: bool, is_complete: bool
+    ) -> UIMessage:
         """Conversational Layer: assistant response."""
         return UIMessage(
             type=UIMessageType.ASSISTANT,
@@ -116,7 +119,15 @@ class TUIController:
             is_complete=is_complete,
         )
 
-    def _render_conversational_tool_use(self, tool_name: str, tool_input: dict, tool_use_id: str, iteration: int, tool_idx: int, total_tools: int) -> UIMessage:
+    def _render_conversational_tool_use(
+        self,
+        tool_name: str,
+        tool_input: dict,
+        tool_use_id: str,
+        iteration: int,
+        tool_idx: int,
+        total_tools: int,
+    ) -> UIMessage:
         """Conversational Layer: tool call notification."""
         is_safe = self._is_safe_tool(tool_name, tool_input if isinstance(tool_input, dict) else {})
         return UIMessage(

@@ -539,7 +539,7 @@ Previous discussion:
         """Run a single agent task with tool support and allowed_tools filtering."""
         import json
         from ..tools.registry import get_tool_by_name
-        from ..utils.model_client import Message as MCMessage
+        from ..utils.model_client import Message as MCMessage, ToolCall
 
         client = get_model_client()
         ctx = ToolUseContext()
@@ -549,10 +549,19 @@ Previous discussion:
         for tool_name in agent.definition.allowed_tools:
             tool = get_tool_by_name(tool_name)
             if tool:
+                # description may be a callable; invoke it to get the string
+                raw_desc = tool.description
+                if callable(raw_desc):
+                    try:
+                        desc = raw_desc(tool.input_schema(), {})
+                    except Exception:
+                        desc = tool.name
+                else:
+                    desc = raw_desc
                 all_tools.append(
                     {
                         "name": tool.name,
-                        "description": tool.description,
+                        "description": desc,
                         "input_schema": tool.input_schema.model_json_schema(),
                     }
                 )
@@ -578,7 +587,7 @@ Previous discussion:
                 choice = response.get("choices", [{}])[0]
                 delta = choice.get("delta", {})
 
-                content = delta.get("content", "")
+                content = delta.get("content") or ""
                 tool_calls_raw = delta.get("tool_calls")
 
                 # Build assistant message with content and/or tool_calls
@@ -587,15 +596,16 @@ Previous discussion:
                     assistant_msg.tool_calls = []
                     for tc in tool_calls_raw:
                         fn = tc.get("function", {})
+                        try:
+                            args = json.loads(fn.get("arguments", "{}"))
+                        except json.JSONDecodeError:
+                            args = {}
                         assistant_msg.tool_calls.append(
-                            {
-                                "id": tc.get("id", ""),
-                                "type": "function",
-                                "function": {
-                                    "name": fn.get("name", ""),
-                                    "arguments": fn.get("arguments", "{}"),
-                                },
-                            }
+                            ToolCall(
+                                id=tc.get("id", ""),
+                                name=fn.get("name", ""),
+                                arguments=args,
+                            )
                         )
                 messages.append(assistant_msg)
 

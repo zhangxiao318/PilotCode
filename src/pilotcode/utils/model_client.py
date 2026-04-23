@@ -10,7 +10,6 @@ import httpx
 from .config import get_global_config
 from .models_config import get_model_info
 
-
 # Provider inference keywords mapped to canonical provider names
 _PROVIDER_KEYWORDS: dict[str, str] = {
     "qwen": "qwen",

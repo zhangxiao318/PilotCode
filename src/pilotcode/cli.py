@@ -77,6 +77,7 @@ def _print_api_capability(console: Console, caps: dict, static_info=None) -> Non
     If static_info (ModelInfo) is provided, values that differ from the
     static config are highlighted in red.
     """
+
     def _val(label: str, detected: Any, static_val: Any, fmt: Callable[[Any], str] = str) -> None:
         if detected is None:
             return
@@ -552,18 +553,36 @@ def config(
 
                     detected_name = api_caps.get("display_name")
                     if detected_name and detected_name != config.default_model:
-                        config_mismatches.append(("default_model", config.default_model or "(empty)", detected_name))
+                        config_mismatches.append(
+                            ("default_model", config.default_model or "(empty)", detected_name)
+                        )
 
                     detected_provider = api_caps.get("_provider")
                     if detected_provider and detected_provider != config.model_provider:
-                        config_mismatches.append(("model_provider", config.model_provider or "(empty)", detected_provider))
+                        config_mismatches.append(
+                            (
+                                "model_provider",
+                                config.model_provider or "(empty)",
+                                detected_provider,
+                            )
+                        )
 
                     detected_ctx = api_caps.get("context_window")
-                    if detected_ctx is not None and model_info and detected_ctx != model_info.context_window:
-                        model_mismatches.append(("context_window", model_info.context_window, detected_ctx))
+                    if (
+                        detected_ctx is not None
+                        and model_info
+                        and detected_ctx != model_info.context_window
+                    ):
+                        model_mismatches.append(
+                            ("context_window", model_info.context_window, detected_ctx)
+                        )
 
                     detected_max = api_caps.get("max_tokens")
-                    if detected_max is not None and model_info and detected_max != model_info.max_tokens:
+                    if (
+                        detected_max is not None
+                        and model_info
+                        and detected_max != model_info.max_tokens
+                    ):
                         model_mismatches.append(("max_tokens", model_info.max_tokens, detected_max))
 
                     if config_mismatches or model_mismatches:

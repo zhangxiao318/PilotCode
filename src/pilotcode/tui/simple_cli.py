@@ -87,9 +87,7 @@ class SimpleCLI:
                     saved = payload.get("tokens_saved", 0)
                     cleared = payload.get("tool_results_cleared", 0)
                     if payload.get("fallback"):
-                        print(
-                            f"\n🔄 Auto-compacted context (fallback, ~{saved} tokens saved)"
-                        )
+                        print(f"\n🔄 Auto-compacted context (fallback, ~{saved} tokens saved)")
                     elif cleared > 0:
                         print(
                             f"\n🔄 Auto-compacted context ({cleared} old tool results cleared, ~{saved} tokens saved)"
@@ -216,7 +214,9 @@ class SimpleCLI:
             desc = str(list(tool_input.values())[0])[:50] if tool_input else "N/A"
         print(f"🔧 Executing {tool_name}: {desc}")
 
-    def _render_conversational_tool_result(self, output: str, success: bool, error_msg: str = "") -> None:
+    def _render_conversational_tool_result(
+        self, output: str, success: bool, error_msg: str = ""
+    ) -> None:
         """Conversational Layer: tool execution result."""
         if not success:
             print(f"❌ Error: {error_msg}")
@@ -374,6 +374,7 @@ class SimpleCLI:
         if tool_name == "Bash":
             try:
                 from pilotcode.tools.bash_tool import is_read_only_command
+
                 command = params.get("command", "")
                 return is_read_only_command(command)
             except ImportError:
@@ -598,7 +599,9 @@ class SimpleCLI:
                         # -- Conversational Layer: flush assistant response --
                         if result.is_complete:
                             if accumulated_response:
-                                self._render_conversational_assistant(accumulated_response, is_complete=True)
+                                self._render_conversational_assistant(
+                                    accumulated_response, is_complete=True
+                                )
                             elif not response_received and not pending_tools:
                                 self._render_system("no_response")
 

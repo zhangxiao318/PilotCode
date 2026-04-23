@@ -53,6 +53,7 @@ class DisplayEvent:
 
 # Common event type constants to avoid string typos across UI modes.
 
+
 # Conversational layer
 class ConversationalType:
     USER_INPUT = "user_input"
@@ -96,18 +97,27 @@ def make_conversational(
     **kwargs: Any,
 ) -> DisplayEvent:
     """Factory for conversational layer events."""
-    payload = {"content": content, "is_streaming": is_streaming, "is_complete": is_complete, **kwargs}
+    payload = {
+        "content": content,
+        "is_streaming": is_streaming,
+        "is_complete": is_complete,
+        **kwargs,
+    }
     return DisplayEvent(layer=DisplayLayer.CONVERSATIONAL, type=type, payload=payload)
 
 
 def make_system(type: str, content: str = "", **kwargs: Any) -> DisplayEvent:
     """Factory for system layer events."""
-    return DisplayEvent(layer=DisplayLayer.SYSTEM, type=type, payload={"content": content, **kwargs})
+    return DisplayEvent(
+        layer=DisplayLayer.SYSTEM, type=type, payload={"content": content, **kwargs}
+    )
 
 
 def make_interactive(type: str, prompt: str = "", **kwargs: Any) -> DisplayEvent:
     """Factory for interactive layer events."""
-    return DisplayEvent(layer=DisplayLayer.INTERACTIVE, type=type, payload={"prompt": prompt, **kwargs})
+    return DisplayEvent(
+        layer=DisplayLayer.INTERACTIVE, type=type, payload={"prompt": prompt, **kwargs}
+    )
 
 
 def make_status(type: str, **kwargs: Any) -> DisplayEvent:

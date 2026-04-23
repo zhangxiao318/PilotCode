@@ -77,6 +77,7 @@ class REPL:
         tools = get_all_tools()
         if read_only:
             tools = [t for t in tools if t.name not in self.WRITE_TOOLS]
+
         def _on_notify(event_type: str, payload: dict) -> None:
             if event_type == "auto_compact":
                 saved = payload.get("tokens_saved", 0)
@@ -143,13 +144,9 @@ class REPL:
             )
         elif event_type == "context_warning":
             usage_pct = payload.get("usage_pct", 0)
-            self.console.print(
-                f"[yellow]⚠️  Context at {usage_pct}% — approaching limit.[/yellow]"
-            )
+            self.console.print(f"[yellow]⚠️  Context at {usage_pct}% — approaching limit.[/yellow]")
         elif event_type == "permission_denied":
-            self.console.print(
-                "[red]⛔ Tool execution denied by user. Task stopped.[/red]"
-            )
+            self.console.print("[red]⛔ Tool execution denied by user. Task stopped.[/red]")
         elif event_type == "loop_detected":
             reason = payload.get("reason", "unknown")
             warning = (
@@ -210,14 +207,24 @@ class REPL:
             self.console.print()
             sys.stdout.flush()
 
-    def _render_conversational_tool_use(self, tool_name: str, tool_input: dict, iteration: int, max_iterations: int, tool_idx: int = 1, total_tools: int = 1) -> None:
+    def _render_conversational_tool_use(
+        self,
+        tool_name: str,
+        tool_input: dict,
+        iteration: int,
+        max_iterations: int,
+        tool_idx: int = 1,
+        total_tools: int = 1,
+    ) -> None:
         """Conversational Layer: tool call notification."""
         tool_progress = f"[turn {iteration}/{max_iterations}]"
         if total_tools > 1:
             tool_progress += f" [tool {tool_idx}/{total_tools}]"
         self.console.print(f"\n[dim][T] {tool_progress} {tool_name}[/dim]")
 
-    def _render_conversational_tool_result(self, tool_name: str, success: bool, message: str) -> None:
+    def _render_conversational_tool_result(
+        self, tool_name: str, success: bool, message: str
+    ) -> None:
         """Conversational Layer: tool execution result."""
         if success:
             self.console.print(f"[dim]✓ {tool_name} completed[/dim]")
@@ -282,8 +289,12 @@ class REPL:
             permission_denied = False
             for tool_idx, tool_msg in enumerate(pending_tools, 1):
                 self._render_conversational_tool_use(
-                    tool_msg.name, tool_msg.input, iteration, self.max_iterations,
-                    tool_idx=tool_idx, total_tools=len(pending_tools)
+                    tool_msg.name,
+                    tool_msg.input,
+                    iteration,
+                    self.max_iterations,
+                    tool_idx=tool_idx,
+                    total_tools=len(pending_tools),
                 )
 
                 context = ToolUseContext(

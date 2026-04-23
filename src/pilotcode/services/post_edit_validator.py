@@ -8,10 +8,13 @@ from typing import Any
 from ..utils.model_client import ModelClient, Message
 from ..utils.env_diagnosis import looks_like_environment_error, diagnose_and_fix_environment
 
-
 # Test framework detection patterns
 _TEST_FRAMEWORKS: list[tuple[str, list[str], str]] = [
-    ("pytest", ["pytest.ini", "pyproject.toml", "setup.cfg", "setup.py", "tox.ini"], "python -m pytest -xvs"),
+    (
+        "pytest",
+        ["pytest.ini", "pyproject.toml", "setup.cfg", "setup.py", "tox.ini"],
+        "python -m pytest -xvs",
+    ),
     ("pytest", ["tests", "test"], "python -m pytest -xvs"),
     ("npm", ["package.json"], "npm test"),
     ("cargo", ["Cargo.toml"], "cargo test"),
@@ -168,7 +171,9 @@ class PostEditValidator:
         self._test_framework_cache = (framework_cmd, test_targets)
         return framework_cmd, test_targets
 
-    async def run_tests(self, command: str, targets: list[str] | None, cwd: str | None = None) -> str:
+    async def run_tests(
+        self, command: str, targets: list[str] | None, cwd: str | None = None
+    ) -> str:
         """Run tests and return output."""
         work_dir = cwd or str(os.getcwd())
 
@@ -342,23 +347,27 @@ class PostEditValidator:
         ]
 
         if review_result and "[Review" not in review_result:
-            lines.extend([
-                "=== Review Feedback ===",
-                review_result[:2000],
-                "",
-            ])
+            lines.extend(
+                [
+                    "=== Review Feedback ===",
+                    review_result[:2000],
+                    "",
+                ]
+            )
 
-        lines.extend([
-            "=== Redesign Instructions ===",
-            "1. Re-read the failing test and ALL code it exercises.",
-            "2. Use Grep to find every call site of the function you changed.",
-            "3. Identify the TRUE root cause. Your previous assumption may be wrong.",
-            "4. Consider whether your fix introduced a regression or missed a call site.",
-            "5. Produce a COMPLETELY REVISED fix.",
-            "6. Run the tests again to confirm they pass before declaring completion.",
-            "",
-            "DO NOT simply tweak the previous patch. Reconsider from scratch.",
-        ])
+        lines.extend(
+            [
+                "=== Redesign Instructions ===",
+                "1. Re-read the failing test and ALL code it exercises.",
+                "2. Use Grep to find every call site of the function you changed.",
+                "3. Identify the TRUE root cause. Your previous assumption may be wrong.",
+                "4. Consider whether your fix introduced a regression or missed a call site.",
+                "5. Produce a COMPLETELY REVISED fix.",
+                "6. Run the tests again to confirm they pass before declaring completion.",
+                "",
+                "DO NOT simply tweak the previous patch. Reconsider from scratch.",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -367,7 +376,18 @@ class PostEditValidator:
         lines = test_output.split("\n")
         error_lines = []
         for line in lines:
-            if any(k in line for k in ("FAIL:", "ERROR:", "Traceback", "AssertionError", "TypeError", "ValueError", "NameError")):
+            if any(
+                k in line
+                for k in (
+                    "FAIL:",
+                    "ERROR:",
+                    "Traceback",
+                    "AssertionError",
+                    "TypeError",
+                    "ValueError",
+                    "NameError",
+                )
+            ):
                 error_lines.append(line)
         tail = "\n".join(lines[-100:])
         combined = "\n".join(error_lines) + "\n\n--- Tail of output ---\n" + tail
@@ -434,7 +454,15 @@ class PostEditValidator:
         if "no issues" in lowered or "looks good" in lowered:
             return False
         issue_markers = [
-            "bug", "error", "issue", "problem", "fix", "should be",
-            "missing", "incorrect", "potential", "concern",
+            "bug",
+            "error",
+            "issue",
+            "problem",
+            "fix",
+            "should be",
+            "missing",
+            "incorrect",
+            "potential",
+            "concern",
         ]
         return any(marker in lowered for marker in issue_markers)

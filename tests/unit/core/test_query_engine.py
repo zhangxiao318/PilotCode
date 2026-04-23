@@ -263,9 +263,7 @@ class TestQueryEngineNotify:
     def test_on_notify_payload_structure(self, notify_engine):
         """Verify the payload structure sent to on_notify."""
         for i in range(10):
-            notify_engine.messages.append(
-                UserMessage(content=f"Message number {i} with content")
-            )
+            notify_engine.messages.append(UserMessage(content=f"Message number {i} with content"))
 
         notify_engine.auto_compact_if_needed()
 
@@ -276,7 +274,9 @@ class TestQueryEngineNotify:
         assert "tokens_before" in payload and isinstance(payload["tokens_before"], int)
         assert "tokens_after" in payload and isinstance(payload["tokens_after"], int)
         assert "tokens_saved" in payload and isinstance(payload["tokens_saved"], int)
-        assert "tool_results_cleared" in payload and isinstance(payload["tool_results_cleared"], int)
+        assert "tool_results_cleared" in payload and isinstance(
+            payload["tool_results_cleared"], int
+        )
         assert "compaction_count" in payload and isinstance(payload["compaction_count"], int)
         assert "fallback" in payload and isinstance(payload["fallback"], bool)
 
