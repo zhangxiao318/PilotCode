@@ -708,13 +708,8 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             if finish_reason:
                 break
 
-        # Strip any XML-style tool calls from displayed content unconditionally
-        if accumulated_content and (
-            "<tool_call" in accumulated_content or "<function=" in accumulated_content
-        ):
-            accumulated_content = self._remove_xml_tool_calls(accumulated_content)
-
         # Fallback: parse XML-style tool calls from content if API didn't return standard tool_calls
+        # MUST parse before stripping XML, otherwise content is empty for parsing.
         if not current_tool_call and accumulated_content:
             xml_tools = self._parse_content_tool_calls(accumulated_content)
             if xml_tools:
@@ -724,6 +719,12 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                         "name": tc["name"],
                         "arguments": json.dumps(tc["arguments"]),
                     }
+
+        # Strip any XML-style tool calls from displayed content unconditionally
+        if accumulated_content and (
+            "<tool_call" in accumulated_content or "<function=" in accumulated_content
+        ):
+            accumulated_content = self._remove_xml_tool_calls(accumulated_content)
 
         # Final assistant message
         if accumulated_content:
