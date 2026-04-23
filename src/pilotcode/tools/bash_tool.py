@@ -380,7 +380,7 @@ def _update_cwd_from_cd(command: str, current_cwd: str | None, set_app_state) ->
     if not cmd:
         return
     lower = cmd.lower()
-    m = re.match(r'^(?:cd|chdir|set-location)\s+["\']?(.+?)["\']?\s*$', lower)
+    m = re.match(r'^(?:cd|chdir|set-location)(?:\s+/d)?\s+["\']?(.+?)["\']?\s*$', lower)
     if not m:
         if re.match(r"^(?:cd|chdir|set-location)\s*$", lower):
             target = os.path.expanduser("~")
