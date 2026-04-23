@@ -308,9 +308,7 @@ def _probe_and_update_local_config(config, config_manager) -> None:
         if backend in ("vllm", "openai-compatible") and config.base_url:
             url = config.base_url.rstrip("/")
             if not url.endswith("/v1"):
-                console.print(
-                    f"[yellow]⚠ base_url missing /v1 suffix: {config.base_url}[/yellow]"
-                )
+                console.print(f"[yellow]⚠ base_url missing /v1 suffix: {config.base_url}[/yellow]")
                 if typer.confirm("Auto-append /v1 to base_url?", default=True):
                     local_updates["base_url"] = url + "/v1"
 
@@ -689,7 +687,9 @@ def config(
                                 f"\n[yellow]⚠ context_window mismatch: "
                                 f"settings.json={config.context_window}, detected={detected_ctx}[/yellow]"
                             )
-                            if typer.confirm("Update settings.json to match detected value?", default=True):
+                            if typer.confirm(
+                                "Update settings.json to match detected value?", default=True
+                            ):
                                 local_updates["context_window"] = detected_ctx
 
                     # For vLLM, check model name
@@ -700,7 +700,9 @@ def config(
                                 f"\n[yellow]⚠ vLLM model name mismatch: "
                                 f"settings.json='{config.default_model}', detected='{detected_model}'[/yellow]"
                             )
-                            if typer.confirm("Update default_model in settings.json?", default=True):
+                            if typer.confirm(
+                                "Update default_model in settings.json?", default=True
+                            ):
                                 local_updates["default_model"] = detected_model
 
                     if local_updates:

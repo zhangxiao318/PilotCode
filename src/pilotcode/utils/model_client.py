@@ -355,7 +355,7 @@ class ModelClient:
             # backends (vLLM, TGI, etc.) only expose the /v1 prefix.
             base_has_v1 = str(self.client.base_url).rstrip("/").endswith("/v1")
             candidates: list[str] = []
-            for prefix in ([""] if base_has_v1 else ["/v1", ""]):
+            for prefix in [""] if base_has_v1 else ["/v1", ""]:
                 candidates.append(f"{prefix}/models/{self.model}")
                 candidates.append(f"{prefix}/models")
             # Deduplicate while preserving order

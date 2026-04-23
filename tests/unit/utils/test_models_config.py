@@ -7,7 +7,6 @@ from pilotcode.utils.models_config import (
     get_model_context_window,
     get_model_max_tokens,
     get_model_info,
-    ModelInfo,
     ModelProvider,
 )
 

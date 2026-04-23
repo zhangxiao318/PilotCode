@@ -1,10 +1,7 @@
 """Tests for config module."""
 
-import os
 import json
 import pytest
-import tempfile
-from pathlib import Path
 from dataclasses import asdict
 
 from pilotcode.utils.config import (
@@ -13,9 +10,6 @@ from pilotcode.utils.config import (
     ConfigManager,
     get_config_manager,
     get_global_config,
-    save_global_config,
-    is_configured,
-    get_config_status,
     ensure_configured,
 )
 
@@ -172,7 +166,7 @@ class TestConfigManager:
         ConfigManager.SETTINGS_FILE = config_dir / "settings.json"
 
         try:
-            manager = ConfigManager()
+            ConfigManager()
             assert config_dir.exists()
         finally:
             ConfigManager.CONFIG_DIR = original_dir

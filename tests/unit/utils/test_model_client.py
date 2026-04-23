@@ -1,6 +1,5 @@
 """Tests for model_client module."""
 
-import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -220,7 +219,9 @@ class TestModelClient:
     @pytest.mark.asyncio
     async def test_fetch_capabilities_returns_model_id(self):
         """Test that fetch_model_capabilities returns model_id from /v1/models."""
-        client = ModelClient(api_key="test", base_url="http://localhost:8000/v1", model="qwen-coder")
+        client = ModelClient(
+            api_key="test", base_url="http://localhost:8000/v1", model="qwen-coder"
+        )
 
         # Make /props, /api/show, /model/info return 404 so we hit /v1/models
         async def mock_get_side_effect(url, **kwargs):
