@@ -25,7 +25,7 @@ from .components.repl import (
     classify_task_complexity,
 )
 from .version import __version__
-from .utils.config import is_configured, get_config_manager
+from .utils.config import is_configured, get_config_manager, is_local_url
 from .utils.configure import run_configure_wizard, format_model_list, get_available_model_names
 
 app = typer.Typer(
@@ -181,7 +181,7 @@ def check_configuration() -> bool:
 
     # Skip dynamic verification for local/internal network models
     # Check both effective URL (after env override) and config file URL
-    is_local_model = _is_local_url(effective_base_url) or _is_local_url(config_base_url)
+    is_local_model = is_local_url(effective_base_url) or is_local_url(config_base_url)
 
     if is_local_model:
         display_url = effective_base_url or config_base_url
@@ -558,7 +558,7 @@ def config(
 
         # --- For local models, probe runtime info ---
         effective_url = config.base_url or (model_info.base_url if model_info else "")
-        if _is_local_url(effective_url):
+        if is_local_url(effective_url):
             console.print("\n[dim]Probing local model runtime info...[/dim]")
 
             async def _probe_local() -> dict | None:
@@ -581,24 +581,10 @@ def config(
                     _print_api_capability(console, api_caps, static_info=model_info)
 
                     # --- Detect mismatches and offer to update config ---
+                    # For local models, skip updating default_model/model_provider
+                    # (the detected name like "qwen-coder" may not exist in models.json)
                     config_mismatches: list[tuple[str, str, str]] = []
                     model_mismatches: list[tuple[str, int, int]] = []
-
-                    detected_name = api_caps.get("display_name")
-                    if detected_name and detected_name != config.default_model:
-                        config_mismatches.append(
-                            ("default_model", config.default_model or "(empty)", detected_name)
-                        )
-
-                    detected_provider = api_caps.get("_provider")
-                    if detected_provider and detected_provider != config.model_provider:
-                        config_mismatches.append(
-                            (
-                                "model_provider",
-                                config.model_provider or "(empty)",
-                                detected_provider,
-                            )
-                        )
 
                     detected_ctx = api_caps.get("context_window")
                     if (
@@ -610,7 +596,7 @@ def config(
                             ("context_window", model_info.context_window, detected_ctx)
                         )
 
-                    if config_mismatches or model_mismatches:
+                    if model_mismatches:
                         console.print("\n[yellow]⚠ Detected mismatches with config file:[/yellow]")
                         for key, old, new in config_mismatches:
                             console.print(f"  {key}: {old} → {new}")

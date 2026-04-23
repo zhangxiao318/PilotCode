@@ -16,6 +16,52 @@ from .models_config import (
 )
 
 
+def is_local_url(url: str) -> bool:
+    """Check if URL points to a local/internal model.
+
+    Matches localhost, loopback, and RFC1918 private addresses.
+    """
+    if not url:
+        return False
+
+    # localhost / loopback
+    if "localhost" in url or "127.0.0.1" in url:
+        return True
+
+    # Ollama default port
+    if ":11434" in url:
+        return True
+
+    # Extract host from URL for RFC1918 checks
+    from urllib.parse import urlparse
+
+    try:
+        host = urlparse(url).hostname or ""
+    except Exception:
+        return False
+
+    # 10.x.x.x
+    if host.startswith("10."):
+        return True
+
+    # 172.16-31.x.x
+    if host.startswith("172."):
+        parts = host.split(".")
+        if len(parts) >= 2:
+            try:
+                second = int(parts[1])
+                if 16 <= second <= 31:
+                    return True
+            except ValueError:
+                pass
+
+    # 192.168.x.x
+    if host.startswith("192.168."):
+        return True
+
+    return False
+
+
 @dataclass
 class GlobalConfig:
     """Global configuration."""
@@ -239,17 +285,7 @@ class ConfigManager:
             if ".gguf" in config.default_model or ".bin" in config.default_model:
                 return True
             # Local models with specific patterns (e.g., localhost, 127.0.0.1, local network)
-            if config.base_url and (
-                "localhost" in config.base_url
-                or "127.0.0.1" in config.base_url
-                or ":11434" in config.base_url
-                or config.base_url.startswith("http://192.168.")
-                or config.base_url.startswith("http://10.")
-                or config.base_url.startswith("http://172.")
-            ):
-                return True
-            # Custom base URL without API key (local/custom endpoint)
-            if config.base_url and not config.base_url.startswith("https://api."):
+            if config.base_url and is_local_url(config.base_url):
                 return True
 
         return False
