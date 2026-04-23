@@ -1,6 +1,5 @@
 """Unit tests for plugin policy."""
 
-import json
 import pytest
 
 try:

@@ -1,7 +1,6 @@
 """Tests for file watcher service."""
 
 import asyncio
-import os
 import tempfile
 from pathlib import Path
 
@@ -9,8 +8,6 @@ import pytest
 
 from pilotcode.services.file_watcher import (
     FileWatcher,
-    FileChangeEvent,
-    FileChangeType,
     WatcherConfig,
     get_file_watcher,
     watch_path,

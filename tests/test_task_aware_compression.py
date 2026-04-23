@@ -1,7 +1,6 @@
 """Tests for task-aware compression module."""
 
 import pytest
-from unittest.mock import Mock, patch
 
 from pilotcode.services.task_aware_compression import (
     SemanticClustering,
@@ -9,11 +8,10 @@ from pilotcode.services.task_aware_compression import (
     TaskContext,
     CompressionMode,
     TaskAwareCompressionResult,
-    RetentionDecision,
     get_task_aware_compressor,
     reset_task_aware_compressor,
 )
-from pilotcode.services.context_manager import ContextMessage, MessagePriority
+from pilotcode.services.context_manager import ContextMessage
 
 
 class TestSemanticClustering:

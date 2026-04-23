@@ -1,9 +1,8 @@
 """Tests for update checker functionality."""
 
 import pytest
-from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+from datetime import timedelta
+from unittest.mock import AsyncMock, patch
 
 from pilotcode.services.update_checker import (
     UpdateChecker,
@@ -11,7 +10,6 @@ from pilotcode.services.update_checker import (
     UpdateInfo,
     UpdateStatus,
     get_update_checker,
-    check_for_updates,
     should_check_updates,
 )
 

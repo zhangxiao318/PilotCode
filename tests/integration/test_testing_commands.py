@@ -10,7 +10,6 @@ from pilotcode.commands.testing_commands import (
     detect_test_framework,
     parse_pytest_output,
     parse_coverage_output,
-    run_pytest_tests,
     test_command as run_test_cmd,
     coverage_command as run_coverage_cmd,
     benchmark_command as run_benchmark_cmd,

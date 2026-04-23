@@ -3,14 +3,11 @@
 import pytest
 import tempfile
 import os
-from pathlib import Path
 
 from pilotcode.services.tool_sandbox import (
     SandboxConfig,
     SandboxLevel,
     SandboxResult,
-    SandboxError,
-    SecurityViolation,
     CommandAnalyzer,
     ToolSandbox,
     get_tool_sandbox,
@@ -105,7 +102,6 @@ class TestSandboxConfig:
 
     def test_blocked_paths(self):
         """Test blocked paths configuration."""
-        import os
 
         config = SandboxConfig()
 
@@ -192,7 +188,6 @@ class TestToolSandbox:
 
     def test_filesystem_access_check(self):
         """Test filesystem access checking."""
-        import os
 
         sandbox = self.create_sandbox()
 
@@ -206,7 +201,6 @@ class TestToolSandbox:
             )
 
         # Allowed path - use platform-specific temp directory
-        import tempfile
 
         temp_dir = tempfile.gettempdir()
         assert sandbox.check_filesystem_access(os.path.join(temp_dir, "test"), "read") is True
@@ -336,7 +330,6 @@ class TestEdgeCases:
 
     def test_pipe_command(self):
         """Test piped command."""
-        import os
 
         sandbox = ToolSandbox()
 

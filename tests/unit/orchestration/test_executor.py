@@ -1,7 +1,6 @@
 """Tests for the task executor."""
 
 import pytest
-import asyncio
 from datetime import datetime
 
 from pilotcode.orchestration.executor import (
@@ -193,7 +192,7 @@ class TestTaskExecutor:
         ]
 
         async def mock_run(agent, prompt, context):
-            return f"Result"
+            return "Result"
 
         executor._run_agent = mock_run
 
@@ -211,7 +210,7 @@ class TestTaskExecutor:
         ]
 
         async def mock_run(agent, prompt, context):
-            return f"Result"
+            return "Result"
 
         executor._run_agent = mock_run
 

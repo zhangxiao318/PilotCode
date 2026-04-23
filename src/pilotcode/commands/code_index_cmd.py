@@ -10,7 +10,6 @@ Usage:
 """
 
 from pathlib import Path
-from typing import Any
 
 from .base import CommandHandler, register_command
 from ..types.command import CommandContext
@@ -40,8 +39,8 @@ async def index_command_handler(
         if not files:
             return f"""No source files found in {context.cwd}
 
-Supported extensions: {', '.join(sorted(indexer.SUPPORTED_EXTENSIONS))[:100]}...
-Ignored directories: {', '.join(list(indexer.IGNORE_DIRS)[:5])}...
+Supported extensions: {", ".join(sorted(indexer.SUPPORTED_EXTENSIONS))[:100]}...
+Ignored directories: {", ".join(list(indexer.IGNORE_DIRS)[:5])}...
 
 Try:
   1. Check you're in the right directory (/pwd)
@@ -49,7 +48,7 @@ Try:
   3. Check if files exist: /bash command="find . -name '*.py' | head"
 """
 
-        print(f"⏳ Starting index...")
+        print("⏳ Starting index...")
         stats = await indexer.index_codebase(incremental=True)
 
         # Format language stats
@@ -80,8 +79,8 @@ Try:
         if not files:
             return f"""No source files found in {context.cwd}
 
-Supported extensions: {', '.join(sorted(indexer.SUPPORTED_EXTENSIONS))}
-Ignored directories: {', '.join(sorted(indexer.IGNORE_DIRS))}
+Supported extensions: {", ".join(sorted(indexer.SUPPORTED_EXTENSIONS))}
+Ignored directories: {", ".join(sorted(indexer.IGNORE_DIRS))}
 
 Try:
   1. Check you're in the right directory (/pwd)
@@ -89,7 +88,7 @@ Try:
   3. List current directory: /ls
 """
 
-        print(f"⏳ Starting full reindex...")
+        print("⏳ Starting full reindex...")
         indexer.clear_index()
         stats = await indexer.index_codebase(incremental=False)
 

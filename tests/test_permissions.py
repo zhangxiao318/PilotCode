@@ -30,7 +30,7 @@ class TestPermissionManager:
 
     def test_session_grant_persists(self):
         pm = PermissionManager()
-        req = PermissionRequest("Bash", {"command": "rm -rf test"}, "test", "critical")
+        PermissionRequest("Bash", {"command": "rm -rf test"}, "test", "critical")
 
         # Grant session permission
         pm.grant_session_permission("Bash", {"command": "rm -rf test"})

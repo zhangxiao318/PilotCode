@@ -3,8 +3,8 @@
 import pytest
 import copy
 
-from pilotcode.state.store import Store, get_store, set_global_store, StateSelector, StateUpdater
-from pilotcode.state.app_state import AppState, Settings, get_default_app_state
+from pilotcode.state.store import Store, get_store, set_global_store
+from pilotcode.state.app_state import AppState, Settings
 
 
 class TestStore:

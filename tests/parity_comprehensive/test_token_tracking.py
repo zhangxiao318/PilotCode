@@ -1,7 +1,5 @@
 """Tests for token counting and auto-compact."""
 
-import pytest
-
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
 from pilotcode.types.message import UserMessage, AssistantMessage
 

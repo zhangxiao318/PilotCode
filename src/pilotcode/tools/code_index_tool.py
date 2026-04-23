@@ -7,7 +7,6 @@ Provides commands to:
 - Clear index
 """
 
-import asyncio
 from typing import Any, Optional
 from enum import Enum
 from pydantic import BaseModel, Field

@@ -232,7 +232,7 @@ class TestReferencesCommand:
 
         with patch("os.path.exists", return_value=True):
             with patch("os.path.isabs", return_value=True):
-                result = await references_command(
+                await references_command(
                     ["/test/project/test.py", "10", "5"], command_context
                 )
                 mock_lsp_manager.get_references.assert_called_once()
@@ -267,7 +267,7 @@ class TestDefinitionsCommand:
 
         with patch("os.path.exists", return_value=True):
             with patch("os.path.isabs", return_value=True):
-                result = await definitions_command(
+                await definitions_command(
                     ["/test/project/test.py", "10", "5"], command_context
                 )
                 mock_lsp_manager.get_definition.assert_called_once()
@@ -292,7 +292,7 @@ class TestHoverCommand:
 
         with patch("os.path.exists", return_value=True):
             with patch("os.path.isabs", return_value=True):
-                result = await hover_command(["/test/project/test.py", "10", "5"], command_context)
+                await hover_command(["/test/project/test.py", "10", "5"], command_context)
                 mock_lsp_manager.get_hover.assert_called_once()
 
 
@@ -318,7 +318,7 @@ class TestImplementationsCommand:
 
         with patch("os.path.exists", return_value=True):
             with patch("os.path.isabs", return_value=True):
-                result = await implementations_command(
+                await implementations_command(
                     ["/test/project/test.py", "10", "5"], command_context
                 )
                 mock_lsp_manager.get_implementations.assert_called_once()

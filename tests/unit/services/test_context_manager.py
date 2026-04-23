@@ -1,15 +1,12 @@
 """Tests for Context Manager service."""
 
 import pytest
-import tempfile
-import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from pilotcode.services.context_manager import (
     ContextManager,
     ContextConfig,
     ContextMessage,
-    ContextStats,
     ContextBudget,
     CompactStrategy,
     MessagePriority,
@@ -315,7 +312,7 @@ class TestCompactionStrategies:
         )
         context_manager.add_message("user", "Extra", priority=MessagePriority.LOG)
 
-        initial_count = len(context_manager.messages)
+        len(context_manager.messages)
 
         # Compact
         removed = context_manager.compact(strategy=CompactStrategy.PRIORITY, target_ratio=0.3)

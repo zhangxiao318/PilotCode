@@ -6,9 +6,7 @@ This module combines tests for:
 """
 
 import pytest
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 # Bash tool security imports
 from pilotcode.tools.bash_tool import (
@@ -19,13 +17,10 @@ from pilotcode.tools.bash_tool import (
 # File tool security imports
 from pilotcode.tools.file_edit_tool import (
     edit_file_content,
-    FileEditOutput,
     _is_path_within_workspace,
 )
 from pilotcode.tools.file_write_tool import (
     write_file_atomic,
-    FileWriteOutput,
-    _is_path_within_workspace as write_is_path_within_workspace,
 )
 import shutil
 
@@ -449,7 +444,7 @@ class TestFileEditSecurity:
         try:
             original_content = test_file.read_text()
 
-            result = await edit_file_content(
+            await edit_file_content(
                 str(test_file),
                 old_string="nonexistent string that doesn't exist",
                 new_string="modified",

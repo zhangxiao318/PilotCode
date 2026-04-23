@@ -81,7 +81,7 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
   ID: {agent.agent_id}
   Name: {definition.name}
   Description: {definition.description}
-  Allowed tools: {', '.join(definition.allowed_tools[:5])}..."""
+  Allowed tools: {", ".join(definition.allowed_tools[:5])}..."""
 
     elif action == "show":
         if len(args) < 2:

@@ -7,11 +7,10 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Callable
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Callable
+from unittest.mock import MagicMock
 
 import pytest
-import pytest_asyncio
 
 # Ensure src is in path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -332,7 +331,6 @@ def mock_model_client():
 def query_engine_factory(mock_model_client, app_store):
     """Factory for creating QueryEngine instances with mock client."""
     from pilotcode.query_engine import QueryEngine, QueryEngineConfig
-    from pilotcode.tools.registry import get_all_tools
 
     def _factory(
         tools=None,

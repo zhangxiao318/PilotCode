@@ -600,7 +600,9 @@ AgentTool = build_tool(
     search_hint="Create a sub-agent to work on a specific task",
     is_read_only=lambda _: False,
     is_concurrency_safe=lambda _: False,
-    render_tool_use_message=lambda x, o: f"🤖 Creating {x.subagent_type or 'sub'} agent: {x.description[:60]}...",
+    render_tool_use_message=lambda x, o: (
+        f"🤖 Creating {x.subagent_type or 'sub'} agent: {x.description[:60]}..."
+    ),
 )
 
 register_tool(AgentTool)

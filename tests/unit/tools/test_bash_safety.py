@@ -1,7 +1,6 @@
 """Tests for Bash tool dangerous command detection."""
 
 import pytest
-import asyncio
 from pilotcode.tools.bash_tool import check_dangerous_command, DANGEROUS_PATTERNS
 
 

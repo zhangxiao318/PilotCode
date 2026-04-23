@@ -751,7 +751,8 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
         # Use smart compression
         result = await self._context_compressor.compress(
-            self.messages, summarizer=None  # Could pass Brief tool here
+            self.messages,
+            summarizer=None,  # Could pass Brief tool here
         )
 
         if result.summary or result.removed_indices:
@@ -883,10 +884,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         # Add summary as system message if we cleared content
         if result.tool_results_cleared > 0:
             summary_text = f"""[Conversation Context Summary]
-Project: {summary.get('primary_request', 'N/A')[:100]}
-Files examined: {', '.join(summary.get('files_examined', []))}
-Files modified: {', '.join(summary.get('files_modified', []))}
-Errors: {len(summary.get('errors_encountered', []))}
+Project: {summary.get("primary_request", "N/A")[:100]}
+Files examined: {", ".join(summary.get("files_examined", []))}
+Files modified: {", ".join(summary.get("files_modified", []))}
+Errors: {len(summary.get("errors_encountered", []))}
 """
             # Insert after system message or at beginning
             if self.messages and isinstance(self.messages[0], SystemMessage):

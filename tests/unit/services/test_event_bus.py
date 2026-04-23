@@ -3,7 +3,6 @@
 import pytest
 import asyncio
 from dataclasses import dataclass
-from typing import List, Any
 
 from pilotcode.services.event_bus import (
     EventBus,

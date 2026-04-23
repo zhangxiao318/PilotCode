@@ -1,11 +1,9 @@
 """Tests for Git tools."""
 
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from pilotcode.tools.registry import get_tool_by_name
 from tests.conftest import run_tool_test
 
 

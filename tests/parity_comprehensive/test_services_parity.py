@@ -1,9 +1,7 @@
 """Parity tests for services layer: config, state, export, sessions."""
 
-import json
 import os
 import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -22,7 +20,7 @@ class TestConfigService:
         assert hasattr(cfg, "default_model")
 
     def test_config_manager_roundtrip(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory():
             manager = get_config_manager()
             # Save a custom global config path
             cfg = get_global_config()

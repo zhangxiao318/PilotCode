@@ -361,7 +361,6 @@ async def ripgrep_call(
     # Resolve path
     search_path = input_data.path
     if not os.path.isabs(search_path) and context.get_app_state:
-
         app_state = context.get_app_state()
         if app_state:
             search_path = os.path.join(app_state.cwd, search_path)

@@ -4,7 +4,6 @@ import pytest
 import time
 import tempfile
 import os
-from unittest.mock import Mock, patch
 
 from pilotcode.services.hierarchical_memory import (
     KnowledgeFragment,

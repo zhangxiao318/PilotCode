@@ -1,8 +1,5 @@
 """Unit tests for skill loader."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 try:

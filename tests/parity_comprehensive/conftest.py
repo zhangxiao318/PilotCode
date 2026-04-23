@@ -1,7 +1,6 @@
 """Shared fixtures for parity tests."""
 
 import asyncio
-import os
 import shutil
 import sys
 import tempfile
@@ -16,7 +15,7 @@ from pilotcode.permissions.permission_manager import (
     ToolPermission,
     get_permission_manager,
 )
-from pilotcode.tools.base import ToolResult, ToolUseContext
+from pilotcode.tools.base import ToolUseContext
 from pilotcode.tools.registry import get_all_tools, get_tool_by_name
 
 

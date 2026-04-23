@@ -45,7 +45,7 @@ def hello_world():
     print("Hello, World!")
     return True
 """
-        count_normal = estimator.estimate(code, is_code=False)
+        estimator.estimate(code, is_code=False)
         count_code = estimator.estimate(code, is_code=True)
 
         # Code mode should give different estimate
@@ -85,7 +85,7 @@ def hello_world():
         """Test that long texts are not cached."""
         text = "x" * 15000  # Very long text
 
-        count = estimator.estimate(text)
+        estimator.estimate(text)
 
         # Should not be in cache
         cache_key = f"{hash(text)}:False"

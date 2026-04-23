@@ -9,7 +9,6 @@ This module combines tests for:
 
 import pytest
 import subprocess
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from pilotcode.commands.config_cmd import config_command

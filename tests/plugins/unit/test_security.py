@@ -1,8 +1,6 @@
 """Unit tests for plugin security."""
 
 import json
-import tempfile
-from pathlib import Path
 
 import pytest
 

@@ -1,6 +1,5 @@
 """Tests for code indexing service."""
 
-import asyncio
 import tempfile
 from pathlib import Path
 

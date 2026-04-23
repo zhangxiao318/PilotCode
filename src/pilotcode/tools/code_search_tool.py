@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 from ..services.codebase_indexer import (
-    CodebaseIndexer,
     SearchQuery,
     get_codebase_indexer,
 )

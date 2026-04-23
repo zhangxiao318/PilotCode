@@ -1,14 +1,10 @@
 """Tests for team manager."""
 
 import pytest
-import asyncio
 from pilotcode.services.team_manager import (
     TeamManager,
-    Agent,
-    Team,
     AgentStatus,
     create_team,
-    spawn_agent,
     get_team_manager,
 )
 

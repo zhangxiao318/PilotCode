@@ -151,12 +151,12 @@ async def skill_call(
                 else f"\nContent:\n{content}"
             )
 
-        info = f"""Skill: {config.get('name', input_data.skill_name)}
-Version: {config.get('version', 'unknown')}
-Description: {config.get('description', 'No description')}
-Author: {config.get('author', 'unknown')}
-Source: {config.get('source', 'legacy')}
-Allowed Tools: {', '.join(config.get('allowedTools', [])) if config.get('allowedTools') else 'None specified'}{content_preview}
+        info = f"""Skill: {config.get("name", input_data.skill_name)}
+Version: {config.get("version", "unknown")}
+Description: {config.get("description", "No description")}
+Author: {config.get("author", "unknown")}
+Source: {config.get("source", "legacy")}
+Allowed Tools: {", ".join(config.get("allowedTools", [])) if config.get("allowedTools") else "None specified"}{content_preview}
 """
 
         return ToolResult(

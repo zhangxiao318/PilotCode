@@ -4,7 +4,6 @@ import pytest
 import time
 import tempfile
 import os
-from unittest.mock import Mock, patch
 
 from pilotcode.services.compression_feedback import (
     CompressionEvent,
@@ -17,8 +16,6 @@ from pilotcode.services.compression_feedback import (
 )
 from pilotcode.services.task_aware_compression import (
     TaskAwareCompressionResult,
-    TaskContext,
-    RetentionDecision,
 )
 
 
@@ -160,7 +157,7 @@ class TestCompressionFeedbackLoop:
             compressed_tokens=3000,
             value_retention_rate=0.8,
         )
-        event_id = loop.record_compression(result, "Test task", "task_1")
+        loop.record_compression(result, "Test task", "task_1")
 
         # Then record outcome
         event = loop.record_outcome("task_1", TaskOutcome.SUCCESS)

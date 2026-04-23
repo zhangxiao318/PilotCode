@@ -1,19 +1,16 @@
 """Tests for FileSelector Tool."""
 
 import pytest
-import os
 import tempfile
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from pilotcode.tools.file_selector import (
     FileSelectorInput,
-    FileSelectorOutput,
     FileInfo,
     SortBy,
     SortOrder,
-    select_files,
     load_gitignore,
     is_gitignored,
     collect_files,

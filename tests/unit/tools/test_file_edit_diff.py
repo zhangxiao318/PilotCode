@@ -1,9 +1,6 @@
 """Tests for FileEdit tool unified diff functionality."""
 
 import pytest
-import tempfile
-import os
-from pathlib import Path
 
 from pilotcode.tools.file_edit_tool import (
     _generate_unified_diff,
@@ -124,7 +121,7 @@ class TestEditFileContentWithDiff:
     async def test_edit_preserves_content(self, temp_file_in_project):
         temp_file = temp_file_in_project
         """Test that editing actually modifies the file."""
-        result = await edit_file_content(
+        await edit_file_content(
             temp_file, old_string="second line", new_string="modified line"
         )
 

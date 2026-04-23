@@ -30,14 +30,14 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 from collections import defaultdict
 import fnmatch
 
-from .code_index import CodeIndexer, Symbol, get_code_indexer
-from .advanced_code_analyzer import ASTCodeAnalyzer, ModuleInfo, get_analyzer
-from .embedding_service import EmbeddingService, SearchResult, get_embedding_service
-from .file_metadata_cache import FileMetadataCache, get_file_metadata_cache
+from .code_index import Symbol, get_code_indexer
+from .advanced_code_analyzer import get_analyzer
+from .embedding_service import EmbeddingService, get_embedding_service
+from .file_metadata_cache import get_file_metadata_cache
 
 
 @dataclass
@@ -233,7 +233,7 @@ class CodebaseIndexer:
             Statistics about the indexed codebase
         """
         self._is_indexing = True
-        start_time = time.time()
+        time.time()
 
         try:
             # Find all source files

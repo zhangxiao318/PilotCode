@@ -2,14 +2,13 @@
 
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 from pilotcode.services.error_recovery import (
     ErrorClassifier,
     ErrorCategory,
     RetryHandler,
     RetryConfig,
     CircuitBreaker,
-    RetryResult,
     with_retry,
 )
 

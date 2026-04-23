@@ -57,7 +57,11 @@ class ToolTestBase:
             return {"behavior": "allow"}
 
         return await tool.call(
-            parsed, ctx, allow_callback, None, lambda x: None  # parent_message  # on_progress
+            parsed,
+            ctx,
+            allow_callback,
+            None,
+            lambda x: None,  # parent_message  # on_progress
         )
 
     def assert_success(self, result: ToolResult, msg: str = None):

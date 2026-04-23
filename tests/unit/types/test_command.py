@@ -1,7 +1,6 @@
 """Tests for command types module."""
 
 import pytest
-from typing import Awaitable
 
 from pilotcode.types.command import (
     CommandContext,
@@ -11,7 +10,7 @@ from pilotcode.types.command import (
     LocalJSXCommand,
     LocalCommandResult,
 )
-from pilotcode.types.message import ContentBlock, TextBlock
+from pilotcode.types.message import TextBlock
 
 
 class TestCommandContext:

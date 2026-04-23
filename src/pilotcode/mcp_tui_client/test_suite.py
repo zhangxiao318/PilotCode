@@ -354,9 +354,9 @@ class PilotCodeTestSuite:
             # Screen should be mostly clear
             screen = await self.client.capture_screen()
             # Just verify no error occurred
-            assert (
-                "Error" not in screen.raw_text or "error" not in screen.raw_text.lower()
-            ), "Clear command failed"
+            assert "Error" not in screen.raw_text or "error" not in screen.raw_text.lower(), (
+                "Clear command failed"
+            )
 
             await self.client.close_session()
 
@@ -441,7 +441,7 @@ class PilotCodeTestSuite:
                 print(f"   Screenshot: {result.screenshot}")
 
         print("\n" + "=" * 70)
-        print(f"Total: {passed}/{total} passed ({passed/total*100:.1f}%)")
+        print(f"Total: {passed}/{total} passed ({passed / total * 100:.1f}%)")
         print(f"Time: {total_time:.2f}s")
         print(f"Screenshots: {self.screenshots_dir}")
         print("=" * 70)

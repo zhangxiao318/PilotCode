@@ -6,7 +6,6 @@ import shutil
 from pathlib import Path
 from pilotcode.services.session_persistence import (
     SessionPersistence,
-    SessionMetadata,
     get_session_persistence,
 )
 from pilotcode.types.message import UserMessage, AssistantMessage

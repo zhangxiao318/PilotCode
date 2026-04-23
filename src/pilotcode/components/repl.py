@@ -845,7 +845,6 @@ async def run_headless(
     from ..permissions import get_permission_manager, PermissionLevel, ToolPermission
 
     # Create initial state with correct cwd
-    from ..state.app_state import AppState
 
     # Ensure cwd is valid (not None, not empty)
     effective_cwd = cwd if cwd else str(os.getcwd())
@@ -1474,7 +1473,7 @@ Diff Stats:
 - Hunks: {diff_hunks}
 - Docstring/comment only changes: {docstring_changes}
 - Whitespace-only changes: {whitespace_changes}
-- Double-escaped backslashes detected: {'YES — CRITICAL BUG' if has_double_escape else 'No'}
+- Double-escaped backslashes detected: {"YES — CRITICAL BUG" if has_double_escape else "No"}
 
 Verification Steps (FOCUS on planned files only):
 1. Were ALL planned files modified correctly?

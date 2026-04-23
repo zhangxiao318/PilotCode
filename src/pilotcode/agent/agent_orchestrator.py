@@ -284,7 +284,7 @@ class AgentOrchestrator:
 
 Task: {task}
 
-Available worker types: {', '.join(worker_types)}
+Available worker types: {", ".join(worker_types)}
 
 Provide a JSON array of subtasks, where each subtask has:
 - "worker_type": which worker should handle it

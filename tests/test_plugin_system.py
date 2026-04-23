@@ -1,10 +1,6 @@
 """Tests for the plugin system."""
 
-import asyncio
 import json
-import shutil
-import tempfile
-from pathlib import Path
 
 import pytest
 

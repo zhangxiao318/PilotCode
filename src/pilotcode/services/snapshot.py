@@ -271,7 +271,7 @@ class SnapshotManager:
         # Check for uncommitted changes if confirm is True
         if confirm and self._has_uncommitted_changes():
             raise RuntimeError(
-                "Workspace has uncommitted changes. " "Commit or stash changes before restoring."
+                "Workspace has uncommitted changes. Commit or stash changes before restoring."
             )
 
         # Get list of files in snapshot

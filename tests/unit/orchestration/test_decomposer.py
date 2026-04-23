@@ -1,7 +1,5 @@
 """Tests for the task decomposition engine."""
 
-import pytest
-
 from pilotcode.orchestration.decomposer import (
     TaskDecomposer,
     DecompositionStrategy,

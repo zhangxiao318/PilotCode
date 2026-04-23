@@ -1,10 +1,8 @@
 """Parity tests for core runtime behavior vs original Claude Code."""
 
-import json
 import pytest
 
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
-from pilotcode.tools.base import ToolUseContext
 from pilotcode.tools.registry import get_all_tools
 from pilotcode.types.message import AssistantMessage, ToolUseMessage
 from tests.mock_llm import MockLLMResponse
@@ -143,7 +141,7 @@ class TestPermissionParity:
         assert len(levels) >= 4
 
     def test_session_grant_persists(self):
-        from pilotcode.permissions.permission_manager import PermissionManager, PermissionLevel
+        from pilotcode.permissions.permission_manager import PermissionManager
 
         pm = PermissionManager()
         pm.grant_session_permission("Bash")
@@ -254,17 +252,14 @@ class TestServiceGaps:
     """These document features present in original but missing/unfinished here."""
 
     def test_session_persistence_exists(self):
-        from pilotcode.query_engine import QueryEngine
 
         assert hasattr(QueryEngine, "save_session") and hasattr(QueryEngine, "load_session")
 
     def test_auto_compact_exists(self):
-        from pilotcode.query_engine import QueryEngineConfig
 
         assert hasattr(QueryEngineConfig, "auto_compact")
 
     def test_token_counting_exists(self):
-        from pilotcode.query_engine import QueryEngine
 
         assert hasattr(QueryEngine, "count_tokens")
 
@@ -280,11 +275,9 @@ class TestServiceGaps:
         assert "mcp-add" in names or "mcp-remove" in names
 
     def test_cost_tracking_wired(self):
-        from pilotcode.query_engine import QueryEngine
 
         assert hasattr(QueryEngine, "track_cost")
 
     def test_tool_result_caching_exists(self):
-        from pilotcode.query_engine import QueryEngineConfig
 
         assert hasattr(QueryEngineConfig, "cache_tool_results")

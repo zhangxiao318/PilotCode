@@ -6,7 +6,6 @@ Tests all git-related tools with comprehensive coverage.
 import subprocess
 import pytest
 
-from pilotcode.tools.registry import get_tool_by_name
 from tests.base import ToolTestBase, CategoryMarkers
 
 

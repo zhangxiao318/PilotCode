@@ -119,7 +119,7 @@ class PluginManager:
         existing = self._get_installation(plugin_id)
         if existing and not force:
             raise PluginError(
-                f"Plugin '{plugin_id}' is already installed. " "Use --force to reinstall."
+                f"Plugin '{plugin_id}' is already installed. Use --force to reinstall."
             )
 
         # Download plugin

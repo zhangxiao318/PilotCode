@@ -1,8 +1,6 @@
 """Tests for memory value estimation module."""
 
 import pytest
-import time
-from unittest.mock import Mock, patch
 
 from pilotcode.services.memory_value import (
     InformationDensityCalculator,

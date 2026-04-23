@@ -68,8 +68,8 @@ class TestMCPConfigManager:
         manager = MCPConfigManager()
 
         global_config = MCPConfig(command="global-cmd", args=[])
-        project_config = MCPConfig(command="project-cmd", args=[])
-        mcprc_config = MCPConfig(command="mcprc-cmd", args=[])
+        MCPConfig(command="project-cmd", args=[])
+        MCPConfig(command="mcprc-cmd", args=[])
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)

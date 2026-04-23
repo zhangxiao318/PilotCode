@@ -9,7 +9,6 @@ from pilotcode.commands.package_commands import (
     PackageInfo,
     detect_package_manager,
     run_pip_command,
-    run_npm_command,
     install_command,
     upgrade_command,
     uninstall_command,

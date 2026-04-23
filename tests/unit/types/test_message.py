@@ -10,7 +10,6 @@ from pilotcode.types.message import (
     ToolUseBlock,
     ToolResultBlock,
     ImageBlock,
-    Message,
     UserMessage,
     AssistantMessage,
     SystemMessage,

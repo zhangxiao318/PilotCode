@@ -1,10 +1,7 @@
 """Tests for configuration verification with live LLM checks."""
 
 import asyncio
-import json
-import os
 import pytest
-from pathlib import Path
 from unittest.mock import AsyncMock, patch, MagicMock
 
 

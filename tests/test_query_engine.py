@@ -2,12 +2,10 @@
 
 import pytest
 
-from pilotcode.query_engine import QueryEngine, QueryEngineConfig
 from pilotcode.types.message import (
     AssistantMessage,
     ToolUseMessage,
     ToolResultMessage,
-    UserMessage,
 )
 from tests.mock_llm import MockLLMResponse
 

@@ -2,7 +2,6 @@
 
 import pytest
 import tempfile
-import os
 from pathlib import Path
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -10,7 +9,6 @@ from pilotcode.tools.ripgrep_tool import (
     RipgrepRunner,
     RipgrepInput,
     RipgrepOutput,
-    RipgrepMatch,
     get_ripgrep_runner,
     ripgrep_call,
 )

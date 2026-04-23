@@ -150,7 +150,9 @@ Output ONLY a JSON object with this structure:
     cmd = diagnosis.get("fix_command", "").strip()
     if not cmd:
         if progress_callback:
-            progress_callback(f"[ENV] No fix command proposed. Diagnosis: {diagnosis.get('diagnosis')}")
+            progress_callback(
+                f"[ENV] No fix command proposed. Diagnosis: {diagnosis.get('diagnosis')}"
+            )
         return False
 
     needs_perm = diagnosis.get("requires_user_permission", True)

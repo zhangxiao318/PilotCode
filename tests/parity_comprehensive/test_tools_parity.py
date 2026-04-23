@@ -2,14 +2,11 @@
 
 import asyncio
 import json
-import os
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
-from pilotcode.tools.base import ToolUseContext
 from pilotcode.tools.registry import get_all_tools, get_tool_by_name
 from tests.parity_comprehensive.conftest import allow_all
 
@@ -99,7 +96,7 @@ class TestFileTools:
     async def test_file_edit_replaces_string(self, tmp_path):
         path = str(tmp_path / "edit.txt")
         Path(path).write_text("old content")
-        result = await allow_all(
+        await allow_all(
             "FileEdit",
             {
                 "file_path": path,
@@ -127,7 +124,7 @@ class TestFileTools:
             "nbformat_minor": 4,
         }
         Path(nb_path).write_text(json.dumps(initial))
-        result = await allow_all(
+        await allow_all(
             "NotebookEdit",
             {
                 "notebook_path": nb_path,
@@ -392,7 +389,7 @@ class TestUtilityTools:
     @pytest.mark.asyncio
     async def test_sleep_delays(self):
         start = time.time()
-        result = await allow_all("Sleep", {"seconds": 0.1})
+        await allow_all("Sleep", {"seconds": 0.1})
         elapsed = time.time() - start
         assert elapsed >= 0.05
 

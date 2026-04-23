@@ -2,7 +2,6 @@
 
 import asyncio
 import time
-from typing import Any
 
 import pytest
 
@@ -282,8 +281,6 @@ class TestServiceIntegration:
     def test_global_instances(self):
         """Test that global service instances work correctly."""
         from pilotcode.services.tool_cache import get_tool_cache
-        from pilotcode.services.token_estimation import get_token_estimator
-        from pilotcode.services.context_compression import get_context_compressor
         from pilotcode.services.tool_orchestrator import get_tool_orchestrator
 
         cache1 = get_tool_cache()

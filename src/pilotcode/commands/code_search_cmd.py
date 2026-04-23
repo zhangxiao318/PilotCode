@@ -8,9 +8,6 @@ Usage:
     /search -l <language>        - Filter by language
 """
 
-import asyncio
-from typing import Optional, Any
-
 from .base import CommandHandler, register_command
 from ..types.command import CommandContext
 from ..services.codebase_indexer import get_codebase_indexer, SearchQuery
@@ -72,7 +69,7 @@ async def search_command_handler(
     query = " ".join(query_parts).strip()
 
     if not query:
-        return f"""Usage: /search <query> [options]
+        return """Usage: /search <query> [options]
 
 Options:
   -s, --symbol <name>     Search by symbol name

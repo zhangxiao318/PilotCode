@@ -1,14 +1,13 @@
 """Tests for QueryEngine."""
 
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
 from pilotcode.state.app_state import get_default_app_state
 from pilotcode.state.store import Store, set_global_store
 from pilotcode.tools.registry import get_all_tools
-from pilotcode.types.message import UserMessage, SystemMessage, ToolResultMessage
+from pilotcode.types.message import UserMessage, ToolResultMessage
 
 
 class TestQueryEngineInit:

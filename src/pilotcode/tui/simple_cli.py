@@ -618,7 +618,6 @@ class SimpleCLI:
                     break
 
                 # Execute all pending tools
-                permission_denied = False
                 for tool_msg in pending_tools:
                     tool_name = tool_msg.name
                     params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
@@ -631,7 +630,6 @@ class SimpleCLI:
                             "Tool execution denied by user. Proceed with your alternative read-only approach immediately without explaining your plan first.",
                             is_error=True,
                         )
-                        permission_denied = True
                         break
 
                     try:
@@ -786,7 +784,8 @@ class SimpleCLI:
         original_count = len(self.query_engine.messages)
         original_tokens = total_tokens
         self.query_engine.messages = compressor.simple_compact(
-            self.query_engine.messages, keep_recent=10  # Keep last 10 messages
+            self.query_engine.messages,
+            keep_recent=10,  # Keep last 10 messages
         )
         compressed_count = len(self.query_engine.messages)
 

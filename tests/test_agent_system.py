@@ -1,6 +1,5 @@
 """Tests for the agent management and orchestration system."""
 
-import os
 import tempfile
 
 import pytest
@@ -9,7 +8,6 @@ from pilotcode.agent.agent_manager import (
     AgentManager,
     AgentStatus,
     ENHANCED_AGENT_DEFINITIONS,
-    get_agent_manager,
 )
 from pilotcode.agent.agent_orchestrator import get_orchestrator
 from tests.mock_llm import MockLLMResponse
@@ -56,7 +54,7 @@ class TestAgentManager:
         mgr = AgentManager()
         parent = mgr.create_agent()
         child = mgr.create_agent(parent_id=parent.agent_id)
-        grandchild = mgr.create_agent(parent_id=child.agent_id)
+        mgr.create_agent(parent_id=child.agent_id)
 
         tree = mgr.get_agent_tree(parent.agent_id)
         assert tree["agent"]["agent_id"] == parent.agent_id
@@ -67,7 +65,7 @@ class TestAgentManager:
     def test_list_agents_with_filter(self):
         mgr = AgentManager()
         a1 = mgr.create_agent(agent_type="coder")
-        a2 = mgr.create_agent(agent_type="debugger")
+        mgr.create_agent(agent_type="debugger")
         mgr.set_agent_status(a1.agent_id, AgentStatus.COMPLETED)
 
         pending = mgr.list_agents(status=AgentStatus.PENDING)

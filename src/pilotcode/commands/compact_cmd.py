@@ -46,7 +46,7 @@ async def compact_command(args: list[str], context: CommandContext) -> str:
     if result.get("tool_results_cleared", 0) > 0:
         lines.append(f"  🧹 Cleared {result['tool_results_cleared']} old tool results")
     if after_pct >= 80:
-        lines.append(f"  ⚠️  Still above 80% — may compress again soon")
+        lines.append("  ⚠️  Still above 80% — may compress again soon")
 
     return "\n".join(lines)
 

@@ -1,9 +1,7 @@
 """Tests for TUI v2 application startup."""
 
 import pytest
-import asyncio
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 
 class TestTUIv2Startup:
@@ -12,10 +10,7 @@ class TestTUIv2Startup:
     def test_import_tui_v2_components(self):
         """Test that all TUI v2 components can be imported."""
         # This verifies the MessageType import fix
-        from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
-        from pilotcode.tui_v2.screens.session import SessionScreen
-        from pilotcode.tui_v2.components.message.display import MessageDisplay
-        from pilotcode.tui_v2.components.message.virtual_list import HybridMessageList
+        from pilotcode.tui_v2.controller.controller import UIMessageType
 
         # Verify UIMessageType is an Enum with expected values
         assert hasattr(UIMessageType, "USER")
@@ -54,7 +49,7 @@ class TestTUIv2Startup:
 
         # Test that MessageDisplay can be created with different message types
         for msg_type in [UIMessageType.SYSTEM, UIMessageType.USER, UIMessageType.ASSISTANT]:
-            msg = UIMessage(type=msg_type, content=f"Test {msg_type.name}")
+            UIMessage(type=msg_type, content=f"Test {msg_type.name}")
             # Note: We can't fully instantiate without textual's runtime,
             # but we can verify the import and basic structure
             assert MessageDisplay is not None
@@ -83,7 +78,7 @@ class TestTUIv2Startup:
     @pytest.mark.asyncio
     async def test_controller_submit_message_mock(self):
         """Test controller message submission with mocked dependencies."""
-        from pilotcode.tui_v2.controller.controller import TUIController, UIMessageType
+        from pilotcode.tui_v2.controller.controller import TUIController
 
         # Create controller with mocked query engine
         with patch("pilotcode.tui_v2.controller.controller.QueryEngine") as MockEngine:
@@ -174,10 +169,8 @@ class TestTUIv2Integration:
         from pilotcode.tui_v2.screens.session import SessionScreen
 
         # Import components
-        from pilotcode.tui_v2.components.message.display import MessageDisplay, MessageList
+        from pilotcode.tui_v2.components.message.display import MessageDisplay
         from pilotcode.tui_v2.components.message.virtual_list import HybridMessageList
-        from pilotcode.tui_v2.components.prompt.input import PromptWithMode
-        from pilotcode.tui_v2.components.status.bar import StatusBar
 
         # Import controller
         from pilotcode.tui_v2.controller.controller import TUIController, UIMessage, UIMessageType

@@ -229,7 +229,6 @@ async def _read_stream(
 ) -> None:
     """Read a stream line-by-line, handling both \n and \r."""
     buffer = b""
-    is_progress = False
     try:
         while True:
             chunk = await stream.read(4096)

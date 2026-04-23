@@ -1,11 +1,8 @@
 """Web command implementation - Launch web UI server."""
 
-import os
 import sys
 import webbrowser
-import asyncio
 import socket
-from pathlib import Path
 
 from .base import CommandHandler, register_command, CommandContext
 

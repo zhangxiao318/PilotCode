@@ -1,15 +1,9 @@
 """Tests for advanced code analyzer."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from pilotcode.services.advanced_code_analyzer import (
     ASTCodeAnalyzer,
-    FunctionInfo,
-    ClassInfo,
-    ModuleInfo,
     ProjectArchitecture,
     get_analyzer,
 )

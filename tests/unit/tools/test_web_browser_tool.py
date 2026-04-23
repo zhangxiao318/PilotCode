@@ -4,10 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from pilotcode.tools.web_browser_tool import (
     WebBrowserInput,
-    WebBrowserOutput,
     web_browser_call,
-    get_or_create_session,
-    close_session,
     navigate,
     click,
     fill,

@@ -1,14 +1,10 @@
 """Tests for Embedding Service."""
 
 import pytest
-import tempfile
-import shutil
 import math
-from pathlib import Path
 
 from pilotcode.services.embedding_service import (
     EmbeddingVector,
-    SearchResult,
     EmbeddingStats,
     SimpleEmbeddingProvider,
     VectorStore,

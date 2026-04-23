@@ -1,7 +1,6 @@
 """Tests for binary feedback mechanism."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from pilotcode.services.binary_feedback import (
     BinaryFeedbackTester,

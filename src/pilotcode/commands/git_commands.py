@@ -701,11 +701,11 @@ async def _pr_view(number: Optional[str] = None) -> str:
             panel_content = f"""[bold]{pr.title}[/bold]
 
 [dim]Author:[/dim] @{pr.user.login}
-[dim]Branch:[/dim] {pr.head.get('ref', '?')} → {pr.base.get('ref', '?')}
+[dim]Branch:[/dim] {pr.head.get("ref", "?")} → {pr.base.get("ref", "?")}
 [dim]Status:[/dim] [{status_color}]{status_text}[/{status_color}]
-[dim]Created:[/dim] {pr.created_at.strftime('%Y-%m-%d') if pr.created_at else 'N/A'}
+[dim]Created:[/dim] {pr.created_at.strftime("%Y-%m-%d") if pr.created_at else "N/A"}
 
-{pr.body or '[dim]No description[/dim]'}
+{pr.body or "[dim]No description[/dim]"}
 
 [blue]{pr.html_url}[/blue]
 """
@@ -903,9 +903,9 @@ async def _issue_view(number: str) -> str:
 [dim]Status:[/dim] [{status_color}]{status_text}[/{status_color}]
 [dim]Labels:[/dim] {labels_text}
 [dim]Comments:[/dim] {issue.comments}
-[dim]Created:[/dim] {issue.created_at.strftime('%Y-%m-%d') if issue.created_at else 'N/A'}
+[dim]Created:[/dim] {issue.created_at.strftime("%Y-%m-%d") if issue.created_at else "N/A"}
 
-{issue.body or '[dim]No description[/dim]'}
+{issue.body or "[dim]No description[/dim]"}
 
 [blue]{issue.html_url}[/blue]
 """

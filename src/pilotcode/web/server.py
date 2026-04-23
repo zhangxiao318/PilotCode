@@ -1,6 +1,5 @@
 """Web server for PilotCode Web UI."""
 
-import os
 import sys
 import json
 import asyncio
@@ -8,7 +7,7 @@ import traceback
 import logging
 import uuid
 from pathlib import Path
-from typing import Set, Dict, Any, Optional
+from typing import Set, Dict, Any
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
 
@@ -170,18 +169,18 @@ class WebSocketManager:
                     old_task = self.current_tasks[websocket]
                     if not old_task.done():
                         old_task.cancel()
-                        print(f"[Query] Cancelled previous task for client")
+                        print("[Query] Cancelled previous task for client")
                 # Process query in background task to avoid blocking message loop
                 task = asyncio.create_task(self.process_query(websocket, query))
                 self.current_tasks[websocket] = task
 
             elif msg_type == "interrupt":
-                print(f"[WebSocket] Interrupt requested")
+                print("[WebSocket] Interrupt requested")
                 if websocket in self.current_tasks:
                     task = self.current_tasks[websocket]
                     if not task.done():
                         task.cancel()
-                        print(f"[Query] Cancelled task due to interrupt")
+                        print("[Query] Cancelled task due to interrupt")
                     del self.current_tasks[websocket]
                 # Cancel any pending permissions
                 self.permission_manager.cancel_all()
@@ -856,7 +855,7 @@ def run_websocket_server_sync(host: str, port: int):
                 ping_interval=20,
                 ping_timeout=10,
                 origins=None,
-            ) as server:
+            ):
                 print(f"[WebSocket] Server running on ws://{host}:{port}")
                 await asyncio.Future()
         except Exception as e:
@@ -874,9 +873,9 @@ def run_server_standalone(host: str = "127.0.0.1", port: int = 8080, cwd: str = 
     """Run both HTTP and WebSocket servers."""
     ws_manager.cwd = cwd
 
-    print(f"=" * 60)
-    print(f"PilotCode Web UI Server")
-    print(f"=" * 60)
+    print("=" * 60)
+    print("PilotCode Web UI Server")
+    print("=" * 60)
     print(f"Working directory: {cwd}")
     print(f"Python: {sys.executable}")
     print()

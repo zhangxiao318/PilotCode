@@ -1,6 +1,5 @@
 """Unit tests for hook system."""
 
-import asyncio
 import pytest
 
 try:

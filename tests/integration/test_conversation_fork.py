@@ -1,7 +1,7 @@
 """Tests for conversation fork functionality."""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from pilotcode.services.conversation_fork import (
     ConversationForker,
@@ -160,7 +160,7 @@ class TestConversationForker:
             MagicMock(type="user", content="Hello"),
         ]
 
-        result = await forker.fork_conversation(messages)
+        await forker.fork_conversation(messages)
         new_messages = forker._create_forked_messages(messages, ConversationSummary(content="Test"))
 
         assert len(new_messages) > 0

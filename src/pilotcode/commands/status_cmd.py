@@ -85,9 +85,9 @@ async def status_command(args: list[str], context: CommandContext) -> str:
         bar = "█" * filled + "░" * (bar_len - filled)
         lines.append(f"  [{bar}] {used_pct}%")
         if used_pct >= 80:
-            lines.append(f"  ⚠️  Above 80% — auto-compression active")
+            lines.append("  ⚠️  Above 80% — auto-compression active")
         elif used_pct >= 60:
-            lines.append(f"  ⚡ Above 60% — approaching limit")
+            lines.append("  ⚡ Above 60% — approaching limit")
 
     return "\n".join(lines)
 

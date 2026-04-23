@@ -6,9 +6,8 @@ from pilotcode.permissions.permission_manager import (
     PermissionManager,
     PermissionRequest,
     PermissionLevel,
-    get_permission_manager,
 )
-from pilotcode.permissions.tool_executor import ToolExecutor, get_tool_executor
+from pilotcode.permissions.tool_executor import get_tool_executor
 
 
 class TestPermissionRequest:

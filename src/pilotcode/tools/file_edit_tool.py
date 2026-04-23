@@ -360,12 +360,10 @@ async def file_edit_validate(
 
     # Check if file has been read (conflict detection)
     # Use normalized path comparison to handle Windows path variations
-    matched_key = None
     read_info = None
     if context.read_file_state:
         for key, info in context.read_file_state.items():
             if _normalize_path(key, None) == normalized_path:
-                matched_key = key
                 read_info = info
                 break
 

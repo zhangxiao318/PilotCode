@@ -69,7 +69,10 @@ class GitHubSource(PluginSource):
             clone_cmd.extend([git_url, str(temp_clone_path)])
 
             result = subprocess.run(
-                clone_cmd, capture_output=True, text=True, timeout=120  # 2 minute timeout
+                clone_cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,  # 2 minute timeout
             )
 
             if result.returncode != 0:

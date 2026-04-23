@@ -1,6 +1,5 @@
 """Tests for snapshot service."""
 
-import os
 import tempfile
 from pathlib import Path
 

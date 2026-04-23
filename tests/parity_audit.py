@@ -14,7 +14,6 @@ import os
 import json
 import argparse
 from dataclasses import dataclass, field, asdict
-from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 

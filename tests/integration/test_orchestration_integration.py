@@ -14,7 +14,7 @@ from pilotcode.orchestration import (
     AgentCoordinator,
 )
 from pilotcode.orchestration.decomposer import SubTask
-from pilotcode.orchestration.executor import ExecutionResult, ExecutionStatus
+from pilotcode.orchestration.executor import ExecutionStatus
 
 
 class MockAgent:
@@ -137,7 +137,7 @@ class TestComplexTaskDecomposition:
                     assert dep in all_ids
 
         print(f"\n✓ Multi-module project decomposed into {len(result.subtasks)} subtasks")
-        print(f"  Dependencies validated")
+        print("  Dependencies validated")
 
 
 class TestTaskSchedulingExecution:
@@ -385,7 +385,7 @@ class TestCoordinatorIntegration:
         # Should be decomposed
         assert result.metadata.get("decomposed", False) or True  # May or may not be decomposed
 
-        print(f"\n✓ Complex task workflow completed")
+        print("\n✓ Complex task workflow completed")
         print(f"  Status: {result.status}")
         print(f"  Duration: {result.duration_seconds:.2f}s")
 

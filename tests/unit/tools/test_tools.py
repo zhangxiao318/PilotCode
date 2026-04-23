@@ -1,12 +1,10 @@
 """Tests for tool implementations."""
 
 import pytest
-import asyncio
 import os
 import tempfile
-from pathlib import Path
 
-from pilotcode.tools.registry import get_tool_registry, get_tool_by_name
+from pilotcode.tools.registry import get_tool_by_name
 from pilotcode.tools.base import ToolUseContext
 from pilotcode.tools.bash_tool import BashInput, BashTool
 from pilotcode.tools.file_read_tool import FileReadInput, FileReadTool
@@ -75,7 +73,7 @@ class TestFileTools:
             write_tool = FileWriteTool
             write_input = FileWriteInput(file_path=test_file, content=test_content)
 
-            write_result = await write_tool.call(
+            await write_tool.call(
                 write_input, ToolUseContext(), mock_can_use_tool, None, lambda x: None
             )
 
@@ -86,7 +84,7 @@ class TestFileTools:
 
             context.read_file_state[test_file] = {"timestamp": time.time() + 1}
 
-            write_result = await write_tool.call(
+            await write_tool.call(
                 write_input, context, mock_can_use_tool, None, lambda x: None
             )
 

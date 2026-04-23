@@ -222,7 +222,7 @@ class TestBackgroundTaskQueue:
         async def completed_task():
             return "done"
 
-        task = await queue.submit(completed_task())
+        await queue.submit(completed_task())
 
         # Wait for completion
         await asyncio.sleep(0.2)

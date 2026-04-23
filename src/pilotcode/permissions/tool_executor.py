@@ -148,9 +148,9 @@ class ToolExecutor:
             # Only set default callback if no custom callback is already set
             if self.permission_manager._permission_callback is None:
                 self.permission_manager.set_permission_callback(self._interactive_permission_prompt)
-                print(f"[ToolExecutor] Using default permission prompt")
+                print("[ToolExecutor] Using default permission prompt")
             else:
-                print(f"[ToolExecutor] Using custom permission callback")
+                print("[ToolExecutor] Using custom permission callback")
 
             is_granted, level = await self.permission_manager.request_permission(
                 tool_name, tool_input

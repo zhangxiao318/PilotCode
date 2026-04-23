@@ -2,8 +2,6 @@
 
 import pytest
 
-from pilotcode.query_engine import QueryEngineConfig
-from pilotcode.query_engine import QueryEngine as QE
 from pilotcode.tools.registry import get_all_tools
 from pilotcode.types.message import AssistantMessage, ToolUseMessage
 from tests.mock_llm import MockLLMResponse

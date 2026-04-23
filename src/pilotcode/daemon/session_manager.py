@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
 from dataclasses import dataclass, field
 from typing import Optional
-from pathlib import Path
 
 from ..components.repl import run_headless, classify_task_complexity, run_headless_with_planning
 from ..services.session_persistence import (

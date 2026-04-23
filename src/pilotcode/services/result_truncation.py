@@ -312,7 +312,7 @@ TRUNCATION_MESSAGES = {
         "Search found more than {total} matches. "
         "Showing first {limit}. Use more specific patterns to narrow results."
     ),
-    "git_status": ("Repository has many changes. " "Showing first {limit} modified files."),
+    "git_status": ("Repository has many changes. Showing first {limit} modified files."),
 }
 
 

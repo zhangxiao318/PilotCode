@@ -4,7 +4,6 @@ import pytest
 import time
 import tempfile
 import os
-from unittest.mock import Mock, patch
 
 from pilotcode.services.adaptive_context_manager import (
     AdaptiveContextManager,
@@ -16,9 +15,7 @@ from pilotcode.services.adaptive_context_manager import (
     reset_adaptive_context_manager,
     create_adaptive_context_manager,
 )
-from pilotcode.services.context_manager import ContextMessage, MessagePriority
 from pilotcode.services.task_aware_compression import CompressionMode
-from pilotcode.services.compression_feedback import TaskOutcome
 
 
 class TestAdaptiveContextConfig:
@@ -320,7 +317,7 @@ class TestIntegration:
             manager.add_message("user", "Use JWT tokens")
 
             # Force compression
-            result = manager.force_compact(CompressionMode.LIGHT)
+            manager.force_compact(CompressionMode.LIGHT)
 
             # Record outcome
             manager.record_task_outcome(success=True)

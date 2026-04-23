@@ -1,7 +1,6 @@
 """Tests for file-related tools."""
 
 import pytest
-from pathlib import Path
 
 from pilotcode.tools.registry import get_tool_by_name
 

@@ -161,8 +161,7 @@ async def run_command_streaming(
 
             if idle >= inactivity_timeout and not warned:
                 console.print(
-                    f"[yellow]⚠️  命令已 {int(idle)} 秒无输出，可能已卡住。"
-                    "按 Ctrl+C 中断。[/yellow]"
+                    f"[yellow]⚠️  命令已 {int(idle)} 秒无输出，可能已卡住。按 Ctrl+C 中断。[/yellow]"
                 )
                 warned = True
             elif idle < inactivity_timeout // 2 and warned:

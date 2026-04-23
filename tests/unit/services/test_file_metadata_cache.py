@@ -10,7 +10,6 @@ from pilotcode.services.file_metadata_cache import (
     LineEndingType,
     LRUCache,
     detect_file_encoding,
-    detect_line_endings,
     detect_file_encoding_direct,
     detect_line_endings_direct,
     get_file_metadata_cache,

@@ -1,9 +1,7 @@
 """Tests for Analytics Service."""
 
 import pytest
-import tempfile
 import time
-from unittest.mock import MagicMock, patch
 
 from pilotcode.services.analytics_service import (
     AnalyticsService,

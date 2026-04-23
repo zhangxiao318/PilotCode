@@ -2,7 +2,6 @@
 
 import json
 import pytest
-import asyncio
 
 try:
     from pilotcode.plugins import get_plugin_manager
@@ -27,7 +26,6 @@ pytestmark = [
 @pytest.fixture
 async def manager(temp_config_dir, monkeypatch):
     """Create plugin manager with temp config."""
-    from unittest.mock import AsyncMock, MagicMock
     import json as json_mod
     from pathlib import Path
 

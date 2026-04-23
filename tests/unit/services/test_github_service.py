@@ -1,9 +1,8 @@
 """Tests for GitHub Service."""
 
 import pytest
-import asyncio
 from datetime import datetime
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import patch
 
 import httpx
 import respx
@@ -15,13 +14,6 @@ from pilotcode.services.github_service import (
     Repository,
     Issue,
     PullRequest,
-    Comment,
-    Review,
-    Release,
-    WorkflowRun,
-    CheckRun,
-    User,
-    Label,
     RateLimit,
     CreateIssueRequest,
     CreatePullRequestRequest,
@@ -29,8 +21,6 @@ from pilotcode.services.github_service import (
     MergePullRequestRequest,
     IssueState,
     MergeMethod,
-    CheckStatus,
-    GitHubError,
     GitHubAuthError,
     GitHubRateLimitError,
     GitHubNotFoundError,
@@ -1185,7 +1175,7 @@ class TestGitHubCaching:
         await service.update_issue("owner", "test-repo", 1, title="Updated")
 
         # Cache entry should be gone
-        cache_key = f"GET:/repos/owner/test-repo/issues/1:*"
+        cache_key = "GET:/repos/owner/test-repo/issues/1:*"
         assert service._cache.get(cache_key) is None
 
         await service.close()

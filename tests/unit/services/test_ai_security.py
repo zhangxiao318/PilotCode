@@ -3,7 +3,6 @@
 import pytest
 
 from pilotcode.services.ai_security import (
-    SecurityAnalysis,
     RiskLevel,
     get_command_security_analysis,
     extract_command_prefix,

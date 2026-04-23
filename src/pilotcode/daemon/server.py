@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
-import socket
 import os
 from pathlib import Path
 from typing import Optional, Callable
@@ -19,7 +17,7 @@ if sys.platform == "win32":
     # Set console code page to UTF-8
     os.system("chcp 65001 >nul 2>&1")
 
-from .protocol import Request, Response, Notification, ErrorCode
+from .protocol import Request, Response, ErrorCode
 from .session_manager import SessionManager
 
 

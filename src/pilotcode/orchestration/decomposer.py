@@ -426,7 +426,7 @@ class TaskDecomposer:
 
         for i, std in enumerate(subtask_dicts):
             subtask = SubTask(
-                id=std.get("id", f"step{i+1}"),
+                id=std.get("id", f"step{i + 1}"),
                 description=std.get("description", ""),
                 prompt=std.get("prompt", ""),
                 role=std.get("role", "coder"),
