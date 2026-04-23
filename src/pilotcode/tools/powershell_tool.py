@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
+from .bash_tool import _update_cwd_from_cd
 
 
 class PowerShellInput(BaseModel):
@@ -102,6 +103,10 @@ async def powershell_call(
         cwd = getattr(app_state, "cwd", os.getcwd())
 
     result = await execute_powershell(input_data.command, timeout=input_data.timeout, cwd=cwd)
+
+    # Track directory changes from cd/Set-Location commands
+    if context.set_app_state and result.exit_code == 0:
+        _update_cwd_from_cd(input_data.command, cwd, context.set_app_state)
 
     return ToolResult(data=result)
 

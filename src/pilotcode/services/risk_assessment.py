@@ -285,15 +285,8 @@ class ToolRiskAnalyzer:
 
         elif tool_name == "PowerShell":
             command = params.get("command", "")
-            # Similar to bash analysis
-            return RiskAssessment(
-                level=RiskLevel.MEDIUM,
-                reason="PowerShell command execution",
-                auto_allow=False,
-                requires_confirmation=True,
-                destructive=False,
-                read_only=False,
-            )
+            # Reuse bash command analyzer for consistent risk assessment
+            return self.command_analyzer.assess_bash_command(command)
 
         elif tool_name == "Agent":
             return RiskAssessment(

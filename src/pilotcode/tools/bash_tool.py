@@ -5,6 +5,7 @@ import re
 import os
 import sys
 from typing import Any
+from dataclasses import replace
 from pydantic import BaseModel, Field
 
 from .base import ToolResult, ToolUseContext, build_tool
@@ -373,6 +374,29 @@ async def execute_bash(
         return BashOutput(stdout="", stderr=str(e), exit_code=-1, command=command)
 
 
+def _update_cwd_from_cd(command: str, current_cwd: str | None, set_app_state) -> None:
+    """Parse cd/Set-Location/chdir and update app_state.cwd if valid."""
+    cmd = command.strip()
+    if not cmd:
+        return
+    lower = cmd.lower()
+    m = re.match(r'^(?:cd|chdir|set-location)\s+["\']?(.+?)["\']?\s*$', lower)
+    if not m:
+        if re.match(r"^(?:cd|chdir|set-location)\s*$", lower):
+            target = os.path.expanduser("~")
+        else:
+            return
+    else:
+        target = m.group(1).strip()
+    base = current_cwd or os.getcwd()
+    if os.path.isabs(target):
+        new_cwd = os.path.normpath(target)
+    else:
+        new_cwd = os.path.normpath(os.path.join(base, target))
+    if os.path.isdir(new_cwd):
+        set_app_state(lambda s: replace(s, cwd=new_cwd))
+
+
 async def bash_call(
     input_data: BashInput,
     context: ToolUseContext,
@@ -423,6 +447,10 @@ async def bash_call(
     result = await execute_bash(
         input_data.command, cwd=cwd, timeout=input_data.timeout, on_progress=on_progress
     )
+
+    # Track directory changes from cd commands
+    if context.set_app_state and result.exit_code == 0:
+        _update_cwd_from_cd(input_data.command, cwd, context.set_app_state)
 
     return ToolResult(data=result)
 

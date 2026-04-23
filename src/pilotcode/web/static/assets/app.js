@@ -613,7 +613,7 @@ function renderMarkdown(text) {
     });
     
     // Collapse excessive consecutive newlines before rendering
-    text = text.replace(/\n{3,}/g, '\n\n');
+    text = text.replace(/\n{2,}/g, '\n');
     
     // Line breaks (outside code blocks)
     text = text.replace(/\n/g, '<br>');
