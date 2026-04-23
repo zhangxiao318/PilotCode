@@ -612,6 +612,9 @@ function renderMarkdown(text) {
         return `<li style="margin-left: ${indent.length * 8}px">${item}</li>`;
     });
     
+    // Collapse excessive consecutive newlines before rendering
+    text = text.replace(/\n{3,}/g, '\n\n');
+    
     // Line breaks (outside code blocks)
     text = text.replace(/\n/g, '<br>');
     

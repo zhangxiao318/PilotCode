@@ -65,6 +65,7 @@ class CommandRiskAnalyzer:
         r"^\s*grep\b",
         r"^\s*find\b",
         r"^\s*pwd\b",
+        r"^\s*cd\b",
         r"^\s*echo\b",
         r"^\s*wc\b",
         r"^\s*sort\b",
