@@ -580,6 +580,23 @@ def config(
                     console.print("[bold]Model Capability (Runtime Detected):[/bold]")
                     _print_api_capability(console, api_caps, static_info=model_info)
 
+                    # --- Suggest /v1 suffix for OpenAI-compatible local backends ---
+                    backend = api_caps.get("_backend", "")
+                    if backend in ("vllm", "openai-compatible") and config.base_url:
+                        url = config.base_url.rstrip("/")
+                        if not url.endswith("/v1"):
+                            console.print(
+                                f"\n[yellow]⚠ base_url missing /v1 suffix:[/yellow] {config.base_url}"
+                            )
+                            console.print(
+                                "  [dim]vLLM and other OpenAI-compatible backends typically "
+                                "expose endpoints under /v1 (e.g. /v1/chat/completions).[/dim]"
+                            )
+                            if typer.confirm("Auto-append /v1 to base_url?", default=True):
+                                config.base_url = url + "/v1"
+                                get_config_manager().save_global_config(config)
+                                console.print(f"[green]✓ base_url updated: {config.base_url}[/green]")
+
                     # --- Detect mismatches and offer to update config ---
                     # For local models, skip updating default_model/model_provider
                     # (the detected name like "qwen-coder" may not exist in models.json)
