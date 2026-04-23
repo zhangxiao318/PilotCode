@@ -216,7 +216,8 @@ class ConfigurationWizard:
         console.print("\n[bold]Step 3: Optional Settings[/bold] [dim](press Enter to skip)[/dim]")
 
         # Custom base URL (if needed)
-        if self.selected_model and self.selected_model.name in ("custom", "vllm", "azure"):
+        # Local models (Ollama, vLLM) may run on another host in the LAN
+        if self.selected_model and self.selected_model.name in ("ollama", "custom", "vllm", "azure"):
             custom_url = Prompt.ask("Enter base URL", default=self.config.base_url)
             if custom_url:
                 self.config.base_url = custom_url
