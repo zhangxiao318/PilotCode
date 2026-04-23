@@ -79,7 +79,7 @@ class ConfigurationWizard:
 
         table.add_row("1", "International", "OpenAI, Anthropic Claude, Azure, etc.")
         table.add_row("2", "Domestic (国内)", "DeepSeek, Qwen, GLM, Moonshot, etc.")
-        table.add_row("3", "Local/Custom", "Ollama, or custom OpenAI-compatible endpoint")
+        table.add_row("3", "Local/Custom", "Ollama, vLLM, or custom OpenAI-compatible endpoint")
 
         console.print(table)
 
@@ -93,7 +93,11 @@ class ConfigurationWizard:
             "2": ("Domestic", get_domestic_models()),
             "3": (
                 "Local/Custom",
-                {"ollama": get_model_info("ollama"), "custom": get_model_info("custom")},
+                {
+                    "ollama": get_model_info("ollama"),
+                    "vllm": get_model_info("vllm"),
+                    "custom": get_model_info("custom"),
+                },
             ),
         }
 
@@ -152,9 +156,9 @@ class ConfigurationWizard:
             console.print("[red]No model selected![/red]")
             return False
 
-        # For Ollama, no API key needed
-        if self.selected_model.name == "ollama":
-            console.print("[green]✓[/green] Ollama runs locally, no API key needed.")
+        # For Ollama and vLLM, no API key needed
+        if self.selected_model.name in ("ollama", "vllm"):
+            console.print(f"[green]✓[/green] {self.selected_model.display_name} runs locally, no API key needed.")
             self.config.api_key = ""
             return True
 
@@ -202,6 +206,7 @@ class ConfigurationWizard:
             "moonshot": "Get from: https://platform.moonshot.cn/console/api-keys",
             "baichuan": "Get from: https://platform.baichuan-ai.com/console/apikey",
             "doubao": "Get from: https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
+            "vllm": "No API key needed for local vLLM server",
             "custom": "Enter your custom API endpoint and key",
         }
         return instructions.get(model_name, "Please check the provider's documentation.")
@@ -211,8 +216,8 @@ class ConfigurationWizard:
         console.print("\n[bold]Step 3: Optional Settings[/bold] [dim](press Enter to skip)[/dim]")
 
         # Custom base URL (if needed)
-        if self.selected_model and self.selected_model.name in ("custom", "azure"):
-            custom_url = Prompt.ask("Enter custom base URL", default=self.config.base_url)
+        if self.selected_model and self.selected_model.name in ("custom", "vllm", "azure"):
+            custom_url = Prompt.ask("Enter base URL", default=self.config.base_url)
             if custom_url:
                 self.config.base_url = custom_url
 
@@ -296,7 +301,7 @@ def quick_configure(
     # Get API key
     if api_key:
         config.api_key = api_key
-    elif model_name != "ollama":
+    elif model_name not in ("ollama", "vllm"):
         env_key = model_info.get_env_key()
         env_api_key = os.environ.get(env_key) or os.environ.get("PILOTCODE_API_KEY")
         if env_api_key:
