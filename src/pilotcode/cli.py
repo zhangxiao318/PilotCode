@@ -583,20 +583,24 @@ def config(
                     # --- Detect mismatches and offer to update config ---
                     # For local models, skip updating default_model/model_provider
                     # (the detected name like "qwen-coder" may not exist in models.json)
-                    config_mismatches: list[tuple[str, str, str]] = []
+                    config_mismatches: list[tuple[str, Any, Any]] = []
                     model_mismatches: list[tuple[str, int, int]] = []
 
                     detected_ctx = api_caps.get("context_window")
-                    if (
-                        detected_ctx is not None
-                        and model_info
-                        and detected_ctx != model_info.context_window
-                    ):
-                        model_mismatches.append(
-                            ("context_window", model_info.context_window, detected_ctx)
-                        )
+                    if detected_ctx is not None:
+                        # Compare against the effective config value (GlobalConfig)
+                        effective_ctx = config.context_window or (model_info.context_window if model_info else 0)
+                        if effective_ctx and detected_ctx != effective_ctx:
+                            config_mismatches.append(
+                                ("context_window", effective_ctx, detected_ctx)
+                            )
+                        # Also compare against static model config (models.json)
+                        if model_info and detected_ctx != model_info.context_window:
+                            model_mismatches.append(
+                                ("context_window", model_info.context_window, detected_ctx)
+                            )
 
-                    if model_mismatches:
+                    if config_mismatches or model_mismatches:
                         console.print("\n[yellow]⚠ Detected mismatches with config file:[/yellow]")
                         for key, old, new in config_mismatches:
                             console.print(f"  {key}: {old} → {new}")
