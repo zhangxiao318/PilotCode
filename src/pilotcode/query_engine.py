@@ -659,6 +659,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         accumulated_content = ""
         pending_tool_calls: list[ToolCall] = []
         current_tool_call: dict[int, dict] = {}  # Accumulate tool call parts
+        suppress_streaming = False  # Set to True when XML tool calls appear in content
 
         async for chunk in self.client.chat_completion(
             messages=api_messages,
@@ -679,8 +680,15 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             content = delta.get("content")
             if content:
                 accumulated_content += content
-                partial_msg = AssistantMessage(content=content)
-                yield QueryResult(message=partial_msg, is_complete=False)
+                # If accumulated content starts containing XML tool-call markers,
+                # stop streaming individual chunks to avoid showing raw XML tags.
+                if not suppress_streaming and (
+                    "<tool_call" in accumulated_content or "<function=" in accumulated_content
+                ):
+                    suppress_streaming = True
+                if not suppress_streaming:
+                    partial_msg = AssistantMessage(content=content)
+                    yield QueryResult(message=partial_msg, is_complete=False)
 
             # Handle tool calls (accumulate across chunks)
             if delta.get("tool_calls"):
@@ -704,13 +712,15 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         if not current_tool_call and accumulated_content:
             xml_tools = self._parse_content_tool_calls(accumulated_content)
             if xml_tools:
-                accumulated_content = self._remove_xml_tool_calls(accumulated_content)
                 for i, tc in enumerate(xml_tools):
                     current_tool_call[i] = {
                         "id": f"xml_tool_{i}_{uuid.uuid4().hex[:6]}",
                         "name": tc["name"],
                         "arguments": json.dumps(tc["arguments"]),
                     }
+            # Always strip XML tags from displayed content even if parsing failed
+            if "<tool_call" in accumulated_content or "<function=" in accumulated_content:
+                accumulated_content = self._remove_xml_tool_calls(accumulated_content)
 
         # Final assistant message
         if accumulated_content:
