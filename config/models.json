@@ -156,6 +156,19 @@
       "context_window": 128000,
       "env_key": "OPENAI_API_KEY"
     },
+    "vllm": {
+      "name": "vllm",
+      "display_name": "vLLM (Local)",
+      "provider": "vllm",
+      "base_url": "http://localhost:8000/v1",
+      "default_model": "default",
+      "description": "Local vLLM inference server (OpenAI-compatible)",
+      "supports_tools": true,
+      "supports_vision": false,
+      "max_tokens": 4096,
+      "context_window": 128000,
+      "env_key": ""
+    },
     "ollama": {
       "name": "ollama",
       "display_name": "Ollama (Local)",

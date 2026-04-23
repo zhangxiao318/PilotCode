@@ -156,7 +156,7 @@ Config file: /home/user/.config/pilotcode/settings.json
 
 ### 本地模型的运行时探测
 
-如果配置的模型使用本地地址（如 `localhost`、`127.0.0.1`、`:11434`、`192.168.x.x` 等），PilotCode 会自动探测后端实际能力：
+如果配置的模型使用本地地址（如 `localhost`、`127.0.0.1`、`:11434`、`10.x.x.x`、`172.16-31.x.x`、`192.168.x.x` 等），PilotCode 会自动探测后端实际能力：
 
 ```bash
 $ python3 -m pilotcode config --list
@@ -179,6 +179,7 @@ Model Capability (Runtime Detected):
 |------|----------|----------|
 | **llama.cpp / llama-server** | `/props` | `n_ctx`, `model_path`, `modalities` |
 | **Ollama** | `/api/show` | `context_length`, `capabilities` |
+| **vLLM** | `/v1/models` | `max_model_len`, `max_tokens` |
 | **LiteLLM** | `/model/info` | `max_input_tokens`, `max_output_tokens` |
 | **OpenAI-compatible** | `/v1/models` | `context_length`, `max_tokens` 等 |
 

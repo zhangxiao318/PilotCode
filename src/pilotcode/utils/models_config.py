@@ -24,6 +24,7 @@ class ModelProvider(Enum):
     MOONSHOT = "moonshot"
     BAICHUAN = "baichuan"
     DOUBAO = "doubao"
+    VLLM = "vllm"
     CUSTOM = "custom"
 
 
@@ -180,7 +181,8 @@ def get_international_models() -> dict[str, ModelInfo]:
         ModelProvider.BAICHUAN,
         ModelProvider.DOUBAO,
     }
-    return {k: v for k, v in SUPPORTED_MODELS.items() if v.provider not in domestic}
+    local = {ModelProvider.CUSTOM, ModelProvider.VLLM}
+    return {k: v for k, v in SUPPORTED_MODELS.items() if v.provider not in domestic | local}
 
 
 def get_domestic_models() -> dict[str, ModelInfo]:
@@ -255,8 +257,8 @@ def check_api_key_configured(model_name: str) -> bool:
             return True
         return False
 
-    # For Ollama/local models, no API key needed
-    if model_info.provider == ModelProvider.CUSTOM and not model_info.env_key:
+    # For Ollama/vLLM/local models, no API key needed
+    if model_info.provider in (ModelProvider.CUSTOM, ModelProvider.VLLM) and not model_info.env_key:
         return True
 
     # Check environment variable
@@ -328,6 +330,8 @@ def format_model_list() -> str:
     lines.append("\n[bold cyan]Local/Custom:[/bold cyan]")
     lines.append(f"  [green]{'ollama':<15}[/green] - Ollama (Local)")
     lines.append("    Local Ollama instance")
+    lines.append(f"  [green]{'vllm':<15}[/green] - vLLM (Local)")
+    lines.append("    Local vLLM inference server (OpenAI-compatible)")
     lines.append(f"  [green]{'custom':<15}[/green] - Custom endpoint")
     lines.append("    Custom OpenAI-compatible API")
 

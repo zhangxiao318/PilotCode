@@ -340,18 +340,36 @@ class ModelClient:
         # ------------------------------------------------------------------
         if "context_window" not in cap or "max_tokens" not in cap:
             model_data = None
-            for endpoint in [f"/models/{self.model}", "/models"]:
+            # Build candidate endpoints.  If base_url already ends in /v1 the
+            # httpx client resolves /v1/models correctly; otherwise many
+            # backends (vLLM, TGI, etc.) only expose the /v1 prefix.
+            base_has_v1 = str(self.client.base_url).rstrip("/").endswith("/v1")
+            candidates: list[str] = []
+            for prefix in ([""] if base_has_v1 else ["/v1", ""]):
+                candidates.append(f"{prefix}/models/{self.model}")
+                candidates.append(f"{prefix}/models")
+            # Deduplicate while preserving order
+            seen = set()
+            endpoints = []
+            for e in candidates:
+                if e not in seen:
+                    seen.add(e)
+                    endpoints.append(e)
+
+            for endpoint in endpoints:
                 try:
                     resp = await self.client.get(endpoint, timeout=5.0)
                     if resp.status_code == 200:
                         data = resp.json()
                         if endpoint.endswith("/models"):
-                            for m in data.get("data", []):
+                            models = data.get("data", [])
+                            for m in models:
                                 if m.get("id") == self.model:
                                     model_data = m
                                     break
-                            if model_data is None and len(data.get("data", [])) == 1:
-                                model_data = data["data"][0]
+                            # Fallback: if no exact match, take the first model
+                            if model_data is None and models:
+                                model_data = models[0]
                         else:
                             model_data = data
                         break
@@ -364,6 +382,13 @@ class ModelClient:
                     continue
 
             if model_data:
+                # Detect vLLM backend from metadata
+                owned_by = model_data.get("owned_by", "")
+                root = model_data.get("root", "")
+                if owned_by == "vllm" or "vllm" in str(root).lower():
+                    cap["_provider"] = "vllm"
+                    cap["_backend"] = "vllm"
+
                 # context window
                 if "context_window" not in cap:
                     for key in (

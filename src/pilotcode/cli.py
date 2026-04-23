@@ -35,17 +35,48 @@ console = Console()
 
 
 def _is_local_url(url: str) -> bool:
-    """Check if URL points to a local/internal model."""
+    """Check if URL points to a local/internal model.
+
+    Matches localhost, loopback, and RFC1918 private addresses.
+    """
     if not url:
         return False
-    return (
-        "localhost" in url
-        or "127.0.0.1" in url
-        or ":11434" in url
-        or url.startswith("http://192.168.")
-        or url.startswith("http://10.")
-        or url.startswith("http://172.")
-    )
+
+    # localhost / loopback
+    if "localhost" in url or "127.0.0.1" in url:
+        return True
+
+    # Ollama default port
+    if ":11434" in url:
+        return True
+
+    # Extract host from URL for RFC1918 checks
+    from urllib.parse import urlparse
+    try:
+        host = urlparse(url).hostname or ""
+    except Exception:
+        return False
+
+    # 10.x.x.x
+    if host.startswith("10."):
+        return True
+
+    # 172.16-31.x.x
+    if host.startswith("172."):
+        parts = host.split(".")
+        if len(parts) >= 2:
+            try:
+                second = int(parts[1])
+                if 16 <= second <= 31:
+                    return True
+            except ValueError:
+                pass
+
+    # 192.168.x.x
+    if host.startswith("192.168."):
+        return True
+
+    return False
 
 
 def _fmt_ctx(n: int) -> str:
@@ -515,6 +546,10 @@ def config(
         console.print(f"  Model Provider: {config.model_provider}")
         console.print(f"  Base URL: {config.base_url or 'Default'}")
         console.print(f"  API Key: {'***set***' if config.api_key else 'Not set'}")
+        if config.max_tokens > 0:
+            console.print(f"  Max Tokens: {config.max_tokens}")
+        if config.context_window > 0:
+            console.print(f"  Context Window: {config.context_window}")
 
         # --- Model capability info ---
         model_info = get_model_info(config.default_model)
@@ -577,7 +612,10 @@ def config(
                             # Update global config
                             for key, _old, new in config_mismatches:
                                 setattr(config, key, new)
-                            if config_mismatches:
+                            # Also update max_tokens and context_window in global config
+                            for key, _old, new in model_mismatches:
+                                setattr(config, key, new)
+                            if config_mismatches or model_mismatches:
                                 get_config_manager().save_global_config(config)
 
                             # Update models.json
