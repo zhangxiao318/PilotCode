@@ -161,27 +161,67 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
     if not os.path.exists(cache_dir):
         os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
         repo_url = f"https://github.com/{repo}.git"
+        # Temporarily disable proxy for git operations (network may be unstable)
+        env_no_proxy = "GIT_CONFIG_GLOBAL=/dev/null"
         rc, _, stderr = run_cmd(
-            f"git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}", timeout=300
+            f"{env_no_proxy} git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}", timeout=60
         )
         if rc != 0:
-            print(f"[WARN] Shallow clone failed, trying full clone: {stderr}")
-            rc, _, stderr = run_cmd(f"git clone {repo_url} {cache_dir}", timeout=600)
+            print(f"[WARN] Shallow clone failed: {stderr}")
+            rc, _, stderr = run_cmd(
+                f"{env_no_proxy} git clone {repo_url} {cache_dir}", timeout=120
+            )
             if rc != 0:
-                print(f"[ERROR] Failed to clone {repo}: {stderr}")
-                return False
-        rc, _, stderr = run_cmd(f"git fetch --depth 1 origin {commit}", cwd=cache_dir, timeout=120)
-        if rc != 0:
-            rc, _, stderr = run_cmd(f"git fetch origin {commit}", cwd=cache_dir, timeout=300)
-        rc, _, stderr = run_cmd(f"git checkout {commit}", cwd=cache_dir, timeout=60)
-        if rc != 0:
-            print(f"[ERROR] Failed to checkout {commit}: {stderr}")
+                print(f"[WARN] Full clone failed: {stderr}")
+                # Fallback: try to reuse any existing repo for the same project
+                existing = _find_existing_repo_cache(repo_slug)
+                if existing:
+                    print(f"[CACHE] Copying existing repo {existing} -> {cache_dir}")
+                    shutil.copytree(existing, cache_dir, symlinks=True)
+                else:
+                    print(f"[ERROR] No existing cache for {repo} and clone failed")
+                    return False
+        if not os.path.isdir(os.path.join(cache_dir, ".git")):
+            print(f"[ERROR] Cache dir {cache_dir} is not a git repo")
             return False
+        # Fetch/checkout target commit with short timeout
+        rc, _, stderr = run_cmd(
+            f"{env_no_proxy} git fetch --depth 1 origin {commit}", cwd=cache_dir, timeout=30
+        )
+        if rc != 0:
+            rc, _, stderr = run_cmd(
+                f"{env_no_proxy} git fetch origin {commit}", cwd=cache_dir, timeout=60
+            )
+        rc, _, stderr = run_cmd(f"git checkout {commit}", cwd=cache_dir, timeout=30)
+        if rc != 0:
+            print(f"[WARN] Failed to checkout {commit}: {stderr}")
+            # If we have an existing repo copy, try direct checkout (commit may already be local)
+            rc2, _, _ = run_cmd(f"git cat-file -t {commit}", cwd=cache_dir, timeout=10)
+            if rc2 == 0:
+                print(f"[CACHE] Commit {commit} exists locally, attempting checkout anyway")
+                rc3, _, stderr3 = run_cmd(f"git checkout -f {commit}", cwd=cache_dir, timeout=30)
+                if rc3 != 0:
+                    print(f"[ERROR] Checkout failed: {stderr3}")
+                    return False
+            else:
+                print(f"[ERROR] Commit {commit} not available locally and network fetch failed")
+                return False
 
     if os.path.exists(work_dir):
         shutil.rmtree(work_dir)
     shutil.copytree(cache_dir, work_dir, symlinks=True)
     return True
+
+
+def _find_existing_repo_cache(repo_slug: str) -> str | None:
+    """Find any existing cached repo directory for the given repo slug."""
+    if not os.path.isdir(REPO_CACHE_DIR):
+        return None
+    for entry in os.listdir(REPO_CACHE_DIR):
+        entry_path = os.path.join(REPO_CACHE_DIR, entry)
+        if os.path.isdir(os.path.join(entry_path, ".git")) and entry.startswith(repo_slug):
+            return entry_path
+    return None
 
 
 def run_pilotcode(

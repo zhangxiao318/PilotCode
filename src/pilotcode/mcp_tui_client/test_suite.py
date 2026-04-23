@@ -354,9 +354,9 @@ class PilotCodeTestSuite:
             # Screen should be mostly clear
             screen = await self.client.capture_screen()
             # Just verify no error occurred
-            assert "Error" not in screen.raw_text or "error" not in screen.raw_text.lower(), (
-                "Clear command failed"
-            )
+            assert (
+                "Error" not in screen.raw_text or "error" not in screen.raw_text.lower()
+            ), "Clear command failed"
 
             await self.client.close_session()
 
