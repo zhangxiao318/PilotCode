@@ -18,8 +18,10 @@ PilotCode 不仅是代码助手，更是完整的开发环境，支持：
 ## 工作流概览
 
 ```
-1. 需求理解 → 2. 设计讨论 → 3. 编码实现 → 4. 测试验证 → 5. 代码提交
+1. 需求理解 → 2. 设计讨论 → 3. 编码实现 → 4. 自动审查与测试 → 5. 代码提交
 ```
+
+> **自动审查**：启用 `auto_review=true` 后，编码完成后系统会自动 Review 变更、运行相关测试，并在测试失败时自动生成修复指令。详见 [模型配置](../features/model-configuration.md)。
 
 ---
 
@@ -263,7 +265,27 @@ PilotCode 不仅是代码助手，更是完整的开发环境，支持：
 
 ### 4.2 代码审查
 
-自我审查：
+**自动审查（推荐）**：
+
+启用自动审查后，每次编码完成系统会自动：
+1. 审查变更的代码质量
+2. 从 `git diff` 提取相关测试文件并运行
+3. 测试失败时自动生成修复指令
+
+```bash
+# 启用自动审查
+/config set auto_review true
+/config set max_review_iterations 3
+```
+
+自动审查流程：
+```
+编码完成 → 自动 Review → 运行相关测试 → 测试通过 → 继续
+                                    ↓
+                              测试失败 → 提取错误 → 生成 Redesign 指令 → LLM 修复
+```
+
+**手动审查**：
 
 ```
 请审查 src/auth/ 目录的代码：
@@ -274,6 +296,26 @@ PilotCode 不仅是代码助手，更是完整的开发环境，支持：
 ```
 
 ### 4.3 处理 Review 意见
+
+**自动修复**：
+
+如果自动审查发现了问题，系统会以 SystemMessage 形式插入修复指令：
+```
+🚨 TESTS FAILED — Your changes must be revised.
+
+=== Test Errors ===
+FAIL: test_auth ...
+AssertionError: expected 200 but got 401
+
+=== Redesign Instructions ===
+1. Re-read the failing test and ALL code it exercises.
+2. Use Grep to find every call site of the function you changed.
+3. Produce a COMPLETELY REVISED fix.
+```
+
+LLM 会自动根据指令修复问题，最多循环 `max_review_iterations` 轮。
+
+**手动处理**：
 
 ```
 Reviewer 提出了这些意见：
