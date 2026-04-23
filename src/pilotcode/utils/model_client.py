@@ -83,30 +83,41 @@ class ModelClient:
         # Determine model name: use provided, or config, or fallback
         model_key = model or config.default_model or "default"
 
-        # Map model key to actual API model name (e.g., "qwen" -> "qwen-max")
-        model_info = get_model_info(model_key)
-        if model_info and model_info.default_model and model_info.default_model != "default":
-            self.model = model_info.default_model
-        elif model_key == "custom":
-            # For custom models, detect provider from base_url
-            config_base = config.base_url or ""
-            if "dashscope" in config_base.lower() or "aliyun" in config_base.lower():
-                self.model = "qwen-max"  # Alibaba DashScope
-            elif "deepseek" in config_base.lower():
-                self.model = "deepseek-chat"
-            else:
-                self.model = "default"  # Fallback
-        else:
-            self.model = model_key
+        # For local models, use config directly without models.json lookup.
+        # Local model config lives entirely in settings.json.
+        from .config import is_local_url
 
-        # Determine base URL: use provided, or from model info, or from config
+        is_local = is_local_url(config.base_url or "")
+        if is_local:
+            self.model = model_key
+        else:
+            # Map model key to actual API model name (e.g., "qwen" -> "qwen-max")
+            model_info = get_model_info(model_key)
+            if model_info and model_info.default_model and model_info.default_model != "default":
+                self.model = model_info.default_model
+            elif model_key == "custom":
+                # For custom models, detect provider from base_url
+                config_base = config.base_url or ""
+                if "dashscope" in config_base.lower() or "aliyun" in config_base.lower():
+                    self.model = "qwen-max"  # Alibaba DashScope
+                elif "deepseek" in config_base.lower():
+                    self.model = "deepseek-chat"
+                else:
+                    self.model = "default"  # Fallback
+            else:
+                self.model = model_key
+
+        # Determine base URL: use provided, or from config, or from model info as fallback
         if base_url:
             self.base_url = base_url
+        elif config.base_url:
+            # Respect user's explicit configuration first
+            self.base_url = config.base_url
         elif model_info and model_info.base_url:
-            # Use model-specific base URL if available
+            # Use model-specific base URL as fallback
             self.base_url = model_info.base_url
         else:
-            self.base_url = config.base_url
+            self.base_url = ""
 
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -493,11 +504,13 @@ class ModelClient:
                             if "supports_vision" in cap:
                                 break
 
-                # display name from model id
-                if model_data and "display_name" not in cap:
+                # display name and model id from API response
+                if model_data:
                     model_id = model_data.get("id")
                     if model_id:
-                        cap["display_name"] = model_id
+                        cap["model_id"] = model_id
+                        if "display_name" not in cap:
+                            cap["display_name"] = model_id
 
                 if "_backend" not in cap:
                     cap["_backend"] = "openai-compatible"

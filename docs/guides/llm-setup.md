@@ -173,9 +173,12 @@ source ~/.zshrc
 {
   "api_key": "",
   "base_url": "http://localhost:11434/v1",
-  "default_model": "llama2"
+  "default_model": "ollama",
+  "context_window": 128000
 }
 ```
+
+> 本地模型以 `settings.json` 为唯一配置来源。启动时会自动探测实际能力（上下文窗口、模型名等），发现不一致时提示确认后自动修复。
 
 ### 自定义 API (vLLM, TGI 等)
 
@@ -183,9 +186,12 @@ source ~/.zshrc
 {
   "api_key": "optional-key",
   "base_url": "http://localhost:8000/v1",
-  "default_model": "default"
+  "default_model": "vllm",
+  "context_window": 204800
 }
 ```
+
+> vLLM 启动时会自动探测 `/v1/models` 获取实际模型 ID（如 `qwen-coder`），若与 `default_model` 不一致会提示确认后更新。
 
 ---
 

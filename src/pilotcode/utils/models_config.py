@@ -205,7 +205,15 @@ def get_default_model() -> str:
 
 
 def get_model_context_window(model_name: str | None = None) -> int:
-    """Get the context window for a model (static config).
+    """Get the context window for a model.
+
+    Priority:
+        1. User's GlobalConfig.context_window (settings.json)
+        2. For remote models: static model config (models.json)
+        3. Safe fallback (128K)
+
+    Local models NEVER fall back to models.json — all local config lives in
+    settings.json and is probed at startup.
 
     Args:
         model_name: Model key. If None, uses the currently configured model.
@@ -213,19 +221,32 @@ def get_model_context_window(model_name: str | None = None) -> int:
     Returns:
         Context window size in tokens.
     """
+    from .config import get_global_config, is_local_url
+
+    config = get_global_config()
+
+    # Priority 1: User's explicit config (settings.json)
+    if config.context_window > 0:
+        return config.context_window
+
+    # For local models, don't fall back to models.json
+    if is_local_url(config.base_url or ""):
+        return 128_000
+
+    # Priority 2: Static model config (models.json) for remote models
     if model_name is None:
-        from .config import get_global_config
-
-        model_name = get_global_config().default_model
-
+        model_name = config.default_model
     info = get_model_info(model_name)
     if info and info.context_window > 0:
         return info.context_window
+
     return 128_000  # Safe fallback
 
 
 def get_model_max_tokens(model_name: str | None = None) -> int:
-    """Get the max output tokens for a model (static config).
+    """Get the max output tokens for a model.
+
+    Local models NEVER fall back to models.json.
 
     Args:
         model_name: Model key. If None, uses the currently configured model.
@@ -233,10 +254,16 @@ def get_model_max_tokens(model_name: str | None = None) -> int:
     Returns:
         Max output tokens.
     """
-    if model_name is None:
-        from .config import get_global_config
+    from .config import get_global_config, is_local_url
 
-        model_name = get_global_config().default_model
+    config = get_global_config()
+
+    # For local models, don't fall back to models.json
+    if is_local_url(config.base_url or ""):
+        return 4096
+
+    if model_name is None:
+        model_name = config.default_model
 
     info = get_model_info(model_name)
     if info and info.max_tokens > 0:

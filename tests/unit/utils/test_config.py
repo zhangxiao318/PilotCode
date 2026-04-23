@@ -69,6 +69,45 @@ class TestGlobalConfig:
         # Should have default model set
         assert config.default_model != ""
 
+    def test_post_init_local_model_no_models_json(self):
+        """Local model: __post_init__ must NOT fill base_url/context_window from models.json."""
+        config = GlobalConfig(
+            default_model="ollama",
+            base_url="http://172.19.201.40:3530/v1",
+            context_window=0,
+        )
+
+        # base_url already set, should not be overwritten
+        assert config.base_url == "http://172.19.201.40:3530/v1"
+        # For local models, __post_init__ bails out early, so context_window stays 0
+        assert config.context_window == 0
+
+    def test_post_init_local_model_empty_base_url_no_fill(self):
+        """Local model with empty base_url: __post_init__ must NOT auto-fill from models.json."""
+        config = GlobalConfig(
+            default_model="ollama",
+            base_url="",
+            context_window=0,
+        )
+
+        # base_url should remain empty (not filled from models.json)
+        assert config.base_url == ""
+        # context_window should remain 0 (not filled from models.json)
+        assert config.context_window == 0
+
+    def test_post_init_remote_model_uses_models_json(self):
+        """Remote model: __post_init__ fills base_url/context_window from models.json."""
+        config = GlobalConfig(
+            default_model="deepseek",
+            base_url="",
+            context_window=0,
+        )
+
+        # base_url should be filled from models.json
+        assert config.base_url == "https://api.deepseek.com/v1"
+        # context_window should be filled from models.json
+        assert config.context_window == 128_000
+
     def test_asdict_serialization(self):
         """Test that config can be serialized to dict."""
         config = GlobalConfig(theme="dark", api_key="secret")

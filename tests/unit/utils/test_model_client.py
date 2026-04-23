@@ -101,6 +101,53 @@ class TestModelClient:
         assert client.base_url == "https://custom.api.com"
         assert client.model == "gpt-4"
 
+    def test_local_model_uses_config_directly(self, monkeypatch):
+        """Local model: ModelClient must use config.default_model directly, not models.json."""
+        from pilotcode.utils.config import GlobalConfig
+
+        mock_config = GlobalConfig(
+            default_model="my-local-model",
+            base_url="http://172.19.201.40:3530/v1",
+            api_key="test-key",
+        )
+
+        with patch("pilotcode.utils.model_client.get_global_config", return_value=mock_config):
+            client = ModelClient()
+
+        # Should use config.default_model directly, NOT look up models.json
+        assert client.model == "my-local-model"
+
+    def test_local_model_base_url_from_config(self, monkeypatch):
+        """Local model: base_url must come from config, not models.json."""
+        from pilotcode.utils.config import GlobalConfig
+
+        mock_config = GlobalConfig(
+            default_model="ollama",
+            base_url="http://172.19.201.40:3530/v1",
+            api_key="test-key",
+        )
+
+        with patch("pilotcode.utils.model_client.get_global_config", return_value=mock_config):
+            client = ModelClient()
+
+        assert client.base_url == "http://172.19.201.40:3530/v1"
+
+    def test_remote_model_uses_models_json(self, monkeypatch):
+        """Remote model: ModelClient looks up default_model from models.json."""
+        from pilotcode.utils.config import GlobalConfig
+
+        mock_config = GlobalConfig(
+            default_model="deepseek",
+            base_url="https://api.deepseek.com/v1",
+            api_key="test-key",
+        )
+
+        with patch("pilotcode.utils.model_client.get_global_config", return_value=mock_config):
+            client = ModelClient()
+
+        # deepseek in models.json has default_model="deepseek-chat"
+        assert client.model == "deepseek-chat"
+
     def test_convert_messages(self):
         """Test converting messages to API format."""
         client = ModelClient(api_key="test")
@@ -169,6 +216,53 @@ class TestModelClient:
         assert api_tools[0]["type"] == "function"
         assert api_tools[0]["function"]["name"] == "Bash"
         assert api_tools[0]["function"]["description"] == "Execute bash commands"
+
+    @pytest.mark.asyncio
+    async def test_fetch_capabilities_returns_model_id(self):
+        """Test that fetch_model_capabilities returns model_id from /v1/models."""
+        client = ModelClient(api_key="test", base_url="http://localhost:8000/v1", model="qwen-coder")
+
+        # Make /props, /api/show, /model/info return 404 so we hit /v1/models
+        async def mock_get_side_effect(url, **kwargs):
+            resp = MagicMock()
+            if url.endswith("/models"):
+                # List endpoint (/v1/models)
+                resp.status_code = 200
+                resp.json.return_value = {
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": "qwen-coder",
+                            "object": "model",
+                            "owned_by": "vllm",
+                            "root": "/home/lyr/Qwen3-Coder-30B-A3B-Instruct-FP8",
+                            "max_model_len": 204800,
+                        }
+                    ],
+                }
+            elif "/models/" in url:
+                # Single model endpoint (/v1/models/qwen-coder)
+                resp.status_code = 200
+                resp.json.return_value = {
+                    "id": "qwen-coder",
+                    "object": "model",
+                    "owned_by": "vllm",
+                    "root": "/home/lyr/Qwen3-Coder-30B-A3B-Instruct-FP8",
+                    "max_model_len": 204800,
+                }
+            else:
+                resp.status_code = 404
+            return resp
+
+        client.client.get = AsyncMock(side_effect=mock_get_side_effect)
+
+        caps = await client.fetch_model_capabilities()
+
+        assert caps is not None
+        assert caps.get("model_id") == "qwen-coder"
+        assert caps.get("display_name") == "qwen-coder"
+        assert caps.get("context_window") == 204800
+        assert caps.get("_backend") == "vllm"
 
     @pytest.mark.asyncio
     async def test_chat_completion_non_stream(self):

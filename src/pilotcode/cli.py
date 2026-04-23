@@ -187,6 +187,9 @@ def check_configuration() -> bool:
     if is_local_model:
         display_url = effective_base_url or config_base_url
         console.print(f"[dim]Using local/internal LLM at {display_url}[/dim]")
+
+        # Probe local model capabilities and update settings.json if needed
+        _probe_and_update_local_config(config, config_manager)
         return True
 
     # Deep check: verify LLM is actually accessible
@@ -243,6 +246,81 @@ def check_configuration() -> bool:
         console.print(f"[yellow]Warning: Could not verify LLM: {e}[/yellow]")
         # Fall back to static check
         return True
+
+
+def _probe_and_update_local_config(config, config_manager) -> None:
+    """Probe local model capabilities and update settings.json if needed.
+
+    For local models, settings.json is the single source of truth.
+    Prompts user for confirmation, then auto-fixes on confirmation.
+    """
+    import asyncio
+    from .utils.model_client import ModelClient
+
+    async def _probe() -> dict | None:
+        client = ModelClient(
+            api_key=config.api_key or None,
+            base_url=config.base_url or None,
+            model=config.default_model or None,
+        )
+        try:
+            return await client.fetch_model_capabilities()
+        finally:
+            await client.close()
+
+    try:
+        api_caps = asyncio.run(_probe())
+        if not api_caps:
+            return
+
+        local_updates: dict[str, Any] = {}
+        backend = api_caps.get("_backend", "")
+
+        # Check context_window
+        detected_ctx = api_caps.get("context_window")
+        if detected_ctx is not None:
+            if config.context_window <= 0:
+                console.print(
+                    f"[yellow]⚠ context_window not set in settings.json. "
+                    f"Detected: {detected_ctx}[/yellow]"
+                )
+                local_updates["context_window"] = detected_ctx
+            elif config.context_window != detected_ctx:
+                console.print(
+                    f"[yellow]⚠ context_window mismatch: "
+                    f"settings.json={config.context_window}, detected={detected_ctx}[/yellow]"
+                )
+                if typer.confirm("Update settings.json to match detected value?", default=True):
+                    local_updates["context_window"] = detected_ctx
+
+        # For vLLM, check model name
+        if backend == "vllm":
+            detected_model = api_caps.get("model_id") or api_caps.get("display_name")
+            if detected_model and config.default_model != detected_model:
+                console.print(
+                    f"[yellow]⚠ vLLM model name mismatch: "
+                    f"settings.json='{config.default_model}', detected='{detected_model}'[/yellow]"
+                )
+                if typer.confirm("Update default_model in settings.json?", default=True):
+                    local_updates["default_model"] = detected_model
+
+        # Check /v1 suffix for OpenAI-compatible backends
+        if backend in ("vllm", "openai-compatible") and config.base_url:
+            url = config.base_url.rstrip("/")
+            if not url.endswith("/v1"):
+                console.print(
+                    f"[yellow]⚠ base_url missing /v1 suffix: {config.base_url}[/yellow]"
+                )
+                if typer.confirm("Auto-append /v1 to base_url?", default=True):
+                    local_updates["base_url"] = url + "/v1"
+
+        if local_updates:
+            for key, val in local_updates.items():
+                setattr(config, key, val)
+            config_manager.save_global_config(config)
+            console.print("[green]✓ settings.json updated.[/green]")
+    except Exception as e:
+        console.print(f"[dim]Could not probe local model: {e}[/dim]")
 
 
 def _show_configuration_prompt(skip_static_check: bool = False) -> bool:
@@ -551,14 +629,8 @@ def config(
         if config.context_window > 0:
             console.print(f"  Context Window: {config.context_window}")
 
-        # --- Model capability info ---
-        model_info = get_model_info(config.default_model)
-        if model_info:
-            console.print("\n[bold]Model Capability (Static Config):[/bold]")
-            _print_model_capability(console, model_info, source="static")
-
-        # --- For local models, probe runtime info ---
-        effective_url = config.base_url or (model_info.base_url if model_info else "")
+        # --- For local models, probe runtime info and check settings.json ---
+        effective_url = config.base_url or ""
         if is_local_url(effective_url):
             console.print("\n[dim]Probing local model runtime info...[/dim]")
 
@@ -579,7 +651,7 @@ def config(
                 api_caps = asyncio.run(_probe_local())
                 if api_caps:
                     console.print("[bold]Model Capability (Runtime Detected):[/bold]")
-                    _print_api_capability(console, api_caps, static_info=model_info)
+                    _print_api_capability(console, api_caps, static_info=None)
 
                     # --- Suggest /v1 suffix for OpenAI-compatible local backends ---
                     backend = api_caps.get("_backend", "")
@@ -600,57 +672,53 @@ def config(
                                     f"[green]✓ base_url updated: {config.base_url}[/green]"
                                 )
 
-                    # --- Detect mismatches and offer to update config ---
-                    # For local models, skip updating default_model/model_provider
-                    # (the detected name like "qwen-coder" may not exist in models.json)
-                    config_mismatches: list[tuple[str, Any, Any]] = []
-                    model_mismatches: list[tuple[str, int, int]] = []
+                    # --- For local models, check settings.json against probed values ---
+                    # Local models use settings.json as the single source of truth.
+                    local_updates: dict[str, Any] = {}
 
                     detected_ctx = api_caps.get("context_window")
                     if detected_ctx is not None:
-                        # Compare against the effective config value (GlobalConfig)
-                        effective_ctx = config.context_window or (
-                            model_info.context_window if model_info else 0
-                        )
-                        if effective_ctx and detected_ctx != effective_ctx:
-                            config_mismatches.append(
-                                ("context_window", effective_ctx, detected_ctx)
+                        if config.context_window <= 0:
+                            console.print(
+                                f"\n[yellow]⚠ context_window not set in settings.json. "
+                                f"Detected: {detected_ctx}[/yellow]"
                             )
-                        # Also compare against static model config (models.json)
-                        if model_info and detected_ctx != model_info.context_window:
-                            model_mismatches.append(
-                                ("context_window", model_info.context_window, detected_ctx)
+                            local_updates["context_window"] = detected_ctx
+                        elif config.context_window != detected_ctx:
+                            console.print(
+                                f"\n[yellow]⚠ context_window mismatch: "
+                                f"settings.json={config.context_window}, detected={detected_ctx}[/yellow]"
                             )
+                            if typer.confirm("Update settings.json to match detected value?", default=True):
+                                local_updates["context_window"] = detected_ctx
 
-                    if config_mismatches or model_mismatches:
-                        console.print("\n[yellow]⚠ Detected mismatches with config file:[/yellow]")
-                        for key, old, new in config_mismatches:
-                            console.print(f"  {key}: {old} → {new}")
-                        for key, old, new in model_mismatches:
-                            console.print(f"  {key}: {old} → {new}")
+                    # For vLLM, check model name
+                    if backend == "vllm":
+                        detected_model = api_caps.get("model_id") or api_caps.get("display_name")
+                        if detected_model and config.default_model != detected_model:
+                            console.print(
+                                f"\n[yellow]⚠ vLLM model name mismatch: "
+                                f"settings.json='{config.default_model}', detected='{detected_model}'[/yellow]"
+                            )
+                            if typer.confirm("Update default_model in settings.json?", default=True):
+                                local_updates["default_model"] = detected_model
 
-                        if typer.confirm("Update config to match detected values?", default=True):
-                            # Update global config
-                            for key, _old, new in config_mismatches:
-                                setattr(config, key, new)
-                            # Also update context_window in global config
-                            for key, _old, new in model_mismatches:
-                                setattr(config, key, new)
-                            if config_mismatches or model_mismatches:
-                                get_config_manager().save_global_config(config)
-
-                            # Update models.json
-                            if model_mismatches:
-                                from .utils.models_config import update_model_in_json
-
-                                updates = {k: v for k, _old, v in model_mismatches}
-                                update_model_in_json(config.default_model, updates)
-
-                            console.print("[green]✓ Config updated.[/green]")
+                    if local_updates:
+                        for key, val in local_updates.items():
+                            setattr(config, key, val)
+                        get_config_manager().save_global_config(config)
+                        console.print("[green]✓ settings.json updated.[/green]")
                 else:
                     console.print("[dim]  Local model did not expose capability metadata.[/dim]")
             except Exception as e:
                 console.print(f"[yellow]  Could not probe local model: {e}[/yellow]")
+
+        else:
+            # Remote models: show static config from models.json
+            model_info = get_model_info(config.default_model)
+            if model_info:
+                console.print("\n[bold]Model Capability (Static Config):[/bold]")
+                _print_model_capability(console, model_info, source="static")
 
         config_file = get_config_manager().SETTINGS_FILE
         console.print(f"\n[dim]Config file: {config_file}[/dim]")

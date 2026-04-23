@@ -60,11 +60,16 @@ python3 -m pilotcode config --list
 ```
 
 输出包含：
-- **Global Configuration** — 当前全局配置
-- **Model Capability (Static Config)** — 来自 `config/models.json` 的静态配置
-- **Model Capability (Runtime Detected)** — 本地模型的运行时探测结果（如果是本地地址）
+- **Global Configuration** — 当前全局配置（`settings.json`）
+- **Model Capability (Static Config)** — 来自 `config/models.json` 的静态配置（仅远程模型显示）
+- **Model Capability (Runtime Detected)** — 本地模型的运行时探测结果（仅本地模型显示）
 
-本地模型探测时，若探测值与静态配置不一致，会以**红色高亮**显示差异，并交互式提示是否更新配置。
+本地模型探测时，若探测值与 `settings.json` 不一致，会提示确认后自动更新：
+
+```
+⚠ context_window mismatch: settings.json=31072, detected=131072
+Update settings.json to match detected value? [Y/n]:
+```
 
 ### 设置配置项
 
@@ -79,74 +84,13 @@ python3 -m pilotcode config --list
 /config set default_model qwen
 ```
 
-### 获取配置项
+## 本地模型的配置行为
 
-```bash
-# 获取当前主题
-/config get theme
+对于本地模型（Ollama、vLLM），`config --list` 会：
 
-# 获取当前模型
-/config get default_model
-```
+1. **不显示** `models.json` 的静态配置
+2. **探测**本地模型的实际能力（`context_window`、`model_id` 等）
+3. **对比** `settings.json` 与探测值
+4. **提示确认**后自动修复 `settings.json`
 
-### 重置配置
-
-```bash
-# 重置为默认配置
-/config reset
-```
-
-## 常用配置项
-
-| 配置项 | 说明 | 可选值 |
-|--------|------|--------|
-| `theme` | 界面主题 | `default`, `dark`, `light` |
-| `verbose` | 详细模式 | `true`, `false` |
-| `auto_compact` | 自动压缩历史 | `true`, `false` |
-| `default_model` | 默认模型 | 模型名称 |
-| `model_provider` | 模型提供商 | `deepseek`, `openai`, `qwen` 等 |
-
-## 配置文件位置
-
-配置文件存储在：
-
-```
-~/.config/pilotcode/settings.json
-```
-
-## 使用场景
-
-### 场景1：切换模型
-
-```bash
-# 查看当前模型
-/config get default_model
-
-# 切换到 Qwen
-/config set default_model qwen
-
-# 验证切换
-/config get default_model
-```
-
-### 场景2：切换主题
-
-```bash
-# 切换到暗色主题
-/config set theme dark
-
-# 切回默认主题
-/config set theme default
-```
-
-### 场景3：查看完整配置
-
-```bash
-# 显示所有配置
-/config
-```
-
-## 相关命令
-
-- `/model` - 快速切换模型
-- `/theme` - 快速切换主题
+> 本地模型的所有配置以 `settings.json` 为唯一来源，`models.json` 不参与本地模型的配置加载。

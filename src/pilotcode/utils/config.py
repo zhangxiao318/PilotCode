@@ -85,13 +85,23 @@ class GlobalConfig:
         if not self.default_model:
             self.default_model = get_default_model()
 
-        # Set base_url from model config if not specified
+        # For local models, NEVER auto-fill from models.json.
+        # Local models are identified by base_url (RFC1918/localhost) OR by
+        # known local backend keys (ollama, vllm).
+        is_local = is_local_url(self.base_url or "")
+        if not is_local and self.default_model in ("ollama", "vllm"):
+            is_local = True
+
+        if is_local:
+            return
+
+        # Set base_url from model config if not specified (remote only)
         if not self.base_url and self.default_model:
             model_info = get_model_info(self.default_model)
             if model_info:
                 self.base_url = model_info.base_url
 
-        # Set context_window from model config if not specified
+        # Set context_window from model config if not specified (remote only)
         if self.default_model:
             model_info = get_model_info(self.default_model)
             if model_info:
