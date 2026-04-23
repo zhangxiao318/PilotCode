@@ -677,19 +677,21 @@ class WebSocketManager:
                             set_app_state=lambda f: store.set_state(f),
                         )
 
-                        async def _send_tool_progress(data):
+                        def _send_tool_progress(data):
                             if isinstance(data, dict) and data.get("type") == "bash_output":
                                 line = data.get("line", "")
                                 if line:
-                                    await self.send_to_client(
-                                        websocket,
-                                        {
-                                            "type": "tool_progress",
-                                            "stream_id": stream_id,
-                                            "tool_name": tool_msg.name,
-                                            "line": line,
-                                            "is_progress": data.get("is_progress", False),
-                                        },
+                                    asyncio.create_task(
+                                        self.send_to_client(
+                                            websocket,
+                                            {
+                                                "type": "tool_progress",
+                                                "stream_id": stream_id,
+                                                "tool_name": tool_msg.name,
+                                                "line": line,
+                                                "is_progress": data.get("is_progress", False),
+                                            },
+                                        )
                                     )
 
                         exec_result = await tool_executor.execute_tool_by_name(
