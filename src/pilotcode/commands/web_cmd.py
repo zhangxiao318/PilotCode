@@ -39,10 +39,12 @@ async def web_command(args: list[str], context: CommandContext) -> str:
                 return f"[red]Invalid port number: {arg}[/red]"
 
     # Check websockets
-    try:
-        import websockets
-    except ImportError as e:
-        return f"[red]websockets not installed: {e}[/red]\nRun: {sys.executable} -m pip install websockets"
+    import importlib.util
+
+    if importlib.util.find_spec("websockets") is None:
+        return (
+            f"[red]websockets not installed[/red]\nRun: {sys.executable} -m pip install websockets"
+        )
 
     # Check ports
     ws_port = port + 1

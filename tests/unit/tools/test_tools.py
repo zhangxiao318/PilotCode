@@ -84,9 +84,7 @@ class TestFileTools:
 
             context.read_file_state[test_file] = {"timestamp": time.time() + 1}
 
-            await write_tool.call(
-                write_input, context, mock_can_use_tool, None, lambda x: None
-            )
+            await write_tool.call(write_input, context, mock_can_use_tool, None, lambda x: None)
 
             # Read file
             read_tool = FileReadTool

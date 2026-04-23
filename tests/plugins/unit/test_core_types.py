@@ -14,8 +14,6 @@ try:
         MCPServerConfig,
         PluginMarketplace,
         PluginMarketplaceEntry,
-        LoadedPlugin,
-        KnownMarketplace,
     )
 
     PLUGINS_AVAILABLE = True

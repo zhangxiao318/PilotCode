@@ -232,9 +232,7 @@ class TestReferencesCommand:
 
         with patch("os.path.exists", return_value=True):
             with patch("os.path.isabs", return_value=True):
-                await references_command(
-                    ["/test/project/test.py", "10", "5"], command_context
-                )
+                await references_command(["/test/project/test.py", "10", "5"], command_context)
                 mock_lsp_manager.get_references.assert_called_once()
 
 
@@ -267,9 +265,7 @@ class TestDefinitionsCommand:
 
         with patch("os.path.exists", return_value=True):
             with patch("os.path.isabs", return_value=True):
-                await definitions_command(
-                    ["/test/project/test.py", "10", "5"], command_context
-                )
+                await definitions_command(["/test/project/test.py", "10", "5"], command_context)
                 mock_lsp_manager.get_definition.assert_called_once()
 
 
@@ -318,9 +314,7 @@ class TestImplementationsCommand:
 
         with patch("os.path.exists", return_value=True):
             with patch("os.path.isabs", return_value=True):
-                await implementations_command(
-                    ["/test/project/test.py", "10", "5"], command_context
-                )
+                await implementations_command(["/test/project/test.py", "10", "5"], command_context)
                 mock_lsp_manager.get_implementations.assert_called_once()
 
 

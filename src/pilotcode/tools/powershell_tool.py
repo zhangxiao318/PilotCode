@@ -1,6 +1,7 @@
 """PowerShell Tool for Windows PowerShell execution."""
 
 import asyncio
+import os
 import sys
 from typing import Any
 from pydantic import BaseModel, Field

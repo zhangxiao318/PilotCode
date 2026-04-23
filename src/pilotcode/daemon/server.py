@@ -92,7 +92,7 @@ class DaemonServer:
             writer.close()
             try:
                 await writer.wait_closed()
-            except:
+            except Exception:
                 pass
 
         if self.server:
@@ -141,7 +141,7 @@ class DaemonServer:
             writer.close()
             try:
                 await writer.wait_closed()
-            except:
+            except Exception:
                 pass
 
     async def _handle_request(self, line: str) -> Optional[Response]:

@@ -12,11 +12,6 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
-# Context variable to prevent nested environment-diagnosis dead loops
-_env_diagnosis_ctx: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "env_diagnosis_active", default=False
-)
-
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -34,6 +29,11 @@ from ..utils.config import get_global_config
 from ..types.message import AssistantMessage, ToolUseMessage
 from ..permissions import get_tool_executor
 from ..utils.model_client import get_model_client, Message
+
+# Context variable to prevent nested environment-diagnosis dead loops
+_env_diagnosis_ctx: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "env_diagnosis_active", default=False
+)
 
 
 class REPL:
@@ -385,7 +385,7 @@ class REPL:
                 self.query_engine.messages.append(AssistantMessage(content=warning))
 
             # -- Status Layer: turn budget prompts (injected into model context) --
-            remaining = max_iterations - iteration
+            remaining = self.max_iterations - iteration
             if remaining <= 5:
                 prompt = f"URGENT: You have only {remaining} tool-call rounds left. If you know the fix, APPLY IT NOW. If not, make your best edit and declare completion."
             elif remaining <= 15:
@@ -1688,17 +1688,17 @@ def _is_patch_trivial(work_dir: str, patch: str) -> bool:
         return True
     lines = patch.splitlines()
     code_lines = [
-        l
-        for l in lines
-        if (l.startswith("+") or l.startswith("-")) and not l.startswith(("+++", "---"))
+        line
+        for line in lines
+        if (line.startswith("+") or line.startswith("-")) and not line.startswith(("+++", "---"))
     ]
     if len(code_lines) <= 3:
         return True
 
-    added = [l for l in code_lines if l.startswith("+")]
-    has_new_import = any("import " in l or "from " in l for l in added)
-    has_new_symbol = any("def " in l or "class " in l for l in added)
-    has_signature_change = any("def " in l for l in code_lines)
+    added = [line for line in code_lines if line.startswith("+")]
+    has_new_import = any("import " in line or "from " in line for line in added)
+    has_new_symbol = any("def " in line or "class " in line for line in added)
+    has_signature_change = any("def " in line for line in code_lines)
     has_new_file = bool(len(set(re.findall(r"^diff --git a/(.+?) b/", patch, re.MULTILINE))) > 1)
 
     if has_new_import or has_new_symbol or has_signature_change or has_new_file:

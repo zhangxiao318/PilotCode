@@ -798,7 +798,7 @@ async def websocket_handler(websocket):
     finally:
         try:
             await ws_manager.unregister(websocket)
-        except:
+        except Exception:
             pass
 
 

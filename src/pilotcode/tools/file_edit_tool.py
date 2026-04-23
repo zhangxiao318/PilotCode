@@ -335,7 +335,7 @@ async def edit_file_content(
         if backup_path and backup_path.exists():
             try:
                 shutil.copy2(backup_path, path)
-            except:
+            except Exception:
                 pass
         return FileEditOutput(file_path=str(path), replacements_made=0, error=str(e))
     finally:
@@ -343,7 +343,7 @@ async def edit_file_content(
         if backup_path and backup_path.exists():
             try:
                 backup_path.unlink()
-            except:
+            except Exception:
                 pass
 
 

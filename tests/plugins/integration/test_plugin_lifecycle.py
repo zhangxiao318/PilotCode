@@ -8,7 +8,7 @@ try:
     from pilotcode.plugins.core.config import PluginConfig
     from pilotcode.plugins.core.types import PluginScope, MarketplaceSource
     from pilotcode.plugins.loader.skills import SkillLoader
-    from pilotcode.plugins.hooks import get_hook_manager, HookType, HookResult
+    from pilotcode.plugins.hooks import HookType, HookResult
 
     PLUGINS_AVAILABLE = True
 except ImportError:
@@ -121,79 +121,6 @@ def create_local_marketplace(temp_config_dir):
 
 class TestPluginLifecycle:
     """Test complete plugin lifecycle."""
-
-    async def test_full_plugin_lifecycle(
-        self,
-        manager,
-        create_local_marketplace,
-        create_test_plugin,
-        temp_config_dir,
-    ):
-        """Test complete plugin lifecycle: install → load → use → uninstall."""
-        # 1. Create test plugin
-        plugin_dir = create_test_plugin("test-lifecycle", with_skills=True)
-
-        # 2. Create local marketplace
-        marketplace_dir = create_local_marketplace(
-            [
-                {
-                    "name": "test-lifecycle",
-                    "description": "Test plugin for lifecycle",
-                    "version": "1.0.0",
-                    "source": str(plugin_dir),
-                }
-            ]
-        )
-
-        # 3. Add marketplace
-        await manager.marketplace.add_marketplace(
-            "test-lifecycle-marketplace",
-            MarketplaceSource(source="directory", file_path=str(marketplace_dir)),
-        )
-
-        # 4. Install plugin
-        plugin = await manager.install_plugin(
-            "test-lifecycle@test-lifecycle-marketplace",
-            scope=PluginScope.USER,
-        )
-
-        assert plugin.manifest.name == "test-lifecycle"
-        assert plugin.enabled is True
-
-        # 5. Load plugins
-        result = await manager.load_plugins()
-
-        assert len(result.enabled) >= 1
-        loaded_plugin = manager.get_loaded_plugin("test-lifecycle@test-lifecycle-marketplace")
-        assert loaded_plugin is not None
-
-        # 6. Load and verify skills
-        if loaded_plugin.skills_path:
-            skill_loader = SkillLoader(loaded_plugin.skills_path)
-            skills = skill_loader.load_all()
-
-            assert len(skills) >= 1
-            assert skills[0].name == "test-skill"
-
-        # 7. Disable plugin
-        success = await manager.disable_plugin("test-lifecycle@test-lifecycle-marketplace")
-        assert success is True
-
-        result = await manager.load_plugins()
-        loaded = [p for p in result.disabled if p.manifest.name == "test-lifecycle"]
-        assert len(loaded) >= 1
-
-        # 8. Re-enable plugin
-        success = await manager.enable_plugin("test-lifecycle@test-lifecycle-marketplace")
-        assert success is True
-
-        # 9. Uninstall plugin
-        success = await manager.uninstall_plugin("test-lifecycle@test-lifecycle-marketplace")
-        assert success is True
-
-        # Verify uninstalled
-        plugin_after = manager.get_loaded_plugin("test-lifecycle@test-lifecycle-marketplace")
-        assert plugin_after is None
 
     async def test_full_plugin_lifecycle(
         self,

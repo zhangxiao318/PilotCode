@@ -121,9 +121,7 @@ class TestEditFileContentWithDiff:
     async def test_edit_preserves_content(self, temp_file_in_project):
         temp_file = temp_file_in_project
         """Test that editing actually modifies the file."""
-        await edit_file_content(
-            temp_file, old_string="second line", new_string="modified line"
-        )
+        await edit_file_content(temp_file, old_string="second line", new_string="modified line")
 
         # Check file was modified
         with open(temp_file, "r") as f:

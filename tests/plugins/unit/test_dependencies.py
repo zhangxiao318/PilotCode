@@ -5,11 +5,7 @@ import pytest
 try:
     from pilotcode.plugins.core.dependencies import (
         DependencyGraph,
-        DependencyNode,
-        DependencyEdge,
-        DependencyStatus,
         VersionConstraint,
-        DependencyResolver,
     )
     from pilotcode.plugins.core.types import PluginManifest
 

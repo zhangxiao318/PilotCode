@@ -10,7 +10,6 @@ try:
         PluginManifest,
         MarketplaceSource,
         PluginScope,
-        SkillDefinition,
     )
     from pilotcode.plugins.core.config import PluginConfig
     from pilotcode.plugins.loader.skills import load_skill_from_file, parse_frontmatter

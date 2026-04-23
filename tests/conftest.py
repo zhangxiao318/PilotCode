@@ -323,7 +323,7 @@ def mock_model_client():
 
     try:
         asyncio.get_event_loop().run_until_complete(client.close())
-    except:
+    except Exception:
         pass
 
 

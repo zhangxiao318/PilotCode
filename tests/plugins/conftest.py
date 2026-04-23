@@ -12,8 +12,6 @@ try:
     from pilotcode.plugins.core.types import (
         PluginManifest,
         MarketplaceSource,
-        PluginScope,
-        SkillDefinition,
         PluginMarketplace,
         PluginMarketplaceEntry,
     )
