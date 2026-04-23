@@ -394,9 +394,10 @@ async def file_edit_call(
     # Resolve path
     file_path = input_data.file_path
     cwd = os.getcwd()
-    if not os.path.isabs(file_path) and context.get_app_state:
+    if context.get_app_state:
         app_state = context.get_app_state()
         cwd = getattr(app_state, "cwd", os.getcwd())
+    if not os.path.isabs(file_path):
         file_path = os.path.join(cwd, file_path)
 
     # Edit file with workspace restriction

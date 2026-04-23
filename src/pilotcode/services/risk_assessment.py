@@ -264,6 +264,8 @@ class ToolRiskAnalyzer:
         "TodoWrite": RiskLevel.LOW,
         "Config": RiskLevel.LOW,
         "AskUser": RiskLevel.NONE,
+        "Sleep": RiskLevel.NONE,
+        "Ripgrep": RiskLevel.NONE,
     }
 
     def __init__(self):
@@ -285,6 +287,26 @@ class ToolRiskAnalyzer:
 
         elif tool_name == "PowerShell":
             command = params.get("command", "")
+            # Check for read-only PowerShell cmdlets first
+            readonly_ps_patterns = [
+                r"^\s*Get-",
+                r"^\s*Test-",
+                r"^\s*Find-",
+                r"^\s*cd\b",
+                r"^\s*Set-Location\b",
+                r"^\s*chdir\b",
+                r"^\s*Write-Output\b",
+            ]
+            for pattern in readonly_ps_patterns:
+                if re.match(pattern, command, re.IGNORECASE):
+                    return RiskAssessment(
+                        level=RiskLevel.NONE,
+                        reason="Read-only PowerShell command",
+                        auto_allow=True,
+                        requires_confirmation=False,
+                        destructive=False,
+                        read_only=True,
+                    )
             # Reuse bash command analyzer for consistent risk assessment
             return self.command_analyzer.assess_bash_command(command)
 

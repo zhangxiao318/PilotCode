@@ -150,9 +150,12 @@ async def file_write_validate(
         cwd = getattr(app_state, "cwd", os.getcwd())
         file_path = os.path.join(cwd, file_path)
 
+    # Normalize key to match FileRead (uses normcase + normpath + abspath)
+    normalized_key = os.path.normcase(os.path.normpath(os.path.abspath(file_path)))
+
     # Check if file has been read (conflict detection)
-    if context.read_file_state and file_path in context.read_file_state:
-        read_info = context.read_file_state[file_path]
+    if context.read_file_state and normalized_key in context.read_file_state:
+        read_info = context.read_file_state[normalized_key]
         read_timestamp = read_info.get("timestamp", 0)
 
         # Check if file has been modified since read
@@ -194,9 +197,10 @@ async def file_write_call(
 
     # Get workspace directory for security check
     cwd = os.getcwd()
-    if not os.path.isabs(file_path) and context.get_app_state:
+    if context.get_app_state:
         app_state = context.get_app_state()
         cwd = getattr(app_state, "cwd", os.getcwd())
+    if not os.path.isabs(file_path):
         file_path = os.path.join(cwd, file_path)
 
     # Write file with workspace restriction
@@ -212,6 +216,8 @@ async def file_write_call(
             "hash": hashlib.md5(input_data.content.encode()).hexdigest()[:8],
         }
 
+    if result.error:
+        return ToolResult(data=result, error=result.error)
     return ToolResult(data=result)
 
 

@@ -27,6 +27,7 @@ from .file_edit_tool import FileEditTool  # noqa: F401
 from .apply_patch_tool import ApplyPatchTool  # noqa: F401
 from .glob_tool import GlobTool  # noqa: F401
 from .grep_tool import GrepTool  # noqa: F401
+from .ripgrep_tool import RipgrepTool  # noqa: F401
 from .ask_user_tool import AskUserQuestionTool  # noqa: F401
 from .todo_tool import TodoWriteTool  # noqa: F401
 from .web_search_tool import WebSearchTool  # noqa: F401
