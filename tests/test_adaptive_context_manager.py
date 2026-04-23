@@ -71,7 +71,7 @@ class TestBudgetAdaptation:
 
         manager._adapt_budget_to_complexity()
 
-        assert manager.budget.max_tokens == 4000
+        assert manager.budget.context_window == 4000
 
     def test_adapt_to_complex_task(self):
         config = AdaptiveContextConfig()
@@ -80,7 +80,7 @@ class TestBudgetAdaptation:
 
         manager._adapt_budget_to_complexity()
 
-        assert manager.budget.max_tokens == config.complex_task_tokens
+        assert manager.budget.context_window == config.complex_task_tokens
 
 
 class TestTaskContextManagement:

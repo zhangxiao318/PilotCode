@@ -27,7 +27,6 @@ class GlobalConfig:
     base_url: str = ""
     default_model: str = ""
     model_provider: str = ""
-    max_tokens: int = 0
     context_window: int = 0
     allowed_tools: list[str] = field(default_factory=list)
     mcp_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -46,12 +45,10 @@ class GlobalConfig:
             if model_info:
                 self.base_url = model_info.base_url
 
-        # Set max_tokens and context_window from model config if not specified
+        # Set context_window from model config if not specified
         if self.default_model:
             model_info = get_model_info(self.default_model)
             if model_info:
-                if self.max_tokens <= 0:
-                    self.max_tokens = model_info.max_tokens
                 if self.context_window <= 0:
                     self.context_window = model_info.context_window
 
@@ -79,7 +76,6 @@ class ConfigManager:
         "PILOTCODE_API_KEY": "api_key",
         "PILOTCODE_BASE_URL": "base_url",
         "PILOTCODE_MODEL": "default_model",
-        "PILOTCODE_MAX_TOKENS": "max_tokens",
         "PILOTCODE_CONTEXT_WINDOW": "context_window",
         # Legacy env vars for backward compatibility
         "LOCAL_API_KEY": "api_key",
@@ -105,7 +101,7 @@ class ConfigManager:
                 if config_key in ("verbose", "auto_compact"):
                     value = value.lower() in ("true", "1", "yes", "on")
                 # Handle integer values
-                elif config_key in ("max_tokens", "context_window", "max_review_iterations"):
+                elif config_key in ("context_window", "max_review_iterations"):
                     try:
                         value = int(value)
                     except ValueError:

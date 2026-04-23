@@ -24,7 +24,7 @@ from pilotcode.services.context_manager import (
 def basic_config():
     """Create basic context config."""
     return ContextConfig(
-        max_tokens=1000,
+        context_window=1000,
         warning_threshold=0.8,
         critical_threshold=0.95,
         auto_compact=False,
@@ -122,7 +122,7 @@ class TestContextBudget:
     def test_budget_limits(self):
         """Test budget limit calculations."""
         budget = ContextBudget(
-            max_tokens=1000,
+            context_window=1000,
             warning_threshold=0.8,
             critical_threshold=0.95,
             reserved_tokens=100,
@@ -367,7 +367,7 @@ class TestCompactionStrategies:
             time.sleep(0.001)  # Ensure unique message IDs
 
         # Total tokens: 300+250+200+150+100+80+50 = 1130
-        # Target with ratio 0.5 and max_tokens=1000: 500
+        # Target with ratio 0.5 and context_window=1000: 500
         # Need to remove at least 630 tokens
         # Protected: last 4 = 150+100+80+50 = 380
         # Removable: first 3 = 300+250+200 = 750
@@ -462,7 +462,7 @@ class TestPersistence:
         """Test deserialization from dict."""
         data = {
             "config": {
-                "max_tokens": 2000,
+                "context_window": 2000,
                 "warning_threshold": 0.7,
             },
             "messages": [
@@ -473,7 +473,7 @@ class TestPersistence:
 
         manager = ContextManager.from_dict(data)
 
-        assert manager.config.max_tokens == 2000
+        assert manager.config.context_window == 2000
         assert len(manager.messages) == 1
 
 
@@ -584,7 +584,7 @@ class TestAutoCompaction:
     def test_auto_compact_enabled(self):
         """Test auto-compaction when enabled."""
         config = ContextConfig(
-            max_tokens=1000,
+            context_window=1000,
             critical_threshold=0.5,  # Low threshold for testing
             auto_compact=True,
         )
@@ -600,7 +600,7 @@ class TestAutoCompaction:
     def test_auto_compact_disabled(self):
         """Test no auto-compaction when disabled."""
         config = ContextConfig(
-            max_tokens=1000,
+            context_window=1000,
             critical_threshold=0.5,
             auto_compact=False,
         )

@@ -32,7 +32,7 @@ class TestTokenCounting:
 
 class TestAutoCompact:
     def test_auto_compact_not_triggered_when_disabled(self):
-        engine = QueryEngine(QueryEngineConfig(cwd=".", auto_compact=False, max_tokens=10))
+        engine = QueryEngine(QueryEngineConfig(cwd=".", auto_compact=False, context_window=10))
         for i in range(10):
             engine.messages.append(UserMessage(content=f"Message {i}"))
         compacted = engine.auto_compact_if_needed()
@@ -40,7 +40,7 @@ class TestAutoCompact:
         assert len(engine.messages) == 10
 
     def test_auto_compact_triggered_when_over_limit(self):
-        engine = QueryEngine(QueryEngineConfig(cwd=".", auto_compact=True, max_tokens=1))
+        engine = QueryEngine(QueryEngineConfig(cwd=".", auto_compact=True, context_window=1))
         # Add many messages to exceed token limit
         for i in range(10):
             engine.messages.append(

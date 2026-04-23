@@ -336,7 +336,7 @@ class TestStatusCommand:
 
         mock_qe = MagicMock()
         mock_qe.messages = [mock_message, mock_message]
-        mock_qe.config.max_tokens = 128000
+        mock_qe.config.context_window = 128000
 
         context_with_qe = CommandContext(cwd=str(context.cwd), query_engine=mock_qe)
 

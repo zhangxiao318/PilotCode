@@ -41,7 +41,7 @@ class QueryEngineConfig:
     custom_system_prompt: str | None = None
     max_turns: int = 50
     auto_compact: bool = True
-    max_tokens: int = 0  # 0 = auto-detect from model config
+    context_window: int = 0  # 0 = auto-detect from model config
     cache_tool_results: bool = False
     on_notify: Callable[[str, dict[str, Any]], None] | None = None
     auto_review: bool = False
@@ -74,21 +74,21 @@ class QueryEngine:
         self.client = get_model_client()
         self.abort_event = asyncio.Event()
 
-        # Auto-detect max_tokens from model context window if not set
-        if self.config.max_tokens <= 0:
+        # Auto-detect context_window from model config if not set
+        if self.config.context_window <= 0:
             ctx = get_model_context_window()
-            self.config.max_tokens = ctx
+            self.config.context_window = ctx
 
         # Initialize services
         self._token_estimator = get_token_estimator()
         self._context_compressor = get_context_compressor()
 
-        # Create a dedicated compactor instance configured with our max_tokens
+        # Create a dedicated compactor instance configured with our context_window
         compact_config = CompactConfig()
-        if self.config.max_tokens > 0:
+        if self.config.context_window > 0:
             # Use max(1, ...) to avoid 0 which triggers auto-detection in the compactor
-            compact_config.compact_threshold = max(1, int(self.config.max_tokens * 0.8))
-            compact_config.critical_threshold = max(1, int(self.config.max_tokens * 0.95))
+            compact_config.compact_threshold = max(1, int(self.config.context_window * 0.8))
+            compact_config.critical_threshold = max(1, int(self.config.context_window * 0.95))
         self._intelligent_compactor = IntelligentContextCompactor(config=compact_config)
 
         if config.cache_tool_results:
@@ -721,7 +721,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
     def get_token_budget(self) -> dict[str, Any]:
         """Get current token budget status."""
-        return self._token_estimator.get_budget_status(self.count_tokens(), self.config.max_tokens)
+        return self._token_estimator.get_budget_status(self.count_tokens(), self.config.context_window)
 
     def track_cost(self, tokens: int, cost_usd: float) -> None:
         """Track cost for this session.
@@ -738,12 +738,12 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
     async def smart_compact(self) -> CompressionResult | None:
         """Intelligently compress conversation using summarization.
 
-        Triggers at 80% of max_tokens to leave headroom.
+        Triggers at 80% of context_window to leave headroom.
 
         Returns compression result or None if not needed.
         """
         token_count = self.count_tokens()
-        threshold = int(self.config.max_tokens * 0.8)
+        threshold = int(self.config.context_window * 0.8)
         if token_count < threshold:
             return None
 
@@ -783,7 +783,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             return False
 
         token_count = self.count_tokens()
-        threshold = int(self.config.max_tokens * 0.8)
+        threshold = int(self.config.context_window * 0.8)
         if token_count < threshold:
             return False
 
@@ -793,9 +793,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             return False
 
         # DEBUG: print actual values when compaction is triggered
-        print(
-            f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} max_tokens={self.config.max_tokens} msg_count={current_msg_count} last_compacted_at={self._last_compaction_message_count}"
-        )
+        print(f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} context_window={self.config.context_window} msg_count={current_msg_count} last_compacted_at={self._last_compaction_message_count}")
 
         tokens_before = self.count_tokens()
         result = self.intelligent_compact()
@@ -819,7 +817,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                 return True
 
         # Fallback: if still over threshold, use simple compaction
-        threshold = int(self.config.max_tokens * 0.8)
+        threshold = int(self.config.context_window * 0.8)
         if self.count_tokens() < threshold:
             return False
 

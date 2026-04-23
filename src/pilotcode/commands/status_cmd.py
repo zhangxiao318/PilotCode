@@ -53,17 +53,17 @@ async def status_command(args: list[str], context: CommandContext) -> str:
 
     lines.append(f"Theme: {config.theme}")
 
-    # QueryEngine max_tokens (for debugging auto-compact threshold)
+    # QueryEngine context_window (for debugging auto-compact threshold)
     if context.query_engine is not None:
         qe = context.query_engine
-        qe_max = qe.config.max_tokens
+        qe_ctx = qe.config.context_window
         try:
             qe_threshold = (
-                int(qe_max * 0.8) if isinstance(qe_max, (int, float)) and qe_max > 0 else "auto"
+                int(qe_ctx * 0.8) if isinstance(qe_ctx, (int, float)) and qe_ctx > 0 else "auto"
             )
         except (TypeError, ValueError):
             qe_threshold = "auto"
-        lines.append(f"QE max_tokens: {qe_max}  (compact threshold: {qe_threshold})")
+        lines.append(f"QE context_window: {qe_ctx}  (compact threshold: {qe_threshold})")
 
     # Conversation context stats
     if context.query_engine is not None:

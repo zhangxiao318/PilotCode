@@ -339,7 +339,7 @@ def query_engine_factory(mock_model_client, app_store):
         cwd="/tmp",
         custom_system_prompt=None,
         auto_compact=False,
-        max_tokens=4000,
+        context_window=4000,
     ):
         config = QueryEngineConfig(
             cwd=cwd,
@@ -348,7 +348,7 @@ def query_engine_factory(mock_model_client, app_store):
             set_app_state=lambda f: app_store.set_state(f),
             custom_system_prompt=custom_system_prompt,
             auto_compact=auto_compact,
-            max_tokens=max_tokens,
+            context_window=context_window,
         )
         engine = QueryEngine(config=config)
         # Replace the client with our mock

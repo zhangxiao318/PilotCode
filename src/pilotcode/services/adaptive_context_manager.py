@@ -240,10 +240,10 @@ class AdaptiveContextManager(ContextManager):
             TaskComplexity.VERY_COMPLEX: self.adaptive_config.complex_task_tokens,
         }
 
-        new_budget = budget_map.get(self.current_task_complexity, self.adaptive_config.max_tokens)
+        new_budget = budget_map.get(self.current_task_complexity, self.adaptive_config.context_window)
 
-        # Update budget - warning_limit and critical_limit are computed from max_tokens
-        self.budget.max_tokens = new_budget
+        # Update budget - warning_limit and critical_limit are computed from context_window
+        self.budget.context_window = new_budget
 
     def _inject_relevant_history(self, query: str) -> None:
         """Inject relevant historical context into working memory."""
@@ -339,7 +339,7 @@ class AdaptiveContextManager(ContextManager):
             CompressionMode.EMERGENCY: 0.2,
         }.get(recommended_mode, 0.6)
 
-        target_tokens = int(self.budget.max_tokens * target_ratio)
+        target_tokens = int(self.budget.context_window * target_ratio)
 
         # Perform task-aware compression
         result = self.task_compressor.compress_with_task_context(
@@ -548,12 +548,12 @@ class AdaptiveContextManager(ContextManager):
     ) -> TaskAwareCompressionResult:
         """Force compression with specific mode."""
         # Temporarily set budget to trigger compression
-        original_max = self.budget.max_tokens
-        self.budget.max_tokens = int(self.stats.total_tokens * 0.5)
+        original_max = self.budget.context_window
+        self.budget.context_window = int(self.stats.total_tokens * 0.5)
 
         result = self.adaptive_compact()
 
-        self.budget.max_tokens = original_max
+        self.budget.context_window = original_max
         return result
 
     def to_dict(self) -> dict[str, Any]:

@@ -41,14 +41,14 @@ class TestQueryEngineInit:
             get_app_state=store.get_state,
             set_app_state=lambda f: store.set_state(f),
             auto_compact=False,
-            max_tokens=1000,
+            context_window=1000,
         )
 
         engine = QueryEngine(config=config)
 
         assert engine.config.cwd == "/home/test"
         assert engine.config.auto_compact is False
-        assert engine.config.max_tokens == 1000
+        assert engine.config.context_window == 1000
 
 
 class TestQueryEngineMessages:
@@ -217,14 +217,14 @@ class TestQueryEngineNotify:
             get_app_state=app_store.get_state,
             set_app_state=lambda f: app_store.set_state(f),
             auto_compact=True,
-            max_tokens=1,  # Very low threshold to force compaction
+            context_window=1,  # Very low threshold to force compaction
             on_notify=self.mock_notify,
         )
         return QueryEngine(config=config)
 
     def test_on_notify_called_when_auto_compact_triggers(self, notify_engine):
         """on_notify should be called when auto_compact triggers."""
-        # Add enough messages to exceed the tiny max_tokens=1 limit
+        # Add enough messages to exceed the tiny context_window=1 limit
         for i in range(10):
             notify_engine.messages.append(
                 UserMessage(content=f"This is a longer message number {i} with many tokens")
@@ -249,7 +249,7 @@ class TestQueryEngineNotify:
             get_app_state=app_store.get_state,
             set_app_state=lambda f: app_store.set_state(f),
             auto_compact=True,
-            max_tokens=100000,  # Very high threshold
+            context_window=100000,  # Very high threshold
             on_notify=mock_notify,
         )
         engine = QueryEngine(config=config)
@@ -282,7 +282,7 @@ class TestQueryEngineNotify:
 
     def test_on_notify_called_via_auto_compact_if_needed(self, notify_engine):
         """on_notify should be called when auto_compact triggers via auto_compact_if_needed."""
-        # Pre-fill with enough messages to exceed the tiny max_tokens=1 limit
+        # Pre-fill with enough messages to exceed the tiny context_window=1 limit
         for i in range(10):
             notify_engine.messages.append(
                 UserMessage(content=f"Message number {i} with lots of token content here")
@@ -306,7 +306,7 @@ class TestQueryEngineNotify:
             get_app_state=app_store.get_state,
             set_app_state=lambda f: app_store.set_state(f),
             auto_compact=False,
-            max_tokens=1,
+            context_window=1,
             on_notify=mock_notify,
         )
         engine = QueryEngine(config=config)

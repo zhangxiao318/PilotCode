@@ -547,8 +547,6 @@ def config(
         console.print(f"  Model Provider: {config.model_provider}")
         console.print(f"  Base URL: {config.base_url or 'Default'}")
         console.print(f"  API Key: {'***set***' if config.api_key else 'Not set'}")
-        if config.max_tokens > 0:
-            console.print(f"  Max Tokens: {config.max_tokens}")
         if config.context_window > 0:
             console.print(f"  Context Window: {config.context_window}")
 
@@ -612,14 +610,6 @@ def config(
                             ("context_window", model_info.context_window, detected_ctx)
                         )
 
-                    detected_max = api_caps.get("max_tokens")
-                    if (
-                        detected_max is not None
-                        and model_info
-                        and detected_max != model_info.max_tokens
-                    ):
-                        model_mismatches.append(("max_tokens", model_info.max_tokens, detected_max))
-
                     if config_mismatches or model_mismatches:
                         console.print("\n[yellow]⚠ Detected mismatches with config file:[/yellow]")
                         for key, old, new in config_mismatches:
@@ -631,7 +621,7 @@ def config(
                             # Update global config
                             for key, _old, new in config_mismatches:
                                 setattr(config, key, new)
-                            # Also update max_tokens and context_window in global config
+                            # Also update context_window in global config
                             for key, _old, new in model_mismatches:
                                 setattr(config, key, new)
                             if config_mismatches or model_mismatches:

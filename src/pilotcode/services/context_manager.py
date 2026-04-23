@@ -107,22 +107,22 @@ class ContextMessage:
 class ContextBudget:
     """Token budget configuration."""
 
-    max_tokens: int = 0  # 0 = auto-detect from model config
+    context_window: int = 0  # 0 = auto-detect from model config
     warning_threshold: float = 0.75  # Warn at 75% capacity
     critical_threshold: float = 0.80  # Force compact at 80% capacity
     reserved_tokens: int = 500  # Reserve for system messages
 
     @property
     def warning_limit(self) -> int:
-        return int(self.max_tokens * self.warning_threshold)
+        return int(self.context_window * self.warning_threshold)
 
     @property
     def critical_limit(self) -> int:
-        return int(self.max_tokens * self.critical_threshold)
+        return int(self.context_window * self.critical_threshold)
 
     @property
     def available_tokens(self) -> int:
-        return self.max_tokens - self.reserved_tokens
+        return self.context_window - self.reserved_tokens
 
 
 @dataclass
@@ -146,7 +146,7 @@ class ContextStats:
 class ContextConfig(BaseModel):
     """Configuration for ContextManager."""
 
-    max_tokens: int = Field(default=0, description="Maximum tokens in context (0=auto)")
+    context_window: int = Field(default=0, description="Maximum tokens in context (0=auto)")
     warning_threshold: float = Field(default=0.75, description="Warning threshold (0-1)")
     critical_threshold: float = Field(default=0.80, description="Critical threshold (0-1)")
     reserved_tokens: int = Field(default=500, description="Reserved tokens for system")
@@ -185,17 +185,17 @@ class ContextManager:
 
     def __init__(self, config: Optional[ContextConfig] = None):
         self.config = config or ContextConfig()
-        # Resolve auto max_tokens from model config
-        max_tokens = self.config.max_tokens
-        if max_tokens <= 0:
+        # Resolve auto context_window from model config
+        context_window = self.config.context_window
+        if context_window <= 0:
             from ..utils.models_config import get_model_context_window
 
-            max_tokens = get_model_context_window()
-            self.config.max_tokens = max_tokens
+            context_window = get_model_context_window()
+            self.config.context_window = context_window
 
         self.messages: list[ContextMessage] = []
         self.budget = ContextBudget(
-            max_tokens=max_tokens,
+            context_window=context_window,
             warning_threshold=self.config.warning_threshold,
             critical_threshold=self.config.critical_threshold,
             reserved_tokens=self.config.reserved_tokens,
@@ -309,7 +309,7 @@ class ContextManager:
     @property
     def usage_ratio(self) -> float:
         """Get current usage ratio (0-1)."""
-        return self.stats.total_tokens / self.budget.max_tokens
+        return self.stats.total_tokens / self.budget.context_window
 
     def compact(
         self,
@@ -326,7 +326,7 @@ class ContextManager:
             List of removed messages
         """
         strategy = strategy or self.config.compact_strategy
-        target_tokens = int(self.budget.max_tokens * target_ratio)
+        target_tokens = int(self.budget.context_window * target_ratio)
 
         removed = []
 
@@ -548,7 +548,11 @@ class ContextManager:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ContextManager:
         """Deserialize from dictionary."""
-        config = ContextConfig(**data.get("config", {}))
+        config_data = data.get("config", {})
+        # Backward compatibility: old serialized data used "max_tokens"
+        if "max_tokens" in config_data and "context_window" not in config_data:
+            config_data = {**config_data, "context_window": config_data.pop("max_tokens")}
+        config = ContextConfig(**config_data)
         manager = cls(config)
 
         for msg_data in data.get("messages", []):
