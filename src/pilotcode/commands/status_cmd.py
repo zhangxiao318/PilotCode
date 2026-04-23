@@ -57,7 +57,12 @@ async def status_command(args: list[str], context: CommandContext) -> str:
     if context.query_engine is not None:
         qe = context.query_engine
         qe_max = qe.config.max_tokens
-        qe_threshold = int(qe_max * 0.8) if qe_max > 0 else "auto"
+        try:
+            qe_threshold = (
+                int(qe_max * 0.8) if isinstance(qe_max, (int, float)) and qe_max > 0 else "auto"
+            )
+        except (TypeError, ValueError):
+            qe_threshold = "auto"
         lines.append(f"QE max_tokens: {qe_max}  (compact threshold: {qe_threshold})")
 
     # Conversation context stats

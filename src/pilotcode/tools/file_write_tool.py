@@ -1,6 +1,7 @@
 """File write tool for writing file contents."""
 
 import os
+import sys
 import tempfile
 import shutil
 import time
@@ -20,7 +21,7 @@ def _is_path_within_workspace(file_path: str, cwd: str | None = None) -> tuple[b
         (is_valid, error_message): True if path is safe, False with error message if outside workspace
     """
     try:
-        # Reject obvious path traversal and Windows absolute paths on Unix
+        # Reject obvious path traversal
         if ".." in file_path:
             return False, f"Access denied: Path traversal detected in '{file_path}'."
 
@@ -28,8 +29,8 @@ def _is_path_within_workspace(file_path: str, cwd: str | None = None) -> tuple[b
 
         # On non-Windows, a path like C:/Windows/... is NOT absolute but looks
         # like a Windows absolute path.  Resolve() would prepend cwd, making it
-        # appear inside the workspace.  Reject it outright.
-        if ":" in file_path and not file_path.startswith("~/"):
+        # appear inside the workspace.  Reject it outright on non-Windows only.
+        if sys.platform != "win32" and ":" in file_path and not file_path.startswith("~/"):
             return False, f"Access denied: Invalid absolute path '{file_path}'."
 
         # Resolve to absolute path
