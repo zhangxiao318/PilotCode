@@ -59,7 +59,7 @@ def _load_models_json() -> dict[str, ModelInfo]:
     """
     # Determine candidate paths for the JSON file
     src_dir = Path(__file__).resolve().parent.parent  # src/pilotcode
-    project_root = src_dir.parent  # project root
+    project_root = src_dir.parent.parent  # project root
     candidates = [
         project_root / "config" / "models.json",
         Path("config/models.json"),
@@ -106,9 +106,10 @@ SUPPORTED_MODELS: dict[str, ModelInfo] = _load_models_json()
 def _get_models_json_path() -> Path | None:
     """Return the path to the active models.json file, or None."""
     src_dir = Path(__file__).resolve().parent.parent  # src/pilotcode
-    project_root = src_dir.parent  # project root
+    project_root = src_dir.parent.parent  # project root
     candidates = [
         project_root / "config" / "models.json",
+        src_dir.parent.parent / "config" / "models.json",
         Path("config/models.json"),
     ]
     for candidate in candidates:

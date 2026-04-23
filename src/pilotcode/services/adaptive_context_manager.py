@@ -240,7 +240,9 @@ class AdaptiveContextManager(ContextManager):
             TaskComplexity.VERY_COMPLEX: self.adaptive_config.complex_task_tokens,
         }
 
-        new_budget = budget_map.get(self.current_task_complexity, self.adaptive_config.context_window)
+        new_budget = budget_map.get(
+            self.current_task_complexity, self.adaptive_config.context_window
+        )
 
         # Update budget - warning_limit and critical_limit are computed from context_window
         self.budget.context_window = new_budget

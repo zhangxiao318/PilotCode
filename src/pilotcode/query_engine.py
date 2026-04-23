@@ -721,7 +721,9 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
     def get_token_budget(self) -> dict[str, Any]:
         """Get current token budget status."""
-        return self._token_estimator.get_budget_status(self.count_tokens(), self.config.context_window)
+        return self._token_estimator.get_budget_status(
+            self.count_tokens(), self.config.context_window
+        )
 
     def track_cost(self, tokens: int, cost_usd: float) -> None:
         """Track cost for this session.
@@ -793,7 +795,9 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             return False
 
         # DEBUG: print actual values when compaction is triggered
-        print(f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} context_window={self.config.context_window} msg_count={current_msg_count} last_compacted_at={self._last_compaction_message_count}")
+        print(
+            f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} context_window={self.config.context_window} msg_count={current_msg_count} last_compacted_at={self._last_compaction_message_count}"
+        )
 
         tokens_before = self.count_tokens()
         result = self.intelligent_compact()

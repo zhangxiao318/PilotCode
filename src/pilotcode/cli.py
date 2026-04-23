@@ -52,6 +52,7 @@ def _is_local_url(url: str) -> bool:
 
     # Extract host from URL for RFC1918 checks
     from urllib.parse import urlparse
+
     try:
         host = urlparse(url).hostname or ""
     except Exception:
@@ -595,7 +596,9 @@ def config(
                             if typer.confirm("Auto-append /v1 to base_url?", default=True):
                                 config.base_url = url + "/v1"
                                 get_config_manager().save_global_config(config)
-                                console.print(f"[green]✓ base_url updated: {config.base_url}[/green]")
+                                console.print(
+                                    f"[green]✓ base_url updated: {config.base_url}[/green]"
+                                )
 
                     # --- Detect mismatches and offer to update config ---
                     # For local models, skip updating default_model/model_provider
@@ -606,7 +609,9 @@ def config(
                     detected_ctx = api_caps.get("context_window")
                     if detected_ctx is not None:
                         # Compare against the effective config value (GlobalConfig)
-                        effective_ctx = config.context_window or (model_info.context_window if model_info else 0)
+                        effective_ctx = config.context_window or (
+                            model_info.context_window if model_info else 0
+                        )
                         if effective_ctx and detected_ctx != effective_ctx:
                             config_mismatches.append(
                                 ("context_window", effective_ctx, detected_ctx)

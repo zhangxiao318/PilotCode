@@ -158,7 +158,9 @@ class ConfigurationWizard:
 
         # For Ollama and vLLM, no API key needed
         if self.selected_model.name in ("ollama", "vllm"):
-            console.print(f"[green]✓[/green] {self.selected_model.display_name} runs locally, no API key needed.")
+            console.print(
+                f"[green]✓[/green] {self.selected_model.display_name} runs locally, no API key needed."
+            )
             self.config.api_key = ""
             return True
 
@@ -217,7 +219,12 @@ class ConfigurationWizard:
 
         # Custom base URL (if needed)
         # Local models (Ollama, vLLM) may run on another host in the LAN
-        if self.selected_model and self.selected_model.name in ("ollama", "custom", "vllm", "azure"):
+        if self.selected_model and self.selected_model.name in (
+            "ollama",
+            "custom",
+            "vllm",
+            "azure",
+        ):
             custom_url = Prompt.ask("Enter base URL", default=self.config.base_url)
             if custom_url:
                 self.config.base_url = custom_url
