@@ -1,0 +1,173 @@
+{
+  "suite": "simple_tasks",
+  "description": "Simple single-turn and multi-turn tasks requiring basic tool use and context retention.",
+  "cases": [
+    {
+      "id": "S001",
+      "name": "单轮文件读取",
+      "description": "Ask to read a known file and verify the content is returned.",
+      "steps": [
+        {
+          "send": "读取 README.md 的前5行",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["PilotCode", "Claude Code"],
+            "response_min_length": 50
+          }
+        }
+      ]
+    },
+    {
+      "id": "S002",
+      "name": "单轮Glob查找",
+      "description": "Ask to list Python files and verify Glob is used.",
+      "steps": [
+        {
+          "send": "列出 src/pilotcode/tools 目录下所有以 test_ 开头的文件",
+          "expect": {
+            "tool_calls": ["Glob"],
+            "not_tool_calls": ["FileRead"],
+            "response_min_length": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "S003",
+      "name": "两轮上下文保持",
+      "description": "First query reads a file; second query asks about it without re-reading.",
+      "steps": [
+        {
+          "send": "读取 pyproject.toml 文件",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["[project]", "[tool.pytest]"]
+          }
+        },
+        {
+          "send": "刚才读的文件里，项目名称是什么？",
+          "expect": {
+            "not_tool_calls": ["FileRead"],
+            "contains": ["PilotCode"],
+            "response_min_length": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "S004",
+      "name": "三轮工具链",
+      "description": "Analyze project structure -> read file -> summarize.",
+      "steps": [
+        {
+          "send": "用 Glob 查找 src/pilotcode/query_engine.py",
+          "expect": {
+            "tool_calls": ["Glob"]
+          }
+        },
+        {
+          "send": "读取这个文件的前30行",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["QueryEngine"]
+          }
+        },
+        {
+          "send": "这个类的主要职责是什么？不要重新读取文件。",
+          "expect": {
+            "not_tool_calls": ["FileRead"],
+            "response_min_length": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "S005",
+      "name": "Bash执行与结果记忆",
+      "description": "Run a shell command and ask about the result in the next turn.",
+      "steps": [
+        {
+          "send": "运行命令：echo 'hello-session-test'",
+          "expect": {
+            "tool_calls": ["Bash"],
+            "contains": ["hello-session-test"]
+          }
+        },
+        {
+          "send": "刚才的命令输出是什么？",
+          "expect": {
+            "not_tool_calls": ["Bash"],
+            "contains": ["hello-session-test"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "S006",
+      "name": "Grep搜索后追问",
+      "description": "Search for a pattern, then ask about findings without re-searching.",
+      "steps": [
+        {
+          "send": "在 src/pilotcode/tools 目录搜索 'class Tool' 的定义",
+          "expect": {
+            "tool_calls": ["Grep"],
+            "response_min_length": 20
+          }
+        },
+        {
+          "send": "搜索结果中提到了哪些文件？",
+          "expect": {
+            "not_tool_calls": ["Grep"],
+            "response_min_length": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "S007",
+      "name": "会话隔离",
+      "description": "Create two sessions, give each different context, verify isolation.",
+      "session_mode": "multi",
+      "steps": [
+        {
+          "session": "sess_A",
+          "action": "create"
+        },
+        {
+          "session": "sess_B",
+          "action": "create"
+        },
+        {
+          "session": "sess_A",
+          "send": "记住：我们当前讨论的是 query_engine.py",
+          "expect": {
+            "response_min_length": 5
+          }
+        },
+        {
+          "session": "sess_B",
+          "send": "记住：我们当前讨论的是 cli.py",
+          "expect": {
+            "response_min_length": 5
+          }
+        },
+        {
+          "session": "sess_A",
+          "send": "我们刚才在讨论哪个文件？",
+          "expect": {
+            "contains": ["query_engine"],
+            "not_contains": ["cli.py"]
+          }
+        },
+        {
+          "session": "sess_B",
+          "send": "我们刚才在讨论哪个文件？",
+          "expect": {
+            "contains": ["cli.py"],
+            "not_contains": ["query_engine"]
+          }
+        }
+      ]
+    }
+  ]
+}

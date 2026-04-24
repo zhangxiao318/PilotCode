@@ -11,6 +11,8 @@ from typing import Set, Dict, Any
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
 
+from pilotcode.types.message import SystemMessage
+
 # Suppress websockets verbose logging - only show errors, not warnings
 logging.getLogger("websockets").setLevel(logging.ERROR)
 logging.getLogger("websockets.server").setLevel(logging.ERROR)
@@ -18,6 +20,41 @@ logging.getLogger("websockets.protocol").setLevel(logging.ERROR)
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+
+# ------------------------------------------------------------------
+# Helper: detect explicit tool-use intent in user query / response
+# ------------------------------------------------------------------
+
+TOOL_KEYWORDS = {
+    "glob", "file read", "fileread", "grep", "search", "查找", "搜索",
+    "读取", "read", "运行", "执行", "run", "execute", "bash",
+    "file write", "filewrite", "edit", "修改", "写入", "写",
+    "code index", "codeindex", "git status", "git log", "git diff",
+}
+
+
+def _should_use_tools(query: str, response: str) -> bool:
+    """Heuristic: did the user explicitly ask for a tool operation?"""
+    q = query.lower()
+    # Negative cues — user explicitly says NOT to use tools
+    negations = {"不要", "不用", "无需", "别", "不需要", "不要调用", "不用重新",
+                 "do not", "don't", "no need to", "without", "无需使用"}
+    for neg in negations:
+        if neg in q:
+            return False
+    # Explicit tool name mention
+    for kw in TOOL_KEYWORDS:
+        if kw in q:
+            return True
+    # Response looks like a pseudo tool-call (model emitted XML-like tags)
+    if response and (
+        "<parameter>" in response
+        or "<tool_call>" in response
+        or "</tool>" in response
+    ):
+        return True
+    return False
 
 
 class PermissionRequest:
@@ -123,7 +160,7 @@ class UserQuestionManager:
 
 
 class WebSocketManager:
-    """Manage WebSocket connections and communication."""
+    """Manage WebSocket connections and communication with Session-level context."""
 
     def __init__(self):
         self.clients: Set[Any] = set()
@@ -131,6 +168,120 @@ class WebSocketManager:
         self.permission_manager = PermissionRequestManager()
         self.question_manager = UserQuestionManager()
         self.current_tasks: Dict[Any, asyncio.Task] = {}  # Track current query tasks per websocket
+
+        # Session-level context management
+        # websocket -> session_id (which session this connection is attached to)
+        self.client_sessions: Dict[Any, str] = {}
+        # session_id -> {query_engine, store, created_at, last_activity}
+        self._session_contexts: Dict[str, dict] = {}
+        self._session_lock = asyncio.Lock()
+
+        # LoopGuard: detect repetitive tool-call patterns
+        from pilotcode.components.repl import LoopGuard
+        self.loop_guard = LoopGuard()
+
+    # ------------------------------------------------------------------
+    # Session management helpers
+    # ------------------------------------------------------------------
+
+    def _generate_session_id(self) -> str:
+        return f"sess_{uuid.uuid4().hex[:12]}"
+
+    async def _create_session_context(self, session_id: str) -> dict:
+        """Create a new Session context with its own QueryEngine and Store."""
+        from dataclasses import replace
+        from pilotcode.query_engine import QueryEngine, QueryEngineConfig
+        from pilotcode.tools.registry import get_all_tools
+        from pilotcode.state.app_state import get_default_app_state
+        from pilotcode.state.store import Store
+        from pilotcode.utils.config import get_global_config
+
+        store = Store(get_default_app_state())
+        store.set_state(lambda s: replace(s, cwd=self.cwd))
+        tools = get_all_tools()
+        global_cfg = get_global_config()
+
+        def _on_notify(event_type: str, payload: dict) -> None:
+            pass  # Notifications are handled per-query in process_query
+
+        query_engine = QueryEngine(
+            QueryEngineConfig(
+                cwd=self.cwd,
+                tools=tools,
+                get_app_state=store.get_state,
+                set_app_state=lambda f: store.set_state(f),
+                on_notify=_on_notify,
+                auto_review=global_cfg.auto_review,
+                max_review_iterations=global_cfg.max_review_iterations,
+            )
+        )
+
+        ctx = {
+            "session_id": session_id,
+            "query_engine": query_engine,
+            "store": store,
+            "created_at": asyncio.get_event_loop().time(),
+            "last_activity": asyncio.get_event_loop().time(),
+            "message_count": 0,
+        }
+        async with self._session_lock:
+            self._session_contexts[session_id] = ctx
+        print(f"[Session] Created session {session_id}")
+        return ctx
+
+    async def _get_or_create_session(self, session_id: str) -> dict:
+        """Get existing session or create new one."""
+        async with self._session_lock:
+            ctx = self._session_contexts.get(session_id)
+        if ctx is None:
+            ctx = await self._create_session_context(session_id)
+        return ctx
+
+    async def _get_session(self, session_id: str) -> dict | None:
+        """Get session context if it exists."""
+        async with self._session_lock:
+            return self._session_contexts.get(session_id)
+
+    async def _delete_session(self, session_id: str) -> bool:
+        """Delete a session and its context."""
+        async with self._session_lock:
+            ctx = self._session_contexts.pop(session_id, None)
+        if ctx:
+            # Disconnect any websockets attached to this session
+            disconnected = []
+            for ws, sid in list(self.client_sessions.items()):
+                if sid == session_id:
+                    self.client_sessions.pop(ws, None)
+                    disconnected.append(ws)
+            print(f"[Session] Deleted {session_id}, disconnected {len(disconnected)} clients")
+            return True
+        return False
+
+    async def _list_sessions(self) -> list[dict]:
+        """List all active sessions."""
+        result = []
+        async with self._session_lock:
+            for sid, ctx in self._session_contexts.items():
+                result.append(
+                    {
+                        "session_id": sid,
+                        "message_count": len(ctx["query_engine"].messages),
+                        "created_at": ctx["created_at"],
+                        "last_activity": ctx["last_activity"],
+                    }
+                )
+        return result
+
+    def _touch_session(self, session_id: str):
+        """Update last activity timestamp for a session."""
+        ctx = self._session_contexts.get(session_id)
+        if ctx:
+            ctx["last_activity"] = asyncio.get_event_loop().time()
+            ctx["message_count"] = len(ctx["query_engine"].messages)
+
+    # ------------------------------------------------------------------
+    # Connection lifecycle
+    # ------------------------------------------------------------------
 
     async def register(self, websocket):
         """Register a new client."""
@@ -141,6 +292,8 @@ class WebSocketManager:
     async def unregister(self, websocket):
         """Unregister a client."""
         self.clients.discard(websocket)
+        # Remove connection->session mapping, but DO NOT destroy the session
+        self.client_sessions.pop(websocket, None)
         client_info = getattr(websocket, "remote_address", ("unknown", 0))
         print(f"[WebSocket] Client disconnected from {client_info}. Total: {len(self.clients)}")
         # Cancel all pending permissions and questions for this client
@@ -162,8 +315,113 @@ class WebSocketManager:
             msg_type = data.get("type", "")
             print(f"[WebSocket] Message type: {msg_type}")
 
-            if msg_type == "query":
+            # ------------------------------------------------------------------
+            # Session lifecycle management
+            # ------------------------------------------------------------------
+            if msg_type == "session_create":
+                sid = data.get("session_id") or self._generate_session_id()
+                await self._get_or_create_session(sid)
+                self.client_sessions[websocket] = sid
+                await self.send_to_client(
+                    websocket,
+                    {"type": "session_created", "session_id": sid, "status": "active"},
+                )
+                print(f"[Session] Client attached to new session {sid}")
+
+            elif msg_type == "session_attach":
+                sid = data.get("session_id", "")
+                ctx = await self._get_session(sid)
+                if ctx is None:
+                    # Try to create if not exists (allows re-attaching to saved sessions)
+                    ctx = await self._get_or_create_session(sid)
+                self.client_sessions[websocket] = sid
+                msg_count = len(ctx["query_engine"].messages)
+                await self.send_to_client(
+                    websocket,
+                    {
+                        "type": "session_attached",
+                        "session_id": sid,
+                        "message_count": msg_count,
+                        "status": "active",
+                    },
+                )
+                print(f"[Session] Client attached to session {sid} ({msg_count} messages)")
+
+            elif msg_type == "session_list":
+                sessions = await self._list_sessions()
+                await self.send_to_client(
+                    websocket,
+                    {"type": "session_list", "sessions": sessions},
+                )
+
+            elif msg_type == "session_save":
+                sid = self.client_sessions.get(websocket)
+                if sid:
+                    from pilotcode.services.session_persistence import get_session_persistence
+                    from pilotcode.types.message import serialize_messages
+
+                    ctx = await self._get_session(sid)
+                    if ctx:
+                        persist = get_session_persistence()
+                        persist.save_session(
+                            session_id=sid,
+                            messages=ctx["query_engine"].messages,
+                            name=data.get("name", sid),
+                            project_path=self.cwd,
+                        )
+                        await self.send_to_client(
+                            websocket,
+                            {"type": "session_saved", "session_id": sid},
+                        )
+                    else:
+                        await self.send_to_client(
+                            websocket,
+                            {"type": "session_error", "error": f"Session not found: {sid}"},
+                        )
+                else:
+                    await self.send_to_client(
+                        websocket,
+                        {"type": "session_error", "error": "No active session"},
+                    )
+
+            elif msg_type == "session_delete":
+                sid = data.get("session_id", "")
+                success = await self._delete_session(sid)
+                await self.send_to_client(
+                    websocket,
+                    {
+                        "type": "session_deleted" if success else "session_error",
+                        "session_id": sid,
+                    },
+                )
+
+            # ------------------------------------------------------------------
+            # Query processing (session-aware)
+            # ------------------------------------------------------------------
+            elif msg_type == "query":
                 query = data.get("message", "")
+                explicit_sid = data.get("session_id")
+
+                # Determine session: explicit > attached > auto-create
+                if explicit_sid:
+                    sid = explicit_sid
+                    if (
+                        websocket not in self.client_sessions
+                        or self.client_sessions[websocket] != sid
+                    ):
+                        self.client_sessions[websocket] = sid
+                        await self._get_or_create_session(sid)
+                else:
+                    sid = self.client_sessions.get(websocket)
+                    if not sid:
+                        sid = self._generate_session_id()
+                        await self._get_or_create_session(sid)
+                        self.client_sessions[websocket] = sid
+                        await self.send_to_client(
+                            websocket,
+                            {"type": "session_created", "session_id": sid, "status": "auto"},
+                        )
+
                 # Cancel any existing task for this websocket
                 if websocket in self.current_tasks:
                     old_task = self.current_tasks[websocket]
@@ -171,7 +429,7 @@ class WebSocketManager:
                         old_task.cancel()
                         print("[Query] Cancelled previous task for client")
                 # Process query in background task to avoid blocking message loop
-                task = asyncio.create_task(self.process_query(websocket, query))
+                task = asyncio.create_task(self.process_query(websocket, sid, query))
                 self.current_tasks[websocket] = task
 
             elif msg_type == "interrupt":
@@ -332,18 +590,36 @@ class WebSocketManager:
             print(f"[Question] Request {request_id} error: {e}")
             return ""
 
-    async def process_query(self, websocket, query: str):
-        """Process user query and stream results."""
-        print(f"[Query] Processing: {query[:50]}...")
+    async def process_query(self, websocket, session_id: str, query: str):
+        """Process user query and stream results within a Session context.
+
+        The QueryEngine is retrieved from the session context, ensuring
+        multi-turn conversation history persists across queries.
+        """
+        print(f"[Query] Processing in session {session_id}: {query[:50]}...")
 
         stream_id = f"stream_{uuid.uuid4().hex[:8]}"
 
+        # Reset LoopGuard for each new query
+        self.loop_guard.reset()
+
+        # Retrieve session context (QueryEngine + Store are reused)
+        session_ctx = await self._get_session(session_id)
+        if session_ctx is None:
+            await self.send_to_client(
+                websocket,
+                {
+                    "type": "streaming_error",
+                    "stream_id": stream_id,
+                    "error": f"Session not found: {session_id}",
+                },
+            )
+            return
+
+        query_engine = session_ctx["query_engine"]
+        store = session_ctx["store"]
+
         try:
-            from dataclasses import replace
-            from pilotcode.query_engine import QueryEngine, QueryEngineConfig
-            from pilotcode.tools.registry import get_all_tools
-            from pilotcode.state.app_state import get_default_app_state
-            from pilotcode.state.store import Store
             from pilotcode.tools.base import ToolUseContext, ToolResult
             from pilotcode.permissions import get_tool_executor
             from pilotcode.permissions.permission_manager import (
@@ -400,16 +676,10 @@ class WebSocketManager:
                         "content": result.get("response", ""),
                     },
                 )
+                self._touch_session(session_id)
                 return
 
-            # Create store
-            store = Store(get_default_app_state())
-            store.set_state(lambda s: replace(s, cwd=self.cwd))
-
-            # Get tools
-            tools = get_all_tools()
-
-            # Create query engine
+            # Set up notification handler that routes to this websocket
             def _on_notify(event_type: str, payload: dict) -> None:
                 if event_type == "auto_compact":
                     saved = payload.get("tokens_saved", 0)
@@ -431,20 +701,8 @@ class WebSocketManager:
                         )
                     )
 
-            from pilotcode.utils.config import get_global_config
-
-            global_cfg = get_global_config()
-            query_engine = QueryEngine(
-                QueryEngineConfig(
-                    cwd=self.cwd,
-                    tools=tools,
-                    get_app_state=store.get_state,
-                    set_app_state=lambda f: store.set_state(f),
-                    on_notify=_on_notify,
-                    auto_review=global_cfg.auto_review,
-                    max_review_iterations=global_cfg.max_review_iterations,
-                )
-            )
+            # Attach notification callback to the existing query engine for this query
+            query_engine.config.on_notify = _on_notify
 
             # Set up permission callback for Web mode
             perm_manager = get_permission_manager()
@@ -570,6 +828,27 @@ class WebSocketManager:
 
                 # No more tools to execute - this is the final response
                 if not pending_tools:
+                    # ---- Tool-call reinforcement: if user explicitly asked for a tool
+                    # but the model answered directly without calling it, nudge once.
+                    if (
+                        iteration == 1
+                        and not is_continue_query
+                        and _should_use_tools(query, full_content)
+                    ):
+                        reinforce_msg = (
+                            "The user explicitly requested a tool operation. "
+                            "You MUST call the appropriate tool instead of answering in text. "
+                            "Do NOT explain your plan — just call the tool now."
+                        )
+                        query_engine.messages.append(
+                            SystemMessage(content=reinforce_msg)
+                        )
+                        print("[Query] Tool reinforcement triggered, retrying with system nudge")
+                        query = "Please execute the requested tool operation now."
+                        is_continue_query = True
+                        sent_content_length = 0
+                        continue
+
                     # Send final content if any (only the new part)
                     if full_content:
                         if len(full_content) > sent_content_length:
@@ -584,6 +863,35 @@ class WebSocketManager:
                             )
                         full_content = ""
                     break
+
+                # ---- LoopGuard: detect repetitive tool-call patterns ----
+                loop_reason = self.loop_guard.record(pending_tools)
+                if loop_reason:
+                    self.loop_guard.loop_count += 1
+                    print(f"[LoopGuard] {loop_reason} — blocking {len(pending_tools)} tool(s)")
+                    await _render_system(
+                        f"[LOOP GUARD] {loop_reason}. Repeating tool calls detected. "
+                        "Forcing final answer."
+                    )
+                    # Block all pending tools and inject error results
+                    for tool_msg in pending_tools:
+                        forced_result = (
+                            f"[SYSTEM ERROR] LOOP DETECTED: {loop_reason}. "
+                            f"Tool execution has been blocked. You MUST provide your final answer NOW "
+                            f"without any more tool calls."
+                        )
+                        query_engine.add_tool_result(
+                            tool_msg.tool_use_id, forced_result, is_error=True
+                        )
+                    # Force the model to summarize instead of continuing exploration
+                    query = (
+                        "CRITICAL: You are in a tool-call loop. All pending tool calls were blocked. "
+                        "Summarize what you have done so far and declare completion. "
+                        "Do NOT call any more tools."
+                    )
+                    is_continue_query = True
+                    sent_content_length = 0
+                    continue
 
                 # Check if we've reached max iterations
                 if iteration >= max_iterations:
@@ -621,6 +929,20 @@ class WebSocketManager:
                     full_content = ""
 
                 print(f"[Query] Executing {len(pending_tools)} tools...")
+
+                # Notify client that tools are about to run (keeps connection alive
+                # during long-running operations like CodeIndex)
+                for tool_msg in pending_tools:
+                    await self.send_to_client(
+                        websocket,
+                        {
+                            "type": "tool_progress",
+                            "stream_id": stream_id,
+                            "tool_name": tool_msg.name,
+                            "line": f"Executing {tool_msg.name}...",
+                            "is_progress": True,
+                        },
+                    )
 
                 # Get tool executor
                 tool_executor = get_tool_executor()
@@ -772,6 +1094,8 @@ class WebSocketManager:
             # Clean up task tracking
             if websocket in self.current_tasks:
                 del self.current_tasks[websocket]
+            # Update session activity
+            self._touch_session(session_id)
 
 
 ws_manager = WebSocketManager()

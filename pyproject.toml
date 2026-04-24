@@ -91,6 +91,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "e2e: marks tests as end-to-end tests",
+    "llm_e2e: marks tests as LLM-backed WebSocket E2E tests (requires --run-llm-e2e)",
     "network: marks tests that require network access",
     "tui: marks tests that require TUI",
     "plugin: marks tests as plugin system tests",

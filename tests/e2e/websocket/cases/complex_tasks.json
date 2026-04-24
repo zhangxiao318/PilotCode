@@ -1,0 +1,191 @@
+{
+  "suite": "complex_tasks",
+  "description": "Complex multi-turn tasks requiring planning, cross-file analysis, and deep context retention.",
+  "cases": [
+    {
+      "id": "C001",
+      "name": "项目架构分析",
+      "description": "Analyze the overall project structure across multiple turns.",
+      "steps": [
+        {
+          "send": "分析 PilotCode 项目的整体架构。先列出 src/pilotcode 下所有顶层目录和关键文件。",
+          "expect": {
+            "tool_calls": ["Glob"],
+            "response_min_length": 100
+          }
+        },
+        {
+          "send": "读取 query_engine.py、cli.py 和 server.py 的头部注释和导入部分，了解它们各自的角色。",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "response_min_length": 200
+          }
+        },
+        {
+          "send": "基于前面分析的三个核心文件，总结一下 PilotCode 的数据流：用户输入是如何从 CLI 传递到 QueryEngine 再到 WebServer 的？",
+          "expect": {
+            "not_tool_calls": ["FileRead", "Glob"],
+            "contains": ["CLI", "QueryEngine", "WebSocket"],
+            "response_min_length": 150
+          }
+        }
+      ]
+    },
+    {
+      "id": "C002",
+      "name": "跨文件代码理解",
+      "description": "Understand relationships between multiple source files.",
+      "steps": [
+        {
+          "send": "在 src/pilotcode/tools 目录中，找出 Tool 基类的定义文件，并读取它的核心字段。",
+          "expect": {
+            "tool_calls": ["Grep", "FileRead"],
+            "contains": ["Tool", "input_schema", "call"]
+          }
+        },
+        {
+          "send": "现在读取 registry.py，看看 ToolRegistry 是如何注册和管理工具的。",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["ToolRegistry", "register"]
+          }
+        },
+        {
+          "send": "对比 Tool 基类和 ToolRegistry 的设计：Tool 负责什么？Registry 负责什么？它们之间是如何协作的？不要重新读取文件。",
+          "expect": {
+            "not_tool_calls": ["FileRead"],
+            "contains": ["定义", "注册", "协作"],
+            "response_min_length": 100
+          }
+        }
+      ]
+    },
+    {
+      "id": "C003",
+      "name": "Bug定位模拟",
+      "description": "Simulate a debugging workflow: reproduce -> locate -> analyze.",
+      "steps": [
+        {
+          "send": "假设用户报告：'web模式下每次发送消息都是全新的对话，没有上下文'。请分析 web/server.py 中的 process_query 方法，找出上下文丢失的原因。",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["QueryEngine", "process_query"],
+            "response_min_length": 100
+          }
+        },
+        {
+          "send": "基于你发现的问题，描述一下如果要改成 session 级别持久化，需要在 server.py 中做哪些关键改动？",
+          "expect": {
+            "not_tool_calls": ["FileRead"],
+            "contains": ["session", "持久"],
+            "response_min_length": 150
+          }
+        }
+      ]
+    },
+    {
+      "id": "C004",
+      "name": "长上下文压缩测试",
+      "description": "Generate a long conversation and verify context is retained after compaction.",
+      "steps": [
+        {
+          "send": "读取 src/pilotcode/services/codebase_indexer.py 的前100行",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "response_min_length": 50
+          }
+        },
+        {
+          "send": "读取 src/pilotcode/services/context_compression.py 的完整内容",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "response_min_length": 50
+          }
+        },
+        {
+          "send": "读取 src/pilotcode/services/intelligent_compact.py 的完整内容",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "response_min_length": 50
+          }
+        },
+        {
+          "send": "读取 src/pilotcode/query_engine.py 中关于 auto_compact 和 intelligent_compact 的方法实现",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "response_min_length": 50
+          }
+        },
+        {
+          "send": "基于你读到的所有关于上下文压缩的代码，比较 context_compression.py 和 intelligent_compact.py 两种压缩策略的区别。不要重新读取文件。",
+          "expect": {
+            "not_tool_calls": ["FileRead"],
+            "contains": ["压缩", "区别"],
+            "response_min_length": 150
+          }
+        },
+        {
+          "send": "最开始让你读的是哪个文件？它的主要类叫什么？",
+          "expect": {
+            "not_tool_calls": ["FileRead"],
+            "contains": ["codebase_indexer", "CodebaseIndexer"],
+            "response_min_length": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "C005",
+      "name": "计划模式验证",
+      "description": "Trigger a complex task that enters planning mode.",
+      "steps": [
+        {
+          "send": "重构 src/pilotcode/web/server.py 中的 process_query 方法，将其拆分为三个独立函数：初始化、流式处理、工具执行。请制定详细计划并执行。",
+          "expect": {
+            "contains": ["plan"],
+            "response_min_length": 100
+          }
+        },
+        {
+          "send": "你制定的计划第一步是什么？目前执行到哪一步了？",
+          "expect": {
+            "response_min_length": 50
+          }
+        }
+      ]
+    },
+    {
+      "id": "C006",
+      "name": "断线重连上下文保持",
+      "description": "Simulate disconnect/reconnect and verify session context persists.",
+      "session_mode": "reconnect",
+      "steps": [
+        {
+          "send": "记住：我们正在分析 PilotCode 的 web 服务器架构。关键文件是 server.py。",
+          "expect": {
+            "response_min_length": 10
+          }
+        },
+        {
+          "send": "读取 web/server.py 中的 WebSocketManager 类定义。",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["WebSocketManager"]
+          }
+        },
+        {
+          "action": "disconnect_and_reconnect",
+          "session_id": "_use_current"
+        },
+        {
+          "send": "重新连接后，我们之前在分析什么？WebSocketManager 的主要职责是什么？不要重新读取文件。",
+          "expect": {
+            "not_tool_calls": ["FileRead"],
+            "contains": ["WebSocketManager", "connection"],
+            "response_min_length": 50
+          }
+        }
+      ]
+    }
+  ]
+}
