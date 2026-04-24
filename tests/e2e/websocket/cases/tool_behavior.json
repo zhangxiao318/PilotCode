@@ -1,0 +1,346 @@
+{
+  "suite": "tool_behavior",
+  "description": "E2E tests for individual tool behaviors. Each case sends a natural-language prompt and verifies the LLM invokes the expected tool(s) with correct results.",
+  "cases": [
+    {
+      "id": "TB001",
+      "name": "FileRead_reads_known_file",
+      "description": "Ask to read a known file and verify FileRead is used and content is returned.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "读取 README.md 文件的内容，并告诉我它的前两行写了什么。",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["PilotCode", "Claude Code"],
+            "response_min_length": 50
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB002",
+      "name": "FileWrite_and_FileRead_roundtrip",
+      "description": "Ask to write a temp file, then read it back.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "在 {{TMP}}/e2e_test_write.txt 创建一个文件，内容为 'Hello from E2E test'。",
+          "expect": {
+            "tool_calls": ["FileWrite"],
+            "contains": ["创建", "写入", "成功"],
+            "response_min_length": 10
+          }
+        },
+        {
+          "send": "读取 {{TMP}}/e2e_test_write.txt 的内容",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["Hello from E2E test"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB003",
+      "name": "FileEdit_modifies_existing_file",
+      "description": "Write a file, then edit it, then verify the edit.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "创建 {{TMP}}/e2e_test_edit.txt，内容为 'old_value = 1\\nsecond_line = 2'",
+          "expect": {
+            "tool_calls": ["FileWrite"]
+          }
+        },
+        {
+          "send": "把 {{TMP}}/e2e_test_edit.txt 中的 old_value = 1 改成 new_value = 100",
+          "expect": {
+            "tool_calls": ["FileEdit"],
+            "contains": ["修改", "编辑"]
+          }
+        },
+        {
+          "send": "读取 {{TMP}}/e2e_test_edit.txt 验证修改",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["new_value = 100"],
+            "not_contains": ["old_value = 1"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB004",
+      "name": "Glob_finds_files_by_pattern",
+      "description": "Ask to find files matching a pattern.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "查找 src/pilotcode/tools 目录下所有以 _tool.py 结尾的文件",
+          "expect": {
+            "tool_calls": ["Glob"],
+            "contains": ["bash_tool.py", "file_read_tool.py"],
+            "response_min_length": 30
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB005",
+      "name": "Grep_searches_text_pattern",
+      "description": "Ask to search for a text pattern across files.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "在 src/pilotcode/tools 目录搜索包含 'class Tool' 定义的文件",
+          "expect": {
+            "tool_calls": ["Grep"],
+            "contains": ["base.py"],
+            "response_min_length": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB006",
+      "name": "Bash_ls_on_unix",
+      "description": "Use Bash to list files (Unix only).",
+      "platforms": ["linux", "darwin"],
+      "steps": [
+        {
+          "send": "用 Bash 命令列出当前目录下的子目录",
+          "expect": {
+            "tool_calls": ["Bash"],
+            "contains": ["src", "tests"],
+            "response_min_length": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB007",
+      "name": "Bash_echo_and_pipe",
+      "description": "Use Bash echo and pipe (Unix only).",
+      "platforms": ["linux", "darwin"],
+      "steps": [
+        {
+          "send": "运行 bash 命令：echo 'e2e-bash-test' | tr 'a-z' 'A-Z'",
+          "expect": {
+            "tool_calls": ["Bash"],
+            "contains": ["E2E-BASH-TEST"],
+            "response_min_length": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB008",
+      "name": "Bash_pwd_returns_cwd",
+      "description": "Use Bash pwd to verify working directory (Unix only).",
+      "platforms": ["linux", "darwin"],
+      "steps": [
+        {
+          "send": "运行 pwd 命令告诉我当前工作目录",
+          "expect": {
+            "tool_calls": ["Bash"],
+            "contains": ["PilotCode"],
+            "response_min_length": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB009",
+      "name": "PowerShell_GetChildItem_on_windows",
+      "description": "Use PowerShell to list items (Windows only).",
+      "platforms": ["win32"],
+      "steps": [
+        {
+          "send": "用 PowerShell 列出当前目录的内容",
+          "expect": {
+            "tool_calls": ["PowerShell"],
+            "response_min_length": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB010",
+      "name": "GitStatus_shows_repo_state",
+      "description": "Ask for git status in a temporary repo.",
+      "platforms": ["all"],
+      "setup": "init_git_repo",
+      "steps": [
+        {
+          "send": "查看 {{TMP}}/git_test_repo 的 git 状态",
+          "expect": {
+            "tool_calls": ["GitStatus"],
+            "contains": ["clean", "nothing to commit", "无提交"],
+            "response_min_length": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB011",
+      "name": "GitLog_shows_recent_commits",
+      "description": "Ask for recent git log in a temporary repo.",
+      "platforms": ["all"],
+      "setup": "init_git_repo",
+      "steps": [
+        {
+          "send": "查看 {{TMP}}/git_test_repo 最近的 2 条 git 提交记录",
+          "expect": {
+            "tool_calls": ["GitLog"],
+            "contains": ["Initial commit"],
+            "response_min_length": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB012",
+      "name": "ToolSearch_finds_available_tools",
+      "description": "Ask to search for available tools.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "搜索有哪些和文件相关的工具可以用",
+          "expect": {
+            "tool_calls": ["ToolSearch"],
+            "contains": ["FileRead", "FileWrite"],
+            "response_min_length": 20
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB013",
+      "name": "TodoWrite_creates_todo_list",
+      "description": "Ask to create a todo list.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "创建一个待办列表：1. 分析代码结构 2. 运行测试 3. 提交修改",
+          "expect": {
+            "tool_calls": ["TodoWrite"],
+            "contains": ["分析代码结构"],
+            "response_min_length": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB014",
+      "name": "Sleep_delays_execution",
+      "description": "Ask to sleep for a short time.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "等待 1 秒钟",
+          "expect": {
+            "tool_calls": ["Sleep"],
+            "response_min_length": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB015",
+      "name": "CodeIndex_and_CodeSearch",
+      "description": "Index the codebase and search for a symbol.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "索引 src/pilotcode 目录的代码库",
+          "expect": {
+            "tool_calls": ["CodeIndex"],
+            "response_min_length": 5
+          }
+        },
+        {
+          "send": "搜索符号 'QueryEngine' 的定义位置",
+          "expect": {
+            "tool_calls": ["CodeSearch"],
+            "contains": ["query_engine.py"],
+            "response_min_length": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB016",
+      "name": "Brief_summarizes_text",
+      "description": "Ask to summarize a long text.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "读取 README.md，然后用 Brief 工具把它总结成两句话",
+          "expect": {
+            "tool_calls": ["FileRead", "Brief"],
+            "response_min_length": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB017",
+      "name": "Config_reads_settings",
+      "description": "Ask to read configuration.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "查看当前的默认模型配置是什么",
+          "expect": {
+            "tool_calls": ["Config"],
+            "response_min_length": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB018",
+      "name": "ApplyPatch_applies_diff",
+      "description": "Write a file and apply a patch.",
+      "platforms": ["all"],
+      "steps": [
+        {
+          "send": "创建 {{TMP}}/e2e_patch_target.txt，内容为 'line1\\nline2\\nline3'",
+          "expect": {
+            "tool_calls": ["FileWrite"]
+          }
+        },
+        {
+          "send": "对 {{TMP}}/e2e_patch_target.txt 应用补丁，把 line2 改成 modified_line2",
+          "expect": {
+            "tool_calls": ["ApplyPatch"],
+            "contains": ["patch"]
+          }
+        },
+        {
+          "send": "读取 {{TMP}}/e2e_patch_target.txt 验证补丁",
+          "expect": {
+            "tool_calls": ["FileRead"],
+            "contains": ["modified_line2"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TB019",
+      "name": "CronList_shows_cron_jobs",
+      "description": "List cron jobs.",
+      "platforms": ["linux", "darwin"],
+      "steps": [
+        {
+          "send": "查看当前的定时任务列表",
+          "expect": {
+            "tool_calls": ["CronList"],
+            "response_min_length": 1
+          }
+        }
+      ]
+    }
+  ]
+}
