@@ -448,7 +448,10 @@ def run_repl(auto_allow: bool = False, max_iterations: int | None = None) -> Non
 
 
 def assess_project_complexity(cwd: str) -> dict[str, Any]:
-    """Quickly assess codebase size and language complexity via shell commands.
+    """Quickly assess codebase size and language complexity via pathlib.
+
+    Cross-platform replacement for the previous Linux find/wc based approach
+    that failed silently on Windows.
 
     Returns dict with file_count, language_scores, loc_estimate, complexity_score.
     """
@@ -460,29 +463,10 @@ def assess_project_complexity(cwd: str) -> dict[str, Any]:
     }
 
     try:
-        # Count total source files (exclude common non-source dirs)
-        cmd = (
-            f"find '{cwd}' -maxdepth 3 -type f "
-            r"\( -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.jsx' -o -name '*.tsx' "
-            r"-o -name '*.java' -o -name '*.cpp' -o -name '*.cc' -o -name '*.c' -o -name '*.h' "
-            r"-o -name '*.go' -o -name '*.rs' -o -name '*.rb' \) "
-            r"! -path '*/node_modules/*' ! -path '*/.git/*' ! -path '*/__pycache__/*' "
-            r"! -path '*/venv/*' ! -path '*/.venv/*' ! -path '*/build/*' "
-            r"| wc -l"
-        )
-        proc = subprocess.run(
-            cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=15,
-        )
-        file_count = int(proc.stdout.strip()) if proc.returncode == 0 else 0
-        result["file_count"] = file_count
+        root = Path(cwd).resolve()
+        if not root.exists():
+            return result
 
-        # Language breakdown with weights (higher = more complex)
         lang_weights = {
             ".py": 1.0,
             ".js": 1.0,
@@ -499,44 +483,58 @@ def assess_project_complexity(cwd: str) -> dict[str, Any]:
             ".h": 1.0,
             ".hpp": 1.5,
         }
+
+        skip_dirs = {
+            "node_modules",
+            ".git",
+            "__pycache__",
+            "venv",
+            ".venv",
+            "build",
+            "dist",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".tox",
+            ".egg-info",
+            ".eggs",
+            "site-packages",
+        }
+
+        file_count = 0
         lang_scores: dict[str, int] = {}
-        for ext in lang_weights:
-            cmd = f"find '{cwd}' -maxdepth 3 -type f -name '*{ext}' ! -path '*/node_modules/*' ! -path '*/.git/*' | wc -l"
-            proc = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=10,
-            )
-            cnt = int(proc.stdout.strip()) if proc.returncode == 0 else 0
-            if cnt > 0:
-                lang_scores[ext.lstrip(".")] = cnt
+        loc_estimate = 0
+
+        for item in root.rglob("*"):
+            if not item.is_file():
+                continue
+            if any(part in skip_dirs for part in item.parts):
+                continue
+            try:
+                rel_parts = item.relative_to(root).parts
+            except ValueError:
+                continue
+            if len(rel_parts) > 3:
+                continue
+
+            ext = item.suffix.lower()
+            if ext in lang_weights:
+                file_count += 1
+                key = ext.lstrip(".")
+                lang_scores[key] = lang_scores.get(key, 0) + 1
+                try:
+                    with item.open("r", encoding="utf-8", errors="ignore") as fh:
+                        for _ in range(5000):
+                            line = fh.readline()
+                            if not line:
+                                break
+                            loc_estimate += 1
+                except Exception:
+                    pass
+
+        result["file_count"] = file_count
         result["language_scores"] = lang_scores
+        result["loc_estimate"] = loc_estimate
 
-        # LOC estimate via wc -l on top-level source files (fast approximation)
-        cmd = (
-            f"find '{cwd}' -maxdepth 3 -type f "
-            r"\( -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.java' "
-            r"-o -name '*.cpp' -o -name '*.cc' -o -name '*.c' -o -name '*.go' -o -name '*.rs' \) "
-            r"! -path '*/node_modules/*' ! -path '*/.git/*' ! -path '*/__pycache__/*' "
-            r"-exec cat {{}} + 2>/dev/null | wc -l"
-        )
-        proc = subprocess.run(
-            cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=15,
-        )
-        loc = int(proc.stdout.strip()) if proc.returncode == 0 else 0
-        result["loc_estimate"] = loc
-
-        # Compute a composite complexity score
         complexity = 0.0
         if file_count > 500:
             complexity += 2.0
@@ -547,11 +545,11 @@ def assess_project_complexity(cwd: str) -> dict[str, Any]:
         else:
             complexity += 0.3
 
-        if loc > 100000:
+        if loc_estimate > 100000:
             complexity += 2.0
-        elif loc > 30000:
+        elif loc_estimate > 30000:
             complexity += 1.0
-        elif loc > 10000:
+        elif loc_estimate > 10000:
             complexity += 0.5
 
         for ext, cnt in lang_scores.items():
@@ -563,20 +561,76 @@ def assess_project_complexity(cwd: str) -> dict[str, Any]:
 
         result["complexity_score"] = round(complexity, 2)
     except Exception:
-        # If assessment fails, return conservative defaults
         pass
 
     return result
 
 
 def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> float:
-    """Compute a composite complexity score (0-10 scale)."""
+    """Compute a composite complexity score (0-10 scale).
+
+    Returns a high positive score for complex dev tasks, a high negative score
+    for obviously non-dev tasks (greetings, Q&A), and mid-range for ambiguous.
+    """
     score = project_stats.get("complexity_score", 0.0)
 
     prompt_lower = prompt.lower()
 
-    # Task-type keywords
+    # ---------- Non-development tasks: strongly signal DIRECT ----------
+    direct_signals = [
+        # Greetings / social
+        "hello",
+        "hi ",
+        "hey",
+        "你好",
+        "您好",
+        "哈喽",
+        "在吗",
+        "在么",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        # General Q&A / explanation
+        "explain",
+        "what is",
+        "what are",
+        "how to",
+        "how does",
+        "how do",
+        "tell me about",
+        "describe",
+        "overview",
+        "summary",
+        "什么是",
+        "什么是",
+        "怎么",
+        "如何",
+        "解释一下",
+        "说明",
+        "介绍",
+        "谢谢",
+        "感谢",
+        "再见",
+        "拜拜",
+        # Simple help
+        "help",
+        "can you",
+        "could you",
+        "would you",
+        "please",
+        "帮忙",
+        "帮我把",
+        "帮我",
+        "请",
+        "能不能",
+    ]
+    for sig in direct_signals:
+        if sig in prompt_lower:
+            return -5.0  # Force DIRECT, skip everything else
+
+    # ---------- Hard complexity signals ----------
     hard_keywords = [
+        # English
         "refactor",
         "architecture",
         "restructure",
@@ -591,8 +645,33 @@ def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> floa
         "cross-file",
         "multiple files",
         "across the codebase",
+        # Chinese
+        "重构",
+        "架构",
+        "重新设计",
+        "实现",
+        "添加功能",
+        "引入",
+        "调试",
+        "修复 bug",
+        "修复问题",
+        "跨文件",
+        "多个文件",
+        "添加支持",
+        "性能优化",
+        "性能问题",
+        "新功能",
+        "开发",
+        "编写",
+        "集成",
+        "api",
+        "docker",
+        "kubernetes",
+        "k8s",
+        "ci/cd",
     ]
     medium_keywords = [
+        # English
         "update",
         "modify",
         "change behavior",
@@ -600,8 +679,29 @@ def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> floa
         "improve",
         "optimize",
         "performance",
+        "upgrade",
+        "migrate",
+        # Chinese
+        "更新",
+        "修改",
+        "改进",
+        "优化",
+        "增强",
+        "升级",
+        "迁移",
+        "改动",
+        "调整",
+        "变更",
+        "完善",
+        "测试",
+        "写测试",
+        "添加测试",
+        "单元测试",
+        "算法",
+        "数据结构",
     ]
     easy_keywords = [
+        # English
         "rename",
         "move",
         "extract",
@@ -610,6 +710,22 @@ def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> floa
         "update docstring",
         "add comment",
         "fix typo",
+        "format",
+        # Chinese
+        "重命名",
+        "移动",
+        "提取",
+        "简单",
+        "单文件",
+        "修复拼写",
+        "格式化",
+        "加注释",
+        "改名字",
+        "readme",
+        "文档",
+        "注释",
+        "配置文件",
+        "配置",
     ]
 
     for kw in hard_keywords:
@@ -633,35 +749,49 @@ def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> floa
 
 
 async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
-    """Use project scale + LLM to classify whether the task needs planning.
+    """Classify whether the task needs planning mode (PLAN) or direct mode (DIRECT).
+
+    Strategy:
+      1. Fast heuristic rules for obvious cases (no LLM call).
+      2. For ambiguous cases, use a lightweight LLM call as tie-breaker.
+      3. Never let project size alone force PLAN — only the *task content* should.
 
     Returns:
-        "PLAN" if the task likely involves multiple files or complex logic.
-        "DIRECT" for simple, localized tasks.
+        "PLAN"  -> multi-step, multi-file, or complex logic.
+        "DIRECT"-> simple Q&A, greeting, explanation, or single edit.
     """
     effective_cwd = cwd if cwd else str(os.getcwd())
     project_stats = assess_project_complexity(effective_cwd)
     composite_score = _compute_task_complexity(prompt, project_stats)
 
-    # Fast path: very small projects with low scores -> DIRECT
-    if composite_score < 1.5 and project_stats.get("file_count", 0) < 30:
+    # ---- Rule 1: Explicit non-dev tasks → DIRECT (no LLM) ----
+    if composite_score <= -3.0:
         return "DIRECT"
 
-    # Fast path: large projects or high scores -> PLAN without LLM overhead
-    if composite_score >= 3.0 or project_stats.get("file_count", 0) > 150:
+    # ---- Rule 3: Clear dev complexity → PLAN (no LLM) ----
+    if composite_score >= 2.5:
         return "PLAN"
 
-    # Use LLM as a tie-breaker for mid-range scores
+    # ---- Rule 2: Very short, no code signals → DIRECT ----
+    prompt_stripped = prompt.strip()
+    if len(prompt_stripped) < 20 and not any(
+        c in prompt_stripped for c in "._/=(){}[];:#$%&@!^*+-"
+    ):
+        return "DIRECT"
+
+    # ---- Rule 4: Ambiguous middle ground → lightweight LLM ----
     classifier_prompt = (
-        "You are a task router. Based on the user request, decide if this task "
-        "requires multi-step planning before execution.\n\n"
-        f"Project stats: {json.dumps(project_stats)}\n\n"
-        "User request:\n"
-        f"{prompt}\n\n"
-        "Answer with ONLY one word: PLAN or DIRECT.\n"
-        "- PLAN: The task likely involves multiple files, complex logic, debugging "
-        "across the codebase, or bug fixing.\n"
-        "- DIRECT: The task is simple, localized, or can be done in a single edit."
+        "You are a strict task router. Decide if this user request requires "
+        "multi-step planning across multiple files (PLAN) or can be answered "
+        "directly in a single turn (DIRECT).\n\n"
+        f"Project size: {project_stats.get('file_count', 0)} source files.\n"
+        f"User request ({len(prompt)} chars):\n{prompt}\n\n"
+        "Rules:\n"
+        "- DIRECT for: greetings, general Q&A, explanations, asking for help, "
+        "single-file edits, reading code, simple formatting.\n"
+        "- PLAN for: implementing features, refactoring, bug fixing across files, "
+        "adding tests to multiple modules, architecture changes.\n\n"
+        "Answer with EXACTLY one word: PLAN or DIRECT. No punctuation."
     )
 
     client = get_model_client()
@@ -674,19 +804,35 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
     ]
 
     try:
-        chunks = []
-        async for chunk in client.chat_completion(
+        # stream=False may return a coroutine or an async iterator depending on
+        # the client implementation.  Handle both shapes safely.
+        response = await client.chat_completion(
             messages=messages,
             tools=None,
             temperature=0.0,
             stream=False,
-        ):
-            chunks.append(chunk)
+        )
 
-        if not chunks:
-            return "PLAN"
+        # If the client returns an async iterator even with stream=False,
+        # collect the chunks.
+        if hasattr(response, "__aiter__"):
+            chunks = []
+            async for chunk in response:
+                chunks.append(chunk)
+            if not chunks:
+                return "PLAN"
+            response = chunks[0]
 
-        content = chunks[0].get("choices", [{}])[0].get("delta", {}).get("content", "")
+        # Non-streaming response shape
+        content = ""
+        if isinstance(response, dict):
+            choices = response.get("choices", [{}])
+            if choices:
+                delta = choices[0].get("delta", {})
+                if delta:
+                    content = delta.get("content", "")
+                else:
+                    content = choices[0].get("message", {}).get("content", "")
         content = content.strip().upper()
 
         if "DIRECT" in content:
