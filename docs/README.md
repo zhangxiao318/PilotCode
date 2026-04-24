@@ -64,6 +64,13 @@
 |------|------|
 | [README.md](plugins/README.md) | **插件系统索引** |
 
+### 🧪 [test/](test/) - 测试文档
+包含 E2E 测试说明和三层诊断框架文档。
+
+| 文档 | 说明 |
+|------|------|
+| [README.md](test/README.md) | **E2E 测试说明与三层诊断框架** |
+
 ### 📦 [archive/](archive/) - 归档文档
 包含开发过程中的过程性文档。
 
@@ -106,3 +113,5 @@
 **查看命令？** 查看 [commands/](commands/) 目录。
 
 **查看工具？** 查看 [tools/](tools/) 目录。
+
+**运行 E2E 测试？** 查看 [test/README.md](test/README.md) 了解三层诊断框架。

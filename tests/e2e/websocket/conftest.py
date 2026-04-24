@@ -26,12 +26,7 @@ from pathlib import Path
 
 
 def pytest_addoption(parser):
-    parser.addoption(
-        "--run-llm-e2e",
-        action="store_true",
-        default=False,
-        help="Run LLM-backed WebSocket end-to-end tests (requires web server + API key)",
-    )
+    # --run-llm-e2e and --e2e-timeout are registered in tests/e2e/conftest.py
     parser.addoption(
         "--ws-url",
         action="store",
@@ -51,41 +46,11 @@ def pytest_addoption(parser):
         default=None,
         help="Working directory the web server should operate on (default: project root)",
     )
-    parser.addoption(
-        "--e2e-timeout",
-        action="store",
-        type=float,
-        default=180.0,
-        help="Default timeout per test step in seconds (default: 180)",
-    )
 
 
 # ---------------------------------------------------------------------------
 # Auto-skip marker
 # ---------------------------------------------------------------------------
-
-
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers",
-        "llm_e2e: marks tests as LLM-backed WebSocket E2E (deselect without --run-llm-e2e)",
-    )
-
-
-def pytest_collection_modifyitems(config, items):
-    if config.getoption("--run-llm-e2e"):
-        # When enabled, also mark them as slow so they run last if -m is used
-        for item in items:
-            if "llm_e2e" in {m.name for m in item.own_markers}:
-                item.add_marker(pytest.mark.slow)
-        return
-
-    skip_llm = pytest.mark.skip(
-        reason="LLM E2E tests skipped by default. Use --run-llm-e2e to enable."
-    )
-    for item in items:
-        if "llm_e2e" in {m.name for m in item.own_markers}:
-            item.add_marker(skip_llm)
 
 
 # ---------------------------------------------------------------------------
