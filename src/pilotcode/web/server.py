@@ -27,10 +27,31 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # ------------------------------------------------------------------
 
 TOOL_KEYWORDS = {
-    "glob", "file read", "fileread", "grep", "search", "查找", "搜索",
-    "读取", "read", "运行", "执行", "run", "execute", "bash",
-    "file write", "filewrite", "edit", "修改", "写入", "写",
-    "code index", "codeindex", "git status", "git log", "git diff",
+    "glob",
+    "file read",
+    "fileread",
+    "grep",
+    "search",
+    "查找",
+    "搜索",
+    "读取",
+    "read",
+    "运行",
+    "执行",
+    "run",
+    "execute",
+    "bash",
+    "file write",
+    "filewrite",
+    "edit",
+    "修改",
+    "写入",
+    "写",
+    "code index",
+    "codeindex",
+    "git status",
+    "git log",
+    "git diff",
 }
 
 
@@ -38,8 +59,20 @@ def _should_use_tools(query: str, response: str) -> bool:
     """Heuristic: did the user explicitly ask for a tool operation?"""
     q = query.lower()
     # Negative cues — user explicitly says NOT to use tools
-    negations = {"不要", "不用", "无需", "别", "不需要", "不要调用", "不用重新",
-                 "do not", "don't", "no need to", "without", "无需使用"}
+    negations = {
+        "不要",
+        "不用",
+        "无需",
+        "别",
+        "不需要",
+        "不要调用",
+        "不用重新",
+        "do not",
+        "don't",
+        "no need to",
+        "without",
+        "无需使用",
+    }
     for neg in negations:
         if neg in q:
             return False
@@ -49,9 +82,7 @@ def _should_use_tools(query: str, response: str) -> bool:
             return True
     # Response looks like a pseudo tool-call (model emitted XML-like tags)
     if response and (
-        "<parameter>" in response
-        or "<tool_call>" in response
-        or "</tool>" in response
+        "<parameter>" in response or "<tool_call>" in response or "</tool>" in response
     ):
         return True
     return False
@@ -178,6 +209,7 @@ class WebSocketManager:
 
         # LoopGuard: detect repetitive tool-call patterns
         from pilotcode.components.repl import LoopGuard
+
         self.loop_guard = LoopGuard()
 
     # ------------------------------------------------------------------
@@ -414,6 +446,8 @@ class WebSocketManager:
                 else:
                     sid = self.client_sessions.get(websocket)
                     if not sid:
+                        # Check if there's an existing session for this websocket connection
+                        # This ensures we reuse the same session for subsequent queries
                         sid = self._generate_session_id()
                         await self._get_or_create_session(sid)
                         self.client_sessions[websocket] = sid
@@ -840,9 +874,7 @@ class WebSocketManager:
                             "You MUST call the appropriate tool instead of answering in text. "
                             "Do NOT explain your plan — just call the tool now."
                         )
-                        query_engine.messages.append(
-                            SystemMessage(content=reinforce_msg)
-                        )
+                        query_engine.messages.append(SystemMessage(content=reinforce_msg))
                         print("[Query] Tool reinforcement triggered, retrying with system nudge")
                         query = "Please execute the requested tool operation now."
                         is_continue_query = True
