@@ -129,6 +129,24 @@ def format_completion(result: dict[str, Any]) -> str:
         for tid in failed_tasks:
             lines.append(f"  - {tid}")
 
+    # Include task outputs
+    task_outputs = result.get("task_outputs", {})
+    if task_outputs:
+        lines.append("")
+        lines.append("=" * 40)
+        lines.append("📊 Task Results")
+        lines.append("=" * 40)
+        for tid, tdata in task_outputs.items():
+            title = tdata.get("title", tid)
+            output = tdata.get("output", "")
+            lines.append("")
+            lines.append(f"--- {title} ---")
+            # Truncate very long outputs for display
+            output_str = str(output) if output else "(no output)"
+            if len(output_str) > 2000:
+                output_str = output_str[:2000] + "\n... [truncated]"
+            lines.append(output_str)
+
     return "\n".join(lines)
 
 

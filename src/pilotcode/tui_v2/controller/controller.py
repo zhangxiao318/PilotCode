@@ -376,14 +376,13 @@ class TUIController:
         except Exception as exc:
             result = {"success": False, "error": str(exc)}
 
-        # Show final summary
+        # Build comprehensive report
+        report_parts: list[str] = []
         if result and result.get("success"):
-            summary = format_completion(result)
-            yield UIMessage(type=UIMessageType.ASSISTANT, content=summary)
+            report_parts.append(format_completion(result))
         else:
             error = result.get("error", "Unknown error") if result else "Mission failed"
-            summary = format_failure(result or {}, error)
-            yield UIMessage(type=UIMessageType.ERROR, content=summary)
+            report_parts.append(format_failure(result or {}, error))
 
         # Also show the raw conversation response if available
         mission_dict = result.get("mission", {}) if result else {}
@@ -396,7 +395,23 @@ class TUIController:
                     state = t.get("state", "unknown")
                     emoji = _STATE_EMOJI.get(state, "❓")
                     lines.append(f"    {emoji} {t.get('title', t.get('id', '?'))}")
-            yield UIMessage(type=UIMessageType.SYSTEM, content="\n".join(lines))
+            report_parts.append("\n".join(lines))
+
+        full_report = "\n\n".join(report_parts)
+
+        # Yield to UI
+        if result and result.get("success"):
+            yield UIMessage(type=UIMessageType.ASSISTANT, content=full_report)
+        else:
+            yield UIMessage(type=UIMessageType.ERROR, content=full_report)
+
+        # Persist the conversation into the main query_engine so follow-up
+        # questions have context.
+        if self.query_engine:
+            from pilotcode.types.message import UserMessage, AssistantMessage
+
+            self.query_engine.messages.append(UserMessage(content=text))
+            self.query_engine.messages.append(AssistantMessage(content=full_report))
 
     async def submit_message(self, text: str) -> AsyncIterator[UIMessage]:
         """Submit a message and yield UI messages.

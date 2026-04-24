@@ -24,6 +24,17 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
+def _strip_ansi_residuals(text: str) -> str:
+    """Remove residual ANSI-like sequences that _strip_ansi may miss.
+
+    Some terminals or tools emit non-standard escape sequences, or the
+    ESC character gets lost leaving only the parameter string.  This
+    catches the most common residuals (e.g. '[35;60;54m') so they don't
+    leak into the TUI as Rich-markup garbage.
+    """
+    return __import__("re").sub(r"\[(?:\d+;)*\d+[a-zA-Z]", "", text)
+
+
 def _copy_to_clipboard_impl(text: str) -> str | None:
     """Copy text to system clipboard.
 
@@ -334,7 +345,7 @@ class MessageDisplay(Static):
         if not self.message:
             return ""
 
-        content = _strip_ansi(self.message.content or "")
+        content = _strip_ansi_residuals(_strip_ansi(self.message.content or ""))
 
         # Tool messages - show tool name + key parameters
         if self.message.type == UIMessageType.TOOL_USE:

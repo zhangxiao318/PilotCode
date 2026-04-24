@@ -185,9 +185,22 @@ class Orchestrator:
             {"mission_id": mid, "snapshot": asdict(snapshot) if snapshot else {}},
         )
 
+        # Collect task outputs for reporting
+        task_outputs: dict[str, Any] = {}
+        dag = self.tracker.get_dag(mid)
+        if dag:
+            for task_id, node in dag.nodes.items():
+                if node.result is not None:
+                    task_outputs[task_id] = {
+                        "title": node.task.title,
+                        "output": node.result,
+                        "artifacts": node.artifacts,
+                    }
+
         return {
             "mission_id": mid,
             "snapshot": snapshot.to_dict() if snapshot else {},
+            "task_outputs": task_outputs,
         }
 
     async def _execute_task(self, mission_id: str, node: DagNode) -> None:
