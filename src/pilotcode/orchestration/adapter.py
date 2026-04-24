@@ -27,6 +27,12 @@ from pilotcode.types.message import ToolUseMessage
 
 from .task_spec import Mission, Phase, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion
 from .orchestrator import Orchestrator, OrchestratorConfig, ExecutionResult, VerificationResult
+from .context_strategy import (
+    ContextStrategy,
+    ContextStrategySelector,
+    MissionPlanAdjuster,
+    StrategyMetrics,
+)
 
 
 class MissionAdapter:
@@ -50,10 +56,19 @@ class MissionAdapter:
         self,
         cancel_event: asyncio.Event | None = None,
         max_worker_turns: int | None = None,
+        context_budget: int = 16000,
     ):
         self._cancel_event = cancel_event or asyncio.Event()
         self._max_worker_turns = max_worker_turns
-        self._orchestrator = Orchestrator(config=OrchestratorConfig())
+        self.context_budget = context_budget
+        self.strategy = ContextStrategySelector.select(context_budget)
+        self.plan_adjuster = MissionPlanAdjuster(strategy=self.strategy)
+
+        # Apply strategy to orchestrator config
+        orch_config = OrchestratorConfig()
+        self.plan_adjuster.apply_to_orchestrator_config(orch_config)
+        self._orchestrator = Orchestrator(config=orch_config)
+
         self._register_workers()
         self._register_verifiers()
         self._setup_permission_callback()
@@ -112,7 +127,8 @@ class MissionAdapter:
 
         client = get_model_client()
 
-        system_prompt = (
+        # Build base prompt + strategy-specific guidance
+        base_prompt = (
             "You are a mission planner for a software development AI system.\n"
             "Given a user's request, decompose it into a structured plan with phases and tasks.\n"
             "Output ONLY a JSON object with no markdown formatting. The JSON must match this schema:\n"
@@ -156,6 +172,8 @@ class MissionAdapter:
             "- Use snake_case for all IDs\n"
             "- Include at least one phase, but no more than 5 phases for typical requests\n"
         )
+        strategy_suffix = self.plan_adjuster.get_plan_prompt_suffix()
+        system_prompt = base_prompt + strategy_suffix
 
         messages = [
             Message(role="system", content=system_prompt),
@@ -177,17 +195,24 @@ class MissionAdapter:
             raise ValueError("LLM returned an empty plan")
 
         plan_data = self._extract_json(accumulated)
-        mission = Mission.from_dict(plan_data)
+        raw_mission = Mission.from_dict(plan_data)
 
         # Ensure mission_id is set
-        if not mission.mission_id:
-            mission.mission_id = f"mission_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
-        if not mission.title:
-            mission.title = user_request[:80]
-        if not mission.requirement:
-            mission.requirement = user_request
-        if not mission.created_at:
-            mission.created_at = datetime.now(timezone.utc).isoformat()
+        if not raw_mission.mission_id:
+            raw_mission.mission_id = f"mission_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+        if not raw_mission.title:
+            raw_mission.title = user_request[:80]
+        if not raw_mission.requirement:
+            raw_mission.requirement = user_request
+        if not raw_mission.created_at:
+            raw_mission.created_at = datetime.now(timezone.utc).isoformat()
+
+        # Tag with context budget and strategy
+        raw_mission.context_budget = self.context_budget
+        raw_mission.context_strategy = self.strategy.value
+
+        # Apply strategy-aware plan adjustments
+        mission = self.plan_adjuster.adjust(raw_mission)
 
         return mission
 
@@ -410,7 +435,7 @@ class MissionAdapter:
             progress_callback: Optional callback(event_type, data) for progress updates.
 
         Returns:
-            Execution summary dict with keys: mission_id, snapshot, success, error, mission.
+            Execution summary dict with keys: mission_id, snapshot, success, error, mission, metrics.
         """
         try:
             mission = await self._plan_mission(user_request)
@@ -422,6 +447,8 @@ class MissionAdapter:
                         "mission_id": mission.mission_id,
                         "title": mission.title,
                         "phases": [p.to_dict() for p in mission.phases],
+                        "strategy": self.strategy.value,
+                        "context_budget": self.context_budget,
                     },
                 )
 
@@ -439,6 +466,14 @@ class MissionAdapter:
             result = await self._orchestrator.run(mission)
             result["mission"] = mission.to_dict()
             result["success"] = result.get("snapshot", {}).get("status") == "completed"
+
+            # Collect strategy metrics
+            metrics = StrategyMetrics(self.strategy, self.context_budget)
+            metrics.total_tasks = len(mission.all_tasks())
+            metrics.total_phases = len(mission.phases)
+            result["metrics"] = metrics.to_dict()
+            result["strategy"] = self.strategy.value
+
             return result
 
         except asyncio.CancelledError:

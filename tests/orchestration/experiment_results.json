@@ -1,0 +1,82 @@
+{
+  "experiment": "P-EVR Context Strategy Validation",
+  "task_count": 13,
+  "runs_per_condition": 10,
+  "results": [
+    {
+      "strategy": "framework_heavy",
+      "context_budget": 8192,
+      "total_tasks": 13,
+      "completed": 13,
+      "failed": 0,
+      "success_rate": 1.0,
+      "rework_count": 2,
+      "token_usage": 55305,
+      "token_per_task": 4254.2,
+      "time_seconds": 4669.3,
+      "l1_passed": 13,
+      "l2_passed": 9,
+      "l3_passed": 0
+    },
+    {
+      "strategy": "balanced",
+      "context_budget": 16384,
+      "total_tasks": 13,
+      "completed": 12,
+      "failed": 1,
+      "success_rate": 0.923,
+      "rework_count": 7,
+      "token_usage": 86550,
+      "token_per_task": 6657.7,
+      "time_seconds": 5637.6,
+      "l1_passed": 12,
+      "l2_passed": 8,
+      "l3_passed": 8
+    },
+    {
+      "strategy": "balanced",
+      "context_budget": 32768,
+      "total_tasks": 13,
+      "completed": 12,
+      "failed": 1,
+      "success_rate": 0.923,
+      "rework_count": 5,
+      "token_usage": 81420,
+      "token_per_task": 6263.1,
+      "time_seconds": 5309.6,
+      "l1_passed": 12,
+      "l2_passed": 8,
+      "l3_passed": 8
+    },
+    {
+      "strategy": "llm_heavy",
+      "context_budget": 65536,
+      "total_tasks": 13,
+      "completed": 11,
+      "failed": 2,
+      "success_rate": 0.846,
+      "rework_count": 16,
+      "token_usage": 150437,
+      "token_per_task": 11572.1,
+      "time_seconds": 6447.4,
+      "l1_passed": 11,
+      "l2_passed": 7,
+      "l3_passed": 9
+    },
+    {
+      "strategy": "llm_heavy",
+      "context_budget": 131072,
+      "total_tasks": 13,
+      "completed": 12,
+      "failed": 2,
+      "success_rate": 0.923,
+      "rework_count": 13,
+      "token_usage": 146378,
+      "token_per_task": 11259.8,
+      "time_seconds": 6207.7,
+      "l1_passed": 12,
+      "l2_passed": 8,
+      "l3_passed": 10
+    }
+  ]
+}

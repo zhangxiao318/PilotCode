@@ -161,6 +161,8 @@ class Mission:
     phases: list[Phase] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
+    context_budget: int = 16000  # Total context window budget in tokens
+    context_strategy: str = "balanced"  # Strategy name (for serialization)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -170,6 +172,8 @@ class Mission:
             "phases": [p.to_dict() for p in self.phases],
             "metadata": self.metadata,
             "created_at": self.created_at,
+            "context_budget": self.context_budget,
+            "context_strategy": self.context_strategy,
         }
 
     @classmethod
@@ -181,6 +185,8 @@ class Mission:
             phases=[Phase.from_dict(p) for p in data.get("phases", [])],
             metadata=data.get("metadata", {}),
             created_at=data.get("created_at", ""),
+            context_budget=data.get("context_budget", 16000),
+            context_strategy=data.get("context_strategy", "balanced"),
         )
 
     def all_tasks(self) -> list[TaskSpec]:

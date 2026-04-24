@@ -15,6 +15,7 @@
 | **自动审查与测试** | 编码后自动 Review + 测试 + 修复 | ✅ 完整 |
 | **错误恢复与重试** | 容错与降级 | ✅ 完整 |
 | **会话管理** | 对话持久化与恢复 | ✅ 完整 |
+| **P-EVR 任务编排** | Plan-Execute-Verify-Reflect 闭环 | ✅ 核心骨架 |
 
 ---
 
@@ -25,6 +26,7 @@
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
 | [agent-system.md](./agent-system.md) | Agent 编排系统 | 复杂任务分解、多代理协作 |
+| [p-evr-task-orchestration.md](./p-evr-task-orchestration.md) | P-EVR 任务编排 | 结构化任务分解、DAG执行、三级验证 |
 | [hook-system.md](./hook-system.md) | 生命周期 Hook | 扩展系统行为、自定义验证 |
 
 ### 代码智能
