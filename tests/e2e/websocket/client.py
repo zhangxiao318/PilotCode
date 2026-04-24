@@ -245,20 +245,24 @@ class PilotCodeWebSocketClient:
 
             elif msg_type == "user_question_request":
                 # Auto-reply to server-side AskUser prompts so tests don't hang
-                await self._send({
-                    "type": "user_question_response",
-                    "request_id": msg.get("request_id", ""),
-                    "response": "yes",
-                })
+                await self._send(
+                    {
+                        "type": "user_question_response",
+                        "request_id": msg.get("request_id", ""),
+                        "response": "yes",
+                    }
+                )
 
             elif msg_type == "permission_request":
                 # Auto-approve all tool permissions so tests don't hang
-                await self._send({
-                    "type": "permission_response",
-                    "request_id": msg.get("request_id", ""),
-                    "granted": True,
-                    "for_session": True,
-                })
+                await self._send(
+                    {
+                        "type": "permission_response",
+                        "request_id": msg.get("request_id", ""),
+                        "granted": True,
+                        "for_session": True,
+                    }
+                )
 
             elif msg_type == "system":
                 result.system_messages.append(msg.get("content", ""))

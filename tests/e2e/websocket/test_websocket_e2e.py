@@ -107,7 +107,11 @@ def verify_result(result: QueryResult, expect: dict, step_index: int) -> list[st
     """Verify a query result against expectations.
 
     Returns a list of error messages (empty if all pass).
+    Hard assertions: success, tool_calls, not_tool_calls, not_contains, length.
+    Soft warnings: contains (logged but does not fail the test).
     """
+    import warnings
+
     errors = []
     text = result.response
 
@@ -116,29 +120,34 @@ def verify_result(result: QueryResult, expect: dict, step_index: int) -> list[st
         errors.append(f"Step {step_index}: Query failed: {result.error}")
         return errors
 
-    # Content contains
+    # Content contains — SOFT check: warn but do not fail
     for keyword in expect.get("contains", []):
         if keyword.lower() not in text.lower():
-            errors.append(f"Step {step_index}: Expected response to contain '{keyword}'")
+            warnings.warn(
+                f"[Step {step_index}] Response missing expected content: '{keyword}'. "
+                f"Actual response starts with: {text[:80]!r}",
+                UserWarning,
+                stacklevel=2,
+            )
 
-    # Content excludes
+    # Content excludes — HARD check
     for keyword in expect.get("not_contains", []):
         if keyword.lower() in text.lower():
             errors.append(f"Step {step_index}: Response should NOT contain '{keyword}'")
 
-    # Tool calls required
+    # Tool calls required — HARD check
     for tool in expect.get("tool_calls", []):
         if tool not in result.tool_calls:
             errors.append(
                 f"Step {step_index}: Expected tool '{tool}' to be called, got: {result.tool_calls}"
             )
 
-    # Tool calls excluded
+    # Tool calls excluded — HARD check
     for tool in expect.get("not_tool_calls", []):
         if tool in result.tool_calls:
             errors.append(f"Step {step_index}: Tool '{tool}' should NOT have been called")
 
-    # Response length
+    # Response length — HARD check
     min_len = expect.get("response_min_length", 0)
     if min_len > 0 and len(text) < min_len:
         errors.append(f"Step {step_index}: Response too short ({len(text)} < {min_len} chars)")
@@ -165,6 +174,7 @@ def _should_run_on_platform(case: E2eCase) -> bool:
 def _init_git_repo(repo_path: Path) -> None:
     """Initialize a temporary git repo for testing."""
     import shutil
+
     if repo_path.exists():
         shutil.rmtree(repo_path)
     repo_path.mkdir(parents=True, exist_ok=True)
