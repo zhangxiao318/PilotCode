@@ -319,6 +319,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         Supports formats like:
           <tool_call><function=Bash><parameter=command>ls</parameter></function></tool_call>
           <tool_call><name>Bash</name><arguments>{"command":"ls"}</arguments></tool_call>
+          <function=Bash><parameter=command>cd</parameter></tool_call>  (incomplete)
 
         Returns list of dicts with 'name' and 'arguments' keys.
         """
@@ -353,6 +354,29 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                 if tool_name:
                     tool_calls.append({"name": tool_name, "arguments": arguments})
 
+        # Pattern 3: Incomplete/flaky XML without <tool_call> wrapper or missing closing tags
+        # e.g. <function=Bash> <parameter=command> cd </tool_call>
+        if not tool_calls:
+            pattern3 = r"<function=(\w+)>\s*(.*?)\s*</tool_call>"
+            for match in re.finditer(pattern3, content, re.DOTALL):
+                tool_name = match.group(1)
+                params_block = match.group(2)
+
+                arguments: dict[str, Any] = {}
+                # Try <parameter=key>value</parameter> first
+                param_pattern = r"<parameter=(\w+)>(.*?)(?:</parameter>|\s*</tool_call>|$)"
+                for pmatch in re.finditer(param_pattern, params_block, re.DOTALL):
+                    arguments[pmatch.group(1)] = pmatch.group(2).strip()
+
+                # Also try bare key=value pairs inside
+                if not arguments:
+                    kv_pattern = r"(\w+)\s*=\s*([^\s<]+|<[^>]+>)"
+                    for kvmatch in re.finditer(kv_pattern, params_block):
+                        arguments[kvmatch.group(1)] = kvmatch.group(2).strip()
+
+                if tool_name:
+                    tool_calls.append({"name": tool_name, "arguments": arguments})
+
         return tool_calls
 
     def _remove_xml_tool_calls(self, content: str) -> str:
@@ -367,6 +391,13 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         # Pattern 2
         cleaned = re.sub(
             r"<tool_call>\s*<name>\w+</name>\s*<arguments>.*?</arguments>\s*</tool_call>",
+            "",
+            cleaned,
+            flags=re.DOTALL,
+        )
+        # Pattern 3: incomplete XML without wrapper
+        cleaned = re.sub(
+            r"<function=\w+>\s*.*?\s*</tool_call>",
             "",
             cleaned,
             flags=re.DOTALL,
