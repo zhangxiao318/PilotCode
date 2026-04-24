@@ -174,8 +174,8 @@ class ContextStrategySelector:
     """
 
     # Thresholds (in tokens)
-    SHORT_CTX_THRESHOLD = 12_000   # <= 12K: FRAMEWORK_HEAVY
-    LONG_CTX_THRESHOLD = 48_000    # > 48K: LLM_HEAVY
+    SHORT_CTX_THRESHOLD = 12_000  # <= 12K: FRAMEWORK_HEAVY
+    LONG_CTX_THRESHOLD = 48_000  # > 48K: LLM_HEAVY
 
     @classmethod
     def select(cls, context_budget: int) -> ContextStrategy:
@@ -195,7 +195,9 @@ class ContextStrategySelector:
             return ContextStrategy.LLM_HEAVY
 
     @classmethod
-    def get_config(cls, strategy: ContextStrategy | None = None, context_budget: int | None = None) -> StrategyConfig:
+    def get_config(
+        cls, strategy: ContextStrategy | None = None, context_budget: int | None = None
+    ) -> StrategyConfig:
         """Get configuration for a strategy.
 
         Args:

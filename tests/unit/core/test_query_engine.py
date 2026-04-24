@@ -107,7 +107,8 @@ class TestQueryEngineTokenCount:
     def test_count_tokens_empty(self, query_engine):
         """Test token count with no messages."""
         count = query_engine.count_tokens()
-        assert count == 0
+        # count_tokens now includes system prompt + tools, so it's > 0 even with no messages
+        assert count > 0
 
     def test_count_tokens_with_messages(self, query_engine):
         """Test token count with messages."""

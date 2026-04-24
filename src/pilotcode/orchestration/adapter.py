@@ -195,11 +195,28 @@ class MissionAdapter:
             raise ValueError("LLM returned an empty plan")
 
         plan_data = self._extract_json(accumulated)
+
+        # Ensure required keys exist before from_dict (LLM may omit fields)
+        if "mission_id" not in plan_data:
+            plan_data["mission_id"] = (
+                f"mission_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            )
+        if "title" not in plan_data:
+            plan_data["title"] = user_request[:80]
+        if "requirement" not in plan_data:
+            plan_data["requirement"] = user_request
+        if "phases" not in plan_data:
+            plan_data["phases"] = []
+        if "created_at" not in plan_data:
+            plan_data["created_at"] = datetime.now(timezone.utc).isoformat()
+
         raw_mission = Mission.from_dict(plan_data)
 
         # Ensure mission_id is set
         if not raw_mission.mission_id:
-            raw_mission.mission_id = f"mission_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            raw_mission.mission_id = (
+                f"mission_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            )
         if not raw_mission.title:
             raw_mission.title = user_request[:80]
         if not raw_mission.requirement:
@@ -307,9 +324,13 @@ class MissionAdapter:
             else self.DEFAULT_TURN_LIMITS.get(complexity, 20)
         )
 
+        # Exclude interactive/blocking tools from autonomous workers
+        excluded_tools = {"AskUser", "ask", "question"}
+        autonomous_tools = [t for t in get_all_tools() if t.name not in excluded_tools]
+
         config = QueryEngineConfig(
             cwd=app_state.cwd,
-            tools=get_all_tools(),
+            tools=autonomous_tools,
             get_app_state=store.get_state,
             set_app_state=store.set_state,
             max_turns=max(5, max_turns // 2),  # QueryEngine internal budget
@@ -342,7 +363,9 @@ class MissionAdapter:
                         )
                     msg = result.message
                     if hasattr(msg, "content") and msg.content and result.is_complete:
-                        final_content = str(msg.content)
+                        from pilotcode.tools.bash_tool import strip_ansi
+
+                        final_content = strip_ansi(str(msg.content))
                     if isinstance(msg, ToolUseMessage):
                         pending_tools.append(msg)
 

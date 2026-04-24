@@ -414,6 +414,12 @@ def main(
         "--planning/--no-planning",
         help="Enable automatic planning mode for complex tasks (default: True)",
     ),
+    restore: bool = typer.Option(
+        False, "--restore", "-r", help="Restore the most recent session on startup"
+    ),
+    session_id: str | None = typer.Option(
+        None, "--session", "-s", help="Restore a specific session by ID"
+    ),
 ):
     """PilotCode - Python rewrite of Claude Code."""
 
@@ -542,7 +548,16 @@ def main(
         # Launch Enhanced TUI v2 (default)
         from .tui_v2.app import EnhancedApp
 
-        app_tui = EnhancedApp(auto_allow=auto_allow, max_iterations=max_iterations)
+        session_options = {
+            "restore": restore,
+            "session_id": session_id,
+            "cwd": cwd,
+        }
+        app_tui = EnhancedApp(
+            auto_allow=auto_allow,
+            max_iterations=max_iterations,
+            session_options=session_options,
+        )
         try:
             app_tui.run()
         except KeyboardInterrupt:

@@ -98,8 +98,8 @@ class QueryEngine:
         else:
             self._tool_orchestrator = None
 
-        # Compaction tracking
-        self._last_compaction_message_count = 0
+        # Compaction tracking (token-based cooldown is more reliable)
+        self._last_compaction_token_count: int = 0
         self._compaction_count = 0
 
         # Post-edit review tracking
@@ -145,10 +145,19 @@ class QueryEngine:
             context_lines.append(
                 "- **Command Notes**: Use Windows commands (e.g., `dir`, `cd`, `type`)"
             )
+            context_lines.append(
+                "- **IMPORTANT**: Each Bash/PowerShell call runs in a separate subprocess. "
+                "`cd` changes ARE tracked across calls, including compound commands like "
+                "`cd .. && cd test`. The current directory shown above is persistent."
+            )
         else:
             shell = os.environ.get("SHELL", "/bin/bash")
             context_lines.append(f"- **Default Shell**: {shell}")
             context_lines.append("- **Command Notes**: Use Unix commands (e.g., `ls`, `cd`, `cat`)")
+            context_lines.append(
+                "- **IMPORTANT**: Each Bash call runs in a separate subprocess. "
+                "`cd` changes ARE tracked across calls. The current directory shown above is persistent."
+            )
 
         return "\n".join(context_lines)
 
@@ -804,6 +813,37 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                         self._changed_files.append(file_path)
                     break
 
+        # Dynamic truncation based on available context budget.
+        # This is the primary gatekeeper: tool layer only has a loose memory safety cap.
+        if isinstance(content, str) and self.config.context_window > 0:
+            tokens_before = self.count_tokens()
+            ratio = tokens_before / self.config.context_window
+
+            if ratio < 0.5:
+                # Plenty of room: allow up to 20 % of total context
+                max_tool_tokens = int(self.config.context_window * 0.20)
+            elif ratio < 0.8:
+                # Getting tight: allow half of remaining space
+                max_tool_tokens = max(
+                    2_000, int((self.config.context_window - tokens_before) * 0.5)
+                )
+            elif ratio < 1.0:
+                # Very tight: keep tool result small
+                max_tool_tokens = 2_000
+            else:
+                # Already over budget: emergency micro-cap
+                max_tool_tokens = 500
+
+            # Rough chars-per-token estimate (~3.5 for mixed content)
+            max_chars = max(500, int(max_tool_tokens * 3.5))
+
+            if len(content) > max_chars:
+                truncated = len(content) - max_chars
+                content = (
+                    content[:max_chars]
+                    + f"\n\n[...truncated {truncated} chars; exceeds context budget ({max_tool_tokens} tokens allowed)]"
+                )
+
         tool_result_msg = ToolResultMessage(
             tool_use_id=tool_use_id, content=content, is_error=is_error
         )
@@ -826,8 +866,16 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         """Count tokens in current conversation.
 
         Uses the token estimator service for accurate counting.
+        Includes system prompt and tool definitions for accuracy.
         """
-        api_messages = []
+        total = 0
+
+        # Count system prompt (always sent on first message, or prepended)
+        system_msg = self._build_system_message()
+        total += self._token_estimator.estimate(system_msg.content)
+        total += 4  # message overhead
+
+        # Count conversation messages
         for m in self.messages:
             # Get content based on message type
             if hasattr(m, "content"):
@@ -838,9 +886,24 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             else:
                 content = str(m)
 
-            api_messages.append({"role": getattr(m, "type", "unknown"), "content": content})
+            total += self._token_estimator.estimate(content)
+            total += 4  # message overhead
 
-        return self._token_estimator.estimate_messages(api_messages)
+        # Count tool definitions (sent with every request if tools enabled)
+        tools = self.config.tools if self.config.tools else []
+        if tools:
+            for tool in tools:
+                # Rough estimate: tool schema is typically 200-2000 tokens
+                # Use JSON serialization length as proxy
+                try:
+                    import json
+
+                    schema = json.dumps(tool, ensure_ascii=False)
+                    total += self._token_estimator.estimate(schema)
+                except Exception:
+                    total += 500  # fallback estimate per tool
+
+        return total
 
     def get_token_budget(self) -> dict[str, Any]:
         """Get current token budget status."""
@@ -910,17 +973,20 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
         token_count = self.count_tokens()
         threshold = int(self.config.context_window * 0.8)
+        critical = int(self.config.context_window * 0.95)
         if token_count < threshold:
             return False
 
-        # Cooldown: don't re-compact if no new messages since last compaction
-        current_msg_count = len(self.messages)
-        if current_msg_count <= self._last_compaction_message_count:
-            return False
+        # Cooldown: don't re-compact if token count hasn't grown since last compaction
+        # (token-based cooldown is more reliable than message-count-based)
+        # EXCEPTION: always compact if we're over critical threshold or context window
+        if token_count <= getattr(self, "_last_compaction_token_count", 0):
+            if token_count < critical:
+                return False
 
         # DEBUG: print actual values when compaction is triggered
         print(
-            f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} context_window={self.config.context_window} msg_count={current_msg_count} last_compacted_at={self._last_compaction_message_count}"
+            f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} critical={critical} context_window={self.config.context_window} msg_count={len(self.messages)}"
         )
 
         tokens_before = self.count_tokens()
@@ -941,17 +1007,58 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                             "fallback": False,
                         },
                     )
-                self._last_compaction_message_count = len(self.messages)
+                self._last_compaction_token_count = self.count_tokens()
                 return True
 
-        # Fallback: if still over threshold, use simple compaction
-        threshold = int(self.config.context_window * 0.8)
+        # Fallback 1: simple compaction (keep system + recent)
         if self.count_tokens() < threshold:
             return False
 
-        compressed = self._context_compressor.simple_compact(self.messages, keep_recent=6)
+        keep_recent = 4 if token_count > critical else 6
+        compressed = self._context_compressor.simple_compact(self.messages, keep_recent=keep_recent)
+        did_compact = False
         if len(compressed) < len(self.messages):
             self.messages = compressed
+            did_compact = True
+
+        # Fallback 2: if still over critical threshold, aggressive truncation
+        # Keep only last 2 messages (emergency measure; system prompt is injected dynamically)
+        if self.count_tokens() > critical and len(self.messages) > 3:
+            self.messages = self.messages[-2:]
+            did_compact = True
+
+        # Fallback 3: if still over threshold, truncate message content
+        if self.count_tokens() > threshold:
+            from .types.message import UserMessage, AssistantMessage, ToolResultMessage
+
+            # When we have very few messages but massive tokens, the huge content
+            # is likely in the most recent message. In critical mode with <=3 msgs,
+            # we must be willing to truncate even the most recent message.
+            allow_truncate_recent = len(self.messages) <= 3 and self.count_tokens() > critical
+
+            for i, msg in enumerate(self.messages):
+                # Skip the most recent message unless we're in critical emergency mode
+                if i >= len(self.messages) - 1 and not allow_truncate_recent:
+                    continue
+                content = getattr(msg, "content", "")
+                text = content if isinstance(content, str) else str(content)
+                if len(text) > 2000:
+                    truncated_text = text[:1500] + f"\n\n[...truncated from {len(text)} chars]"
+                    if isinstance(msg, UserMessage):
+                        self.messages[i] = UserMessage(content=truncated_text)
+                        did_compact = True
+                    elif isinstance(msg, AssistantMessage):
+                        self.messages[i] = AssistantMessage(content=truncated_text)
+                        did_compact = True
+                    elif isinstance(msg, ToolResultMessage):
+                        self.messages[i] = ToolResultMessage(
+                            tool_use_id=msg.tool_use_id,
+                            content=truncated_text,
+                            is_error=msg.is_error,
+                        )
+                        did_compact = True
+
+        if did_compact:
             tokens_after = self.count_tokens()
             if self.config.on_notify:
                 self.config.on_notify(
@@ -965,8 +1072,9 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                         "fallback": True,
                     },
                 )
-            self._last_compaction_message_count = len(self.messages)
+            self._last_compaction_token_count = self.count_tokens()
             return True
+
         return False
 
     def intelligent_compact(self) -> dict[str, Any]:

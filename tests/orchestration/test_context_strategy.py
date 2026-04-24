@@ -26,10 +26,10 @@ from pilotcode.orchestration.task_spec import (
     AcceptanceCriterion,
 )
 
-
 # =============================================================================
 # ContextStrategySelector Tests
 # =============================================================================
+
 
 class TestContextStrategySelector:
     """Tests for strategy selection based on context budget."""
@@ -75,6 +75,7 @@ class TestContextStrategySelector:
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def sample_mission() -> Mission:
@@ -139,6 +140,7 @@ def sample_mission() -> Mission:
 # MissionPlanAdjuster Tests
 # =============================================================================
 
+
 class TestMissionPlanAdjuster:
     """Tests for plan adjustment based on strategy."""
 
@@ -148,9 +150,9 @@ class TestMissionPlanAdjuster:
         adjusted = adjuster.adjust(sample_mission)
 
         for task in adjusted.all_tasks():
-            assert task.estimated_complexity.value <= ComplexityLevel.MODERATE.value, (
-                f"Task {task.id} complexity {task.estimated_complexity} exceeds MODERATE"
-            )
+            assert (
+                task.estimated_complexity.value <= ComplexityLevel.MODERATE.value
+            ), f"Task {task.id} complexity {task.estimated_complexity} exceeds MODERATE"
 
     def test_framework_heavy_limits_max_lines(self, sample_mission: Mission) -> None:
         """FRAMEWORK_HEAVY enforces max_lines <= 150."""
@@ -159,9 +161,9 @@ class TestMissionPlanAdjuster:
 
         for task in adjusted.all_tasks():
             assert task.constraints.max_lines is not None
-            assert task.constraints.max_lines <= 150, (
-                f"Task {task.id} max_lines {task.constraints.max_lines} exceeds 150"
-            )
+            assert (
+                task.constraints.max_lines <= 150
+            ), f"Task {task.id} max_lines {task.constraints.max_lines} exceeds 150"
 
     def test_framework_heavy_reduces_context_budget(self, sample_mission: Mission) -> None:
         """FRAMEWORK_HEAVY sets per-task context budget to 6K."""
@@ -169,9 +171,9 @@ class TestMissionPlanAdjuster:
         adjusted = adjuster.adjust(sample_mission)
 
         for task in adjusted.all_tasks():
-            assert task.context_budget == 6000, (
-                f"Task {task.id} context_budget {task.context_budget} != 6000"
-            )
+            assert (
+                task.context_budget == 6000
+            ), f"Task {task.id} context_budget {task.context_budget} != 6000"
 
     def test_llm_heavy_preserves_high_complexity(self, sample_mission: Mission) -> None:
         """LLM_HEAVY does not cap complexity."""
@@ -189,9 +191,9 @@ class TestMissionPlanAdjuster:
 
         for task in adjusted.all_tasks():
             if task.constraints.max_lines is not None:
-                assert task.constraints.max_lines <= 500, (
-                    f"Task {task.id} max_lines {task.constraints.max_lines} exceeds 500"
-                )
+                assert (
+                    task.constraints.max_lines <= 500
+                ), f"Task {task.id} max_lines {task.constraints.max_lines} exceeds 500"
 
     def test_llm_heavy_increases_context_budget(self, sample_mission: Mission) -> None:
         """LLM_HEAVY sets per-task context budget to 56K."""
@@ -199,9 +201,9 @@ class TestMissionPlanAdjuster:
         adjusted = adjuster.adjust(sample_mission)
 
         for task in adjusted.all_tasks():
-            assert task.context_budget == 56000, (
-                f"Task {task.id} context_budget {task.context_budget} != 56000"
-            )
+            assert (
+                task.context_budget == 56000
+            ), f"Task {task.id} context_budget {task.context_budget} != 56000"
 
     def test_balanced_middle_ground(self, sample_mission: Mission) -> None:
         """BALANCED is between the two extremes."""
@@ -268,6 +270,7 @@ class TestMissionPlanAdjuster:
 # StrategyConfig Tests
 # =============================================================================
 
+
 class TestStrategyConfig:
     """Tests for strategy configuration parameters."""
 
@@ -279,7 +282,11 @@ class TestStrategyConfig:
 
         assert fh.max_tasks_per_phase < bal.max_tasks_per_phase <= lh.max_tasks_per_phase
         assert fh.max_files_per_task < bal.max_files_per_task <= lh.max_files_per_task
-        assert fh.max_task_objective_tokens < bal.max_task_objective_tokens <= lh.max_task_objective_tokens
+        assert (
+            fh.max_task_objective_tokens
+            < bal.max_task_objective_tokens
+            <= lh.max_task_objective_tokens
+        )
         assert fh.max_rework_attempts <= bal.max_rework_attempts <= lh.max_rework_attempts
 
     def test_l3_enabled_for_balanced_and_llm(self) -> None:
@@ -304,6 +311,7 @@ class TestStrategyConfig:
 # =============================================================================
 # StrategyMetrics Tests
 # =============================================================================
+
 
 class TestStrategyMetrics:
     """Tests for strategy metrics collection."""

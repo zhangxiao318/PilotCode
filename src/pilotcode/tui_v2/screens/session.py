@@ -89,10 +89,17 @@ class SessionScreen(Screen):
 
     sidebar_visible: reactive[bool] = reactive(False)
 
-    def __init__(self, auto_allow: bool = False, max_iterations: int = 50, **kwargs):
+    def __init__(
+        self,
+        auto_allow: bool = False,
+        max_iterations: int = 50,
+        session_options: dict | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.auto_allow = auto_allow
         self.max_iterations = max_iterations
+        self.session_options = session_options or {}
         self.controller: TUIController | None = None
         self.message_list: HybridMessageList | None = None
         self.prompt: PromptWithMode | None = None
@@ -134,11 +141,61 @@ class SessionScreen(Screen):
     def on_mount(self):
         """Called when screen is mounted."""
         self._init_controller()
-        self._show_welcome()
+
+        # Restore UI messages from session if any
+        if self.controller and self.controller.query_engine.messages:
+            self._restore_ui_messages()
+        else:
+            self._show_welcome()
+
+        # Update status bar with session info
+        if self.status_bar and self.controller and self.controller._session_id:
+            self.status_bar.set_session_id(self.controller._session_id)
 
         # Focus prompt
         if self.prompt:
             self.prompt.prompt_input.focus()
+
+    def _restore_ui_messages(self):
+        """Render restored session messages into the UI."""
+        if not self.controller or not self.message_list:
+            return
+        from pilotcode.types.message import (
+            UserMessage,
+            AssistantMessage,
+            ToolUseMessage,
+            ToolResultMessage,
+        )
+
+        for msg in self.controller.query_engine.messages:
+            if isinstance(msg, UserMessage):
+                self.message_list.add_message(
+                    UIMessage(type=UIMessageType.USER, content=msg.content, is_complete=True)
+                )
+            elif isinstance(msg, AssistantMessage):
+                self.message_list.add_message(
+                    UIMessage(
+                        type=UIMessageType.ASSISTANT, content=msg.content or "", is_complete=True
+                    )
+                )
+            elif isinstance(msg, ToolUseMessage):
+                self.message_list.add_message(
+                    UIMessage(
+                        type=UIMessageType.TOOL_USE,
+                        content=msg.name,
+                        metadata={"tool_name": msg.name, "tool_input": msg.input},
+                        is_complete=True,
+                    )
+                )
+            elif isinstance(msg, ToolResultMessage):
+                content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                self.message_list.add_message(
+                    UIMessage(
+                        type=UIMessageType.TOOL_RESULT,
+                        content=content[:500] + "..." if len(content) > 500 else content,
+                        is_complete=True,
+                    )
+                )
 
     def _init_controller(self):
         """Initialize the controller."""
@@ -153,6 +210,7 @@ class SessionScreen(Screen):
             set_app_state=lambda f: store.set_state(f) if store else None,
             auto_allow=self.auto_allow,
             max_iterations=self.max_iterations,
+            session_options=self.session_options,
         )
 
         # Set permission callback
@@ -226,6 +284,12 @@ class SessionScreen(Screen):
             self._processing = False
             if self.status_bar:
                 self.status_bar.set_processing(False)
+            # Auto-save session after each exchange
+            if self.controller:
+                self.controller._auto_save()
+                # Update status bar with session info
+                if self.status_bar and self.controller._session_id:
+                    self.status_bar.set_session_id(self.controller._session_id)
 
     async def _handle_command(self, text: str):
         """Handle slash commands using the command registry."""

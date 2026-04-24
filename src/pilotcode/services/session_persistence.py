@@ -388,6 +388,18 @@ class SessionPersistence:
             print(f"Error exporting session: {e}")
             return False
 
+    def get_last_session(self, project_path: str | None = None) -> SessionMetadata | None:
+        """Get the most recently updated session.
+
+        Args:
+            project_path: Optional filter by project path
+
+        Returns:
+            Most recent SessionMetadata or None if no sessions exist
+        """
+        sessions = self.list_sessions(project_path=project_path)
+        return sessions[0] if sessions else None
+
 
 # Global instance
 _persistence: SessionPersistence | None = None
@@ -419,3 +431,8 @@ def load_session(session_id: str) -> tuple[list[Message], dict] | None:
 def list_sessions(project_path: str | None = None) -> list[SessionMetadata]:
     """Convenience function to list sessions."""
     return get_session_persistence().list_sessions(project_path)
+
+
+def get_last_session(project_path: str | None = None) -> SessionMetadata | None:
+    """Convenience function to get the most recent session."""
+    return get_session_persistence().get_last_session(project_path)

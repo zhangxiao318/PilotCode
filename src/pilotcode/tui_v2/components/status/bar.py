@@ -36,12 +36,14 @@ class StatusBar(Static):
     status_text: reactive[str] = reactive("")
     is_processing: reactive[bool] = reactive(False)
     token_count: reactive[int] = reactive(0)
+    session_id: reactive[str] = reactive("")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._left_text = ""
         self._center_text = ""
         self._right_text = ""
+        self._session_id = ""
 
     def watch_is_processing(self, processing: bool):
         """React to processing state changes."""
@@ -56,6 +58,15 @@ class StatusBar(Static):
         """React to status text changes."""
         self._center_text = text
         self._update_display()
+
+    def watch_session_id(self, sid: str):
+        """React to session ID changes."""
+        self._session_id = sid
+        self._update_display()
+
+    def set_session_id(self, sid: str):
+        """Set session ID."""
+        self.session_id = sid
 
     def set_status(self, text: str):
         """Set status text."""
@@ -90,6 +101,8 @@ class StatusBar(Static):
     def _get_right_text(self) -> str:
         """Get right status text."""
         parts = []
+        if self._session_id:
+            parts.append(f"📝 {self._session_id}")
         if self.token_count > 0:
             parts.append(f"📊 {self.token_count} tokens")
         parts.append("/help for commands")

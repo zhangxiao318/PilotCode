@@ -44,6 +44,7 @@ random.seed(42)
 # Simulation Models
 # =============================================================================
 
+
 @dataclass
 class SimulatedTask:
     """A task with simulation parameters."""
@@ -185,6 +186,7 @@ def build_mission_from_tasks(tasks: list[SimulatedTask]) -> Mission:
 # Simulation Logic
 # =============================================================================
 
+
 def simulate_task_execution(
     task: SimulatedTask,
     strategy: ContextStrategy,
@@ -248,14 +250,16 @@ def simulate_task_execution(
     # Rework simulation
     if not success:
         # Failure triggers rework
-        max_rework = {ContextStrategy.FRAMEWORK_HEAVY: 2, ContextStrategy.BALANCED: 3, ContextStrategy.LLM_HEAVY: 5}[
-            strategy
-        ]
+        max_rework = {
+            ContextStrategy.FRAMEWORK_HEAVY: 2,
+            ContextStrategy.BALANCED: 3,
+            ContextStrategy.LLM_HEAVY: 5,
+        }[strategy]
         rework_count = 0
         for _ in range(max_rework):
             rework_count += 1
             # Each rework has diminishing success probability
-            rework_success = adjusted_success * (0.7 ** rework_count)
+            rework_success = adjusted_success * (0.7**rework_count)
             if random.random() < rework_success:
                 success = True
                 token_usage += int(token_usage * 0.5 * rework_count)
@@ -293,7 +297,9 @@ def run_experiment(
                     name=task_spec.title,
                     base_complexity=adj_complexity,
                     required_files=min(orig.required_files, config.max_files_per_task),
-                    estimated_lines=min(orig.estimated_lines, task_spec.constraints.max_lines or 9999),
+                    estimated_lines=min(
+                        orig.estimated_lines, task_spec.constraints.max_lines or 9999
+                    ),
                 )
             )
 
@@ -351,6 +357,7 @@ def run_experiment(
 # Report Generation
 # =============================================================================
 
+
 def print_report(results: list[SimResult]) -> None:
     """Print formatted experiment report."""
     print("=" * 80)
@@ -363,11 +370,15 @@ def print_report(results: list[SimResult]) -> None:
     print("  2. Long context (64K+): LLM-heavy approach is more token-efficient")
     print("     while maintaining high success rate")
     print()
-    print("Benchmark: 12 realistic coding tasks (4 simple + 3 moderate + 3 complex + 2 very complex)")
+    print(
+        "Benchmark: 12 realistic coding tasks (4 simple + 3 moderate + 3 complex + 2 very complex)"
+    )
     print("Runs per condition: 10 (averaged)")
     print()
     print("-" * 80)
-    print(f"{'Context':>10} {'Strategy':>16} {'Tasks':>6} {'Success':>8} {'Rate':>7} {'Rework':>7} {'Tokens':>10} {'Token/τ':>9} {'Time(s)':>9}")
+    print(
+        f"{'Context':>10} {'Strategy':>16} {'Tasks':>6} {'Success':>8} {'Rate':>7} {'Rework':>7} {'Tokens':>10} {'Token/τ':>9} {'Time(s)':>9}"
+    )
     print("-" * 80)
 
     for r in results:
@@ -391,17 +402,25 @@ def print_report(results: list[SimResult]) -> None:
 
         # Finding 1: Success rate comparison
         if short.success_rate() > long.success_rate() * 0.8:
-            print(f"  ✓ FINDING 1: FRAMEWORK_HEAVY ({short.success_rate():.1%}) maintains comparable")
-            print(f"    success to LLM_HEAVY ({long.success_rate():.1%}) despite 8x smaller context")
+            print(
+                f"  ✓ FINDING 1: FRAMEWORK_HEAVY ({short.success_rate():.1%}) maintains comparable"
+            )
+            print(
+                f"    success to LLM_HEAVY ({long.success_rate():.1%}) despite 8x smaller context"
+            )
         else:
             print(f"  ⚠ FINDING 1: Success rate gap is significant")
-            print(f"    FRAMEWORK_HEAVY: {short.success_rate():.1%} vs LLM_HEAVY: {long.success_rate():.1%}")
+            print(
+                f"    FRAMEWORK_HEAVY: {short.success_rate():.1%} vs LLM_HEAVY: {long.success_rate():.1%}"
+            )
 
         print()
 
         # Finding 2: Token efficiency
         if long.token_per_task() < short.token_per_task():
-            print(f"  ✓ FINDING 2: LLM_HEAVY is more token-efficient ({long.token_per_task():.0f} τ/task)")
+            print(
+                f"  ✓ FINDING 2: LLM_HEAVY is more token-efficient ({long.token_per_task():.0f} τ/task)"
+            )
             print(f"    than FRAMEWORK_HEAVY ({short.token_per_task():.0f} τ/task)")
             print(f"    Savings: {1 - long.token_per_task()/short.token_per_task():.1%}")
         else:
@@ -455,6 +474,7 @@ def export_results(results: list[SimResult], path: str) -> None:
 # =============================================================================
 # Main
 # =============================================================================
+
 
 def main() -> None:
     """Run the full experiment suite."""

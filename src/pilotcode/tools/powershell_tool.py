@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
-from .bash_tool import _update_cwd_from_cd
+from .bash_tool import _update_cwd_from_cd, strip_ansi
 
 
 class PowerShellInput(BaseModel):
@@ -44,6 +44,12 @@ async def execute_powershell(
     else:
         ps_executable = "powershell.exe"
 
+    # Disable ANSI color output in PowerShell 7+
+    # Prepend the color-disabling command to the user's command
+    wrapped_command = (
+        f"$PSStyle.OutputRendering = 'PlainText'; {command}" if is_windows() else command
+    )
+
     try:
         # Hide window on Windows
         import subprocess
@@ -57,7 +63,7 @@ async def execute_powershell(
         process = await asyncio.create_subprocess_exec(
             ps_executable,
             "-Command",
-            command,
+            wrapped_command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
@@ -66,9 +72,25 @@ async def execute_powershell(
 
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
 
+        stdout_text = strip_ansi(stdout.decode("utf-8", errors="replace"))
+        stderr_text = strip_ansi(stderr.decode("utf-8", errors="replace"))
+
+        # Hard safety cap: prevent a single command from exhausting system memory.
+        # Context-window-aware truncation is handled by QueryEngine.add_tool_result().
+        MEMORY_CAP_CHARS = 200_000
+
+        if len(stdout_text) > MEMORY_CAP_CHARS:
+            truncated = len(stdout_text) - MEMORY_CAP_CHARS
+            stdout_text = stdout_text[:MEMORY_CAP_CHARS]
+            stdout_text += f"\n\n[...truncated {truncated} chars; total output was too large]"
+        if len(stderr_text) > MEMORY_CAP_CHARS:
+            truncated = len(stderr_text) - MEMORY_CAP_CHARS
+            stderr_text = stderr_text[:MEMORY_CAP_CHARS]
+            stderr_text += f"\n\n[...truncated {truncated} chars; total stderr was too large]"
+
         return PowerShellOutput(
-            stdout=stdout.decode("utf-8", errors="replace"),
-            stderr=stderr.decode("utf-8", errors="replace"),
+            stdout=stdout_text,
+            stderr=stderr_text,
             exit_code=process.returncode or 0,
             command=command,
         )
@@ -107,6 +129,15 @@ async def powershell_call(
     # Track directory changes from cd/Set-Location commands
     if context.set_app_state and result.exit_code == 0:
         _update_cwd_from_cd(input_data.command, cwd, context.set_app_state)
+
+    # Append persistent CWD info so the LLM knows the actual working directory
+    if context.get_app_state:
+        app_state = context.get_app_state()
+        persistent_cwd = getattr(app_state, "cwd", cwd or os.getcwd())
+        if persistent_cwd != cwd:
+            result.stderr += f"\n[NOTE: Persistent working directory is now: {persistent_cwd}]"
+        else:
+            result.stderr += f"\n[NOTE: Working directory: {persistent_cwd}]"
 
     return ToolResult(data=result)
 

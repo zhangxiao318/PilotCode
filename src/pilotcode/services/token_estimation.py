@@ -40,8 +40,16 @@ class TokenEstimator:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        # Method 1: Character count
-        chars_per_token = self.CODE_CHARS_PER_TOKEN if is_code else self.CHARS_PER_TOKEN
+        # Detect CJK (Chinese/Japanese/Korean) content ratio
+        cjk_chars = len(re.findall(r"[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]", text))
+        cjk_ratio = cjk_chars / len(text) if text else 0
+
+        # Method 1: Character count (adaptive per language)
+        # CJK: ~1.5 chars/token, English: ~4 chars/token
+        if cjk_ratio > 0.3:
+            chars_per_token = 1.5 if not is_code else 2.0
+        else:
+            chars_per_token = self.CODE_CHARS_PER_TOKEN if is_code else self.CHARS_PER_TOKEN
         char_estimate = len(text) / chars_per_token
 
         # Method 2: Word count

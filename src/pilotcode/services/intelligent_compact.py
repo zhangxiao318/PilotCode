@@ -40,6 +40,10 @@ class CompactConfig:
     clear_tool_results_after: int = 10  # Clear tool results older than 10 messages
     preserve_recent_tool_results: bool = True  # Keep recent tool results
 
+    # Aggressive compaction at critical threshold
+    critical_max_chars_per_msg: int = 800  # Truncate old messages to this length at critical
+    critical_keep_recent: int = 4  # Keep only last 4 exchanges at critical
+
 
 @dataclass
 class ToolResultSummary:
@@ -185,6 +189,9 @@ class IntelligentContextCompactor:
         tool_results_cleared = 0
         summaries_generated = 0
 
+        # Determine if we are in critical mode (>95%)
+        is_critical = total_tokens is not None and total_tokens > self.config.critical_threshold
+
         # Always keep first system message
         if messages and isinstance(messages[0], SystemMessage):
             result_messages.append(messages[0])
@@ -194,13 +201,31 @@ class IntelligentContextCompactor:
 
         # Determine which messages to compact
         total = len(messages)
-        keep_recent = self.config.min_messages_to_keep
+        keep_recent = (
+            self.config.critical_keep_recent if is_critical else self.config.min_messages_to_keep
+        )
+        max_chars = self.config.critical_max_chars_per_msg if is_critical else 100000
 
         for i, msg in enumerate(messages[start_idx:], start=start_idx):
             # Always keep recent messages
             if i >= total - keep_recent:
                 result_messages.append(msg)
                 continue
+
+            # In critical mode: aggressively truncate old user/assistant messages
+            if is_critical and isinstance(msg, (UserMessage, AssistantMessage)):
+                content = getattr(msg, "content", "")
+                if isinstance(content, str) and len(content) > max_chars:
+                    truncated = (
+                        content[:max_chars]
+                        + f"\n\n[...truncated from {len(content)} chars to save context space]"
+                    )
+                    # Create truncated copy
+                    if isinstance(msg, UserMessage):
+                        msg = UserMessage(content=truncated)
+                    else:
+                        msg = AssistantMessage(content=truncated)
+                    summaries_generated += 1
 
             # Compact old tool results
             if isinstance(msg, ToolResultMessage):
@@ -209,13 +234,6 @@ class IntelligentContextCompactor:
                     tool_results_cleared += 1
                     result_messages.append(compacted)
                     continue
-
-            # For other messages, keep but could summarize if very long
-            if isinstance(msg, (UserMessage, AssistantMessage)):
-                content = getattr(msg, "content", "")
-                if isinstance(content, str) and len(content) > 1000:
-                    # Could implement message summarization here
-                    pass
 
             result_messages.append(msg)
 

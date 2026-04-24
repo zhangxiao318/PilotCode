@@ -86,16 +86,16 @@ class TaskSpec:
     def from_dict(cls, data: dict[str, Any]) -> TaskSpec:
         acs = [
             AcceptanceCriterion(
-                description=ac["description"],
+                description=ac.get("description", ""),
                 verification_method=ac.get("verification_method", "manual"),
             )
             for ac in data.get("acceptance_criteria", [])
         ]
         c = data.get("constraints", {})
         return cls(
-            id=data["id"],
-            title=data["title"],
-            objective=data["objective"],
+            id=data.get("id", ""),
+            title=data.get("title", "Untitled task"),
+            objective=data.get("objective", ""),
             inputs=data.get("inputs", []),
             outputs=data.get("outputs", []),
             dependencies=data.get("dependencies", []),
@@ -140,9 +140,9 @@ class Phase:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Phase:
         return cls(
-            phase_id=data["phase_id"],
-            title=data["title"],
-            description=data["description"],
+            phase_id=data.get("phase_id", ""),
+            title=data.get("title", "Untitled phase"),
+            description=data.get("description", ""),
             tasks=[TaskSpec.from_dict(t) for t in data.get("tasks", [])],
             dependencies=data.get("dependencies", []),
         )
@@ -179,9 +179,9 @@ class Mission:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Mission:
         return cls(
-            mission_id=data["mission_id"],
-            title=data["title"],
-            requirement=data["requirement"],
+            mission_id=data.get("mission_id", ""),
+            title=data.get("title", "Untitled mission"),
+            requirement=data.get("requirement", ""),
             phases=[Phase.from_dict(p) for p in data.get("phases", [])],
             metadata=data.get("metadata", {}),
             created_at=data.get("created_at", ""),

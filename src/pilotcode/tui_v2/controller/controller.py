@@ -80,11 +80,13 @@ class TUIController:
         set_app_state: Optional[Callable[[Callable[[AppState], AppState]], None]] = None,
         auto_allow: bool = False,
         max_iterations: int = 50,
+        session_options: dict | None = None,
     ):
         self.get_app_state = get_app_state
         self.set_app_state = set_app_state
         self.auto_allow = auto_allow
         self.max_iterations = max_iterations
+        self.session_options = session_options or {}
 
         self.query_engine: Optional[QueryEngine] = None
         self.tool_executor = get_tool_executor()
@@ -98,6 +100,11 @@ class TUIController:
 
         # Pending notifications from QueryEngine (e.g., auto-compact)
         self._pending_notifications: list[tuple[str, dict]] = []
+
+        # Session persistence
+        self._session_id: str = ""
+        self._session_name: str = ""
+        self._auto_save_enabled: bool = True
 
         self._init_engine()
 
@@ -166,7 +173,7 @@ class TUIController:
     # ------------------------------------------------------------------
 
     def _init_engine(self) -> None:
-        """Initialize QueryEngine."""
+        """Initialize QueryEngine and session."""
 
         def _on_notify(event_type: str, payload: dict) -> None:
             self._pending_notifications.append((event_type, payload))
@@ -190,6 +197,85 @@ class TUIController:
         # Setup auto-allow if requested
         if self.auto_allow:
             self._setup_auto_allow(tools)
+
+        # Initialize session (create new or restore existing)
+        self._init_session()
+
+    def _init_session(self) -> None:
+        """Create a new session or restore an existing one."""
+        from datetime import datetime
+        from pilotcode.services.session_persistence import (
+            get_session_persistence,
+            load_session,
+        )
+
+        restore = self.session_options.get("restore", False)
+        sid = self.session_options.get("session_id")
+        cwd = self.session_options.get("cwd", str(Path.cwd()))
+
+        persistence = get_session_persistence()
+
+        if sid:
+            # Restore specific session
+            result = load_session(sid)
+            if result:
+                messages, metadata = result
+                self.query_engine.messages = messages
+                self._session_id = sid
+                self._session_name = metadata.get("name", sid)
+                self._notify_session_change()
+                return
+        elif restore:
+            # Restore most recent session for this project
+            last = persistence.get_last_session(project_path=cwd)
+            if last:
+                result = load_session(last.session_id)
+                if result:
+                    messages, metadata = result
+                    self.query_engine.messages = messages
+                    self._session_id = last.session_id
+                    self._session_name = metadata.get("name", last.session_id)
+                    self._notify_session_change()
+                    return
+
+        # Create new session
+        now = datetime.now()
+        self._session_id = f"sess_{now.strftime('%Y%m%d_%H%M%S')}"
+        self._session_name = f"Session {now.strftime('%Y-%m-%d %H:%M')}"
+        self._notify_session_change()
+
+    def _notify_session_change(self) -> None:
+        """Update app_state with session info."""
+        if self.set_app_state:
+            from pilotcode.state.app_state import AppState
+
+            def _update(state: AppState) -> AppState:
+                from dataclasses import replace
+
+                return replace(
+                    state,
+                    session_id=self._session_id,
+                    session_name=self._session_name,
+                )
+
+            self.set_app_state(_update)
+
+    def _auto_save(self) -> None:
+        """Auto-save current session to disk."""
+        if not self._auto_save_enabled or not self.query_engine or not self._session_id:
+            return
+        try:
+            from pilotcode.services.session_persistence import get_session_persistence
+
+            persistence = get_session_persistence()
+            persistence.save_session(
+                session_id=self._session_id,
+                messages=self.query_engine.messages,
+                name=self._session_name,
+                project_path=str(Path.cwd()),
+            )
+        except Exception:
+            pass  # Fail silently to not disrupt the user experience
 
     def _setup_auto_allow(self, tools) -> None:
         """Setup auto-allow for all tools."""

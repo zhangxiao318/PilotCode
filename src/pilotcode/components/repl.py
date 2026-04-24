@@ -566,6 +566,41 @@ def assess_project_complexity(cwd: str) -> dict[str, Any]:
     return result
 
 
+def _extract_target_path(prompt: str) -> str | None:
+    """Extract a filesystem path from the user prompt.
+
+    Looks for absolute paths (Windows e.g. C:\\dir and Unix e.g. /home/dir)
+    and relative paths. Returns the first plausible directory path found,
+    or None if no path is detected.
+    """
+    import re
+
+    # Windows absolute paths: e.g. E:\\test2, D:\\Source\\...
+    win_path = re.search(r"[A-Za-z]:[\\/][^\s\"'\n]*", prompt)
+    if win_path:
+        path = win_path.group(0).replace("/", "\\")
+        if os.path.isdir(path):
+            return path
+
+    # Unix absolute paths: e.g. /home/user/project, /tmp/foo
+    unix_path = re.search(r"/[\w./-]+[^\s\"'\n]*", prompt)
+    if unix_path:
+        path = unix_path.group(0)
+        if os.path.isdir(path):
+            return path
+
+    # Relative paths with common directory indicators
+    rel_path = re.search(
+        r"(?:目录|文件夹|folder|directory|path|dir)\s*[:：]?\s*([^\s\"'\n]+)", prompt, re.IGNORECASE
+    )
+    if rel_path:
+        path = rel_path.group(1)
+        if os.path.isdir(path):
+            return path
+
+    return None
+
+
 def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> float:
     """Compute a composite complexity score (0-10 scale).
 
@@ -681,6 +716,8 @@ def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> floa
         "performance",
         "upgrade",
         "migrate",
+        "analyze",
+        "analyse",
         # Chinese
         "更新",
         "修改",
@@ -699,6 +736,7 @@ def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> floa
         "单元测试",
         "算法",
         "数据结构",
+        "分析",
     ]
     easy_keywords = [
         # English
@@ -761,7 +799,11 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
         "DIRECT"-> simple Q&A, greeting, explanation, or single edit.
     """
     effective_cwd = cwd if cwd else str(os.getcwd())
-    project_stats = assess_project_complexity(effective_cwd)
+
+    # Try to detect a target directory/path mentioned in the prompt
+    # and assess complexity of that path instead of the current cwd
+    target_path = _extract_target_path(prompt) or effective_cwd
+    project_stats = assess_project_complexity(target_path)
     composite_score = _compute_task_complexity(prompt, project_stats)
 
     # ---- Rule 1: Explicit non-dev tasks → DIRECT (no LLM) ----
@@ -788,9 +830,11 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
         f"User request ({len(prompt)} chars):\n{prompt}\n\n"
         "Rules:\n"
         "- DIRECT for: greetings, general Q&A, explanations, asking for help, "
-        "single-file edits, reading code, simple formatting.\n"
+        "single-file edits, reading a single file, simple formatting.\n"
         "- PLAN for: implementing features, refactoring, bug fixing across files, "
-        "adding tests to multiple modules, architecture changes.\n\n"
+        "adding tests to multiple modules, architecture changes, "
+        "analyzing or exploring large directories / projects, "
+        "cross-file dependency analysis, codebase-wide searches.\n\n"
         "Answer with EXACTLY one word: PLAN or DIRECT. No punctuation."
     )
 

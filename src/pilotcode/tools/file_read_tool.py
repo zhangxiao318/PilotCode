@@ -66,6 +66,12 @@ async def read_file_content(
 
         result_content = "\n".join(lines)
 
+        # Hard safety cap on total characters (independent of line limit)
+        MAX_READ_CHARS = 100_000
+        if len(result_content) > MAX_READ_CHARS:
+            result_content = result_content[:MAX_READ_CHARS]
+            truncated = True
+
         return FileReadOutput(
             content=result_content,
             file_path=str(path),

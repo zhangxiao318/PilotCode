@@ -7,7 +7,8 @@ from pilotcode.types.message import UserMessage, AssistantMessage
 class TestTokenCounting:
     def test_count_tokens_empty(self):
         engine = QueryEngine(QueryEngineConfig(cwd="."))
-        assert engine.count_tokens() == 0
+        # count_tokens now includes system prompt + tools, so it's > 0 even with no messages
+        assert engine.count_tokens() > 0
 
     def test_count_tokens_with_messages(self):
         engine = QueryEngine(QueryEngineConfig(cwd="."))
@@ -23,9 +24,10 @@ class TestTokenCounting:
         text = "A" * 100
         engine.messages.append(UserMessage(content=text))
         tokens = engine.count_tokens()
-        # TokenEstimator uses weighted combination
+        # TokenEstimator uses weighted combination; includes system prompt + tools overhead
         assert tokens > 0
-        assert tokens <= 25
+        # System prompt + tools is ~1800 tokens; 100 chars "A" is ~25 tokens
+        assert tokens > 1000
 
 
 class TestAutoCompact:

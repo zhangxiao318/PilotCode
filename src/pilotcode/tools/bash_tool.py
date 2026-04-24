@@ -11,6 +11,14 @@ from pydantic import BaseModel, Field
 from .base import ToolResult, ToolUseContext, build_tool
 from .registry import register_tool
 
+# ANSI escape sequence pattern (CSI, OSC, and other ESC sequences)
+_ANSI_ESCAPE_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from text."""
+    return _ANSI_ESCAPE_RE.sub("", text)
+
 
 def is_windows() -> bool:
     """Check if running on Windows."""
@@ -291,6 +299,9 @@ async def execute_bash(
     process_env = os.environ.copy()
     if env:
         process_env.update(env)
+    # Disable color output from common CLI tools
+    process_env.setdefault("NO_COLOR", "1")
+    process_env.setdefault("FORCE_COLOR", "0")
 
     try:
         import subprocess
@@ -364,9 +375,46 @@ async def execute_bash(
         def decode_lines(lines: list[str]) -> str:
             return "\n".join(lines)
 
+        stdout_text = strip_ansi(decode_lines(stdout_lines))
+        stderr_text = strip_ansi(decode_lines(stderr_lines))
+
+        # Hard safety cap: prevent a single command from exhausting system memory.
+        # Context-window-aware truncation is handled by QueryEngine.add_tool_result().
+        MAX_STDOUT_LINES = 5_000
+        MAX_STDERR_LINES = 1_000
+        MEMORY_CAP_CHARS = 200_000
+
+        if len(stdout_lines) > MAX_STDOUT_LINES:
+            truncated_line_count = len(stdout_lines) - MAX_STDOUT_LINES
+            stdout_lines = stdout_lines[:MAX_STDOUT_LINES]
+            stdout_text = "\n".join(stdout_lines)
+            stdout_text += (
+                f"\n\n[...truncated {truncated_line_count} lines; total output was too large]"
+            )
+        elif len(stdout_text) > MEMORY_CAP_CHARS:
+            truncated_char_count = len(stdout_text) - MEMORY_CAP_CHARS
+            stdout_text = stdout_text[:MEMORY_CAP_CHARS]
+            stdout_text += (
+                f"\n\n[...truncated {truncated_char_count} chars; total output was too large]"
+            )
+
+        if len(stderr_lines) > MAX_STDERR_LINES:
+            truncated_line_count = len(stderr_lines) - MAX_STDERR_LINES
+            stderr_lines = stderr_lines[:MAX_STDERR_LINES]
+            stderr_text = "\n".join(stderr_lines)
+            stderr_text += (
+                f"\n\n[...truncated {truncated_line_count} lines; total stderr was too large]"
+            )
+        elif len(stderr_text) > MEMORY_CAP_CHARS:
+            truncated_char_count = len(stderr_text) - MEMORY_CAP_CHARS
+            stderr_text = stderr_text[:MEMORY_CAP_CHARS]
+            stderr_text += (
+                f"\n\n[...truncated {truncated_char_count} chars; total stderr was too large]"
+            )
+
         return BashOutput(
-            stdout=decode_lines(stdout_lines),
-            stderr=decode_lines(stderr_lines),
+            stdout=stdout_text,
+            stderr=stderr_text,
             exit_code=process.returncode or 0,
             command=command,
         )
@@ -375,25 +423,45 @@ async def execute_bash(
 
 
 def _update_cwd_from_cd(command: str, current_cwd: str | None, set_app_state) -> None:
-    """Parse cd/Set-Location/chdir and update app_state.cwd if valid."""
+    """Parse cd/Set-Location/chdir and update app_state.cwd if valid.
+
+    Handles compound commands separated by &&, ;, or ||.
+    """
     cmd = command.strip()
     if not cmd:
         return
-    lower = cmd.lower()
-    m = re.match(r'^(?:cd|chdir|set-location)(?:\s+/d)?\s+["\']?(.+?)["\']?\s*$', lower)
-    if not m:
-        if re.match(r"^(?:cd|chdir|set-location)\s*$", lower):
-            target = os.path.expanduser("~")
-        else:
-            return
-    else:
-        target = m.group(1).strip()
+
     base = current_cwd or os.getcwd()
-    if os.path.isabs(target):
-        new_cwd = os.path.normpath(target)
-    else:
-        new_cwd = os.path.normpath(os.path.join(base, target))
-    if os.path.isdir(new_cwd):
+    new_cwd = base
+    changed = False
+
+    # Split compound commands: cd .. && cd test  ->  ["cd ..", "cd test"]
+    # Also handles: cd ..; cd test; ls
+    subcommands = [s.strip() for s in re.split(r"&&|;|\|\|", cmd)]
+
+    for sub in subcommands:
+        if not sub:
+            continue
+        lower = sub.lower()
+
+        # Match cd / chdir / Set-Location with optional /d flag (Windows)
+        m = re.match(r'^(?:cd|chdir|set-location)(?:\s+/d)?\s+["\']?(.+?)["\']?\s*$', lower)
+        if not m:
+            # "cd" alone (no args) -> home directory
+            if re.match(r"^(?:cd|chdir|set-location)\s*$", lower):
+                target = os.path.expanduser("~")
+            else:
+                continue
+        else:
+            target = m.group(1).strip()
+
+        if os.path.isabs(target):
+            new_cwd = os.path.normpath(target)
+        else:
+            new_cwd = os.path.normpath(os.path.join(new_cwd, target))
+        changed = True
+
+    if changed and os.path.isdir(new_cwd):
         set_app_state(lambda s: replace(s, cwd=new_cwd))
 
 
@@ -451,6 +519,15 @@ async def bash_call(
     # Track directory changes from cd commands
     if context.set_app_state and result.exit_code == 0:
         _update_cwd_from_cd(input_data.command, cwd, context.set_app_state)
+
+    # Append persistent CWD info so the LLM knows the actual working directory
+    if context.get_app_state:
+        app_state = context.get_app_state()
+        persistent_cwd = getattr(app_state, "cwd", cwd or os.getcwd())
+        if persistent_cwd != cwd:
+            result.stderr += f"\n[NOTE: Persistent working directory is now: {persistent_cwd}]"
+        else:
+            result.stderr += f"\n[NOTE: Working directory: {persistent_cwd}]"
 
     return ToolResult(data=result)
 

@@ -15,6 +15,14 @@ from pilotcode.tui_v2.controller.controller import UIMessage, UIMessageType
 # Internal clipboard buffer (fallback when system clipboard is unavailable)
 _internal_clipboard: str = ""
 
+# ANSI escape sequence pattern
+_ANSI_ESCAPE_RE = __import__("re").compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from text."""
+    return _ANSI_ESCAPE_RE.sub("", text)
+
 
 def _copy_to_clipboard_impl(text: str) -> str | None:
     """Copy text to system clipboard.
@@ -326,7 +334,7 @@ class MessageDisplay(Static):
         if not self.message:
             return ""
 
-        content = self.message.content or ""
+        content = _strip_ansi(self.message.content or "")
 
         # Tool messages - show tool name + key parameters
         if self.message.type == UIMessageType.TOOL_USE:

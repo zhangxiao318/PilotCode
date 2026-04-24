@@ -28,11 +28,17 @@ class EnhancedApp(App):
     """
 
     def __init__(
-        self, auto_allow: bool = False, theme: str = "default", max_iterations: int = 50, **kwargs
+        self,
+        auto_allow: bool = False,
+        theme: str = "default",
+        max_iterations: int = 50,
+        session_options: dict | None = None,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.auto_allow = auto_allow
         self.max_iterations = max_iterations
+        self.session_options = session_options or {}
         self._store: Store | None = None
 
     def on_mount(self):
@@ -44,7 +50,11 @@ class EnhancedApp(App):
 
         # Push main screen
         self.push_screen(
-            SessionScreen(auto_allow=self.auto_allow, max_iterations=self.max_iterations)
+            SessionScreen(
+                auto_allow=self.auto_allow,
+                max_iterations=self.max_iterations,
+                session_options=self.session_options,
+            )
         )
 
     def get_store(self) -> Store | None:
