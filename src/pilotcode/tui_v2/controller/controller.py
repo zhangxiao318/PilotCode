@@ -181,7 +181,6 @@ class TUIController:
             get_app_state=self.get_app_state,
             set_app_state=self.set_app_state,
             auto_compact=True,
-            context_window=8000,
             on_notify=_on_notify,
             auto_review=global_cfg.auto_review,
             max_review_iterations=global_cfg.max_review_iterations,

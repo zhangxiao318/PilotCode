@@ -77,13 +77,13 @@ class SessionScreen(Screen):
 
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
-        ("ctrl+c", "copy", "Copy"),
+        ("ctrl+c", "copy", "Copy Last Reply"),
         ("ctrl+s", "save", "Save Session"),
         ("ctrl+l", "clear", "Clear"),
         ("f1", "help", "Help"),
         ("ctrl+b", "toggle_sidebar", "Toggle Sidebar"),
-        ("ctrl+y", "copy_last_assistant", "Copy Last Assistant"),
-        ("ctrl+o", "copy_last_code", "Copy Last Code Block"),
+        ("ctrl+y", "copy_last_assistant", "Copy Assistant"),
+        ("ctrl+o", "copy_last_code", "Copy Code Block"),
         ("ctrl+f", "toggle_search", "Search"),
     ]
 

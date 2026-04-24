@@ -427,6 +427,13 @@ class MessageDisplay(Static):
             self.focus()
             self._last_click_time = current_time
 
+    def on_mouse_down(self, event):
+        """Handle mouse down - right-click copies message content."""
+        if event.button == 3:  # Right click
+            self.action_copy()
+            event.stop()
+            event.prevent_default()
+
     def _open_text_viewer(self):
         """Open text viewer dialog for mouse selection and copying."""
         if not self.message:
@@ -489,6 +496,14 @@ class CompactToolDisplay(Static):
             # Single click - focus
             self.focus()
             self._last_click_time = current_time
+
+    def on_mouse_down(self, event):
+        """Handle mouse down - right-click copies tool output."""
+        if event.button == 3:  # Right click
+            copy_to_clipboard(self.full_result)
+            self.app.notify("📋 Tool output copied", severity="information", timeout=2)
+            event.stop()
+            event.prevent_default()
 
     def _open_text_viewer(self):
         """Open text viewer dialog for mouse selection and copying."""
@@ -665,9 +680,13 @@ class TextViewerDialog(Screen):
             signal.signal(signal.SIGINT, self._old_handler)
 
     def on_key(self, event):
-        """Handle key events - prevent Ctrl+C from exiting."""
+        """Handle key events - prevent Ctrl+C from exiting.
+
+        Smart copy behavior:
+        - If TextArea has selected text, copy only the selection (via OSC 52)
+        - If no selection, copy all content.
+        """
         # Check for Ctrl+C (different representations on different platforms)
-        # Windows: ctrl+@ with character \x00, Linux/Mac: ctrl+c
         is_ctrl_c = (
             event.key == "ctrl+c"
             or event.key == "ctrl+@"
@@ -675,8 +694,15 @@ class TextViewerDialog(Screen):
             or event.character == "\x00"  # Windows NUL from Ctrl+C
         )
         if is_ctrl_c:
-            # Always handle Ctrl+C as copy action, don't let it propagate
-            self.action_copy()
+            text_area = self.query_one(TextArea)
+            selected = text_area.selected_text
+            if selected:
+                # Copy only the selected text (most intuitive for users)
+                copy_to_clipboard(selected)
+                self.app.notify("📋 Selection copied", severity="information", timeout=2)
+            else:
+                # No selection - copy all
+                self.action_copy()
             event.stop()
             event.prevent_default()
 
