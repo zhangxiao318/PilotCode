@@ -663,6 +663,7 @@ class WebSocketManager:
             from pilotcode.components.repl import classify_task_complexity
             from pilotcode.orchestration.adapter import MissionAdapter
             from pilotcode.orchestration.report import (
+                format_plan,
                 format_completion,
                 format_failure,
                 format_task_event,
@@ -689,7 +690,33 @@ class WebSocketManager:
                 adapter = MissionAdapter(cancel_event=cancel_event)
 
                 async def _ws_progress(event_type: str, data: dict):
-                    if event_type in (
+                    if event_type == "mission:planned":
+                        from pilotcode.orchestration.report import format_plan
+                        from pilotcode.orchestration.task_spec import Mission, Phase, TaskSpec
+
+                        display_mission = Mission(
+                            mission_id=data.get("mission_id", ""),
+                            title=data.get("title", "Untitled Mission"),
+                            requirement="",
+                        )
+                        for pd in data.get("phases", []):
+                            phase = Phase(
+                                phase_id=pd.get("phase_id", ""),
+                                title=pd.get("title", ""),
+                                description=pd.get("description", ""),
+                                tasks=[TaskSpec.from_dict(t) for t in pd.get("tasks", [])],
+                            )
+                            display_mission.phases.append(phase)
+                        plan_text = format_plan(display_mission)
+                        await self.send_to_client(
+                            websocket,
+                            {
+                                "type": "planning_progress",
+                                "stream_id": stream_id,
+                                "content": plan_text,
+                            },
+                        )
+                    elif event_type in (
                         "task:started",
                         "task:verified",
                         "task:rejected",

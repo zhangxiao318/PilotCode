@@ -249,9 +249,25 @@ class TUIController:
 
                 if event_type == "mission:planned" and not mission_displayed:
                     mission_displayed = True
-                    # We don't have the mission object here, so show a generic message
-                    # The real plan display will come from the final result
-                    pass
+                    from pilotcode.orchestration.report import format_plan
+                    from pilotcode.orchestration.task_spec import Mission, Phase, TaskSpec
+
+                    # Reconstruct Mission from event data
+                    display_mission = Mission(
+                        mission_id=data.get("mission_id", ""),
+                        title=data.get("title", "Untitled Mission"),
+                        requirement="",
+                    )
+                    for pd in data.get("phases", []):
+                        phase = Phase(
+                            phase_id=pd.get("phase_id", ""),
+                            title=pd.get("title", ""),
+                            description=pd.get("description", ""),
+                            tasks=[TaskSpec.from_dict(t) for t in pd.get("tasks", [])],
+                        )
+                        display_mission.phases.append(phase)
+                    plan_text = format_plan(display_mission)
+                    yield UIMessage(type=UIMessageType.SYSTEM, content=plan_text)
                 elif event_type in (
                     "task:started",
                     "task:verified",

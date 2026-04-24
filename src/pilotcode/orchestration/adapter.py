@@ -418,7 +418,11 @@ class MissionAdapter:
             if progress_callback:
                 progress_callback(
                     "mission:planned",
-                    {"mission_id": mission.mission_id, "title": mission.title},
+                    {
+                        "mission_id": mission.mission_id,
+                        "title": mission.title,
+                        "phases": [p.to_dict() for p in mission.phases],
+                    },
                 )
 
             # Wire cancellation through progress callbacks
