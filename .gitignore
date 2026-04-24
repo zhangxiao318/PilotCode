@@ -52,6 +52,9 @@ DOCUMENTS_*_REPORT.md
 share_*.json
 uv.lock
 
+# Code analysis artifacts
+PROJECT_INDEX.md
+
 # SWE-bench evaluation artifacts
 logs/
 predictions_*.jsonl
