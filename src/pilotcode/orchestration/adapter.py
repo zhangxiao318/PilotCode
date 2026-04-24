@@ -37,8 +37,22 @@ class MissionAdapter:
         result = await adapter.run("Implement OAuth2 login")
     """
 
-    def __init__(self, cancel_event: asyncio.Event | None = None):
+    # Complexity-to-turns mapping for the LLM worker loop
+    DEFAULT_TURN_LIMITS: dict[ComplexityLevel, int] = {
+        ComplexityLevel.VERY_SIMPLE: 5,
+        ComplexityLevel.SIMPLE: 10,
+        ComplexityLevel.MODERATE: 20,
+        ComplexityLevel.COMPLEX: 30,
+        ComplexityLevel.VERY_COMPLEX: 50,
+    }
+
+    def __init__(
+        self,
+        cancel_event: asyncio.Event | None = None,
+        max_worker_turns: int | None = None,
+    ):
         self._cancel_event = cancel_event or asyncio.Event()
+        self._max_worker_turns = max_worker_turns
         self._orchestrator = Orchestrator(config=OrchestratorConfig())
         self._register_workers()
         self._register_verifiers()
@@ -270,12 +284,20 @@ class MissionAdapter:
         app_state = get_default_app_state()
         store = Store(app_state)
 
+        # Determine turn limit based on task complexity
+        complexity = task.estimated_complexity
+        max_turns = (
+            self._max_worker_turns
+            if self._max_worker_turns is not None
+            else self.DEFAULT_TURN_LIMITS.get(complexity, 20)
+        )
+
         config = QueryEngineConfig(
             cwd=app_state.cwd,
             tools=get_all_tools(),
             get_app_state=store.get_state,
             set_app_state=store.set_state,
-            max_turns=10,
+            max_turns=max(5, max_turns // 2),  # QueryEngine internal budget
         )
         engine = QueryEngine(config)
         executor = get_tool_executor()
@@ -283,7 +305,6 @@ class MissionAdapter:
         final_content = ""
         artifacts: dict[str, Any] = {}
         total_turns = 0
-        max_turns = 10
 
         try:
             while total_turns < max_turns:
