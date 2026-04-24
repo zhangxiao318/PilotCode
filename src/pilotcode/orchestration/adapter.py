@@ -162,26 +162,16 @@ class MissionAdapter:
             Message(role="user", content=user_request),
         ]
 
-        response = await client.chat_completion(
+        accumulated = ""
+        async for chunk in client.chat_completion(
             messages=messages,
             temperature=0.3,
             stream=False,
-        )
-        accumulated = ""
-        if hasattr(response, "__aiter__"):
-            async for chunk in response:
-                delta = chunk.get("choices", [{}])[0].get("delta", {})
-                c = delta.get("content")
-                if c:
-                    accumulated += c
-        elif isinstance(response, dict):
-            choices = response.get("choices", [{}])
-            if choices:
-                delta = choices[0].get("delta", {})
-                if delta:
-                    accumulated = delta.get("content", "")
-                else:
-                    accumulated = choices[0].get("message", {}).get("content", "")
+        ):
+            delta = chunk.get("choices", [{}])[0].get("delta", {})
+            c = delta.get("content")
+            if c:
+                accumulated += c
 
         if not accumulated:
             raise ValueError("LLM returned an empty plan")

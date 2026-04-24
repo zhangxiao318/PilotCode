@@ -804,27 +804,21 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
     ]
 
     try:
-        # stream=False may return a coroutine or an async iterator depending on
-        # the client implementation.  Handle both shapes safely.
-        response = await client.chat_completion(
+        # client.chat_completion is an async generator; always iterate with async for
+        chunks = []
+        async for chunk in client.chat_completion(
             messages=messages,
             tools=None,
             temperature=0.0,
             stream=False,
-        )
+        ):
+            chunks.append(chunk)
 
-        # If the client returns an async iterator even with stream=False,
-        # collect the chunks.
-        if hasattr(response, "__aiter__"):
-            chunks = []
-            async for chunk in response:
-                chunks.append(chunk)
-            if not chunks:
-                return "PLAN"
-            response = chunks[0]
+        if not chunks:
+            return "PLAN"
 
-        # Non-streaming response shape
         content = ""
+        response = chunks[0]
         if isinstance(response, dict):
             choices = response.get("choices", [{}])
             if choices:
