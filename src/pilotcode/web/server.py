@@ -350,9 +350,12 @@ class WebSocketManager:
                 get_permission_manager,
                 PermissionLevel,
             )
-            from pilotcode.components.repl import (
-                classify_task_complexity,
-                run_headless_with_planning,
+            from pilotcode.components.repl import classify_task_complexity
+            from pilotcode.orchestration.adapter import MissionAdapter
+            from pilotcode.orchestration.report import (
+                format_completion,
+                format_failure,
+                format_task_event,
             )
 
             # Send streaming start
@@ -368,38 +371,63 @@ class WebSocketManager:
                     {
                         "type": "system",
                         "stream_id": stream_id,
-                        "content": "Task classified as complex — enabling planning and verification mode",
+                        "content": "Task classified as complex — entering structured PLAN mode with P-EVR orchestration.",
                     },
                 )
 
-                async def send_progress(msg: str):
+                cancel_event = asyncio.Event()
+                adapter = MissionAdapter(cancel_event=cancel_event)
+
+                async def _ws_progress(event_type: str, data: dict):
+                    if event_type in (
+                        "task:started",
+                        "task:verified",
+                        "task:rejected",
+                        "task:needs_rework",
+                    ):
+                        msg = format_task_event(event_type, data)
+                        await self.send_to_client(
+                            websocket,
+                            {
+                                "type": "planning_progress",
+                                "stream_id": stream_id,
+                                "content": msg,
+                            },
+                        )
+                    elif event_type == "mission:blocked":
+                        msg = format_task_event(event_type, data)
+                        await self.send_to_client(
+                            websocket,
+                            {
+                                "type": "system",
+                                "stream_id": stream_id,
+                                "content": msg,
+                            },
+                        )
+
+                result = await adapter.run(query, progress_callback=_ws_progress)
+
+                if result.get("success"):
+                    summary = format_completion(result)
                     await self.send_to_client(
                         websocket,
                         {
-                            "type": "planning_progress",
+                            "type": "streaming_complete",
                             "stream_id": stream_id,
-                            "content": msg,
+                            "content": summary,
                         },
                     )
-
-                def progress_callback(msg: str):
-                    asyncio.create_task(send_progress(msg))
-
-                result = await run_headless_with_planning(
-                    query,
-                    auto_allow=False,
-                    max_iterations=50,
-                    cwd=self.cwd,
-                    progress_callback=progress_callback,
-                )
-                await self.send_to_client(
-                    websocket,
-                    {
-                        "type": "streaming_complete",
-                        "stream_id": stream_id,
-                        "content": result.get("response", ""),
-                    },
-                )
+                else:
+                    error = result.get("error", "Unknown error")
+                    summary = format_failure(result, error)
+                    await self.send_to_client(
+                        websocket,
+                        {
+                            "type": "streaming_error",
+                            "stream_id": stream_id,
+                            "error": summary,
+                        },
+                    )
                 return
 
             # Create store

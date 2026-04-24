@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ..components.repl import run_headless, classify_task_complexity, run_headless_with_planning
+from ..orchestration.adapter import MissionAdapter
+from ..orchestration.report import format_completion, format_failure
 from ..services.session_persistence import (
     get_session_persistence,
     save_session as persist_save,
@@ -145,14 +147,12 @@ class SessionManager:
             if not session.messages:
                 mode = await classify_task_complexity(query)
                 if mode == "PLAN":
-                    result = await run_headless_with_planning(
-                        prompt=query,
-                        auto_allow=session.auto_allow,
-                        json_mode=True,
-                        max_iterations=session.max_iterations,
-                        cwd=effective_cwd,
-                        progress_callback=lambda msg: None,
-                    )
+                    adapter = MissionAdapter()
+                    result = await adapter.run(query)
+                    if result.get("success"):
+                        result["response"] = format_completion(result)
+                    else:
+                        result["response"] = format_failure(result, result.get("error", ""))
                 else:
                     result = await run_headless(
                         prompt=query,

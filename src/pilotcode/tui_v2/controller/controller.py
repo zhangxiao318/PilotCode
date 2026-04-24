@@ -26,6 +26,15 @@ except ImportError:
 from pilotcode.permissions import get_tool_executor
 from pilotcode.state.app_state import AppState
 from pilotcode.components.repl import classify_task_complexity
+from pilotcode.orchestration.adapter import MissionAdapter
+from pilotcode.orchestration.report import (
+    format_plan,
+    format_progress,
+    format_completion,
+    format_failure,
+    format_task_event,
+    _STATE_EMOJI,
+)
 
 
 class ToolDeniedError(Exception):
@@ -202,6 +211,92 @@ class TUIController:
         """
         self._permission_callback = callback
 
+    async def _run_pevr_mode(self, text: str) -> AsyncIterator[UIMessage]:
+        """Run a complex task in P-EVR orchestration mode.
+
+        1. Plans the mission via LLM
+        2. Executes tasks with progress reporting
+        3. Returns completion/failure summary
+        """
+        import asyncio
+
+        cancel_event = asyncio.Event()
+        adapter = MissionAdapter(cancel_event=cancel_event)
+
+        mission_displayed = False
+        last_progress = ""
+
+        def progress_cb(event_type: str, data: dict) -> None:
+            nonlocal mission_displayed, last_progress
+            # Buffer events; actual yielding happens in the generator below
+            self._pevr_events.append((event_type, data))
+
+        self._pevr_events: list[tuple[str, dict]] = []
+
+        # Start mission execution in background
+        mission_task = asyncio.create_task(adapter.run(text, progress_callback=progress_cb))
+
+        yield UIMessage(
+            type=UIMessageType.SYSTEM,
+            content="Task classified as complex — entering PLAN mode with structured execution.",
+        )
+
+        # Poll for progress events while mission runs
+        result: dict | None = None
+        while not mission_task.done():
+            # Drain event buffer
+            while self._pevr_events:
+                event_type, data = self._pevr_events.pop(0)
+
+                if event_type == "mission:planned" and not mission_displayed:
+                    mission_displayed = True
+                    # We don't have the mission object here, so show a generic message
+                    # The real plan display will come from the final result
+                    pass
+                elif event_type in (
+                    "task:started",
+                    "task:verified",
+                    "task:rejected",
+                    "task:needs_rework",
+                ):
+                    msg = format_task_event(event_type, data)
+                    yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
+                elif event_type == "mission:completed":
+                    pass  # Will handle after task finishes
+                elif event_type == "mission:blocked":
+                    msg = format_task_event(event_type, data)
+                    yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
+
+            await asyncio.sleep(0.2)
+
+        # Get final result
+        try:
+            result = mission_task.result()
+        except Exception as exc:
+            result = {"success": False, "error": str(exc)}
+
+        # Show final summary
+        if result and result.get("success"):
+            summary = format_completion(result)
+            yield UIMessage(type=UIMessageType.ASSISTANT, content=summary)
+        else:
+            error = result.get("error", "Unknown error") if result else "Mission failed"
+            summary = format_failure(result or {}, error)
+            yield UIMessage(type=UIMessageType.ERROR, content=summary)
+
+        # Also show the raw conversation response if available
+        mission_dict = result.get("mission", {}) if result else {}
+        phases = mission_dict.get("phases", [])
+        if phases:
+            lines = ["📋 Mission Plan Executed:"]
+            for p in phases:
+                lines.append(f"  • Phase: {p.get('title', 'Untitled')}")
+                for t in p.get("tasks", []):
+                    state = t.get("state", "unknown")
+                    emoji = _STATE_EMOJI.get(state, "❓")
+                    lines.append(f"    {emoji} {t.get('title', t.get('id', '?'))}")
+            yield UIMessage(type=UIMessageType.SYSTEM, content="\n".join(lines))
+
     async def submit_message(self, text: str) -> AsyncIterator[UIMessage]:
         """Submit a message and yield UI messages.
 
@@ -220,12 +315,9 @@ class TUIController:
         if len(self.query_engine.messages) == 0:
             mode = await classify_task_complexity(text)
             if mode == "PLAN":
-                yield UIMessage(
-                    type=UIMessageType.SYSTEM,
-                    content="Task classified as complex — I'll break this down into steps and work through it interactively.",
-                )
-                # In TUI mode we continue with normal streaming interaction so the UI
-                # stays responsive and the user can see progress in real time.
+                async for msg in self._run_pevr_mode(text):
+                    yield msg
+                return
 
         iteration = 0
         current_prompt = text

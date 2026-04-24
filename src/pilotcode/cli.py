@@ -24,6 +24,8 @@ from .components.repl import (
     run_headless_with_feedback,
     classify_task_complexity,
 )
+from .orchestration.adapter import MissionAdapter
+from .orchestration.report import format_completion, format_failure
 from .version import __version__
 from .utils.config import is_configured, get_config_manager, is_local_url
 from .utils.configure import run_configure_wizard, format_model_list, get_available_model_names
@@ -447,17 +449,14 @@ def main(
             else:
                 mode = "DIRECT"
             if mode == "PLAN":
-                console.print(
-                    "[dim]⚡ Task classified as complex — enabling planning and verification mode[/dim]"
-                )
-                return await run_headless_with_feedback(
-                    prompt,
-                    auto_allow=auto_allow,
-                    json_mode=json_mode,
-                    max_iterations=max_iterations,
-                    cwd=cwd,
-                    use_planning=True,
-                )
+                console.print("[dim]⚡ Task classified as complex — entering P-EVR PLAN mode[/dim]")
+                adapter = MissionAdapter()
+                result = await adapter.run(prompt)
+                if result.get("success"):
+                    console.print(format_completion(result))
+                else:
+                    console.print(format_failure(result, result.get("error", "")))
+                return result
             else:
                 console.print(
                     "[dim]⚡ Task classified as simple — running in direct execution mode[/dim]"

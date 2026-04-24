@@ -15,6 +15,14 @@ from .state_machine import TaskState, StateMachine, Transition, InvalidTransitio
 from .dag import DagNode, DagEdge, DagExecutor, build_dag_from_phases
 from .tracker import MissionTracker, AgentProgress, MissionSnapshot
 from .orchestrator import Orchestrator, OrchestratorConfig, ExecutionResult, VerificationResult
+from .adapter import MissionAdapter
+from .report import (
+    format_plan,
+    format_progress,
+    format_completion,
+    format_failure,
+    format_task_event,
+)
 
 __all__ = [
     # Legacy
@@ -45,4 +53,11 @@ __all__ = [
     "OrchestratorConfig",
     "ExecutionResult",
     "VerificationResult",
+    # Adapter & Report
+    "MissionAdapter",
+    "format_plan",
+    "format_progress",
+    "format_completion",
+    "format_failure",
+    "format_task_event",
 ]
