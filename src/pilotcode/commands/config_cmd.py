@@ -51,17 +51,20 @@ async def _run_layer_test(layer: str, extra_pytest_args: list[str] | None = None
 
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{project_root / 'src'}:{env.get('PYTHONPATH', '')}"
+    env["PYTHONUNBUFFERED"] = "1"
 
-    # Run pytest
+    # Run pytest with unbuffered output directly to terminal so user sees progress
     proc = await asyncio.create_subprocess_exec(
         *pytest_args,
         cwd=str(project_root),
         env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        stdout=None,
+        stderr=None,
     )
-    stdout, _ = await proc.communicate()
-    test_output = stdout.decode("utf-8", errors="replace")
+    await proc.communicate()
+    if proc.returncode not in (0, 1):
+        # pytest exits 0 (all pass) or 1 (some failed); anything else is a crash
+        return f"[pytest exited with code {proc.returncode}]"
 
     # Run analyzer
     analyzer_script = project_root / "tests" / "e2e" / "analyze_results.py"
@@ -81,8 +84,7 @@ async def _run_layer_test(layer: str, extra_pytest_args: list[str] | None = None
         if a_stderr:
             report_lines.append(a_stderr.decode("utf-8", errors="replace"))
     else:
-        report_lines.append("[Analyzer script not found, showing raw pytest output:]\n")
-        report_lines.append(test_output[-3000:])  # last 3KB
+        report_lines.append("[Analyzer script not found]\n")
 
     # Cleanup
     try:

@@ -642,7 +642,6 @@ def config(
         raise typer.Exit(0)
 
     if list:
-        import asyncio
         from .utils.models_config import get_model_info
 
         config = get_global_config()
