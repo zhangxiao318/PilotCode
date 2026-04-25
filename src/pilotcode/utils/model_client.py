@@ -131,8 +131,8 @@ class ModelClient:
         for msg in messages:
             api_msg: dict[str, Any] = {"role": msg.role}
 
-            if msg.content is not None:
-                api_msg["content"] = msg.content
+            # OpenAI-compatible APIs require 'content' to be present (can be empty string)
+            api_msg["content"] = msg.content if msg.content is not None else ""
 
             if msg.tool_calls:
                 api_msg["tool_calls"] = [
@@ -184,14 +184,21 @@ class ModelClient:
 
         if tools:
             payload["tools"] = self._convert_tools(tools)
-            payload["tool_choice"] = "auto"
+            # Some providers (e.g. DeepSeek) do not accept tool_choice; skip for them
+            if "deepseek" not in self.base_url.lower():
+                payload["tool_choice"] = "auto"
 
         if max_tokens:
             payload["max_tokens"] = max_tokens
 
         if stream:
             async with self.client.stream("POST", "/chat/completions", json=payload) as response:
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    raise Exception(
+                        f"DeepSeek API error {response.status_code}: {body.decode('utf-8', errors='replace')}\n"
+                        f"Payload: {json.dumps(payload, ensure_ascii=False, default=str)[:2000]}"
+                    )
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
                         data = line[6:]
