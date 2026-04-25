@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
 
@@ -142,18 +142,9 @@ async def glob_call(
 
     # Get base path (cwd or specified path)
     if search_path is None:
-        if context.get_app_state:
-            app_state = context.get_app_state()
-            base_path = getattr(app_state, "cwd", os.getcwd())
-        else:
-            base_path = os.getcwd()
+        base_path = resolve_cwd(context)
     elif not os.path.isabs(search_path):
-        if context.get_app_state:
-            app_state = context.get_app_state()
-            cwd = getattr(app_state, "cwd", os.getcwd())
-            base_path = os.path.join(cwd, search_path)
-        else:
-            base_path = os.path.join(os.getcwd(), search_path)
+        base_path = os.path.join(resolve_cwd(context), search_path)
     else:
         base_path = search_path
 

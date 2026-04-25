@@ -28,6 +28,8 @@ async def cd_command(args: list[str], context: CommandContext) -> str:
         # Change directory
         os.chdir(str(path))
         context.cwd = str(path)
+        if context.query_engine is not None:
+            context.query_engine.change_cwd(str(path))
 
         return f"Changed to: {path}"
 

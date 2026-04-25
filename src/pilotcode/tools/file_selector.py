@@ -470,7 +470,7 @@ async def select_files(directory: str = ".", pattern: str = "*", **kwargs) -> di
     input_data = FileSelectorInput(directory=directory, pattern=pattern, **kwargs)
 
     # Create a minimal context
-    context = ToolUseContext()
+    context = ToolUseContext(cwd=os.getcwd())
 
     result = await tool.call(
         input_data,

@@ -122,7 +122,9 @@ async def exit_worktree_call(
 ) -> ToolResult[ExitWorktreeOutput]:
     """Exit worktree and return to main repository."""
     # Find main repository by looking for .git directory
-    current_dir = context.get_app_state().cwd if context.get_app_state else "."
+    from .base import resolve_cwd
+
+    current_dir = resolve_cwd(context)
 
     # Go up until we find the main repo
     main_path = current_dir

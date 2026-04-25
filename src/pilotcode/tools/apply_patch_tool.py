@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
 
@@ -80,9 +80,8 @@ async def apply_patch_call(
 ) -> ToolResult[ApplyPatchOutput]:
     """Apply a unified diff patch."""
     base_path = input_data.base_path
-    if not os.path.isabs(base_path) and context.get_app_state:
-        app_state = context.get_app_state()
-        cwd = getattr(app_state, "cwd", os.getcwd())
+    if not os.path.isabs(base_path):
+        cwd = resolve_cwd(context)
         base_path = os.path.join(cwd, base_path)
 
     result = _apply_patch_with_command(

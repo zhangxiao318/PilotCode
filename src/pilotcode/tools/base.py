@@ -55,9 +55,30 @@ class ToolUseContext:
     read_file_state: dict[str, Any] = field(default_factory=dict)
     get_app_state: Callable[[], "AppState"] | None = None
     set_app_state: Callable[[Callable[["AppState"], "AppState"]], None] | None = None
+    cwd: str = ""
 
     def is_aborted(self) -> bool:
         return self.abort_controller.is_set()
+
+
+def resolve_cwd(context: ToolUseContext) -> str:
+    """Resolve the effective working directory from context.
+
+    Priority:
+        1. context.cwd (session-level injection)
+        2. context.get_app_state().cwd (global state)
+        3. os.getcwd() (process fallback)
+    """
+    import os
+
+    if context.cwd:
+        return context.cwd
+    if context.get_app_state:
+        app_state = context.get_app_state()
+        cwd = getattr(app_state, "cwd", None)
+        if cwd:
+            return cwd
+    return os.getcwd()
 
 
 # Type for the call function

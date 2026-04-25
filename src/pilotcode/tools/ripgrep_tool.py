@@ -15,7 +15,7 @@ import shutil
 from typing import Any, Callable
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
 
@@ -360,10 +360,8 @@ async def ripgrep_call(
     """Execute ripgrep search."""
     # Resolve path
     search_path = input_data.path
-    if not os.path.isabs(search_path) and context.get_app_state:
-        app_state = context.get_app_state()
-        if app_state:
-            search_path = os.path.join(app_state.cwd, search_path)
+    if not os.path.isabs(search_path):
+        search_path = os.path.join(resolve_cwd(context), search_path)
 
     # Check permission
     permission = await can_use_tool("Ripgrep", {"path": search_path})

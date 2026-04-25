@@ -197,7 +197,8 @@ class DagExecutor:
 
     def all_done(self) -> bool:
         """Check if all tasks are in terminal states."""
-        return all(n.state in {TaskState.DONE, TaskState.CANCELLED} for n in self.nodes.values())
+        terminal = {TaskState.DONE, TaskState.CANCELLED, TaskState.REJECTED}
+        return all(n.state in terminal for n in self.nodes.values())
 
     def all_verified(self) -> bool:
         """Check if all tasks are verified or done."""

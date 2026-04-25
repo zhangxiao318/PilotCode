@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
 
@@ -93,9 +93,8 @@ async def file_read_call(
     """Execute file read."""
     # Resolve path
     file_path = input_data.file_path
-    if not os.path.isabs(file_path) and context.get_app_state:
-        app_state = context.get_app_state()
-        cwd = getattr(app_state, "cwd", os.getcwd())
+    if not os.path.isabs(file_path):
+        cwd = resolve_cwd(context)
         file_path = os.path.join(cwd, file_path)
 
     # Read file

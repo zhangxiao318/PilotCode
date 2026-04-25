@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
 
@@ -145,9 +145,8 @@ async def file_write_validate(
     """Validate file write input."""
     file_path = input_data.file_path
 
-    if not os.path.isabs(file_path) and context.get_app_state:
-        app_state = context.get_app_state()
-        cwd = getattr(app_state, "cwd", os.getcwd())
+    if not os.path.isabs(file_path):
+        cwd = resolve_cwd(context)
         file_path = os.path.join(cwd, file_path)
 
     # Normalize key to match FileRead (uses normcase + normpath + abspath)
@@ -196,10 +195,7 @@ async def file_write_call(
         )
 
     # Get workspace directory for security check
-    cwd = os.getcwd()
-    if context.get_app_state:
-        app_state = context.get_app_state()
-        cwd = getattr(app_state, "cwd", os.getcwd())
+    cwd = resolve_cwd(context)
     if not os.path.isabs(file_path):
         file_path = os.path.join(cwd, file_path)
 

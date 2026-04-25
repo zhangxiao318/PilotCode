@@ -308,7 +308,6 @@ class ModelClient:
         except Exception as e:
             last_error = f"llama-server /props: {type(e).__name__}: {e}"
 
-
         # ------------------------------------------------------------------
         # 2. Ollama  ->  POST /api/show
         #    Returns: model_info.{family}.context_length
@@ -351,7 +350,6 @@ class ModelClient:
             except Exception as e:
                 last_error = f"Ollama /api/show: {type(e).__name__}: {e}"
 
-
         # ------------------------------------------------------------------
         # 3. LiteLLM proxy  ->  GET /model/info
         # ------------------------------------------------------------------
@@ -377,7 +375,6 @@ class ModelClient:
                         cap["_backend"] = "litellm"
             except Exception as e:
                 last_error = f"LiteLLM /model/info: {type(e).__name__}: {e}"
-
 
         # ------------------------------------------------------------------
         # 4. Standard OpenAI-compatible  ->  GET /v1/models / /models/{id}

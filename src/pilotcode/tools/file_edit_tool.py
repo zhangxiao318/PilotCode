@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
 
@@ -351,10 +351,7 @@ async def file_edit_validate(
     input_data: FileEditInput, context: ToolUseContext
 ) -> tuple[bool, str | None]:
     """Validate file edit input."""
-    cwd = None
-    if context.get_app_state:
-        app_state = context.get_app_state()
-        cwd = getattr(app_state, "cwd", os.getcwd())
+    cwd = resolve_cwd(context)
 
     normalized_path = _normalize_path(input_data.file_path, cwd)
 
@@ -393,10 +390,7 @@ async def file_edit_call(
     """Execute file edit."""
     # Resolve path
     file_path = input_data.file_path
-    cwd = os.getcwd()
-    if context.get_app_state:
-        app_state = context.get_app_state()
-        cwd = getattr(app_state, "cwd", os.getcwd())
+    cwd = resolve_cwd(context)
     if not os.path.isabs(file_path):
         file_path = os.path.join(cwd, file_path)
 

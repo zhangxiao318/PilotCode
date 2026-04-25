@@ -8,7 +8,7 @@ from typing import Any
 from dataclasses import replace
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
 # ANSI escape sequence pattern (CSI, OSC, and other ESC sequences)
@@ -506,10 +506,15 @@ async def bash_call(
         )
 
     # Determine working directory
+    # Bash prefers app_state.cwd so that `cd` tracking persists across turns.
+    # File tools prefer context.cwd for session isolation.
     cwd = input_data.working_dir
-    if cwd is None and context.get_app_state:
-        app_state = context.get_app_state()
-        cwd = getattr(app_state, "cwd", os.getcwd())
+    if cwd is None:
+        if context.get_app_state:
+            app_state = context.get_app_state()
+            cwd = getattr(app_state, "cwd", None)
+        if not cwd:
+            cwd = resolve_cwd(context)
 
     # Execute command
     result = await execute_bash(

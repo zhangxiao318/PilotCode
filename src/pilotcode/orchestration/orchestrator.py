@@ -143,7 +143,7 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     async def run(self, mission: Mission) -> dict[str, Any]:
-        """Execute a full mission.
+        """Execute a full mission with cascade failure detection and auto-retry.
 
         Returns summary of execution results.
         """
@@ -162,7 +162,7 @@ class Orchestrator:
                 # Check if anything is in progress
                 snapshot = self.tracker.get_snapshot(mid)
                 if snapshot and snapshot.in_progress_tasks == 0:
-                    # Nothing ready, nothing in progress - possible deadlock or all blocked
+                    # Nothing ready, nothing in progress
                     blocked = self.tracker.get_blocked_tasks(mid)
                     if blocked:
                         self._notify(
@@ -174,9 +174,34 @@ class Orchestrator:
                 await asyncio.sleep(0.5)
                 continue
 
+            # Filter out tasks whose dependencies have failed
+            executable = []
+            for node in ready:
+                if self._has_failed_dependency(mid, node):
+                    self._cancel_downstream_tasks(mid, node.task_id)
+                else:
+                    executable.append(node)
+
+            if not executable:
+                await asyncio.sleep(0.5)
+                continue
+
             # Execute ready tasks (up to concurrency limit)
-            tasks = [self._execute_task(mid, node) for node in ready]
-            await asyncio.gather(*tasks, return_exceptions=True)
+            tasks = [self._execute_task(mid, node) for node in executable]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process exceptions and trigger retries for NEEDS_REWORK
+            for node, result in zip(executable, results):
+                if isinstance(result, Exception):
+                    self._notify(
+                        "task:exception",
+                        {"mission_id": mid, "task_id": node.task_id, "error": str(result)},
+                    )
+                else:
+                    sm = self.tracker.get_state_machine(mid, node.task_id)
+                    if sm and sm.state == TaskState.NEEDS_REWORK:
+                        # Auto-retry with analysis (up to config limit)
+                        await self._smart_retry(mid, node.task_id)
 
         # Final summary
         snapshot = self.tracker.get_snapshot(mid)
@@ -447,27 +472,196 @@ class Orchestrator:
     # Rework
     # ------------------------------------------------------------------
 
-    async def retry_task(self, mission_id: str, task_id: str) -> None:
-        """Retry a task that is in NEEDS_REWORK state.
+    # ------------------------------------------------------------------
+    # Cascade failure & smart retry
+    # ------------------------------------------------------------------
 
-        This can be called after fixing issues identified during verification.
-        """
-        sm = self.tracker.get_state_machine(mission_id, task_id)
-        if not sm or sm.state != TaskState.NEEDS_REWORK:
-            return
+    def _has_failed_dependency(self, mission_id: str, node: DagNode) -> bool:
+        """Check if any dependency of this node is in a terminal failure state."""
+        dag = self.tracker.get_dag(mission_id)
+        if not dag:
+            return False
+        for edge in dag.edges:
+            if edge.to_task == node.task_id:
+                dep_node = dag.nodes.get(edge.from_task)
+                if dep_node and dep_node.state in {TaskState.REJECTED, TaskState.CANCELLED}:
+                    return True
+        return False
 
-        try:
-            sm.transition(Transition.RESUME, actor="orchestrator")
-        except InvalidTransitionError:
-            return
-
+    def _cancel_downstream_tasks(self, mission_id: str, failed_task_id: str) -> None:
+        """Cancel all tasks that depend on a failed task."""
         dag = self.tracker.get_dag(mission_id)
         if not dag:
             return
+        for edge in dag.edges:
+            if edge.from_task == failed_task_id:
+                downstream = edge.to_task
+                sm = self.tracker.get_state_machine(mission_id, downstream)
+                if sm and sm.state == TaskState.PENDING:
+                    try:
+                        sm.transition(Transition.CANCEL, actor="orchestrator")
+                    except InvalidTransitionError:
+                        pass
+                    self._notify(
+                        "task:cancelled_dependency_failure",
+                        {
+                            "mission_id": mission_id,
+                            "task_id": downstream,
+                            "failed_dep": failed_task_id,
+                        },
+                    )
 
+    def _count_rework_attempts(self, mission_id: str, task_id: str) -> int:
+        """Count how many times this task has been retried."""
+        dag = self.tracker.get_dag(mission_id)
+        if not dag:
+            return 0
         node = dag.get_node(task_id)
-        if node:
-            await self._execute_task(mission_id, node)
+        if not node:
+            return 0
+        return node.artifacts.get("rework_count", 0)
+
+    def _analyze_failure(self, task: TaskSpec, exec_result: ExecutionResult) -> dict[str, Any]:
+        """Analyze why a task failed and suggest adjustments."""
+        error = exec_result.error or ""
+        output = exec_result.output or ""
+        combined = (error + " " + output).lower()
+
+        analysis = {
+            "root_cause": "unknown",
+            "suggested_adjustments": [],
+            "escalate": False,
+        }
+
+        if "file not found" in combined or "no such file" in combined:
+            analysis["root_cause"] = "missing_file"
+            analysis["suggested_adjustments"].append(
+                "Add file existence check or create missing files first"
+            )
+        elif "permission" in combined or "access denied" in combined:
+            analysis["root_cause"] = "permission_error"
+            analysis["suggested_adjustments"].append("Check workspace boundaries and permissions")
+        elif "syntax" in combined or "indent" in combined or "unexpected" in combined:
+            analysis["root_cause"] = "syntax_error"
+            analysis["suggested_adjustments"].append(
+                "Verify code syntax before writing; use smaller edits"
+            )
+        elif "import" in combined or "module" in combined:
+            analysis["root_cause"] = "dependency_issue"
+            analysis["suggested_adjustments"].append("Check existing imports and module structure")
+        elif "test" in combined and ("fail" in combined or "error" in combined):
+            analysis["root_cause"] = "test_failure"
+            analysis["suggested_adjustments"].append(
+                "Run tests locally before submitting; fix failing assertions"
+            )
+        elif not exec_result.success:
+            analysis["root_cause"] = "execution_failure"
+            analysis["suggested_adjustments"].append("Break task into smaller sub-tasks")
+
+        return analysis
+
+    def _adjust_task_for_retry(self, task: TaskSpec, analysis: dict[str, Any]) -> TaskSpec:
+        """Create an adjusted copy of the task based on failure analysis."""
+        from copy import deepcopy
+
+        adjusted = deepcopy(task)
+
+        # Add failure context to objective
+        adjusted.objective += (
+            f"\n\n[PREVIOUS ATTEMPT FAILED: {analysis['root_cause']}]\n"
+            f"Adjustments: {', '.join(analysis['suggested_adjustments'])}"
+        )
+
+        # If syntax issues, reduce max_lines to force smaller edits
+        if analysis["root_cause"] == "syntax_error":
+            if adjusted.constraints.max_lines is None or adjusted.constraints.max_lines > 50:
+                adjusted.constraints.max_lines = 50
+
+        # If missing files, add must_use hint
+        if analysis["root_cause"] == "missing_file":
+            adjusted.constraints.must_use.append("FileRead before FileWrite")
+
+        # Escalate complexity if needed
+        if analysis["escalate"] and adjusted.estimated_complexity.value < 5:
+            adjusted.estimated_complexity = ComplexityLevel(adjusted.estimated_complexity.value + 1)
+
+        return adjusted
+
+    async def _smart_retry(self, mission_id: str, task_id: str) -> None:
+        """Intelligently retry a task with failure analysis and adjustments."""
+        dag = self.tracker.get_dag(mission_id)
+        node = dag.get_node(task_id) if dag else None
+        if not node:
+            return
+
+        rework_count = node.artifacts.get("rework_count", 0) + 1
+        node.artifacts["rework_count"] = rework_count
+
+        if rework_count > self.config.max_rework_attempts:
+            self._notify(
+                "task:max_rework_exceeded",
+                {"mission_id": mission_id, "task_id": task_id, "attempts": rework_count},
+            )
+            # Transition to REJECTED so downstream gets cancelled
+            sm = self.tracker.get_state_machine(mission_id, task_id)
+            if sm and sm.state == TaskState.NEEDS_REWORK:
+                try:
+                    sm.transition(
+                        Transition.REJECT,
+                        reason="Max rework attempts exceeded",
+                        actor="orchestrator",
+                    )
+                except InvalidTransitionError:
+                    pass
+            self._cancel_downstream_tasks(mission_id, task_id)
+            return
+
+        # Analyze last failure
+        last_result = node.result
+        if isinstance(last_result, ExecutionResult):
+            analysis = self._analyze_failure(node.task, last_result)
+        else:
+            analysis = {
+                "root_cause": "unknown",
+                "suggested_adjustments": ["Retry with fresh context"],
+                "escalate": False,
+            }
+
+        self._notify(
+            "task:retry_analysis",
+            {
+                "mission_id": mission_id,
+                "task_id": task_id,
+                "attempt": rework_count,
+                "root_cause": analysis["root_cause"],
+                "adjustments": analysis["suggested_adjustments"],
+            },
+        )
+
+        # Adjust task
+        adjusted_task = self._adjust_task_for_retry(node.task, analysis)
+        adjusted_node = DagNode(task_id=task_id, task=adjusted_task)
+        adjusted_node.state = TaskState.PENDING
+        adjusted_node.depth = node.depth
+        adjusted_node.artifacts = dict(node.artifacts)
+
+        # Replace node in DAG
+        dag.nodes[task_id] = adjusted_node
+
+        # Reset state machine
+        sm = self.tracker.get_state_machine(mission_id, task_id)
+        if sm:
+            try:
+                sm.transition(Transition.RESUME, actor="orchestrator")
+            except InvalidTransitionError:
+                pass
+
+        # Re-execute
+        await self._execute_task(mission_id, adjusted_node)
+
+    async def retry_task(self, mission_id: str, task_id: str) -> None:
+        """Public API: retry a task that is in NEEDS_REWORK state."""
+        await self._smart_retry(mission_id, task_id)
 
     # ------------------------------------------------------------------
     # Cancel / Pause

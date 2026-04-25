@@ -164,6 +164,7 @@ async def run_with_tools(
         get_app_state=query_engine.config.get_app_state,
         set_app_state=query_engine.config.set_app_state,
         read_file_state={},
+        cwd=query_engine.config.cwd or "",
     )
 
     deadline = asyncio.get_event_loop().time() + timeout

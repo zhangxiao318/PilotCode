@@ -1,21 +1,16 @@
 """Task orchestration system for multi-agent workflows.
 
-Provides P-EVR (Plan-Execute-Verify-Reflect) task orchestration framework.
-Also maintains backward compatibility with legacy orchestration interfaces.
+Provides unified P-EVR (Plan-Execute-Verify-Reflect) task orchestration framework.
 """
 
-# Legacy orchestration interfaces (backward compatible)
-from .decomposer import TaskDecomposer, DecompositionStrategy
-from .executor import TaskExecutor, ExecutionPlan
-from .coordinator import AgentCoordinator, WorkflowResult
-
-# P-EVR orchestration framework (new)
 from .task_spec import TaskSpec, Phase, Mission, Constraints, AcceptanceCriterion
 from .state_machine import TaskState, StateMachine, Transition, InvalidTransitionError
 from .dag import DagNode, DagEdge, DagExecutor, build_dag_from_phases
 from .tracker import MissionTracker, AgentProgress, MissionSnapshot
 from .orchestrator import Orchestrator, OrchestratorConfig, ExecutionResult, VerificationResult
 from .adapter import MissionAdapter
+from .project_memory import ProjectMemory, FileSnapshot, FailedAttempt
+from .context_strategy import ContextStrategy, ContextStrategySelector, MissionPlanAdjuster
 from .report import (
     format_plan,
     format_progress,
@@ -25,14 +20,7 @@ from .report import (
 )
 
 __all__ = [
-    # Legacy
-    "TaskDecomposer",
-    "DecompositionStrategy",
-    "TaskExecutor",
-    "ExecutionPlan",
-    "AgentCoordinator",
-    "WorkflowResult",
-    # P-EVR
+    # P-EVR Framework
     "TaskSpec",
     "Phase",
     "Mission",
@@ -53,8 +41,15 @@ __all__ = [
     "OrchestratorConfig",
     "ExecutionResult",
     "VerificationResult",
-    # Adapter & Report
+    # Adapter & Memory
     "MissionAdapter",
+    "ProjectMemory",
+    "FileSnapshot",
+    "FailedAttempt",
+    # Strategy & Report
+    "ContextStrategy",
+    "ContextStrategySelector",
+    "MissionPlanAdjuster",
     "format_plan",
     "format_progress",
     "format_completion",

@@ -1092,6 +1092,7 @@ class WebSocketManager:
                         context = ToolUseContext(
                             get_app_state=store.get_state,
                             set_app_state=lambda f: store.set_state(f),
+                            cwd=getattr(store.get_state(), "cwd", ""),
                         )
 
                         def _send_tool_progress(data):

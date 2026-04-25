@@ -632,7 +632,11 @@ class TUIController:
 
         # Execute the tool
         try:
-            ctx = ToolUseContext(get_app_state=self.get_app_state, set_app_state=self.set_app_state)
+            ctx = ToolUseContext(
+                get_app_state=self.get_app_state,
+                set_app_state=self.set_app_state,
+                cwd=self.session_options.get("cwd", str(Path.cwd())),
+            )
 
             # Permission already granted by TUI - set permission_manager callback
             # to always allow to avoid double permission prompt from tool_executor

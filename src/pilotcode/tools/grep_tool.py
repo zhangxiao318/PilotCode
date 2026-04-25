@@ -7,7 +7,7 @@ from typing import Any
 from enum import Enum
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
 
@@ -212,10 +212,8 @@ async def grep_call(
     """Execute grep search."""
     # Resolve path
     search_path = input_data.path
-    if not os.path.isabs(search_path) and context.get_app_state:
-        app_state = context.get_app_state()
-        cwd = getattr(app_state, "cwd", os.getcwd())
-        search_path = os.path.join(cwd, search_path)
+    if not os.path.isabs(search_path):
+        search_path = os.path.join(resolve_cwd(context), search_path)
 
     # Search
     result = await grep_files(

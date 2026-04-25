@@ -300,6 +300,7 @@ class REPL:
                 context = ToolUseContext(
                     get_app_state=self.store.get_state,
                     set_app_state=lambda f: self.store.set_state(f),
+                    cwd=getattr(self.store.get_state(), "cwd", ""),
                 )
 
                 def _on_progress(data):
@@ -1169,7 +1170,9 @@ async def run_headless(
                     exec_result = None
                 else:
                     context = ToolUseContext(
-                        get_app_state=store.get_state, set_app_state=lambda f: store.set_state(f)
+                        get_app_state=store.get_state,
+                        set_app_state=lambda f: store.set_state(f),
+                        cwd=getattr(store.get_state(), "cwd", ""),
                     )
 
                     def _on_progress_headless(data):
