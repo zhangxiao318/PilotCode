@@ -165,16 +165,19 @@ class ConfigManager:
                         continue
                 setattr(config, config_key, value)
 
-        # Check for model-specific env configuration
+        # Check for model-specific env configuration.
+        # Only apply when the user has NOT explicitly set these values in
+        # settings.json.  A value that happens to equal get_default_model()
+        # is still an explicit user choice and must NOT be overwritten.
         model_from_env = get_model_from_env()
         if model_from_env:
             model_name, api_key = model_from_env
-            if not config.default_model or config.default_model == get_default_model():
+            if not config.default_model:
                 config.default_model = model_name
             if not config.api_key:
                 config.api_key = api_key
 
-            # Update base_url from model config
+            # Update base_url from model config only if user hasn't set one
             model_info = get_model_info(model_name)
             if model_info and not config.base_url:
                 config.base_url = model_info.base_url
