@@ -91,21 +91,23 @@ class ModelClient:
         if is_local:
             self.model = model_key
         else:
-            # Map model key to actual API model name (e.g., "qwen" -> "qwen-max")
-            model_info = get_model_info(model_key)
-            if model_info and model_info.default_model and model_info.default_model != "default":
-                self.model = model_info.default_model
-            elif model_key == "custom":
-                # For custom models, detect provider from base_url
-                config_base = config.base_url or ""
-                if "dashscope" in config_base.lower() or "aliyun" in config_base.lower():
-                    self.model = "qwen-max"  # Alibaba DashScope
-                elif "deepseek" in config_base.lower():
-                    self.model = "deepseek-v4-pro"
-                else:
-                    self.model = "default"  # Fallback
+            config_base = (base_url or config.base_url or "").lower()
+
+            # Provider-aware model selection: when base_url points to a known
+            # provider but default_model belongs to another, auto-correct.
+            if "deepseek" in config_base and not model_key.startswith("deepseek"):
+                self.model = "deepseek-v4-pro"
+            elif ("dashscope" in config_base or "aliyun" in config_base) and not model_key.startswith("qwen"):
+                self.model = "qwen-max"
             else:
-                self.model = model_key
+                # Map model key to actual API model name (e.g., "qwen" -> "qwen-max")
+                model_info = get_model_info(model_key)
+                if model_info and model_info.default_model and model_info.default_model != "default":
+                    self.model = model_info.default_model
+                elif model_key == "custom":
+                    self.model = "default"
+                else:
+                    self.model = model_key
 
         # Determine base URL: use provided, or from config, or from model info as fallback
         if base_url:
