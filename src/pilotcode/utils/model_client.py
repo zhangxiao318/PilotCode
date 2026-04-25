@@ -101,7 +101,7 @@ class ModelClient:
                 if "dashscope" in config_base.lower() or "aliyun" in config_base.lower():
                     self.model = "qwen-max"  # Alibaba DashScope
                 elif "deepseek" in config_base.lower():
-                    self.model = "deepseek-chat"
+                    self.model = "deepseek-v4-pro"
                 else:
                     self.model = "default"  # Fallback
             else:

@@ -56,13 +56,13 @@
       "name": "deepseek",
       "display_name": "DeepSeek (深度求索)",
       "provider": "deepseek",
-      "base_url": "https://api.deepseek.com/v1",
-      "default_model": "deepseek-chat",
-      "description": "DeepSeek V3.2 - Strong coding capabilities, cost-effective",
+      "base_url": "https://api.deepseek.com",
+      "default_model": "deepseek-v4-pro",
+      "description": "DeepSeek V4 Pro - 1M context, tool calls & JSON output. Note: deepseek-chat and deepseek-reasoner are deprecated on 2026/07/24; use deepseek-v4-flash or deepseek-v4-pro instead.",
       "supports_tools": true,
       "supports_vision": false,
       "max_tokens": 8192,
-      "context_window": 128000,
+      "context_window": 1000000,
       "env_key": "DEEPSEEK_API_KEY"
     },
     "qwen": {
