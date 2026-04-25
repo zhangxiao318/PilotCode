@@ -142,6 +142,7 @@ class ConfigManager:
     def __init__(self):
         self._global_config: GlobalConfig | None = None
         self._project_config: ProjectConfig | None = None
+        self._settings_mtime: float = 0.0
         self._ensure_config_dir()
 
     def _ensure_config_dir(self) -> None:
@@ -197,8 +198,15 @@ class ConfigManager:
 
     def load_global_config(self) -> GlobalConfig:
         """Load global configuration from file and environment."""
-        if self._global_config is not None:
+        # Check if settings.json changed on disk (e.g. manual edit or another process)
+        current_mtime = 0.0
+        if self.SETTINGS_FILE.exists():
+            current_mtime = self.SETTINGS_FILE.stat().st_mtime
+
+        if self._global_config is not None and current_mtime == self._settings_mtime:
             return self._global_config
+
+        self._settings_mtime = current_mtime
 
         # Load from file
         if self.SETTINGS_FILE.exists():
@@ -228,6 +236,7 @@ class ConfigManager:
         with open(self.SETTINGS_FILE, "w") as f:
             json.dump(asdict(config), f, indent=2)
         self._global_config = config
+        self._settings_mtime = self.SETTINGS_FILE.stat().st_mtime
 
     def load_project_config(self, cwd: str | None = None) -> ProjectConfig | None:
         """Load project configuration from .pilotcode.json."""

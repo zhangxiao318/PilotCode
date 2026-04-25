@@ -619,8 +619,15 @@ def configure(
 def _validate_and_select_remote_model(console, config, base_url: str) -> None:
     """Validate remote model config and let user pick a valid model if needed."""
     from .utils.config import get_config_manager
+    from .utils.models_config import get_model_info
 
     base = base_url.lower()
+
+    def _sync_provider() -> None:
+        """Sync model_provider to match the newly chosen default_model."""
+        model_info = get_model_info(config.default_model)
+        if model_info:
+            config.model_provider = model_info.provider.value
 
     if "deepseek" in base:
         valid_models = ["deepseek-v4-pro", "deepseek-v4-flash"]
@@ -638,6 +645,7 @@ def _validate_and_select_remote_model(console, config, base_url: str) -> None:
             )
             if typer.confirm("Update to deepseek-v4-pro?", default=True):
                 config.default_model = "deepseek-v4-pro"
+                _sync_provider()
                 get_config_manager().save_global_config(config)
                 console.print("[green]✓ default_model updated to deepseek-v4-pro[/green]")
             return
@@ -656,6 +664,7 @@ def _validate_and_select_remote_model(console, config, base_url: str) -> None:
                 idx = int(choice) - 1
                 if 0 <= idx < len(valid_models):
                     config.default_model = valid_models[idx]
+                    _sync_provider()
                     get_config_manager().save_global_config(config)
                     console.print(
                         f"[green]✓ default_model updated to {config.default_model}[/green]"
