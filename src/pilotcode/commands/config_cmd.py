@@ -1,11 +1,136 @@
 """Config command implementation."""
 
+import asyncio
+import os
+import tempfile
+from pathlib import Path
+
 from .base import CommandHandler, register_command, CommandContext
+
+
+# ---------------------------------------------------------------------------
+# Test runner
+# ---------------------------------------------------------------------------
+
+
+async def _run_layer_test(layer: str, extra_pytest_args: list[str] | None = None) -> str:
+    """Run Layer 1 or Layer 2 e2e tests and return analysis report.
+
+    Args:
+        layer: "layer1" or "layer2"
+        extra_pytest_args: Additional arguments to pass to pytest (e.g. ["-k", "test_name"])
+
+    Returns:
+        Analysis report text.
+    """
+    import sys
+
+    # Map layer to test path
+    layer_paths = {
+        "layer1": "tests/e2e/model_capability/test_bare_llm/",
+        "layer2": "tests/e2e/model_capability/test_tool_capability/",
+    }
+    test_path = layer_paths.get(layer)
+    if not test_path:
+        return f"Unknown layer: {layer}. Use: layer1, layer2"
+
+    project_root = Path(__file__).resolve().parents[3]
+    xml_path = tempfile.mktemp(suffix="_e2e.xml")
+
+    # Build pytest command
+    pytest_args = [
+        sys.executable, "-m", "pytest",
+        str(project_root / test_path),
+        "--run-llm-e2e",
+        "--e2e-timeout=240",
+        "-v",
+        f"--junitxml={xml_path}",
+    ]
+    if extra_pytest_args:
+        pytest_args.extend(extra_pytest_args)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = f"{project_root / 'src'}:{env.get('PYTHONPATH', '')}"
+
+    # Run pytest
+    proc = await asyncio.create_subprocess_exec(
+        *pytest_args,
+        cwd=str(project_root),
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    stdout, _ = await proc.communicate()
+    test_output = stdout.decode("utf-8", errors="replace")
+
+    # Run analyzer
+    analyzer_script = project_root / "tests" / "e2e" / "analyze_results.py"
+    report_lines: list[str] = []
+    if analyzer_script.exists() and Path(xml_path).exists():
+        analyzer_proc = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(analyzer_script),
+            xml_path,
+            cwd=str(project_root),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        a_stdout, a_stderr = await analyzer_proc.communicate()
+        report_lines.append(a_stdout.decode("utf-8", errors="replace"))
+        if a_stderr:
+            report_lines.append(a_stderr.decode("utf-8", errors="replace"))
+    else:
+        report_lines.append("[Analyzer script not found, showing raw pytest output:]\n")
+        report_lines.append(test_output[-3000:])  # last 3KB
+
+    # Cleanup
+    try:
+        os.unlink(xml_path)
+    except OSError:
+        pass
+
+    return "\n".join(report_lines)
 
 
 async def config_command(args: list[str], context: CommandContext) -> str:
     """Handle /config command."""
     from ..utils.config import get_config_manager, get_global_config, GlobalConfig
+
+    # Handle --test option
+    if args and args[0] in ("--test", "-t"):
+        if len(args) < 2:
+            return "Usage: /config --test <layer1|layer2>"
+        layer = args[1].lower()
+        if layer not in ("layer1", "layer2"):
+            return f"Unknown layer: {layer}. Use: layer1, layer2"
+
+        # Notify user about long-running test
+        notify_msg = (
+            f"⏳ Starting Layer {layer[-1]} E2E test. "
+            f"This may take several minutes (typically 3–15 min depending on model speed)..."
+        )
+        print(notify_msg)  # CLI fallback
+        # WebSocket / TUI notify via query_engine if available
+        try:
+            qe = context.query_engine
+            if qe and hasattr(qe, "config") and qe.config and getattr(qe.config, "on_notify", None):
+                qe.config.on_notify("test_start", {"message": notify_msg, "layer": layer})
+        except Exception:
+            pass
+
+        report = await _run_layer_test(layer)
+
+        complete_msg = f"✅ Layer {layer[-1]} test completed."
+        print(complete_msg)
+        try:
+            qe = context.query_engine
+            if qe and hasattr(qe, "config") and qe.config and getattr(qe.config, "on_notify", None):
+                qe.config.on_notify("test_complete", {"message": complete_msg, "layer": layer})
+        except Exception:
+            pass
+
+        return report
 
     if not args:
         # Show all config
@@ -83,7 +208,7 @@ async def config_command(args: list[str], context: CommandContext) -> str:
 register_command(
     CommandHandler(
         name="config",
-        description="Manage configuration",
+        description="Manage configuration. Use /config --test <layer1|layer2> to run e2e capability tests",
         handler=config_command,
         aliases=["cfg", "settings"],
     )
