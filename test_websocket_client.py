@@ -13,11 +13,17 @@ import websockets
 
 WS_URL = "ws://127.0.0.1:8081"
 QUERY = (
-    "请分析 /home/zx 下的 Python 项目。步骤："
-    "1) 用 Bash 执行：find /home/zx -maxdepth 2 -name '*.py' | head -50 找到主要项目；"
-    "2) 用 Bash 统计每个目录的 Python 文件数和代码行数；"
-    "3) 直接输出表格：项目名称 | Python文件数 | 代码行数。"
-    "不要递归太深，只分析 maxdepth=2 的目录。"
+    "请分析 /home/zx 下的 Python 项目，统计功能和代码量。"
+    "重要：排除以下大目录（它们包含第三方/缓存代码，不是用户项目）："
+    "swe-env、.local、.cache、.npm、.nvm、.openclaw、.kimi、.config、.claude\n"
+    "步骤：\n"
+    "1) 用 Bash 写一个 Python 分析脚本并保存到 /home/zx/python_analysis.py，"
+    "   脚本功能：遍历 /home/zx 下所有目录，排除隐藏目录和上述大目录，"
+    "   递归统计每个目录的 .py 文件数、代码行数、注释行数、空行数、函数数、类数，"
+    "   输出 Markdown 表格到 /home/zx/python_analysis_report.md\n"
+    "2) 运行 python3 /home/zx/python_analysis.py\n"
+    "3) 用 FileRead 读取 /home/zx/python_analysis_report.md\n"
+    "4) 把报告内容展示给我"
 )
 
 

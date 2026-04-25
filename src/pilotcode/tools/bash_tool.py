@@ -380,9 +380,9 @@ async def execute_bash(
 
         # Hard safety cap: prevent a single command from exhausting system memory.
         # Context-window-aware truncation is handled by QueryEngine.add_tool_result().
-        MAX_STDOUT_LINES = 5_000
-        MAX_STDERR_LINES = 1_000
-        MEMORY_CAP_CHARS = 200_000
+        MAX_STDOUT_LINES = 1_000
+        MAX_STDERR_LINES = 500
+        MEMORY_CAP_CHARS = 100_000
 
         if len(stdout_lines) > MAX_STDOUT_LINES:
             truncated_line_count = len(stdout_lines) - MAX_STDOUT_LINES
