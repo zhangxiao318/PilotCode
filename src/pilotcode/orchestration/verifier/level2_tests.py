@@ -145,11 +145,11 @@ class PytestRunnerVerifier(BaseVerifier):
                     test_files.append(candidate)
         return test_files
 
-    async def _run_command(self, command: str) -> dict[str, Any]:
-        """Run a shell command asynchronously."""
+    async def _run_command(self, *cmd: str) -> dict[str, Any]:
+        """Run a command asynchronously with argument list (safe from injection)."""
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -171,9 +171,9 @@ class PytestRunnerVerifier(BaseVerifier):
         if not test_files:
             return {"exit_code": 0, "stdout": "No tests found", "stderr": ""}
 
-        files_str = " ".join(test_files)
-        cmd = f"{sys.executable} -m pytest {files_str} -q --tb=short 2>&1"
-        return await self._run_command(cmd)
+        return await self._run_command(
+            sys.executable, "-m", "pytest", *test_files, "-q", "--tb=short"
+        )
 
     def _parse_failures(self, output: str) -> list[str]:
         """Parse pytest output for failed test names."""

@@ -58,6 +58,15 @@ class DagExecutor:
         Raises:
             ValueError: If cycles are detected.
         """
+        if self._built:
+            return self._topo_order
+
+        # Clear any stale data in case of rebuild
+        self.nodes.clear()
+        self.edges.clear()
+        self._in_degree.clear()
+        self._outgoing.clear()
+
         # Create nodes
         for phase in self.mission.phases:
             for task in phase.tasks:

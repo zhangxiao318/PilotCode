@@ -80,21 +80,23 @@ class MissionTracker:
         self._agent_progress: dict[str, AgentProgress] = {}
         self._event_callbacks: list[Callable[[str, dict], None]] = []
         self._db_path = db_path
+        self._db_conn: sqlite3.Connection | None = None
         if db_path:
             self._init_db()
 
     def _init_db(self) -> None:
-        """Initialize SQLite persistence."""
+        """Initialize SQLite persistence with WAL mode for concurrent access."""
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self._db_path)
-        conn.execute("""
+        self._db_conn = sqlite3.connect(self._db_path)
+        self._db_conn.execute("PRAGMA journal_mode=WAL")
+        self._db_conn.execute("""
             CREATE TABLE IF NOT EXISTS missions (
                 mission_id TEXT PRIMARY KEY,
                 data TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
         """)
-        conn.execute("""
+        self._db_conn.execute("""
             CREATE TABLE IF NOT EXISTS state_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 mission_id TEXT NOT NULL,
@@ -107,8 +109,7 @@ class MissionTracker:
                 actor TEXT
             )
         """)
-        conn.commit()
-        conn.close()
+        self._db_conn.commit()
 
     def register_mission(self, mission: Mission, dag: DagExecutor | None = None) -> None:
         """Register a new mission."""
@@ -136,10 +137,9 @@ class MissionTracker:
         if dag:
             dag.update_task_state(event.task_id, event.to_state)
 
-        # Persist to DB
-        if self._db_path:
-            conn = sqlite3.connect(self._db_path)
-            conn.execute(
+        # Persist to DB (reuse single connection)
+        if self._db_conn:
+            self._db_conn.execute(
                 "INSERT INTO state_events (mission_id, task_id, from_state, to_state, transition, timestamp, reason, actor) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     mission_id,
@@ -152,8 +152,7 @@ class MissionTracker:
                     event.actor,
                 ),
             )
-            conn.commit()
-            conn.close()
+            self._db_conn.commit()
 
         self._emit(
             "task:state_changed",
@@ -166,12 +165,17 @@ class MissionTracker:
             },
         )
 
+    def close(self) -> None:
+        """Close the database connection."""
+        if self._db_conn:
+            self._db_conn.close()
+            self._db_conn = None
+
     def _persist_mission(self, mission: Mission) -> None:
         """Persist mission to SQLite."""
-        if not self._db_path:
+        if not self._db_conn:
             return
-        conn = sqlite3.connect(self._db_path)
-        conn.execute(
+        self._db_conn.execute(
             "INSERT OR REPLACE INTO missions (mission_id, data, updated_at) VALUES (?, ?, ?)",
             (
                 mission.mission_id,
@@ -179,8 +183,7 @@ class MissionTracker:
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
-        conn.commit()
-        conn.close()
+        self._db_conn.commit()
 
     def get_mission(self, mission_id: str) -> Mission | None:
         """Get a mission by ID."""

@@ -15,9 +15,6 @@ from .agent_manager import (
 from ..utils.model_client import get_model_client
 from ..tools.base import ToolUseContext
 
-# Unified orchestration adapter (merges legacy workflow systems)
-from ..orchestration.adapter import MissionAdapter
-
 
 class WorkflowType(Enum):
     """Types of multi-agent workflows."""
@@ -93,6 +90,8 @@ class AgentOrchestrator:
         )
 
         try:
+            from ..orchestration.adapter import MissionAdapter
+
             adapter = MissionAdapter()
             result = await adapter.run(
                 request,

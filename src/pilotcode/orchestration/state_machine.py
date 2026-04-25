@@ -163,7 +163,7 @@ class StateMachine:
 
     def is_terminal(self) -> bool:
         """Check if current state is terminal."""
-        return self.state in {TaskState.DONE, TaskState.CANCELLED}
+        return self.state in {TaskState.DONE, TaskState.CANCELLED, TaskState.REJECTED}
 
     def is_active(self) -> bool:
         """Check if task is currently being worked on."""

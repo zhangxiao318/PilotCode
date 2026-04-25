@@ -105,13 +105,19 @@ class Orchestrator:
         """Register progress callback."""
         self._progress_callbacks.append(callback)
 
+    def clear_progress_callbacks(self) -> None:
+        """Clear all registered progress callbacks."""
+        self._progress_callbacks.clear()
+
     def _notify(self, event: str, data: dict) -> None:
         """Notify progress callbacks."""
         for cb in self._progress_callbacks:
             try:
                 cb(event, data)
             except Exception:
-                pass
+                import logging
+
+                logging.getLogger(__name__).exception("Progress callback failed for %s", event)
 
     # ------------------------------------------------------------------
     # Plan
@@ -237,8 +243,8 @@ class Orchestrator:
         if not sm:
             return
 
-        # Skip if not pending
-        if sm.state != TaskState.PENDING:
+        # Skip if not in a state where execution can begin
+        if sm.state not in (TaskState.PENDING, TaskState.IN_PROGRESS):
             return
 
         async with self._semaphore:
@@ -353,26 +359,29 @@ class Orchestrator:
                 self._handle_verification_failure(mission_id, task, sm, l1)
                 return
 
+        # Auto-approve very simple tasks: skip L2/L3
+        is_auto_simple = (
+            self.config.auto_approve_simple
+            and task.estimated_complexity == ComplexityLevel.VERY_SIMPLE
+        )
+
         # L2: Tests
-        if self.config.enable_l2_verification:
+        if self.config.enable_l2_verification and not is_auto_simple:
             l2 = await self._run_verifier(2, task, exec_result)
             if not l2.passed:
                 self._handle_verification_failure(mission_id, task, sm, l2)
                 return
 
         # L3: Code Review
-        if self.config.enable_l3_verification and task.estimated_complexity.value >= 3:
+        if (
+            self.config.enable_l3_verification
+            and task.estimated_complexity.value >= 3
+            and not is_auto_simple
+        ):
             l3 = await self._run_verifier(3, task, exec_result)
             if not l3.passed:
                 self._handle_verification_failure(mission_id, task, sm, l3)
                 return
-
-        # Auto-approve very simple tasks
-        if (
-            self.config.auto_approve_simple
-            and task.estimated_complexity == ComplexityLevel.VERY_SIMPLE
-        ):
-            pass  # Already passed L1
 
         # All verifications passed
         try:
@@ -389,6 +398,8 @@ class Orchestrator:
         dag = self.tracker.get_dag(mission_id)
         if dag:
             dag.update_task_result(task_id, exec_result.output, exec_result.artifacts)
+            # Store full ExecutionResult for retry analysis
+            dag.nodes[task_id].artifacts["_exec_result"] = exec_result
 
         self._notify(
             "task:verified",
@@ -617,7 +628,7 @@ class Orchestrator:
             return
 
         # Analyze last failure
-        last_result = node.result
+        last_result = node.artifacts.get("_exec_result")
         if isinstance(last_result, ExecutionResult):
             analysis = self._analyze_failure(node.task, last_result)
         else:
@@ -648,7 +659,9 @@ class Orchestrator:
         # Replace node in DAG
         dag.nodes[task_id] = adjusted_node
 
-        # Reset state machine
+        # Reset state machine: the adjusted node is fresh PENDING.
+        # Since _execute_task now accepts IN_PROGRESS (set by RESUME below),
+        # we transition to IN_PROGRESS to signal retry is underway.
         sm = self.tracker.get_state_machine(mission_id, task_id)
         if sm:
             try:
@@ -656,7 +669,7 @@ class Orchestrator:
             except InvalidTransitionError:
                 pass
 
-        # Re-execute
+        # Re-execute (state is now IN_PROGRESS, which _execute_task accepts)
         await self._execute_task(mission_id, adjusted_node)
 
     async def retry_task(self, mission_id: str, task_id: str) -> None:

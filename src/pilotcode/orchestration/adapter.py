@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sys
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -157,14 +158,21 @@ class MissionAdapter:
 
         cwd = os.getcwd()
         try:
-            result = subprocess.run(
-                ["python", "-m", "pytest", "-xvs", "-q"],
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "pytest",
+                "-xvs",
+                "-q",
                 cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=60,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            if result.returncode == 0:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+            output = stdout.decode("utf-8", errors="replace") + stderr.decode(
+                "utf-8", errors="replace"
+            )
+            if proc.returncode == 0:
                 return VerificationResult(
                     task_id=task.id,
                     level=2,
@@ -178,7 +186,7 @@ class MissionAdapter:
                     level=2,
                     passed=False,
                     score=50.0,
-                    feedback=f"Tests failed:\n{result.stdout}\n{result.stderr}",
+                    feedback=f"Tests failed:\n{output}",
                     verdict="NEEDS_REWORK",
                 )
         except Exception as e:
@@ -420,7 +428,7 @@ class MissionAdapter:
             return json.loads(text)
         except json.JSONDecodeError as exc:
             # Attempt to find the first JSON object in the text
-            match = re.search(r"\{.*\}", text, re.DOTALL)
+            match = re.search(r"\{.*?\}", text, re.DOTALL)
             if match:
                 try:
                     return json.loads(match.group(0))
@@ -864,6 +872,9 @@ class MissionAdapter:
                 )
 
             # Wire cancellation through progress callbacks
+            # Clear previous callbacks to prevent memory leak on repeated runs
+            self._orchestrator.clear_progress_callbacks()
+
             def _wrapped_progress(event: str, data: dict) -> None:
                 if self._cancel_event.is_set():
                     mid = data.get("mission_id")
@@ -888,11 +899,8 @@ class MissionAdapter:
             return result
 
         except asyncio.CancelledError:
-            return {
-                "success": False,
-                "error": "Cancelled by user",
-                "mission_id": "",
-            }
+            # Re-raise so callers can handle cancellation properly
+            raise
         except Exception as exc:
             return {
                 "success": False,
