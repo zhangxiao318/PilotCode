@@ -616,6 +616,56 @@ def configure(
         console.print(f"\nAvailable models: {', '.join(get_available_model_names())}")
 
 
+def _validate_and_select_remote_model(console, config, base_url: str) -> None:
+    """Validate remote model config and let user pick a valid model if needed."""
+    from .utils.config import get_config_manager
+
+    base = base_url.lower()
+
+    if "deepseek" in base:
+        valid_models = ["deepseek-v4-pro", "deepseek-v4-flash"]
+        deprecated = {
+            "deepseek-chat": "deepseek-v4-flash (non-thinking)",
+            "deepseek-reasoner": "deepseek-v4-flash (thinking)",
+        }
+        current = config.default_model or ""
+
+        if current in deprecated:
+            console.print(
+                f"\n[yellow]⚠ Deprecated model name:[/yellow] {current}\n"
+                f"  [dim]DeepSeek deprecated this on 2026/07/24. "
+                f"Use {deprecated[current]} instead.[/dim]"
+            )
+            if typer.confirm("Update to deepseek-v4-pro?", default=True):
+                config.default_model = "deepseek-v4-pro"
+                get_config_manager().save_global_config(config)
+                console.print("[green]✓ default_model updated to deepseek-v4-pro[/green]")
+            return
+
+        if current not in valid_models:
+            console.print(
+                f"\n[yellow]⚠ Invalid model for DeepSeek:[/yellow] {current or '(not set)'}\n"
+                f"  [dim]Valid models: {', '.join(valid_models)}[/dim]"
+            )
+            console.print("\n[bold]Select a model:[/bold]")
+            for i, m in enumerate(valid_models, 1):
+                label = "[Recommended]" if m == "deepseek-v4-pro" else ""
+                console.print(f"  {i}. {m} {label}")
+            choice = typer.prompt("Enter number (1/2)", default="1")
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(valid_models):
+                    config.default_model = valid_models[idx]
+                    get_config_manager().save_global_config(config)
+                    console.print(
+                        f"[green]✓ default_model updated to {config.default_model}[/green]"
+                    )
+                else:
+                    console.print("[red]Invalid choice, skipping update.[/red]")
+            except ValueError:
+                console.print("[red]Invalid choice, skipping update.[/red]")
+
+
 @app.command()
 def config(
     list: bool = typer.Option(False, "--list", "-l", help="List configuration"),
@@ -750,6 +800,10 @@ def config(
             if model_info:
                 console.print("\n[bold]Model Capability (Static Config):[/bold]")
                 _print_model_capability(console, model_info, source="static")
+
+            # --- Provider-specific config validation & model selection ---
+            effective_url = config.base_url or ""
+            _validate_and_select_remote_model(console, config, effective_url)
 
         config_file = get_config_manager().SETTINGS_FILE
         console.print(f"\n[dim]Config file: {config_file}[/dim]")
