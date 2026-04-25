@@ -149,6 +149,13 @@ def _print_api_capability(console: Console, caps: dict, static_info=None) -> Non
         static_vision = static_info.supports_vision if static_info else None
         _val("Vision", vision, static_vision, lambda x: "✓" if x else "✗")
 
+    # Programming-relevant capabilities from static config (API rarely exposes these)
+    if static_info:
+        console.print("  [dim]Coding capabilities:[/dim]")
+        console.print(f"    Tool calls:   {'✓' if static_info.supports_tools else '✗'}")
+        console.print(f"    JSON output:  {'✓' if hasattr(static_info, 'supports_json') and static_info.supports_json else '✓ (inferred)'}")
+        console.print(f"    Vision:       {'✓' if static_info.supports_vision else '✗'}")
+
     backend = caps.get("_backend")
     if backend:
         console.print(f"  [dim]Backend: {backend}[/dim]")
@@ -800,16 +807,25 @@ def config(
                         ):
                             updates["default_model"] = detected_model
 
-                    # --- Suggest /v1 suffix for OpenAI-compatible backends ---
+                    # --- Suggest /v1 suffix for self-hosted OpenAI-compatible backends ---
                     backend = api_caps.get("_backend", "")
-                    if backend in ("vllm", "openai-compatible") and config.base_url:
+                    base_lower = (config.base_url or "").lower()
+                    is_known_cloud = any(
+                        host in base_lower
+                        for host in ("deepseek", "openai", "anthropic", "moonshot", "baichuan")
+                    )
+                    if (
+                        backend in ("vllm", "openai-compatible")
+                        and config.base_url
+                        and not is_known_cloud
+                    ):
                         url = config.base_url.rstrip("/")
                         if not url.endswith("/v1"):
                             console.print(
                                 f"\n[yellow]⚠ base_url missing /v1 suffix:[/yellow] {config.base_url}"
                             )
                             console.print(
-                                "  [dim]OpenAI-compatible backends typically "
+                                "  [dim]Self-hosted OpenAI-compatible backends (vLLM, TGI, etc.) typically "
                                 "expose endpoints under /v1 (e.g. /v1/chat/completions).[/dim]"
                             )
                             if typer.confirm("Auto-append /v1 to base_url?", default=True):

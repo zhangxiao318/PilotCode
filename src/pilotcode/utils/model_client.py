@@ -401,12 +401,28 @@ class ModelClient:
                     continue
 
             if model_data:
-                # Detect vLLM backend from metadata
+                # Detect known cloud providers from metadata
                 owned_by = model_data.get("owned_by", "")
                 root = model_data.get("root", "")
                 if owned_by == "vllm" or "vllm" in str(root).lower():
                     cap["_provider"] = "vllm"
                     cap["_backend"] = "vllm"
+                elif owned_by == "deepseek":
+                    cap["_provider"] = "deepseek"
+                    cap["_backend"] = "deepseek"
+                    # DeepSeek /models endpoint only returns id/owned_by,
+                    # no capability fields. Back-fill from static config.
+                    from .models_config import get_model_info
+                    static = get_model_info(self.model)
+                    if static:
+                        if "context_window" not in cap and static.context_window:
+                            cap["context_window"] = static.context_window
+                        if "max_tokens" not in cap and static.max_tokens:
+                            cap["max_tokens"] = static.max_tokens
+                        if "supports_tools" not in cap:
+                            cap["supports_tools"] = static.supports_tools
+                        if "supports_vision" not in cap:
+                            cap["supports_vision"] = static.supports_vision
 
                 # context window
                 if "context_window" not in cap:
