@@ -1,5 +1,6 @@
 """Glob tool for finding files matching patterns."""
 
+import asyncio
 import os
 import fnmatch
 from pathlib import Path
@@ -39,10 +40,10 @@ def matches_glob_pattern(file_path: Path, pattern: str) -> bool:
     return fnmatch.fnmatch(file_path.name, pattern) or fnmatch.fnmatch(str(file_path), pattern)
 
 
-async def glob_files(
+def _glob_sync(
     pattern: str, search_path: str, limit: int = 100, offset: int = 0
 ) -> GlobOutput:
-    """Find files matching glob pattern."""
+    """Synchronous glob implementation (runs in thread pool)."""
     path = Path(search_path).expanduser().resolve()
 
     if not path.exists():
@@ -61,6 +62,13 @@ async def glob_files(
     try:
         matches = []
 
+        # Directories to skip during recursive search
+        SKIP_DIRS = {
+            "node_modules", "__pycache__", ".git", ".venv", "venv",
+            "dist", "build", ".tox", ".pytest_cache", ".mypy_cache",
+            "site-packages", "egg-info", ".eggs", "target",
+        }
+
         # Handle recursive patterns
         if "**" in pattern:
             # Recursive search
@@ -70,14 +78,17 @@ async def glob_files(
                 dirs[:] = [
                     d
                     for d in dirs
-                    if not d.startswith(".") and d not in ["node_modules", "__pycache__", ".git"]
+                    if not d.startswith(".") and d not in SKIP_DIRS
                 ]
 
                 for file in files:
                     if file.startswith("."):
                         continue
                     file_path = Path(root) / file
-                    rel_path = file_path.relative_to(path)
+                    try:
+                        rel_path = file_path.relative_to(path)
+                    except ValueError:
+                        continue
                     if fnmatch.fnmatch(str(rel_path), pattern) or fnmatch.fnmatch(file, suffix):
                         matches.append(str(rel_path))
         else:
@@ -103,6 +114,14 @@ async def glob_files(
         return GlobOutput(filenames=matches, total_count=total_count, truncated=truncated)
     except Exception as e:
         return GlobOutput(filenames=[], total_count=0, truncated=False, error=str(e))
+
+
+async def glob_files(
+    pattern: str, search_path: str, limit: int = 100, offset: int = 0
+) -> GlobOutput:
+    """Find files matching glob pattern (async wrapper around sync implementation)."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _glob_sync, pattern, search_path, limit, offset)
 
 
 async def glob_call(

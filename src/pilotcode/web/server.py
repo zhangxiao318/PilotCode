@@ -336,8 +336,16 @@ class WebSocketManager:
         """Send message to specific client."""
         try:
             await websocket.send(json.dumps(message))
+        except websockets.exceptions.ConnectionClosed:
+            # Client disconnected, ignore
+            pass
         except Exception as e:
-            print(f"[WebSocket] Send error: {e}")
+            error_str = str(e).lower()
+            if "close" in error_str or "connection" in error_str:
+                # Client likely disconnected
+                pass
+            else:
+                print(f"[WebSocket] Send error: {e}")
 
     async def handle_message(self, websocket, message: str):
         """Handle incoming WebSocket message."""
@@ -1160,8 +1168,19 @@ class WebSocketManager:
                 # Reset content length tracking for new response
                 sent_content_length = 0
 
-            # Send streaming end
-            await self.send_to_client(websocket, {"type": "streaming_end", "stream_id": stream_id})
+            # Send any remaining content and completion signal
+            if full_content and len(full_content) > sent_content_length:
+                await self.send_to_client(
+                    websocket,
+                    {
+                        "type": "streaming_chunk",
+                        "stream_id": stream_id,
+                        "chunk": full_content[sent_content_length:],
+                    },
+                )
+            await self.send_to_client(
+                websocket, {"type": "streaming_complete", "stream_id": stream_id}
+            )
             print("[Query] Done")
 
         except asyncio.CancelledError:
