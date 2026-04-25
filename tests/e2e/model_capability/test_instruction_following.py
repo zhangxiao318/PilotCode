@@ -24,7 +24,7 @@ _THINKING_MARKERS = (
 async def _run_turn(query_engine, query: str, timeout: float) -> tuple[str, list[str]]:
     content_parts = []
     tool_names = []
-    think_closed = False
+    seen_thinking = False
 
     async for result in query_engine.submit_message(query):
         msg = result.message
@@ -33,22 +33,24 @@ async def _run_turn(query_engine, query: str, timeout: float) -> tuple[str, list
             tool_names.append(msg.name)
         elif msg_type == "AssistantMessage" and hasattr(msg, "content") and isinstance(msg.content, str):
             chunk = msg.content
-            if think_closed:
-                stripped = chunk.strip()
-                # After </think>, ignore reasoning continuations
-                if any(m in stripped for m in _THINKING_MARKERS):
-                    continue
-                if len(stripped) > 200:
-                    continue
-                content_parts.append(chunk)
+            stripped = chunk.strip()
+
+            # Detect thinking content even without </think> tags
+            if any(m in stripped for m in _THINKING_MARKERS):
+                seen_thinking = True
+                if "</think>" in chunk:
+                    idx = chunk.rfind("</think>")
+                    post = chunk[idx + len("</think>") :]
+                    if post.strip() and len(post.strip()) <= 200:
+                        content_parts.append(post)
                 continue
-            if "</think>" in chunk:
-                think_closed = True
-                idx = chunk.rfind("</think>")
-                post = chunk[idx + len("</think>") :]
-                if post.strip():
-                    content_parts.append(post)
+
+            # After seeing thinking markers, only keep short, clean chunks
+            if seen_thinking:
+                if stripped and len(stripped) <= 200:
+                    content_parts.append(chunk)
                 continue
+
             content_parts.append(chunk)
 
     return strip_thinking("".join(content_parts)), tool_names
