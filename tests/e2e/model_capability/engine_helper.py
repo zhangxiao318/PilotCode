@@ -208,10 +208,9 @@ async def run_with_tools(
         # Step 2: Execute each pending tool
         # ------------------------------------------------------------------
         for tool_use_id, params in pending_tools:
-            tool_name = params.get("name", "unknown")
-            # The 'name' field may be inside the params from some model formats
-            # ToolUseMessage input usually has the actual params only
-            # Try to find the tool name from the message history
+            # Prefer the tool name from the ToolUseMessage itself; some model formats
+            # incorrectly embed a 'name' key inside params that is not the tool name.
+            tool_name = "unknown"
             for msg in reversed(query_engine.messages):
                 if (
                     msg.__class__.__name__ == "ToolUseMessage"
@@ -219,6 +218,9 @@ async def run_with_tools(
                 ):
                     tool_name = getattr(msg, "name", tool_name)
                     break
+            # Guard against weird model output where msg.name is not a real tool
+            if tool_name == "unknown" and "name" in params:
+                tool_name = params["name"]
 
             try:
                 exec_result = await asyncio.wait_for(
