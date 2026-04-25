@@ -77,16 +77,40 @@ async def execute_powershell(
 
         # Hard safety cap: prevent a single command from exhausting system memory.
         # Context-window-aware truncation is handled by QueryEngine.add_tool_result().
-        MEMORY_CAP_CHARS = 200_000
+        MAX_STDOUT_LINES = 1_000
+        MAX_STDERR_LINES = 500
+        MEMORY_CAP_CHARS = 100_000
 
-        if len(stdout_text) > MEMORY_CAP_CHARS:
-            truncated = len(stdout_text) - MEMORY_CAP_CHARS
+        # Line-based truncation first (keeps output readable)
+        stdout_lines = stdout_text.splitlines()
+        if len(stdout_lines) > MAX_STDOUT_LINES:
+            truncated_line_count = len(stdout_lines) - MAX_STDOUT_LINES
+            stdout_lines = stdout_lines[:MAX_STDOUT_LINES]
+            stdout_text = "\n".join(stdout_lines)
+            stdout_text += (
+                f"\n\n[...truncated {truncated_line_count} lines; total output was too large]"
+            )
+        elif len(stdout_text) > MEMORY_CAP_CHARS:
+            truncated_char_count = len(stdout_text) - MEMORY_CAP_CHARS
             stdout_text = stdout_text[:MEMORY_CAP_CHARS]
-            stdout_text += f"\n\n[...truncated {truncated} chars; total output was too large]"
-        if len(stderr_text) > MEMORY_CAP_CHARS:
-            truncated = len(stderr_text) - MEMORY_CAP_CHARS
+            stdout_text += (
+                f"\n\n[...truncated {truncated_char_count} chars; total output was too large]"
+            )
+
+        stderr_lines = stderr_text.splitlines()
+        if len(stderr_lines) > MAX_STDERR_LINES:
+            truncated_line_count = len(stderr_lines) - MAX_STDERR_LINES
+            stderr_lines = stderr_lines[:MAX_STDERR_LINES]
+            stderr_text = "\n".join(stderr_lines)
+            stderr_text += (
+                f"\n\n[...truncated {truncated_line_count} lines; total stderr was too large]"
+            )
+        elif len(stderr_text) > MEMORY_CAP_CHARS:
+            truncated_char_count = len(stderr_text) - MEMORY_CAP_CHARS
             stderr_text = stderr_text[:MEMORY_CAP_CHARS]
-            stderr_text += f"\n\n[...truncated {truncated} chars; total stderr was too large]"
+            stderr_text += (
+                f"\n\n[...truncated {truncated_char_count} chars; total stderr was too large]"
+            )
 
         return PowerShellOutput(
             stdout=stdout_text,

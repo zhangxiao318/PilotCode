@@ -113,6 +113,7 @@ WebFetchTool = build_tool(
     is_read_only=lambda _: True,
     is_concurrency_safe=lambda _: True,
     render_tool_use_message=render_web_fetch_use,
+    max_result_size_chars=50_000,
 )
 
 # Register the tool

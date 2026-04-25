@@ -74,6 +74,7 @@ WebSearchTool = build_tool(
     is_read_only=lambda _: True,
     is_concurrency_safe=lambda _: True,
     render_tool_use_message=render_web_search_use,
+    max_result_size_chars=30_000,
 )
 
 # Register the tool
