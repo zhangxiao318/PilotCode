@@ -40,9 +40,7 @@ def matches_glob_pattern(file_path: Path, pattern: str) -> bool:
     return fnmatch.fnmatch(file_path.name, pattern) or fnmatch.fnmatch(str(file_path), pattern)
 
 
-def _glob_sync(
-    pattern: str, search_path: str, limit: int = 100, offset: int = 0
-) -> GlobOutput:
+def _glob_sync(pattern: str, search_path: str, limit: int = 100, offset: int = 0) -> GlobOutput:
     """Synchronous glob implementation (runs in thread pool)."""
     path = Path(search_path).expanduser().resolve()
 
@@ -64,9 +62,20 @@ def _glob_sync(
 
         # Directories to skip during recursive search
         SKIP_DIRS = {
-            "node_modules", "__pycache__", ".git", ".venv", "venv",
-            "dist", "build", ".tox", ".pytest_cache", ".mypy_cache",
-            "site-packages", "egg-info", ".eggs", "target",
+            "node_modules",
+            "__pycache__",
+            ".git",
+            ".venv",
+            "venv",
+            "dist",
+            "build",
+            ".tox",
+            ".pytest_cache",
+            ".mypy_cache",
+            "site-packages",
+            "egg-info",
+            ".eggs",
+            "target",
         }
 
         # Handle recursive patterns
@@ -75,11 +84,7 @@ def _glob_sync(
             suffix = pattern.replace("**/", "").replace("**\\", "")
             for root, dirs, files in os.walk(path):
                 # Skip hidden directories and common ignore patterns
-                dirs[:] = [
-                    d
-                    for d in dirs
-                    if not d.startswith(".") and d not in SKIP_DIRS
-                ]
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS]
 
                 for file in files:
                     if file.startswith("."):

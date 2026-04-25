@@ -41,7 +41,10 @@ class TestMultiStepCodingTask:
 
         # Should discover first
         has_discovery = any(t in tool_names for t in ("Glob", "Grep", "CodeSearch", "LSP"))
-        assert has_discovery, f"Should discover file first, got tools: {tool_names}"
+        assert has_discovery, (
+            f"Should discover file first, got tools: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Should read the file
         assert "FileRead" in tool_names, f"Should read the discovered file, got tools: {tool_names}"
@@ -49,7 +52,7 @@ class TestMultiStepCodingTask:
         # Should provide a non-empty answer
         assert (
             len(result.final_response) > 20
-        ), f"Should provide an answer, got: {result.final_response[:200]!r}"
+        ), f"Should provide an answer, got: {result.final_response!r}"
 
     async def test_add_function_and_run(self, model_capability_client, e2e_timeout, tmp_path):
         """Create a Python file with a function, then run it with Bash."""
@@ -58,6 +61,8 @@ class TestMultiStepCodingTask:
         test_dir = tmp_path / "planning_test"
         test_dir.mkdir()
         qe.config.cwd = str(test_dir)
+        if qe.config.set_app_state:
+            qe.config.set_app_state(lambda s: setattr(s, "cwd", str(test_dir)) or s)
 
         result: ToolRunResult = await asyncio.wait_for(
             run_with_tools(
@@ -80,9 +85,10 @@ class TestMultiStepCodingTask:
         ), f"Should write or edit a file, got tools: {tool_names}"
 
         # Should run a test
-        assert (
-            "Bash" in tool_names
-        ), f"Should run a bash command to test the code, got tools: {tool_names}"
+        assert "Bash" in tool_names, (
+            f"Should run a bash command to test the code, got tools: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Verify file was actually created
         created_file = test_dir / "math_utils.py"
@@ -105,6 +111,8 @@ class TestMultiStepCodingTask:
         (test_dir / "c.py").write_text("print('hello')\n")
 
         qe.config.cwd = str(test_dir)
+        if qe.config.set_app_state:
+            qe.config.set_app_state(lambda s: setattr(s, "cwd", str(test_dir)) or s)
 
         result: ToolRunResult = await asyncio.wait_for(
             run_with_tools(
@@ -124,20 +132,24 @@ class TestMultiStepCodingTask:
         tool_names = [tc.name for tc in result.tool_calls]
 
         # Should create the script (FileWrite or Bash redirect)
-        assert (
-            "FileWrite" in tool_names or "Bash" in tool_names
-        ), f"Should write script via FileWrite or Bash, got: {tool_names}"
+        assert "FileWrite" in tool_names or "Bash" in tool_names, (
+            f"Should write script via FileWrite or Bash, got: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Should execute the script
-        assert "Bash" in tool_names, f"Should run Bash to execute script, got: {tool_names}"
+        assert "Bash" in tool_names, (
+            f"Should run Bash to execute script, got: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Verify correctness: 2 txt files, 5 lines total
-        assert "files=2" in result.final_response, (
-            f"Expected 'files=2' in response, got: {result.final_response!r}"
-        )
-        assert "lines=5" in result.final_response, (
-            f"Expected 'lines=5' in response, got: {result.final_response!r}"
-        )
+        assert (
+            "files=2" in result.final_response
+        ), f"Expected 'files=2' in response, got: {result.final_response!r}"
+        assert (
+            "lines=5" in result.final_response
+        ), f"Expected 'lines=5' in response, got: {result.final_response!r}"
 
     async def test_generate_recursive_script_with_excludes(
         self, model_capability_client, e2e_timeout, tmp_path
@@ -164,6 +176,8 @@ class TestMultiStepCodingTask:
         (test_dir / ".venv" / "lib.py").write_text("lib\n")
 
         qe.config.cwd = str(test_dir)
+        if qe.config.set_app_state:
+            qe.config.set_app_state(lambda s: setattr(s, "cwd", str(test_dir)) or s)
 
         result: ToolRunResult = await asyncio.wait_for(
             run_with_tools(
@@ -182,11 +196,13 @@ class TestMultiStepCodingTask:
         tool_names = [tc.name for tc in result.tool_calls]
         assert "Bash" in tool_names, f"Should run Bash to execute script, got: {tool_names}"
 
-        # Expected: 3 .py files (src/a.py, src/b.py, src/sub/c.py)
+        # Expected: 3 .py files in test data (src/a.py, src/b.py, src/sub/c.py)
+        # Plus the script itself (count_py.py) = 4 if the model writes it in the same dir.
         # Excluded: __pycache__/cache.pyc, .git/config, .venv/lib.py
-        assert "py_files=3" in result.final_response, (
-            f"Expected 'py_files=3' in response, got: {result.final_response!r}"
-        )
+        # Accept either 3 or 4 — the script itself is a valid .py file under the root.
+        assert (
+            "py_files=3" in result.final_response or "py_files=4" in result.final_response
+        ), f"Expected 'py_files=3' or 'py_files=4' in response, got: {result.final_response!r}"
 
 
 @pytest.mark.llm_e2e
@@ -212,9 +228,10 @@ class TestTaskDecomposition:
         tool_names = [tc.name for tc in result.tool_calls]
 
         # Should use Glob or Bash for counting
-        assert (
-            "Glob" in tool_names or "Bash" in tool_names
-        ), f"Should use Glob/Bash to count files, got: {tool_names}"
+        assert "Glob" in tool_names or "Bash" in tool_names, (
+            f"Should use Glob/Bash to count files, got: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Should use FileRead for the first line
         assert (
@@ -224,4 +241,4 @@ class TestTaskDecomposition:
         # Should answer both parts
         assert (
             len(result.final_response) > 30
-        ), f"Should answer both questions, got: {result.final_response[:200]!r}"
+        ), f"Should answer both questions, got: {result.final_response!r}"

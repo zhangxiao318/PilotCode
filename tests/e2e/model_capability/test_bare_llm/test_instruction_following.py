@@ -51,7 +51,7 @@ class TestFormatConstraints:
         stripped = response.strip()
         assert stripped.startswith("[") and stripped.endswith(
             "]"
-        ), f"Expected JSON array, got: {response[:200]!r}"
+        ), f"Expected JSON array, got: {response!r}"
 
     async def test_numbered_list_format(self, bare_llm_client, e2e_timeout):
         """User asks for a numbered list."""
@@ -69,7 +69,7 @@ class TestFormatConstraints:
         )
         assert (
             "1." in response and "2." in response and "3." in response
-        ), f"Expected numbered list, got: {response[:200]!r}"
+        ), f"Expected numbered list, got: {response!r}"
 
 
 @pytest.mark.llm_e2e
@@ -113,7 +113,7 @@ class TestNegation:
             timeout=e2e_timeout,
         )
         # Should not contain code block markers
-        assert "```" not in response, f"Should not contain code blocks, got: {response[:200]!r}"
+        assert "```" not in response, f"Should not contain code blocks, got: {response!r}"
 
 
 @pytest.mark.llm_e2e

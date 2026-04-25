@@ -97,7 +97,7 @@ class TestCodeExplanation:
         # Should mention counting vowels or letters
         assert (
             "vowel" in response.lower() or "count" in response.lower()
-        ), f"Expected explanation about vowels/counting, got: {response[:200]!r}"
+        ), f"Expected explanation about vowels/counting, got: {response!r}"
 
     async def test_explain_nested_logic(self, bare_llm_client, e2e_timeout):
         """Given nested logic, the model should summarize key operations."""
@@ -118,7 +118,7 @@ class TestCodeExplanation:
         keywords = ["pending", "order", "total", "discount", "electronics"]
         assert any(
             kw in response.lower() for kw in keywords
-        ), f"Expected mention of orders/totals, got: {response[:200]!r}"
+        ), f"Expected mention of orders/totals, got: {response!r}"
 
 
 @pytest.mark.llm_e2e
@@ -144,4 +144,4 @@ class TestBugDetection:
         keywords = ["negative", "empty", "initial", "zero", "0", "max_val"]
         assert any(
             kw in response.lower() for kw in keywords
-        ), f"Expected mention of negative/empty/initial-value bug, got: {response[:200]!r}"
+        ), f"Expected mention of negative/empty/initial-value bug, got: {response!r}"

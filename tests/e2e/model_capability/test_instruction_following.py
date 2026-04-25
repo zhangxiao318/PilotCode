@@ -11,7 +11,6 @@ import asyncio
 
 from .test_bare_llm.helpers import strip_thinking
 
-
 _THINKING_MARKERS = (
     "The user is asking",
     "Analyze User Input",
@@ -31,7 +30,11 @@ async def _run_turn(query_engine, query: str, timeout: float) -> tuple[str, list
         msg_type = msg.__class__.__name__
         if msg_type == "ToolUseMessage":
             tool_names.append(msg.name)
-        elif msg_type == "AssistantMessage" and hasattr(msg, "content") and isinstance(msg.content, str):
+        elif (
+            msg_type == "AssistantMessage"
+            and hasattr(msg, "content")
+            and isinstance(msg.content, str)
+        ):
             chunk = msg.content
             stripped = chunk.strip()
 
@@ -110,7 +113,7 @@ class TestFormatConstraints:
             timeout=e2e_timeout,
         )
         # If the model called Glob first, that's fine — we check the final content
-        assert "{" in c and "}" in c, f"Should contain JSON braces, got: {c[:200]!r}"
+        assert "{" in c and "}" in c, f"Should contain JSON braces, got: {c!r}"
 
     async def test_list_format(self, model_capability_client, e2e_timeout):
         """User asks for a numbered list."""
@@ -122,6 +125,4 @@ class TestFormatConstraints:
             ),
             timeout=e2e_timeout,
         )
-        assert (
-            "1." in c and "2." in c and "3." in c
-        ), f"Should contain numbered list, got: {c[:200]!r}"
+        assert "1." in c and "2." in c and "3." in c, f"Should contain numbered list, got: {c!r}"

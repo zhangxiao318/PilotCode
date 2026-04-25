@@ -120,9 +120,10 @@ class TestFileEditTool:
                 "new_string": "new",
             },
         )
-        # FileEdit reports 0 replacements rather than an error
-        assert not result.is_error
+        # String not found is reported as an error so the LLM can retry
+        assert result.is_error
         assert result.data.replacements_made == 0
+        assert "String not found" in result.error
 
 
 # ---------------------------------------------------------------------------

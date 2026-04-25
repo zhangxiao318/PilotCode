@@ -29,6 +29,8 @@ class TestFileEditWorkflow:
         test_dir = tmp_path / "edit_test"
         test_dir.mkdir()
         qe.config.cwd = str(test_dir)
+        if qe.config.set_app_state:
+            qe.config.set_app_state(lambda s: setattr(s, "cwd", str(test_dir)) or s)
 
         # Create initial file
         init_file = test_dir / "calculator.py"
@@ -53,12 +55,16 @@ class TestFileEditWorkflow:
         tool_names = [tc.name for tc in result.tool_calls]
 
         # Should read first
-        assert "FileRead" in tool_names, f"Should read file before editing. Tools: {tool_names}"
+        assert "FileRead" in tool_names, (
+            f"Should read file before editing. Tools: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Should edit
-        assert (
-            "FileEdit" in tool_names or "FileWrite" in tool_names
-        ), f"Should edit the file. Tools: {tool_names}"
+        assert "FileEdit" in tool_names or "FileWrite" in tool_names, (
+            f"Should edit the file. Tools: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Verify the file was actually modified
         content = init_file.read_text()
@@ -71,6 +77,8 @@ class TestFileEditWorkflow:
         test_dir = tmp_path / "class_edit_test"
         test_dir.mkdir()
         qe.config.cwd = str(test_dir)
+        if qe.config.set_app_state:
+            qe.config.set_app_state(lambda s: setattr(s, "cwd", str(test_dir)) or s)
 
         init_file = test_dir / "greeter.py"
         init_file.write_text("""class Greeter:
@@ -97,12 +105,16 @@ class TestFileEditWorkflow:
         tool_names = [tc.name for tc in result.tool_calls]
 
         # Should read first
-        assert "FileRead" in tool_names, f"Should read file before editing. Tools: {tool_names}"
+        assert "FileRead" in tool_names, (
+            f"Should read file before editing. Tools: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Should edit
-        assert (
-            "FileEdit" in tool_names or "FileWrite" in tool_names
-        ), f"Should edit the file. Tools: {tool_names}"
+        assert "FileEdit" in tool_names or "FileWrite" in tool_names, (
+            f"Should edit the file. Tools: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Verify the file was modified
         content = init_file.read_text()
@@ -120,6 +132,8 @@ class TestEditVerification:
         test_dir = tmp_path / "verify_test"
         test_dir.mkdir()
         qe.config.cwd = str(test_dir)
+        if qe.config.set_app_state:
+            qe.config.set_app_state(lambda s: setattr(s, "cwd", str(test_dir)) or s)
 
         init_file = test_dir / "utils.py"
         init_file.write_text("""def helper():
@@ -142,9 +156,10 @@ class TestEditVerification:
         tool_names = [tc.name for tc in result.tool_calls]
 
         # Should edit
-        assert (
-            "FileEdit" in tool_names or "FileWrite" in tool_names
-        ), f"Should edit the file. Tools: {tool_names}"
+        assert "FileEdit" in tool_names or "FileWrite" in tool_names, (
+            f"Should edit the file. Tools: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
         # Should run some verification (Bash for syntax check or test)
         # We don't strictly require Bash here because the LLM might just say it's valid,

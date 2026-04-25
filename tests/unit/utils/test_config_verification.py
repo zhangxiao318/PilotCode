@@ -43,6 +43,7 @@ class TestConfigVerification:
         manager = ConfigManager.__new__(ConfigManager)
         manager._global_config = None
         manager._project_config = None
+        manager._settings_mtime = 0.0
 
         # Set isolated paths
         config_dir = tmp_path / "test_pilotcode"

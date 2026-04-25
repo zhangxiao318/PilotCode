@@ -44,13 +44,13 @@ class TestSearchVsRead:
         assert file_read_count <= 3, (
             f"Should use search tools, not brute-force FileRead. "
             f"FileRead count: {file_read_count}, tools: {tool_names}. "
-            f"Response: {result.final_response[:200]!r}"
+            f"Response: {result.final_response!r}"
         )
 
         # Should use at least one preferred search tool
         assert any(t in tool_names for t in preferred), (
             f"Should use a search tool (Grep/CodeSearch/LSP), got: {tool_names}. "
-            f"Response: {result.final_response[:200]!r}"
+            f"Response: {result.final_response!r}"
         )
 
     async def test_find_files_should_use_glob(self, model_capability_client, e2e_timeout):
@@ -69,9 +69,10 @@ class TestSearchVsRead:
         tool_names = [tc.name for tc in result.tool_calls]
         acceptable = {"Glob", "Bash", "FileRead"}  # FileRead after Glob is fine
         # At minimum Glob or Bash should appear
-        assert (
-            "Glob" in tool_names or "Bash" in tool_names
-        ), f"Should use Glob or Bash for file listing, got: {tool_names}"
+        assert "Glob" in tool_names or "Bash" in tool_names, (
+            f"Should use Glob or Bash for file listing, got: {tool_names}\n"
+            f"Final response: {result.final_response!r}"
+        )
 
 
 @pytest.mark.llm_e2e

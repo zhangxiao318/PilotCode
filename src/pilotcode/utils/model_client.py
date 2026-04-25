@@ -63,6 +63,7 @@ class Message:
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
     name: str | None = None
+    reasoning_content: str | None = None  # DeepSeek thinking mode requires echoing this back
 
 
 class ModelClient:
@@ -97,12 +98,18 @@ class ModelClient:
             # provider but default_model belongs to another, auto-correct.
             if "deepseek" in config_base and not model_key.startswith("deepseek"):
                 self.model = "deepseek-v4-pro"
-            elif ("dashscope" in config_base or "aliyun" in config_base) and not model_key.startswith("qwen"):
+            elif (
+                "dashscope" in config_base or "aliyun" in config_base
+            ) and not model_key.startswith("qwen"):
                 self.model = "qwen-max"
             else:
                 # Map model key to actual API model name (e.g., "qwen" -> "qwen-max")
                 model_info = get_model_info(model_key)
-                if model_info and model_info.default_model and model_info.default_model != "default":
+                if (
+                    model_info
+                    and model_info.default_model
+                    and model_info.default_model != "default"
+                ):
                     self.model = model_info.default_model
                 elif model_key == "custom":
                     self.model = "default"
@@ -127,6 +134,9 @@ class ModelClient:
             timeout=300.0,
         )
 
+        # Provider flags for provider-specific handling
+        self._is_deepseek = "deepseek" in self.base_url.lower()
+
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert messages to API format."""
         result = []
@@ -149,6 +159,11 @@ class ModelClient:
             if msg.tool_call_id:
                 api_msg["tool_call_id"] = msg.tool_call_id
                 api_msg["name"] = msg.name
+
+            # DeepSeek thinking mode: echo reasoning_content back on assistant messages.
+            # Only DeepSeek requires this field; other providers must not receive it.
+            if self._is_deepseek and msg.reasoning_content and msg.role == "assistant":
+                api_msg["reasoning_content"] = msg.reasoning_content
 
             result.append(api_msg)
 
@@ -413,6 +428,7 @@ class ModelClient:
                     # DeepSeek /models endpoint only returns id/owned_by,
                     # no capability fields. Back-fill from static config.
                     from .models_config import get_model_info
+
                     static = get_model_info(self.model)
                     if static:
                         if "context_window" not in cap and static.context_window:

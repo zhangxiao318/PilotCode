@@ -413,7 +413,6 @@ async def file_edit_call(
     if result.error:
         return ToolResult(
             data=result,
-            is_error=True,
             error=result.error,
             output_for_assistant=render_file_edit_result(result, [], {}),
         )

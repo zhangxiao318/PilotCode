@@ -144,8 +144,8 @@ class TestModelClient:
         with patch("pilotcode.utils.model_client.get_global_config", return_value=mock_config):
             client = ModelClient()
 
-        # deepseek in models.json has default_model="deepseek-chat"
-        assert client.model == "deepseek-chat"
+        # deepseek in models.json has default_model="deepseek-v4-pro"
+        assert client.model == "deepseek-v4-pro"
 
     def test_convert_messages(self):
         """Test converting messages to API format."""

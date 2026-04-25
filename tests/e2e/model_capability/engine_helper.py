@@ -138,7 +138,7 @@ async def run_with_tools(
     query: str,
     timeout: float = 120.0,
     max_turns: int = 15,
-    continue_prompt: str = "Please continue based on the tool results above.",
+    continue_prompt: str | None = None,
 ) -> ToolRunResult:
     """Run a query through QueryEngine with full tool execution loop.
 
@@ -148,6 +148,7 @@ async def run_with_tools(
         timeout: Max total time for the entire run (all turns).
         max_turns: Safety limit to prevent infinite loops.
         continue_prompt: Prompt sent after tool results to let the LLM continue.
+            If None, a strong default is used that reminds the model of the task.
 
     Returns:
         ToolRunResult with final response, tool call history, and diagnostics.
@@ -168,6 +169,17 @@ async def run_with_tools(
     deadline = asyncio.get_event_loop().time() + timeout
     current_query = query
     is_continue_query = False
+
+    # Build a strong continue prompt that references the original task.
+    # DeepSeek V4 tends to give a "final answer" after receiving tool results
+    # instead of continuing with more tool calls. We explicitly override this.
+    _continue_prompt = continue_prompt or (
+        f"The original request was: {query}\n\n"
+        "You have received the tool results above. "
+        "The task is NOT complete yet — you MUST continue by making additional tool calls "
+        "(FileRead, FileEdit, FileWrite, Bash, etc.) as needed. "
+        "Do NOT provide a final summary or explanation until you have fully completed the request."
+    )
 
     for turn in range(1, max_turns + 1):
         remaining = deadline - asyncio.get_event_loop().time()
@@ -266,7 +278,7 @@ async def run_with_tools(
         # ------------------------------------------------------------------
         # Step 3: Prepare next turn
         # ------------------------------------------------------------------
-        current_query = continue_prompt
+        current_query = _continue_prompt
         is_continue_query = True
 
     else:

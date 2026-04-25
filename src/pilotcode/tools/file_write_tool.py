@@ -219,7 +219,6 @@ async def file_write_call(
     if result.error:
         return ToolResult(
             data=result,
-            is_error=True,
             error=result.error,
             output_for_assistant=f"❌ Error writing {Path(result.file_path).name}: {result.error}",
         )

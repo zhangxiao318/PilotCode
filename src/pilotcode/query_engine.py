@@ -467,51 +467,59 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         return result
 
     def _convert_to_api_messages(self, messages: list[MessageType]) -> list[APIMessage]:
-        """Convert internal messages to API format."""
+        """Convert internal messages to API format.
+
+        Critical invariant: an AssistantMessage followed by ToolUseMessages
+        must be merged into a SINGLE API assistant message (content + tool_calls).
+        DeepSeek enforces this strictly, especially for reasoning_content.
+        """
         api_messages = []
 
-        # Track pending tool calls that need to be attached to assistant message
         # Using ToolCall objects as expected by model_client
         pending_tool_calls: list[ToolCall] = []
+        pending_assistant: APIMessage | None = None  # Delayed assistant message
 
-        for i, msg in enumerate(messages):
-            if isinstance(msg, SystemMessage):
-                api_messages.append(APIMessage(role="system", content=msg.content))
-            elif isinstance(msg, UserMessage):
-                # Flush any pending tool calls before user message
-                if pending_tool_calls:
+        def _flush_assistant() -> None:
+            """Emit pending assistant + tool calls as a single message."""
+            nonlocal pending_assistant, pending_tool_calls
+            if pending_tool_calls:
+                if pending_assistant:
+                    pending_assistant.tool_calls = pending_tool_calls
+                    api_messages.append(pending_assistant)
+                    pending_assistant = None
+                else:
                     api_messages.append(
                         APIMessage(role="assistant", content="", tool_calls=pending_tool_calls)
                     )
-                    pending_tool_calls = []
+                pending_tool_calls = []
+            elif pending_assistant:
+                api_messages.append(pending_assistant)
+                pending_assistant = None
+
+        for msg in messages:
+            if isinstance(msg, SystemMessage):
+                _flush_assistant()
+                api_messages.append(APIMessage(role="system", content=msg.content))
+            elif isinstance(msg, UserMessage):
+                _flush_assistant()
                 content = msg.content if isinstance(msg.content, str) else str(msg.content)
                 api_messages.append(APIMessage(role="user", content=content))
             elif isinstance(msg, AssistantMessage):
-                # Flush pending tool calls if any
-                if pending_tool_calls:
-                    api_messages.append(
-                        APIMessage(
-                            role="assistant",
-                            content=msg.content or "",
-                            tool_calls=pending_tool_calls,
-                        )
-                    )
-                    pending_tool_calls = []
-                else:
-                    content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                    api_messages.append(APIMessage(role="assistant", content=content))
+                # Don't emit immediately — ToolUseMessages may follow and must be
+                # merged into the same assistant message (required by DeepSeek).
+                _flush_assistant()
+                content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                pending_assistant = APIMessage(
+                    role="assistant",
+                    content=content,
+                    reasoning_content=msg.reasoning_content,
+                )
             elif isinstance(msg, ToolUseMessage):
-                # Accumulate tool calls to attach to next assistant message
                 pending_tool_calls.append(
                     ToolCall(id=msg.tool_use_id, name=msg.name, arguments=msg.input)
                 )
             elif isinstance(msg, ToolResultMessage):
-                # Flush pending tool calls before tool result
-                if pending_tool_calls:
-                    api_messages.append(
-                        APIMessage(role="assistant", content="", tool_calls=pending_tool_calls)
-                    )
-                    pending_tool_calls = []
+                _flush_assistant()
                 api_messages.append(
                     APIMessage(
                         role="tool",
@@ -523,12 +531,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                     )
                 )
 
-        # Flush any remaining pending tool calls
-        if pending_tool_calls:
-            api_messages.append(
-                APIMessage(role="assistant", content="", tool_calls=pending_tool_calls)
-            )
-
+        _flush_assistant()
         return api_messages
 
     # Greeting patterns that can be handled locally without calling the API
@@ -695,8 +698,12 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         # Get available tools
         tools = self.config.tools if self.config.tools else []
 
+        # Detect DeepSeek for provider-specific handling
+        is_deepseek = "deepseek" in getattr(self.client, "base_url", "").lower()
+
         # Stream response
         accumulated_content = ""
+        accumulated_reasoning = ""  # DeepSeek thinking mode content
         pending_tool_calls: list[ToolCall] = []
         current_tool_call: dict[int, dict] = {}  # Accumulate tool call parts
         suppress_streaming = False  # Set to True when XML tool calls appear in content
@@ -715,6 +722,12 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
             delta = chunk.get("choices", [{}])[0].get("delta", {})
             finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
+
+            # Handle reasoning content (DeepSeek thinking mode only)
+            if is_deepseek:
+                reasoning = delta.get("reasoning_content")
+                if reasoning:
+                    accumulated_reasoning += reasoning
 
             # Handle content
             content = delta.get("content")
@@ -767,8 +780,11 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             accumulated_content = self._remove_xml_tool_calls(accumulated_content)
 
         # Final assistant message
-        if accumulated_content:
-            assistant_msg = AssistantMessage(content=accumulated_content)
+        if accumulated_content or accumulated_reasoning or current_tool_call:
+            assistant_msg = AssistantMessage(
+                content=accumulated_content,
+                reasoning_content=(accumulated_reasoning or None) if is_deepseek else None,
+            )
             self.messages.append(assistant_msg)
             yield QueryResult(message=assistant_msg, is_complete=True)
 

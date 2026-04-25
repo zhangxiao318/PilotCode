@@ -202,8 +202,7 @@ class TestStandaloneScriptGeneration:
 
         script_code = _extract_script(raw_response)
         assert script_code.strip(), (
-            "Could not extract script from response. "
-            f"Raw: {raw_response[:300]!r}"
+            "Could not extract script from response. " f"Raw: {raw_response[:300]!r}"
         )
 
         success, stdout, stderr, rc = _run_script(script_code, cwd=tmp_path)
@@ -213,8 +212,7 @@ class TestStandaloneScriptGeneration:
         )
 
         assert "txt_count=2" in stdout, (
-            f"Expected 'txt_count=2' in output, got stdout={stdout!r}, "
-            f"stderr={stderr!r}"
+            f"Expected 'txt_count=2' in output, got stdout={stdout!r}, " f"stderr={stderr!r}"
         )
 
     async def test_generate_robust_script_with_error_handling(
@@ -242,8 +240,7 @@ class TestStandaloneScriptGeneration:
 
         script_code = _extract_script(raw_response)
         assert script_code.strip(), (
-            "Could not extract script from response. "
-            f"Raw: {raw_response[:300]!r}"
+            "Could not extract script from response. " f"Raw: {raw_response[:300]!r}"
         )
 
         success, stdout, stderr, rc = _run_script(script_code, cwd=tmp_path)
@@ -253,6 +250,5 @@ class TestStandaloneScriptGeneration:
         )
 
         assert "ERROR: directory not found" in stdout, (
-            f"Expected graceful error handling, got stdout={stdout!r}, "
-            f"stderr={stderr!r}"
+            f"Expected graceful error handling, got stdout={stdout!r}, " f"stderr={stderr!r}"
         )

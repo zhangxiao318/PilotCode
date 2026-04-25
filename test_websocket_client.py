@@ -36,20 +36,28 @@ async def run_test():
 
             # 1. Create session
             session_id = f"test_sess_{int(time.time())}"
-            await ws.send(json.dumps({
-                "type": "session_create",
-                "session_id": session_id,
-            }))
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "session_create",
+                        "session_id": session_id,
+                    }
+                )
+            )
             resp = await asyncio.wait_for(ws.recv(), timeout=5.0)
             print(f"[Client] Session response: {resp}")
 
             # 2. Send query
             print(f"[Client] Sending query: {QUERY[:80]}...")
-            await ws.send(json.dumps({
-                "type": "query",
-                "message": QUERY,
-                "session_id": session_id,
-            }))
+            await ws.send(
+                json.dumps(
+                    {
+                        "type": "query",
+                        "message": QUERY,
+                        "session_id": session_id,
+                    }
+                )
+            )
 
             # 3. Collect responses and auto-approve permissions
             start_time = time.time()
@@ -83,27 +91,37 @@ async def run_test():
                     chunks.append(chunk)
                     # Print progress indicator
                     if len(chunks) % 10 == 0:
-                        print(f"[Client] Received {len(chunks)} chunks, {sum(len(c) for c in chunks)} chars")
+                        print(
+                            f"[Client] Received {len(chunks)} chunks, {sum(len(c) for c in chunks)} chars"
+                        )
 
                 elif msg_type == "tool_call":
                     tool_name = data.get("tool_name", "")
                     tool_input = data.get("tool_input", {})
                     tool_calls.append({"name": tool_name, "input": tool_input})
-                    print(f"[Client] Tool call: {tool_name} -> {json.dumps(tool_input, ensure_ascii=False)[:120]}")
+                    print(
+                        f"[Client] Tool call: {tool_name} -> {json.dumps(tool_input, ensure_ascii=False)[:120]}"
+                    )
 
                 elif msg_type == "tool_progress":
-                    print(f"[Client] Tool progress: {data.get('tool_name', '')} - {data.get('line', '')}")
+                    print(
+                        f"[Client] Tool progress: {data.get('tool_name', '')} - {data.get('line', '')}"
+                    )
 
                 elif msg_type == "permission_request":
                     req_id = data.get("request_id", "")
                     tool_name = data.get("tool_name", "")
                     print(f"[Client] Permission request: {tool_name} ({req_id}) -> AUTO-GRANT")
-                    await ws.send(json.dumps({
-                        "type": "permission_response",
-                        "request_id": req_id,
-                        "granted": True,
-                        "for_session": True,
-                    }))
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "permission_response",
+                                "request_id": req_id,
+                                "granted": True,
+                                "for_session": True,
+                            }
+                        )
+                    )
                     permissions_granted += 1
 
                 elif msg_type == "user_question_request":
@@ -111,11 +129,15 @@ async def run_test():
                     question = data.get("question", "")
                     print(f"[Client] User question: {question[:100]}...")
                     # Auto-respond with a helpful answer
-                    await ws.send(json.dumps({
-                        "type": "user_question_response",
-                        "request_id": req_id,
-                        "response": "请继续分析，尽量全面地统计所有项目。",
-                    }))
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "type": "user_question_response",
+                                "request_id": req_id,
+                                "response": "请继续分析，尽量全面地统计所有项目。",
+                            }
+                        )
+                    )
 
                 elif msg_type == "system":
                     content = data.get("content", "")
@@ -127,7 +149,9 @@ async def run_test():
 
                 elif msg_type == "streaming_complete":
                     content = data.get("content", "")
-                    print(f"[Client] COMPLETE: {content[:300] if content else '(no content field)'}")
+                    print(
+                        f"[Client] COMPLETE: {content[:300] if content else '(no content field)'}"
+                    )
                     is_complete = True
                     break
 
@@ -171,7 +195,9 @@ async def run_test():
             if tool_calls:
                 print("\nTools used:")
                 for i, tc in enumerate(tool_calls, 1):
-                    print(f"  {i}. {tc['name']}: {json.dumps(tc['input'], ensure_ascii=False)[:100]}")
+                    print(
+                        f"  {i}. {tc['name']}: {json.dumps(tc['input'], ensure_ascii=False)[:100]}"
+                    )
 
             if errors:
                 print("\nErrors encountered:")
@@ -187,15 +213,20 @@ async def run_test():
             # Save to file
             result_file = "/tmp/pilotcode_websocket_result.json"
             with open(result_file, "w") as f:
-                json.dump({
-                    "session_id": session_id,
-                    "elapsed": elapsed,
-                    "query": QUERY,
-                    "response": full_response,
-                    "tool_calls": tool_calls,
-                    "errors": errors,
-                    "completed": is_complete,
-                }, f, ensure_ascii=False, indent=2)
+                json.dump(
+                    {
+                        "session_id": session_id,
+                        "elapsed": elapsed,
+                        "query": QUERY,
+                        "response": full_response,
+                        "tool_calls": tool_calls,
+                        "errors": errors,
+                        "completed": is_complete,
+                    },
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                )
             print(f"\nResult saved to: {result_file}")
 
             return 0 if is_complete and not errors else 1
@@ -210,6 +241,7 @@ async def run_test():
     except Exception as e:
         print(f"[Client] ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

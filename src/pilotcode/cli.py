@@ -153,7 +153,9 @@ def _print_api_capability(console: Console, caps: dict, static_info=None) -> Non
     if static_info:
         console.print("  [dim]Coding capabilities:[/dim]")
         console.print(f"    Tool calls:   {'✓' if static_info.supports_tools else '✗'}")
-        console.print(f"    JSON output:  {'✓' if hasattr(static_info, 'supports_json') and static_info.supports_json else '✓ (inferred)'}")
+        console.print(
+            f"    JSON output:  {'✓' if hasattr(static_info, 'supports_json') and static_info.supports_json else '✓ (inferred)'}"
+        )
         console.print(f"    Vision:       {'✓' if static_info.supports_vision else '✗'}")
 
     backend = caps.get("_backend")
@@ -689,7 +691,9 @@ def config(
     list: bool = typer.Option(False, "--list", "-l", help="List configuration"),
     set_key: str | None = typer.Option(None, "--set", help="Set configuration key"),
     set_value: str | None = typer.Option(None, "--value", help="Configuration value"),
-    test: str | None = typer.Option(None, "--test", "-t", help="Run e2e capability tests: layer1 or layer2"),
+    test: str | None = typer.Option(
+        None, "--test", "-t", help="Run e2e capability tests: layer1 or layer2"
+    ),
 ):
     """Manage configuration (legacy command, use 'configure' instead)."""
     from .utils.config import get_global_config, get_config_manager
@@ -703,7 +707,9 @@ def config(
             raise typer.Exit(1)
 
         console.print(f"[bold]⏳ Starting Layer {layer[-1]} E2E test...[/bold]")
-        console.print("[dim]This may take several minutes (typically 3–15 min depending on model speed)[/dim]\n")
+        console.print(
+            "[dim]This may take several minutes (typically 3–15 min depending on model speed)[/dim]\n"
+        )
 
         report = asyncio.run(_run_layer_test(layer))
         console.print(report)
@@ -802,9 +808,7 @@ def config(
                             f"\n[yellow]⚠ Model name mismatch: "
                             f"settings.json='{config.default_model}', detected='{detected_model}'[/yellow]"
                         )
-                        if typer.confirm(
-                            "Update default_model in settings.json?", default=True
-                        ):
+                        if typer.confirm("Update default_model in settings.json?", default=True):
                             updates["default_model"] = detected_model
 
                     # --- Suggest /v1 suffix for self-hosted OpenAI-compatible backends ---

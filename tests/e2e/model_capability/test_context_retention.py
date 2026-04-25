@@ -9,7 +9,6 @@ import asyncio
 
 from .test_bare_llm.helpers import strip_thinking
 
-
 _THINKING_MARKERS = (
     "The user is asking",
     "Analyze User Input",
@@ -30,7 +29,11 @@ async def _run_turn(query_engine, query: str, timeout: float) -> tuple[str, list
         msg_type = msg.__class__.__name__
         if msg_type == "ToolUseMessage":
             tool_names.append(msg.name)
-        elif msg_type == "AssistantMessage" and hasattr(msg, "content") and isinstance(msg.content, str):
+        elif (
+            msg_type == "AssistantMessage"
+            and hasattr(msg, "content")
+            and isinstance(msg.content, str)
+        ):
             chunk = msg.content
             stripped = chunk.strip()
 

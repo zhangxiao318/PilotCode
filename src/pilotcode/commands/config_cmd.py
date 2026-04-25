@@ -7,7 +7,6 @@ from pathlib import Path
 
 from .base import CommandHandler, register_command, CommandContext
 
-
 # ---------------------------------------------------------------------------
 # Test runner
 # ---------------------------------------------------------------------------
@@ -39,7 +38,9 @@ async def _run_layer_test(layer: str, extra_pytest_args: list[str] | None = None
 
     # Build pytest command
     pytest_args = [
-        sys.executable, "-m", "pytest",
+        sys.executable,
+        "-m",
+        "pytest",
         str(project_root / test_path),
         "--run-llm-e2e",
         "--e2e-timeout=240",

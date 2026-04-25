@@ -98,9 +98,9 @@ class TestGlobalConfig:
         )
 
         # base_url should be filled from models.json
-        assert config.base_url == "https://api.deepseek.com/v1"
+        assert config.base_url == "https://api.deepseek.com"
         # context_window should be filled from models.json
-        assert config.context_window == 128_000
+        assert config.context_window == 1_000_000
 
     def test_asdict_serialization(self):
         """Test that config can be serialized to dict."""

@@ -25,37 +25,51 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List
 
-
 # ---------------------------------------------------------------------------
 # Classification rules
 # ---------------------------------------------------------------------------
 
 CLASSIFIERS = [
-    ("timeout", [
-        "TimeoutError",
-        "CancelledError",
-        "asyncio.exceptions.TimeoutError",
-    ]),
-    ("thinking_pollution", [
-        "<think>",
-        "</think>",
-        "Here's a thinking process:",
-        "Thinking Process:",
-        "Analyze User Input:",
-    ]),
-    ("context_retention", [
-        "should NOT FileRead again",
-        "should NOT Glob again",
-    ]),
-    ("file_edit_failed", [
-        "File was not modified",
-        "Method not added",
-        "File was not created",
-        "Should edit the file",
-    ]),
-    ("tool_param_mismatch", [
-        "Param '",
-    ]),
+    (
+        "timeout",
+        [
+            "TimeoutError",
+            "CancelledError",
+            "asyncio.exceptions.TimeoutError",
+        ],
+    ),
+    (
+        "thinking_pollution",
+        [
+            "<think>",
+            "</think>",
+            "Here's a thinking process:",
+            "Thinking Process:",
+            "Analyze User Input:",
+        ],
+    ),
+    (
+        "context_retention",
+        [
+            "should NOT FileRead again",
+            "should NOT Glob again",
+        ],
+    ),
+    (
+        "file_edit_failed",
+        [
+            "File was not modified",
+            "Method not added",
+            "File was not created",
+            "Should edit the file",
+        ],
+    ),
+    (
+        "tool_param_mismatch",
+        [
+            "Param '",
+        ],
+    ),
 ]
 
 
@@ -76,6 +90,7 @@ def classify_failure(message: str) -> str:
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Failure:
@@ -102,6 +117,7 @@ class Report:
 # Parser
 # ---------------------------------------------------------------------------
 
+
 def parse_junit(xml_path: str) -> Report:
     """Parse a JUnit XML file and produce a classified report."""
     tree = ET.parse(xml_path)
@@ -116,7 +132,12 @@ def parse_junit(xml_path: str) -> Report:
 
     for suite in suites:
         report.total += int(suite.get("tests", 0))
-        report.passed += int(suite.get("tests", 0)) - int(suite.get("failures", 0)) - int(suite.get("errors", 0)) - int(suite.get("skipped", 0))
+        report.passed += (
+            int(suite.get("tests", 0))
+            - int(suite.get("failures", 0))
+            - int(suite.get("errors", 0))
+            - int(suite.get("skipped", 0))
+        )
         report.failed += int(suite.get("failures", 0))
         report.errors += int(suite.get("errors", 0))
         report.skipped += int(suite.get("skipped", 0))
@@ -279,6 +300,7 @@ def print_report(report: Report) -> None:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> int:
     if len(sys.argv) < 2:

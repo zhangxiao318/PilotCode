@@ -63,6 +63,7 @@ class AssistantMessage(Message):
 
     type: Literal["assistant"] = "assistant"
     content: str | list[ContentBlock]
+    reasoning_content: str | None = None  # DeepSeek requires echoing reasoning back
 
 
 class SystemMessage(Message):
