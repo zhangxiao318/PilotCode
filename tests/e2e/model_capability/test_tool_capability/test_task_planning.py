@@ -88,6 +88,106 @@ class TestMultiStepCodingTask:
         created_file = test_dir / "math_utils.py"
         assert created_file.exists(), f"File was not created at {created_file}"
 
+    async def test_generate_count_script_and_execute(
+        self, model_capability_client, e2e_timeout, tmp_path
+    ):
+        """LLM generates a Python script to count files, executes it, and verifies output.
+
+        Validates the full write -> execute -> verify loop for script generation tasks.
+        """
+        qe = model_capability_client
+        test_dir = tmp_path / "count_script_test"
+        test_dir.mkdir()
+
+        # Pre-create files with known content for deterministic verification
+        (test_dir / "a.txt").write_text("line1\nline2\nline3\n")
+        (test_dir / "b.txt").write_text("line4\nline5\n")
+        (test_dir / "c.py").write_text("print('hello')\n")
+
+        qe.config.cwd = str(test_dir)
+
+        result: ToolRunResult = await asyncio.wait_for(
+            run_with_tools(
+                qe,
+                (
+                    f"Write a Python script '{test_dir}/count_files.py' that counts "
+                    f"the number of .txt files and total lines in {test_dir}, "
+                    "then prints 'files=X, lines=Y' where X and Y are the actual counts. "
+                    "Then run the script with Bash."
+                ),
+                timeout=e2e_timeout,
+                max_turns=12,
+            ),
+            timeout=e2e_timeout + 30,
+        )
+
+        tool_names = [tc.name for tc in result.tool_calls]
+
+        # Should create the script (FileWrite or Bash redirect)
+        assert (
+            "FileWrite" in tool_names or "Bash" in tool_names
+        ), f"Should write script via FileWrite or Bash, got: {tool_names}"
+
+        # Should execute the script
+        assert "Bash" in tool_names, f"Should run Bash to execute script, got: {tool_names}"
+
+        # Verify correctness: 2 txt files, 5 lines total
+        assert "files=2" in result.final_response, (
+            f"Expected 'files=2' in response, got: {result.final_response!r}"
+        )
+        assert "lines=5" in result.final_response, (
+            f"Expected 'lines=5' in response, got: {result.final_response!r}"
+        )
+
+    async def test_generate_recursive_script_with_excludes(
+        self, model_capability_client, e2e_timeout, tmp_path
+    ):
+        """LLM generates a recursive script with exclude patterns (e.g. __pycache__, .git).
+
+        Simulates real-world directory scanning where certain directories must be skipped.
+        """
+        qe = model_capability_client
+        test_dir = tmp_path / "recursive_script_test"
+        test_dir.mkdir()
+
+        # Create nested structure with mixed file types
+        for p in ["src/sub", "__pycache__", ".git", ".venv"]:
+            (test_dir / p).mkdir(parents=True, exist_ok=True)
+
+        (test_dir / "src" / "a.py").write_text("x = 1\n")
+        (test_dir / "src" / "b.py").write_text("y = 2\ny = 3\n")
+        (test_dir / "src" / "sub" / "c.py").write_text("z = 4\n")
+        (test_dir / "src" / "readme.txt").write_text("docs\n")
+        # Excluded directories (should not count)
+        (test_dir / "__pycache__" / "cache.pyc").write_text("cached\n")
+        (test_dir / ".git" / "config").write_text("gitconfig\n")
+        (test_dir / ".venv" / "lib.py").write_text("lib\n")
+
+        qe.config.cwd = str(test_dir)
+
+        result: ToolRunResult = await asyncio.wait_for(
+            run_with_tools(
+                qe,
+                (
+                    f"Write a Python script that recursively counts all .py files under {test_dir}, "
+                    "excluding '__pycache__', '.git', and '.venv' directories. "
+                    "Print the result as 'py_files=N'. Then run it with Bash."
+                ),
+                timeout=e2e_timeout,
+                max_turns=12,
+            ),
+            timeout=e2e_timeout + 30,
+        )
+
+        tool_names = [tc.name for tc in result.tool_calls]
+        assert "Bash" in tool_names, f"Should run Bash to execute script, got: {tool_names}"
+
+        # Expected: 3 .py files (src/a.py, src/b.py, src/sub/c.py)
+        # Excluded: __pycache__/cache.pyc, .git/config, .venv/lib.py
+        assert "py_files=3" in result.final_response, (
+            f"Expected 'py_files=3' in response, got: {result.final_response!r}"
+        )
+
 
 @pytest.mark.llm_e2e
 class TestTaskDecomposition:

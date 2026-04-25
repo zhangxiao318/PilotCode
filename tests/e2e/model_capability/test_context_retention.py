@@ -7,21 +7,49 @@ without re-reading or re-searching.
 import pytest
 import asyncio
 
+from .test_bare_llm.helpers import strip_thinking
+
+
+_THINKING_MARKERS = (
+    "The user is asking",
+    "Analyze User Input",
+    "Thinking Process",
+    "thinking process",
+    "Here's a thinking process",
+)
+
 
 async def _run_turn(query_engine, query: str, timeout: float) -> tuple[str, list[str]]:
     """Run one turn, return (assistant_content, tool_names_called)."""
     content_parts = []
     tool_names = []
+    think_closed = False
 
     async for result in query_engine.submit_message(query):
         msg = result.message
         msg_type = msg.__class__.__name__
         if msg_type == "ToolUseMessage":
             tool_names.append(msg.name)
-        elif hasattr(msg, "content") and isinstance(msg.content, str):
-            content_parts.append(msg.content)
+        elif msg_type == "AssistantMessage" and hasattr(msg, "content") and isinstance(msg.content, str):
+            chunk = msg.content
+            if think_closed:
+                stripped = chunk.strip()
+                if any(m in stripped for m in _THINKING_MARKERS):
+                    continue
+                if len(stripped) > 200:
+                    continue
+                content_parts.append(chunk)
+                continue
+            if "</think>" in chunk:
+                think_closed = True
+                idx = chunk.rfind("</think>")
+                post = chunk[idx + len("</think>") :]
+                if post.strip():
+                    content_parts.append(post)
+                continue
+            content_parts.append(chunk)
 
-    return "".join(content_parts), tool_names
+    return strip_thinking("".join(content_parts)), tool_names
 
 
 @pytest.mark.llm_e2e

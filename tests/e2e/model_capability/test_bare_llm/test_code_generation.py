@@ -23,6 +23,8 @@ import textwrap
 
 from pilotcode.utils.model_client import Message
 
+from .helpers import strip_thinking
+
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
@@ -46,7 +48,7 @@ async def _generate_code(model_client, prompt: str, timeout: float) -> str:
         content = delta.get("content")
         if content:
             chunks.append(content)
-    return "".join(chunks)
+    return strip_thinking("".join(chunks))
 
 
 def _extract_function(code_text: str) -> str:

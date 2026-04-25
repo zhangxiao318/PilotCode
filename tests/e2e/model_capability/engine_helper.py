@@ -275,6 +275,10 @@ async def run_with_tools(
     if not result.final_response and assistant_chunks:
         result.final_response = "".join(assistant_chunks)
 
+    # Strip reasoning noise from final response (e.g. <think> blocks)
+    from tests.e2e.model_capability.test_bare_llm.helpers import strip_thinking
+    result.final_response = strip_thinking(result.final_response)
+
     # Populate diagnostics
     result.diagnostics["max_turns_reached"] = result.turn_count >= max_turns
     result.diagnostics["timeout_reached"] = result.error and "timeout" in result.error.lower()

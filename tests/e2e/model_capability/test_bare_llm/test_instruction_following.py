@@ -15,6 +15,8 @@ import pytest
 
 from pilotcode.utils.model_client import Message
 
+from .helpers import strip_thinking
+
 
 async def _chat(model_client, messages: list[Message], timeout: float = 60.0) -> str:
     """Send messages to the bare model and collect the full text response."""
@@ -24,7 +26,7 @@ async def _chat(model_client, messages: list[Message], timeout: float = 60.0) ->
         content = delta.get("content")
         if content:
             chunks.append(content)
-    return "".join(chunks)
+    return strip_thinking("".join(chunks))
 
 
 @pytest.mark.llm_e2e
