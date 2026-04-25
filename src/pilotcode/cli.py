@@ -621,9 +621,25 @@ def config(
     list: bool = typer.Option(False, "--list", "-l", help="List configuration"),
     set_key: str | None = typer.Option(None, "--set", help="Set configuration key"),
     set_value: str | None = typer.Option(None, "--value", help="Configuration value"),
+    test: str | None = typer.Option(None, "--test", "-t", help="Run e2e capability tests: layer1 or layer2"),
 ):
     """Manage configuration (legacy command, use 'configure' instead)."""
     from .utils.config import get_global_config, get_config_manager
+
+    if test:
+        from .commands.config_cmd import _run_layer_test
+
+        layer = test.lower().strip()
+        if layer not in ("layer1", "layer2"):
+            console.print(f"[red]Unknown layer: {layer}. Use: layer1, layer2[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[bold]⏳ Starting Layer {layer[-1]} E2E test...[/bold]")
+        console.print("[dim]This may take several minutes (typically 3–15 min depending on model speed)[/dim]\n")
+
+        report = asyncio.run(_run_layer_test(layer))
+        console.print(report)
+        raise typer.Exit(0)
 
     if list:
         import asyncio
