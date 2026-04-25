@@ -558,7 +558,10 @@ def get_model_client(
         current_loop = None
 
     if _client is None or getattr(_client, "_loop", None) != current_loop:
-        # Don't try to close the old async client synchronously —
-        # just let the old loop's cleanup handle it.
+        # Prevent the old client's connection pool from trying to close
+        # on a dead event loop during garbage collection (causes
+        # RuntimeError: Event loop is closed).
+        if _client is not None:
+            _client.client = None  # type: ignore[assignment]
         _client = ModelClient(api_key, base_url, model)
     return _client
