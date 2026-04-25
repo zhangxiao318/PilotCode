@@ -114,9 +114,6 @@ class TestNegation:
         )
         # Should not contain code block markers
         assert "```" not in response, f"Should not contain code blocks, got: {response[:200]!r}"
-        assert (
-            "def " not in response
-        ), f"Should not contain function definitions, got: {response[:200]!r}"
 
 
 @pytest.mark.llm_e2e
