@@ -106,6 +106,17 @@ class QueryEngine:
         self._changed_files: list[str] = []
         self._review_iteration_count: int = 0
 
+    def change_cwd(self, cwd: str) -> None:
+        """Change working directory and sync to app_state.
+
+        Tools resolve relative paths via ToolUseContext.get_app_state(),
+        so updating config.cwd alone is insufficient. This helper ensures
+        both config and app_state stay in sync.
+        """
+        self.config.cwd = cwd
+        if self.config.set_app_state:
+            self.config.set_app_state(lambda s: setattr(s, "cwd", cwd) or s)
+
     def _build_system_message(self) -> SystemMessage:
         """Build system message with runtime context."""
         if self.config.custom_system_prompt:

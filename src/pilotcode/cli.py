@@ -748,7 +748,7 @@ def config(
         # ------------------------------------------------------------------
         static_info = get_model_info(config.default_model)
 
-        if config.api_key and config.base_url:
+        if config.base_url:
             is_local = is_local_url(effective_url)
             label = "local" if is_local else "remote"
             console.print(f"\n[dim]Probing {label} model runtime info...[/dim]")
@@ -767,7 +767,7 @@ def config(
                     await client.close()
 
             try:
-                api_caps = asyncio.run(_probe())
+                api_caps = asyncio.run(asyncio.wait_for(_probe(), timeout=10.0))
                 if api_caps:
                     console.print("[bold]Model Capability (Runtime Detected):[/bold]")
                     _print_api_capability(console, api_caps, static_info=static_info)
@@ -840,13 +840,36 @@ def config(
                             setattr(config, key, val)
                         get_config_manager().save_global_config(config)
                         console.print("[green]✓ settings.json updated.[/green]")
+                elif api_caps and api_caps.get("_error"):
+                    err = api_caps["_error"]
+                    console.print(f"[red]  Could not connect to backend: {err}[/red]")
+                    console.print(
+                        "  [dim]Tips:[/dim]\n"
+                        "    • Check if the server is running\n"
+                        "    • Verify base_url uses the correct protocol (http vs https)\n"
+                        "    • Check firewall / port accessibility"
+                    )
+                    if static_info:
+                        console.print("\n[bold]Model Capability (Static Config):[/bold]")
+                        _print_model_capability(console, static_info, source="static")
                 else:
                     console.print("[dim]  Model did not expose capability metadata.[/dim]")
                     if static_info:
                         console.print("\n[bold]Model Capability (Static Config):[/bold]")
                         _print_model_capability(console, static_info, source="static")
+            except asyncio.TimeoutError:
+                console.print("[red]  Connection timed out (10s).[/red]")
+                console.print(
+                    "  [dim]Tips:[/dim]\n"
+                    "    • Check if the server is running\n"
+                    "    • Verify base_url uses the correct protocol (http vs https)\n"
+                    "    • Check firewall / port accessibility"
+                )
+                if static_info:
+                    console.print("\n[bold]Model Capability (Static Config):[/bold]")
+                    _print_model_capability(console, static_info, source="static")
             except Exception as e:
-                console.print(f"[yellow]  Could not probe model: {e}[/yellow]")
+                console.print(f"[red]  Could not probe model: {type(e).__name__}: {e}[/red]")
                 if static_info:
                     console.print("\n[bold]Model Capability (Static Config):[/bold]")
                     _print_model_capability(console, static_info, source="static")

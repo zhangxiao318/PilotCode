@@ -128,10 +128,14 @@ class ModelClient:
         else:
             self.base_url = ""
 
+        # Local models often use self-signed HTTPS certs; disable verification.
+        verify_ssl = not is_local
+
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
             timeout=300.0,
+            verify=verify_ssl,
         )
 
         # Provider flags for provider-specific handling
@@ -253,11 +257,15 @@ class ModelClient:
         and standard OpenAI-compatible endpoints.
 
         Returns:
-            Dict with capability info, or None if the API doesn't expose it.
+            Dict with capability info. If the API doesn't expose metadata,
+            returns a dict with ``_error`` key explaining why (connection
+            refused, SSL error, timeout, etc.) so callers can surface the
+            reason to the user.
         """
         import asyncio
 
         cap: dict[str, Any] = {}
+        last_error: str | None = None
 
         # Derive root URL (strip trailing /v1 so we can hit backend-specific
         # endpoints like /props or /api/show).
@@ -297,8 +305,9 @@ class ModelClient:
                 if "_provider" not in cap:
                     cap["_provider"] = "custom"
                 cap["_backend"] = "llama-server"
-        except Exception:
-            pass
+        except Exception as e:
+            last_error = f"llama-server /props: {type(e).__name__}: {e}"
+
 
         # ------------------------------------------------------------------
         # 2. Ollama  ->  POST /api/show
@@ -339,8 +348,9 @@ class ModelClient:
                         cap["display_name"] = ollama_name
                     cap["_provider"] = "ollama"
                     cap["_backend"] = "ollama"
-            except Exception:
-                pass
+            except Exception as e:
+                last_error = f"Ollama /api/show: {type(e).__name__}: {e}"
+
 
         # ------------------------------------------------------------------
         # 3. LiteLLM proxy  ->  GET /model/info
@@ -365,8 +375,9 @@ class ModelClient:
                         if "supports_vision" in info:
                             cap["supports_vision"] = bool(info["supports_vision"])
                         cap["_backend"] = "litellm"
-            except Exception:
-                pass
+            except Exception as e:
+                last_error = f"LiteLLM /model/info: {type(e).__name__}: {e}"
+
 
         # ------------------------------------------------------------------
         # 4. Standard OpenAI-compatible  ->  GET /v1/models / /models/{id}
@@ -412,7 +423,8 @@ class ModelClient:
                     httpx.RequestError,
                     json.JSONDecodeError,
                     asyncio.TimeoutError,
-                ):
+                ) as e:
+                    last_error = f"OpenAI-compatible {endpoint}: {type(e).__name__}: {e}"
                     continue
 
             if model_data:
@@ -562,7 +574,11 @@ class ModelClient:
             if inferred:
                 cap["_provider"] = inferred
 
-        return cap if cap else None
+        if cap:
+            return cap
+        if last_error:
+            return {"_error": last_error}
+        return None
 
     async def close(self) -> None:
         """Close the client."""

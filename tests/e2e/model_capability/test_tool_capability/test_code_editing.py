@@ -28,9 +28,7 @@ class TestFileEditWorkflow:
         qe = model_capability_client
         test_dir = tmp_path / "edit_test"
         test_dir.mkdir()
-        qe.config.cwd = str(test_dir)
-        if qe.config.set_app_state:
-            qe.config.set_app_state(lambda s: setattr(s, "cwd", str(test_dir)) or s)
+        qe.change_cwd(str(test_dir))
 
         # Create initial file
         init_file = test_dir / "calculator.py"
@@ -76,9 +74,7 @@ class TestFileEditWorkflow:
         qe = model_capability_client
         test_dir = tmp_path / "class_edit_test"
         test_dir.mkdir()
-        qe.config.cwd = str(test_dir)
-        if qe.config.set_app_state:
-            qe.config.set_app_state(lambda s: setattr(s, "cwd", str(test_dir)) or s)
+        qe.change_cwd(str(test_dir))
 
         init_file = test_dir / "greeter.py"
         init_file.write_text("""class Greeter:
@@ -131,9 +127,7 @@ class TestEditVerification:
         qe = model_capability_client
         test_dir = tmp_path / "verify_test"
         test_dir.mkdir()
-        qe.config.cwd = str(test_dir)
-        if qe.config.set_app_state:
-            qe.config.set_app_state(lambda s: setattr(s, "cwd", str(test_dir)) or s)
+        qe.change_cwd(str(test_dir))
 
         init_file = test_dir / "utils.py"
         init_file.write_text("""def helper():
