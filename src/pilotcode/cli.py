@@ -628,6 +628,8 @@ def _validate_and_select_remote_model(console, config, base_url: str) -> None:
         model_info = get_model_info(config.default_model)
         if model_info:
             config.model_provider = model_info.provider.value
+        elif "deepseek" in base:
+            config.model_provider = "deepseek"
 
     if "deepseek" in base:
         valid_models = ["deepseek-v4-pro", "deepseek-v4-flash"]
@@ -704,6 +706,10 @@ def config(
         from .utils.models_config import get_model_info
 
         config = get_global_config()
+
+        # ------------------------------------------------------------------
+        # Step 1: Basic config display
+        # ------------------------------------------------------------------
         console.print("[bold]Global Configuration:[/bold]")
         console.print(f"  Theme: {config.theme}")
         console.print(f"  Verbose: {config.verbose}")
@@ -715,12 +721,26 @@ def config(
         if config.context_window > 0:
             console.print(f"  Context Window: {config.context_window}")
 
-        # --- For local models, probe runtime info and check settings.json ---
+        # ------------------------------------------------------------------
+        # Step 2: Provider validation (model name, deprecated models, etc.)
+        # ------------------------------------------------------------------
         effective_url = config.base_url or ""
-        if is_local_url(effective_url):
-            console.print("\n[dim]Probing local model runtime info...[/dim]")
+        _validate_and_select_remote_model(console, config, effective_url)
 
-            async def _probe_local() -> dict | None:
+        # Re-fetch config after potential user interaction above
+        config = get_global_config()
+
+        # ------------------------------------------------------------------
+        # Step 3: Probe runtime capabilities (local OR remote)
+        # ------------------------------------------------------------------
+        static_info = get_model_info(config.default_model)
+
+        if config.api_key and config.base_url:
+            is_local = is_local_url(effective_url)
+            label = "local" if is_local else "remote"
+            console.print(f"\n[dim]Probing {label} model runtime info...[/dim]")
+
+            async def _probe() -> dict | None:
                 from .utils.model_client import ModelClient
 
                 client = ModelClient(
@@ -734,33 +754,13 @@ def config(
                     await client.close()
 
             try:
-                api_caps = asyncio.run(_probe_local())
+                api_caps = asyncio.run(_probe())
                 if api_caps:
                     console.print("[bold]Model Capability (Runtime Detected):[/bold]")
-                    _print_api_capability(console, api_caps, static_info=None)
+                    _print_api_capability(console, api_caps, static_info=static_info)
 
-                    # --- Suggest /v1 suffix for OpenAI-compatible local backends ---
-                    backend = api_caps.get("_backend", "")
-                    if backend in ("vllm", "openai-compatible") and config.base_url:
-                        url = config.base_url.rstrip("/")
-                        if not url.endswith("/v1"):
-                            console.print(
-                                f"\n[yellow]⚠ base_url missing /v1 suffix:[/yellow] {config.base_url}"
-                            )
-                            console.print(
-                                "  [dim]vLLM and other OpenAI-compatible backends typically "
-                                "expose endpoints under /v1 (e.g. /v1/chat/completions).[/dim]"
-                            )
-                            if typer.confirm("Auto-append /v1 to base_url?", default=True):
-                                config.base_url = url + "/v1"
-                                get_config_manager().save_global_config(config)
-                                console.print(
-                                    f"[green]✓ base_url updated: {config.base_url}[/green]"
-                                )
-
-                    # --- For local models, check settings.json against probed values ---
-                    # Local models use settings.json as the single source of truth.
-                    local_updates: dict[str, Any] = {}
+                    # --- Check settings.json against probed values ---
+                    updates: dict[str, Any] = {}
 
                     detected_ctx = api_caps.get("context_window")
                     if detected_ctx is not None:
@@ -769,50 +769,77 @@ def config(
                                 f"\n[yellow]⚠ context_window not set in settings.json. "
                                 f"Detected: {detected_ctx}[/yellow]"
                             )
-                            local_updates["context_window"] = detected_ctx
+                            updates["context_window"] = detected_ctx
                         elif config.context_window != detected_ctx:
-                            console.print(
-                                f"\n[yellow]⚠ context_window mismatch: "
-                                f"settings.json={config.context_window}, detected={detected_ctx}[/yellow]"
-                            )
+                            # Warn if user's value is way off (e.g. 10x smaller)
+                            ratio = detected_ctx / max(config.context_window, 1)
+                            if ratio >= 2 or ratio <= 0.5:
+                                console.print(
+                                    f"\n[yellow]⚠ context_window mismatch: "
+                                    f"settings.json={config.context_window}, detected={detected_ctx}"
+                                    f" (ratio {ratio:.1f}x)[/yellow]"
+                                )
+                            else:
+                                console.print(
+                                    f"\n[dim]context_window differs slightly: "
+                                    f"settings.json={config.context_window}, detected={detected_ctx}[/dim]"
+                                )
                             if typer.confirm(
                                 "Update settings.json to match detected value?", default=True
                             ):
-                                local_updates["context_window"] = detected_ctx
+                                updates["context_window"] = detected_ctx
 
-                    # For vLLM, check model name
-                    if backend == "vllm":
-                        detected_model = api_caps.get("model_id") or api_caps.get("display_name")
-                        if detected_model and config.default_model != detected_model:
+                    detected_model = api_caps.get("model_id") or api_caps.get("display_name")
+                    if detected_model and config.default_model != detected_model:
+                        console.print(
+                            f"\n[yellow]⚠ Model name mismatch: "
+                            f"settings.json='{config.default_model}', detected='{detected_model}'[/yellow]"
+                        )
+                        if typer.confirm(
+                            "Update default_model in settings.json?", default=True
+                        ):
+                            updates["default_model"] = detected_model
+
+                    # --- Suggest /v1 suffix for OpenAI-compatible backends ---
+                    backend = api_caps.get("_backend", "")
+                    if backend in ("vllm", "openai-compatible") and config.base_url:
+                        url = config.base_url.rstrip("/")
+                        if not url.endswith("/v1"):
                             console.print(
-                                f"\n[yellow]⚠ vLLM model name mismatch: "
-                                f"settings.json='{config.default_model}', detected='{detected_model}'[/yellow]"
+                                f"\n[yellow]⚠ base_url missing /v1 suffix:[/yellow] {config.base_url}"
                             )
-                            if typer.confirm(
-                                "Update default_model in settings.json?", default=True
-                            ):
-                                local_updates["default_model"] = detected_model
+                            console.print(
+                                "  [dim]OpenAI-compatible backends typically "
+                                "expose endpoints under /v1 (e.g. /v1/chat/completions).[/dim]"
+                            )
+                            if typer.confirm("Auto-append /v1 to base_url?", default=True):
+                                updates["base_url"] = url + "/v1"
 
-                    if local_updates:
-                        for key, val in local_updates.items():
+                    if updates:
+                        for key, val in updates.items():
                             setattr(config, key, val)
                         get_config_manager().save_global_config(config)
                         console.print("[green]✓ settings.json updated.[/green]")
                 else:
-                    console.print("[dim]  Local model did not expose capability metadata.[/dim]")
+                    console.print("[dim]  Model did not expose capability metadata.[/dim]")
+                    if static_info:
+                        console.print("\n[bold]Model Capability (Static Config):[/bold]")
+                        _print_model_capability(console, static_info, source="static")
             except Exception as e:
-                console.print(f"[yellow]  Could not probe local model: {e}[/yellow]")
-
+                console.print(f"[yellow]  Could not probe model: {e}[/yellow]")
+                if static_info:
+                    console.print("\n[bold]Model Capability (Static Config):[/bold]")
+                    _print_model_capability(console, static_info, source="static")
         else:
-            # Remote models: show static config from models.json
-            model_info = get_model_info(config.default_model)
-            if model_info:
+            # No API key or base_url — can only show static config
+            if static_info:
                 console.print("\n[bold]Model Capability (Static Config):[/bold]")
-                _print_model_capability(console, model_info, source="static")
-
-            # --- Provider-specific config validation & model selection ---
-            effective_url = config.base_url or ""
-            _validate_and_select_remote_model(console, config, effective_url)
+                _print_model_capability(console, static_info, source="static")
+            else:
+                console.print(
+                    "\n[yellow]No static config found for model '{config.default_model}'. "
+                    "Run with --wizard to configure.[/yellow]"
+                )
 
         config_file = get_config_manager().SETTINGS_FILE
         console.print(f"\n[dim]Config file: {config_file}[/dim]")

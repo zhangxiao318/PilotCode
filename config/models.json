@@ -65,6 +65,32 @@
       "context_window": 1000000,
       "env_key": "DEEPSEEK_API_KEY"
     },
+    "deepseek-v4-pro": {
+      "name": "deepseek-v4-pro",
+      "display_name": "DeepSeek V4 Pro",
+      "provider": "deepseek",
+      "base_url": "https://api.deepseek.com",
+      "default_model": "deepseek-v4-pro",
+      "description": "DeepSeek V4 Pro - High-performance coding model. 1M context, tool calls, JSON output.",
+      "supports_tools": true,
+      "supports_vision": false,
+      "max_tokens": 8192,
+      "context_window": 1000000,
+      "env_key": "DEEPSEEK_API_KEY"
+    },
+    "deepseek-v4-flash": {
+      "name": "deepseek-v4-flash",
+      "display_name": "DeepSeek V4 Flash",
+      "provider": "deepseek",
+      "base_url": "https://api.deepseek.com",
+      "default_model": "deepseek-v4-flash",
+      "description": "DeepSeek V4 Flash - Fast & cost-effective. 1M context, tool calls, JSON output.",
+      "supports_tools": true,
+      "supports_vision": false,
+      "max_tokens": 8192,
+      "context_window": 1000000,
+      "env_key": "DEEPSEEK_API_KEY"
+    },
     "qwen": {
       "name": "qwen",
       "display_name": "Qwen (通义千问)",
