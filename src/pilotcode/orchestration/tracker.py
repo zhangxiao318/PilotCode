@@ -255,6 +255,7 @@ class MissionTracker:
         counts = {
             TaskState.DONE: 0,
             TaskState.CANCELLED: 0,
+            TaskState.REJECTED: 0,
             TaskState.VERIFIED: 0,
             TaskState.IN_PROGRESS: 0,
             TaskState.BLOCKED: 0,
@@ -266,11 +267,13 @@ class MissionTracker:
                 counts[s] += 1
 
         total = len(dag.nodes)
-        done = counts[TaskState.DONE] + counts[TaskState.CANCELLED]
+        done = counts[TaskState.DONE]
+        failed = counts[TaskState.CANCELLED] + counts[TaskState.REJECTED]
+        terminal = done + failed
 
         status = "pending"
-        if done == total:
-            status = "completed"
+        if terminal == total:
+            status = "completed" if failed == 0 else "failed"
         elif counts[TaskState.IN_PROGRESS] > 0:
             status = "running"
         elif counts[TaskState.BLOCKED] > 0:
@@ -285,7 +288,7 @@ class MissionTracker:
             total_tasks=total,
             completed_tasks=done,
             verified_tasks=counts[TaskState.VERIFIED],
-            failed_tasks=counts[TaskState.CANCELLED],
+            failed_tasks=failed,
             blocked_tasks=counts[TaskState.BLOCKED],
             in_progress_tasks=counts[TaskState.IN_PROGRESS],
             ready_tasks=len(dag.get_ready_tasks()),
@@ -312,7 +315,7 @@ class MissionTracker:
     def all_done(self, mission_id: str) -> bool:
         """Check if all tasks in a mission are done."""
         dag = self._dag_executors.get(mission_id)
-        return dag.all_done() if dag else True
+        return dag.all_done() if dag else False
 
 
 # Global instance

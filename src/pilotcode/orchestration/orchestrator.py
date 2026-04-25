@@ -500,27 +500,33 @@ class Orchestrator:
         return False
 
     def _cancel_downstream_tasks(self, mission_id: str, failed_task_id: str) -> None:
-        """Cancel all tasks that depend on a failed task."""
+        """Recursively cancel all tasks that depend on a failed task."""
         dag = self.tracker.get_dag(mission_id)
         if not dag:
             return
-        for edge in dag.edges:
-            if edge.from_task == failed_task_id:
-                downstream = edge.to_task
-                sm = self.tracker.get_state_machine(mission_id, downstream)
-                if sm and sm.state == TaskState.PENDING:
-                    try:
-                        sm.transition(Transition.CANCEL, actor="orchestrator")
-                    except InvalidTransitionError:
-                        pass
-                    self._notify(
-                        "task:cancelled_dependency_failure",
-                        {
-                            "mission_id": mission_id,
-                            "task_id": downstream,
-                            "failed_dep": failed_task_id,
-                        },
-                    )
+
+        def _cancel_recursive(task_id: str) -> None:
+            for edge in dag.edges:
+                if edge.from_task == task_id:
+                    downstream = edge.to_task
+                    sm = self.tracker.get_state_machine(mission_id, downstream)
+                    if sm and sm.state == TaskState.PENDING:
+                        try:
+                            sm.transition(Transition.CANCEL, actor="orchestrator")
+                        except InvalidTransitionError:
+                            pass
+                        self._notify(
+                            "task:cancelled_dependency_failure",
+                            {
+                                "mission_id": mission_id,
+                                "task_id": downstream,
+                                "failed_dep": task_id,
+                            },
+                        )
+                    # Recursively cancel downstream of downstream
+                    _cancel_recursive(downstream)
+
+        _cancel_recursive(failed_task_id)
 
     def _count_rework_attempts(self, mission_id: str, task_id: str) -> int:
         """Count how many times this task has been retried."""

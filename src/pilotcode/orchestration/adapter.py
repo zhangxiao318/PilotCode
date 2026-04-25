@@ -777,9 +777,9 @@ class MissionAdapter:
 
         exploration: dict[str, Any] = {"files": [], "conventions": {}, "architecture_notes": []}
 
-        # Quick scan of Python files
+        # Quick scan of Python files (offload sync I/O to thread)
         try:
-            py_files = pyglob.glob("**/*.py", recursive=True)
+            py_files = await asyncio.to_thread(pyglob.glob, "**/*.py", recursive=True)
             exploration["files"] = py_files[:50]
         except Exception:
             pass
@@ -806,22 +806,25 @@ class MissionAdapter:
         ]
         for fname in top_level_files:
             fpath = os.path.join(os.getcwd(), fname)
-            if os.path.exists(fpath):
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    self.project_memory.record_file_read(
-                        fname, content, summary=content[:200].replace("\n", " ")
-                    )
-                    if fname == "pyproject.toml":
-                        if "fastapi" in content.lower():
-                            self.project_memory.record_convention("framework", "FastAPI")
-                        elif "django" in content.lower():
-                            self.project_memory.record_convention("framework", "Django")
-                        elif "flask" in content.lower():
-                            self.project_memory.record_convention("framework", "Flask")
-                except Exception:
-                    pass
+            try:
+                exists = await asyncio.to_thread(os.path.exists, fpath)
+                if not exists:
+                    continue
+                content = await asyncio.to_thread(
+                    lambda p: open(p, "r", encoding="utf-8").read(), fpath
+                )
+                self.project_memory.record_file_read(
+                    fname, content, summary=content[:200].replace("\n", " ")
+                )
+                if fname == "pyproject.toml":
+                    if "fastapi" in content.lower():
+                        self.project_memory.record_convention("framework", "FastAPI")
+                    elif "django" in content.lower():
+                        self.project_memory.record_convention("framework", "Django")
+                    elif "flask" in content.lower():
+                        self.project_memory.record_convention("framework", "Flask")
+            except Exception:
+                pass
 
         exploration["key_files"] = key_files_found
         return exploration
@@ -899,8 +902,13 @@ class MissionAdapter:
             return result
 
         except asyncio.CancelledError:
-            # Re-raise so callers can handle cancellation properly
-            raise
+            # Return a clean cancellation result instead of raising,
+            # so callers (e.g. WebSocket handlers) don't need extra try/except.
+            return {
+                "success": False,
+                "error": "Cancelled by user",
+                "mission_id": getattr(locals().get("mission"), "mission_id", ""),
+            }
         except Exception as exc:
             return {
                 "success": False,
