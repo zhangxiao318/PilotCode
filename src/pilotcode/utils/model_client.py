@@ -220,10 +220,13 @@ class ModelClient:
             except ValueError:
                 pass
 
+        # Use granular timeouts to prevent indefinite hangs on half-closed
+        # connections (e.g. CLOSE-WAIT) while still allowing long generations.
+        # read=60s means any single read operation that stalls >60s will abort.
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-            timeout=timeout,
+            timeout=httpx.Timeout(timeout, connect=10.0, read=60.0, write=10.0, pool=5.0),
             verify=verify_ssl,
         )
 

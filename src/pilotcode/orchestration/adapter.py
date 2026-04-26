@@ -128,7 +128,9 @@ class MissionAdapter:
         # Apply adaptive configuration to strategy config
         from ..model_capability.adaptive_config import apply_adaptive_config_to_strategy_config
 
-        apply_adaptive_config_to_strategy_config(self.adaptive_config, self.plan_adjuster.config)
+        self.plan_adjuster.config = apply_adaptive_config_to_strategy_config(
+            self.adaptive_config, self.plan_adjuster.config
+        )
 
         # Apply strategy to orchestrator config
         orch_config = OrchestratorConfig()
@@ -487,14 +489,15 @@ class MissionAdapter:
             raise ValueError(f"Failed to parse plan JSON: {exc}") from exc
 
 
-def _fix_common_json_errors(text: str) -> str:
-    """Fix common JSON errors produced by LLMs."""
-    # Remove trailing commas before } or ]
-    text = re.sub(r",(\s*[}\]])", r"\1", text)
-    # Convert single-quoted strings to double-quoted (naive, best-effort)
-    # Only handles simple cases like {'key': 'value'}
-    text = re.sub(r"(?<!\\)'([^']*?)'(\s*[:}\],])", r'"\1"\2', text)
-    return text
+    @staticmethod
+    def _fix_common_json_errors(text: str) -> str:
+        """Fix common JSON errors produced by LLMs."""
+        # Remove trailing commas before } or ]
+        text = re.sub(r",(\s*[}\]])", r"\1", text)
+        # Convert single-quoted strings to double-quoted (naive, best-effort)
+        # Only handles simple cases like {'key': 'value'}
+        text = re.sub(r"(?<!\\)'([^']*?)'(\s*[:}\],])", r'"\1"\2', text)
+        return text
 
     # Backward-compatible alias
     _extract_json = _extract_json_static
@@ -922,8 +925,6 @@ def _fix_common_json_errors(text: str) -> str:
             self.project_memory.record_convention("testing_framework", "pytest")
         elif "unittest" in output_lower:
             self.project_memory.record_convention("testing_framework", "unittest")
-
-        return exploration
 
     # ------------------------------------------------------------------
     # Public API

@@ -293,21 +293,27 @@ class AdaptiveConfigMapper:
 def apply_adaptive_config_to_strategy_config(
     adaptive: AdaptiveOrchestratorConfig,
     strategy_config: Any,  # StrategyConfig from context_strategy
-) -> None:
-    """Apply adaptive configuration to an existing StrategyConfig object.
+) -> Any:
+    """Apply adaptive configuration to a StrategyConfig object.
 
+    Returns a new StrategyConfig because the original is a frozen dataclass.
     This bridges the new adaptive system with the existing context_strategy module.
     """
-    strategy_config.max_tasks_per_phase = adaptive.max_tasks_per_phase
-    strategy_config.max_files_per_task = adaptive.max_files_per_task
-    strategy_config.force_dependency_declaration = adaptive.force_dependency_declaration
-    strategy_config.max_turns_multiplier = adaptive.max_turns_multiplier
-    strategy_config.auto_worker_selection = adaptive.auto_worker_selection
-    strategy_config.inject_objective_reminder_every = adaptive.inject_objective_reminder_every
-    strategy_config.enable_l1 = adaptive.enable_l1
-    strategy_config.enable_l2 = adaptive.enable_l2
-    strategy_config.enable_l3 = adaptive.enable_l3
-    strategy_config.l3_complexity_threshold = adaptive.l3_complexity_threshold
-    strategy_config.auto_approve_very_simple = adaptive.auto_approve_very_simple
-    strategy_config.max_rework_attempts = adaptive.max_rework_attempts
-    strategy_config.enable_redesign = adaptive.enable_redesign
+    from dataclasses import replace
+
+    return replace(
+        strategy_config,
+        max_tasks_per_phase=adaptive.max_tasks_per_phase,
+        max_files_per_task=adaptive.max_files_per_task,
+        force_dependency_declaration=adaptive.force_dependency_declaration,
+        max_turns_multiplier=adaptive.max_turns_multiplier,
+        auto_worker_selection=adaptive.auto_worker_selection,
+        inject_objective_reminder_every=adaptive.inject_objective_reminder_every,
+        enable_l1=adaptive.enable_l1,
+        enable_l2=adaptive.enable_l2,
+        enable_l3=adaptive.enable_l3,
+        l3_complexity_threshold=adaptive.l3_complexity_threshold,
+        auto_approve_very_simple=adaptive.auto_approve_very_simple,
+        max_rework_attempts=adaptive.max_rework_attempts,
+        enable_redesign=adaptive.enable_redesign,
+    )
