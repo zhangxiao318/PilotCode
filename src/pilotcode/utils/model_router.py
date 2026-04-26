@@ -262,6 +262,43 @@ class ModelRouter:
             if content:
                 yield content
 
+    async def broadcast(
+        self,
+        messages: list[dict[str, Any]],
+        model_names: list[str],
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Send the same request to multiple models in parallel.
+
+        Args:
+            messages: OpenAI-compatible message list.
+            model_names: List of model names to query.
+            **kwargs: Extra arguments passed to each client's chat_completion.
+
+        Returns:
+            Dict mapping model name to the full response dict (non-streaming).
+        """
+        import asyncio
+
+        async def _query_one(name: str) -> tuple[str, Any]:
+            client = self._get_client(name)
+            chunks = []
+            async for chunk in client.chat_completion(messages, stream=False, **kwargs):
+                chunks.append(chunk)
+            # Non-streaming mode yields a single chunk with full response
+            return name, chunks[0] if chunks else {}
+
+        results = await asyncio.gather(
+            *[_query_one(n) for n in model_names], return_exceptions=True
+        )
+        output: dict[str, Any] = {}
+        for name, result in zip(model_names, results):
+            if isinstance(result, Exception):
+                output[name] = {"error": str(result)}
+            else:
+                output[name] = result[1]
+        return output
+
 
 # Global router instance
 _router: ModelRouter | None = None

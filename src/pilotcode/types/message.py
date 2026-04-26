@@ -147,6 +147,43 @@ def deserialize_messages(data: list[dict[str, Any]]) -> list[MessageType]:
     return result
 
 
+def _convert_content_block(block: ContentBlock) -> dict[str, Any]:
+    """Convert a single ContentBlock to OpenAI-compatible format."""
+    if isinstance(block, TextBlock):
+        return {"type": "text", "text": block.text}
+    if isinstance(block, ImageBlock):
+        src = block.source
+        if src.get("type") == "base64":
+            media_type = src.get("media_type", "image/png")
+            data = src.get("data", "")
+            url = f"data:{media_type};base64,{data}"
+        else:
+            url = src.get("url", "")
+        return {"type": "image_url", "image_url": {"url": url}}
+    if isinstance(block, ToolUseBlock):
+        return {
+            "type": "tool_use",
+            "id": block.id,
+            "name": block.name,
+            "input": block.input,
+        }
+    if isinstance(block, ToolResultBlock):
+        return {
+            "type": "tool_result",
+            "tool_use_id": block.tool_use_id,
+            "content": block.content,
+            "is_error": block.is_error,
+        }
+    return {"type": "text", "text": str(block)}
+
+
+def _convert_user_content(content: str | list[ContentBlock]) -> str | list[dict[str, Any]]:
+    """Convert user message content to API format (str or content blocks)."""
+    if isinstance(content, str):
+        return content
+    return [_convert_content_block(b) for b in content]
+
+
 def to_api_format(messages: list[MessageType]) -> list[dict[str, Any]]:
     """Convert internal Pydantic messages to OpenAI-compatible API dict format.
 
@@ -158,6 +195,7 @@ def to_api_format(messages: list[MessageType]) -> list[dict[str, Any]]:
     - AssistantMessage + following ToolUseMessages → merged single assistant msg
     - Empty user messages are skipped (DeepSeek rejects them)
     - reasoning_content is preserved on assistant messages
+    - Vision content (ImageBlock) is converted to OpenAI image_url format
     """
     import json
 
@@ -191,15 +229,21 @@ def to_api_format(messages: list[MessageType]) -> list[dict[str, Any]]:
             result.append({"role": "system", "content": msg.content})
         elif isinstance(msg, UserMessage):
             _flush_assistant()
-            content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            if content.strip():
+            content = _convert_user_content(msg.content)
+            if isinstance(content, str):
+                if content.strip():
+                    result.append({"role": "user", "content": content})
+            else:
+                # content is list[dict] (multimodal)
                 result.append({"role": "user", "content": content})
         elif isinstance(msg, AssistantMessage):
             _flush_assistant()
-            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            assistant_content = _convert_user_content(msg.content)
+            if isinstance(assistant_content, list):
+                assistant_content = json.dumps(assistant_content)
             pending_assistant = {
                 "role": "assistant",
-                "content": content,
+                "content": assistant_content,
             }
             if msg.reasoning_content:
                 pending_assistant["reasoning_content"] = msg.reasoning_content
