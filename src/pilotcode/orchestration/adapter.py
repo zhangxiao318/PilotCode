@@ -110,6 +110,9 @@ class MissionAdapter:
 
         self.compensation = CompensationEngine(self.adaptive_config, self.capability)
 
+        # P0: FileEdit failure streak counter for real-time compensation escalation
+        self._fileedit_failure_streak = 0
+
         # Multi-model router for tiered task routing
         self.router = ModelRouter()
 
@@ -745,6 +748,16 @@ class MissionAdapter:
                         self._update_memory_from_tool(
                             tu, result_text, success, file_reads_this_task
                         )
+
+                        # --- P0: Real-time FileEdit failure detection ---
+                        if tu.name in ("FileEdit", "edit"):
+                            if not success or "String not found" in result_text:
+                                self._fileedit_failure_streak += 1
+                                if self._fileedit_failure_streak >= 2:
+                                    self._escalate_compensation()
+                            else:
+                                self._fileedit_failure_streak = 0
+
                         # Real-time: emit tool result
                         summary = (
                             result_text[:500] + "..." if len(result_text) > 500 else result_text
@@ -837,6 +850,51 @@ class MissionAdapter:
 
         model_config = self.router.get_model_for_tier(tier)
         return self.router._get_client(model_config.name)
+
+    # ------------------------------------------------------------------
+    # P0: Real-time compensation escalation on FileEdit failures
+    # ------------------------------------------------------------------
+
+    def _escalate_compensation(self) -> None:
+        """Automatically increase compensation level when FileEdit keeps failing.
+
+        This is triggered in real-time during tool execution (not after task
+        completion), so the very next LLM turn receives stronger guidance.
+        """
+        config = self.compensation.config
+        escalations: list[str] = []
+
+        # Strategy 1: Force atomic edits (one change per FileEdit call)
+        if config.max_edits_per_round > 1:
+            config.max_edits_per_round = 1
+            escalations.append("max_edits_per_round=1")
+
+        # Strategy 2: Enable SmartEditPlanner if not already on
+        if not config.enable_smart_edit_planner:
+            config.enable_smart_edit_planner = True
+            escalations.append("enable_smart_edit_planner")
+
+        # Strategy 3: Force verify-after-each-edit
+        if not config.verify_after_each_edit:
+            config.verify_after_each_edit = True
+            escalations.append("verify_after_each_edit")
+
+        # Strategy 4: Reduce task granularity to fine
+        if config.task_granularity.value != "fine":
+            from pilotcode.model_capability.adaptive_config import TaskGranularity
+
+            config.task_granularity = TaskGranularity.FINE
+            escalations.append("task_granularity=fine")
+
+        if escalations:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.info(
+                "Compensation escalated after %d FileEdit failures: %s",
+                self._fileedit_failure_streak,
+                ", ".join(escalations),
+            )
 
     # ------------------------------------------------------------------
     # Continue prompt with context
