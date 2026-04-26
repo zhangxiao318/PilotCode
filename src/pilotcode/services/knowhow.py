@@ -13,6 +13,7 @@ weak-model mistakes are caught before they reach the user.
 from __future__ import annotations
 
 import ast
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,6 +53,37 @@ class KnowhowEntry:
     # Metadata
     severity: str = "warning"  # "error" | "warning" | "info"
     tags: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-friendly dict."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "pattern": self.pattern,
+            "pattern_type": self.pattern_type,
+            "applies_to_globs": self.applies_to_globs,
+            "fix_type": self.fix_type,
+            "fix_replacement": self.fix_replacement,
+            "severity": self.severity,
+            "tags": self.tags,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> KnowhowEntry:
+        """Deserialize from a dict (e.g. loaded from JSON)."""
+        return cls(
+            id=data["id"],
+            name=data["name"],
+            description=data["description"],
+            pattern=data["pattern"],
+            pattern_type=data.get("pattern_type", "regex"),
+            applies_to_globs=data.get("applies_to_globs", ["*.py"]),
+            fix_type=data.get("fix_type", "warn"),
+            fix_replacement=data.get("fix_replacement"),
+            severity=data.get("severity", "warning"),
+            tags=data.get("tags", []),
+        )
 
     def detect(self, source: str, file_path: str | None = None) -> list[KnowhowMatch]:
         """Run detection against source code."""
@@ -226,24 +258,111 @@ _BUILTIN_KNOWHOW: list[KnowhowEntry] = [
 ]
 
 
+def _get_knowhow_dir() -> Path:
+    """Return the knowhow directory (~/.pilotcode/knowhow)."""
+    return Path.home() / ".pilotcode" / "knowhow"
+
+
+def model_slug(model_name: str) -> str:
+    """Convert a model name to a filesystem-safe slug.
+
+    Examples:
+        "qwen3-coder-30b"         -> "qwen3-coder-30b"
+        "Qwen/Qwen3-Coder-30B"    -> "qwen-qwen3-coder-30b"
+        "meta-llama/Llama-3-8b"   -> "meta-llama-llama-3-8b"
+    """
+    slug = model_name.lower()
+    slug = re.sub(r"[^a-z0-9._-]+", "-", slug)
+    slug = slug.strip("-.")
+    return slug or "unknown"
+
+
 class KnowhowLibrary:
     """Registry of known problems."""
 
-    def __init__(self, entries: list[KnowhowEntry] | None = None) -> None:
+    def __init__(
+        self,
+        entries: list[KnowhowEntry] | None = None,
+        model_slug: str | None = None,
+        has_model_file: bool = True,
+    ) -> None:
         self.entries = list(entries) if entries is not None else list(_BUILTIN_KNOWHOW)
         self._by_id = {e.id: e for e in self.entries}
+        self.model_slug = model_slug
+        self._has_model_file = has_model_file
+
+    # -- Factory methods ----------------------------------------------------
+
+    @classmethod
+    def for_model(cls, model_name: str) -> KnowhowLibrary:
+        """Load knowhow for a specific model.
+
+        Loads (in order):
+        1. Built-in rules (_BUILTIN_KNOWHOW)
+        2. global.json   — universal rules (optional)
+        3. {slug}.json   — model-specific rules (optional)
+
+        If the model-specific file does NOT exist, detection is skipped
+        entirely (check() returns []), avoiding false positives on unprofiled
+        models.
+        """
+        knowhow_dir = _get_knowhow_dir()
+        slug = model_slug(model_name)
+
+        entries: list[KnowhowEntry] = list(_BUILTIN_KNOWHOW)
+
+        # 1. Global rules (always loaded if present)
+        global_path = knowhow_dir / "global.json"
+        if global_path.exists():
+            entries.extend(cls._load_json_file(global_path))
+
+        # 2. Model-specific rules
+        model_path = knowhow_dir / f"{slug}.json"
+        has_model_file = model_path.exists()
+        if has_model_file:
+            entries.extend(cls._load_json_file(model_path))
+
+        return cls(entries=entries, model_slug=slug, has_model_file=has_model_file)
+
+    @classmethod
+    def empty(cls) -> KnowhowLibrary:
+        """Return an empty library (no rules, detection skipped)."""
+        return cls(entries=[], model_slug=None, has_model_file=False)
+
+    @classmethod
+    def _load_json_file(cls, path: Path) -> list[KnowhowEntry]:
+        """Load entries from a JSON file."""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            raw_entries = data.get("entries", [])
+            return [KnowhowEntry.from_dict(e) for e in raw_entries]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Failed to load knowhow file %s: %s", path, exc)
+            return []
+
+    # -- Mutation -----------------------------------------------------------
 
     def add(self, entry: KnowhowEntry) -> None:
         """Add a new knowhow entry."""
         self.entries.append(entry)
         self._by_id[entry.id] = entry
 
+    # -- Detection ----------------------------------------------------------
+
     def check(self, source: str, file_path: str | None = None) -> list[KnowhowMatch]:
-        """Check source against all applicable rules."""
+        """Check source against all applicable rules.
+
+        Returns an empty list if no model-specific knowhow file exists,
+        to avoid false positives on unprofiled models.
+        """
+        if not self._has_model_file:
+            return []
+
         all_matches: list[KnowhowMatch] = []
         for entry in self.entries:
             all_matches.extend(entry.detect(source, file_path))
-        # Sort by line number
         all_matches.sort(key=lambda m: (m.line_number, m.column))
         return all_matches
 
@@ -315,6 +434,8 @@ class KnowhowLibrary:
         """Return summary statistics."""
         return {
             "total_rules": len(self.entries),
+            "has_model_file": self._has_model_file,
+            "model_slug": self.model_slug,
             "by_severity": {
                 "error": len([e for e in self.entries if e.severity == "error"]),
                 "warning": len([e for e in self.entries if e.severity == "warning"]),
@@ -324,13 +445,151 @@ class KnowhowLibrary:
         }
 
 
-# Global singleton
+# ---------------------------------------------------------------------------
+# Per-model singleton cache
+# ---------------------------------------------------------------------------
+
 _default_library: KnowhowLibrary | None = None
+_model_libraries: dict[str, KnowhowLibrary] = {}
 
 
-def get_knowhow_library() -> KnowhowLibrary:
-    """Get the default knowhow library instance."""
+def get_knowhow_library(model_name: str | None = None) -> KnowhowLibrary:
+    """Get (or create) the knowhow library for a given model.
+
+    If *model_name* is None, returns the legacy singleton (all built-in rules).
+    """
+    if model_name is None:
+        global _default_library
+        if _default_library is None:
+            _default_library = KnowhowLibrary()
+        return _default_library
+
+    slug = model_slug(model_name)
+    if slug not in _model_libraries:
+        _model_libraries[slug] = KnowhowLibrary.for_model(model_name)
+    return _model_libraries[slug]
+
+
+def clear_knowhow_cache() -> None:
+    """Clear the per-model library cache (useful in tests)."""
     global _default_library
-    if _default_library is None:
-        _default_library = KnowhowLibrary()
-    return _default_library
+    _default_library = None
+    _model_libraries.clear()
+
+
+# ---------------------------------------------------------------------------
+# Template / initialisation helpers
+# ---------------------------------------------------------------------------
+
+
+def init_knowhow_for_model(
+    model_name: str,
+    entries: list[KnowhowEntry] | None = None,
+    notes: str = "",
+) -> Path:
+    """Create an initial knowhow JSON file for a model.
+
+    Returns the path to the created file.  Existing files are NOT overwritten.
+    """
+    knowhow_dir = _get_knowhow_dir()
+    knowhow_dir.mkdir(parents=True, exist_ok=True)
+
+    slug = model_slug(model_name)
+    path = knowhow_dir / f"{slug}.json"
+
+    if path.exists():
+        return path
+
+    from datetime import datetime, timezone
+
+    payload: dict[str, Any] = {
+        "model_name": model_name,
+        "version": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "notes": notes or f"Known issues for {model_name}",
+        "entries": [e.to_dict() for e in (entries or [])],
+    }
+
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+# Pre-defined starter templates for known weak models
+
+QWEN3_CODER_30B_STARTER_ENTRIES: list[KnowhowEntry] = [
+    KnowhowEntry(
+        id="py-string-escape-double-n",
+        name="Double-escaped newline",
+        description="In Python source code, '\\n' inside a string literal produces the two characters backslash+n, not a newline. Use a single backslash if you want a real newline.",
+        pattern=r'"[^"]*\\n[^"]*"|' r"'[^']*\\n[^']*'",
+        pattern_type="regex",
+        applies_to_globs=["*.py"],
+        fix_type="replace",
+        fix_replacement=r"\g<0>",
+        severity="error",
+        tags=["python", "string", "escape"],
+    ),
+    KnowhowEntry(
+        id="py-string-escape-double-t",
+        name="Double-escaped tab",
+        description="In Python source code, '\\t' inside a string literal produces the two characters backslash+t, not a tab. Use a single backslash if you want a real tab.",
+        pattern=r'"[^"]*\\t[^"]*"|' r"'[^']*\\t[^']*'",
+        pattern_type="regex",
+        applies_to_globs=["*.py"],
+        fix_type="replace",
+        fix_replacement=r"\g<0>",
+        severity="error",
+        tags=["python", "string", "escape"],
+    ),
+    KnowhowEntry(
+        id="py-string-escape-double-quote",
+        name="Double-escaped quote",
+        description='In Python source code, "\\"" inside a double-quoted string literal produces the two characters backslash+quote, not an escaped quote.',
+        pattern=r'"[^"]*\\"[^"]*"',
+        pattern_type="regex",
+        applies_to_globs=["*.py"],
+        fix_type="replace",
+        fix_replacement=r"\g<0>",
+        severity="error",
+        tags=["python", "string", "escape"],
+    ),
+    KnowhowEntry(
+        id="py-string-escape-double-backslash-return",
+        name="Double-escaped backslash in f-string/join",
+        description="'\\n' or '\\t' in an f-string or regular string produces literal backslash sequences instead of escapes.",
+        pattern=r'"\\n"|"\\t"|"\\r"',
+        pattern_type="regex",
+        applies_to_globs=["*.py"],
+        fix_type="replace",
+        fix_replacement=r"\g<0>",
+        severity="error",
+        tags=["python", "string", "escape"],
+    ),
+    KnowhowEntry(
+        id="py-fstring-escaped-brace",
+        name="F-string with escaped braces",
+        description="Weak models sometimes write f'{{var}}' thinking it inserts var. In f-strings {{ }} are literal braces; use {var} for interpolation.",
+        pattern=r'f[\'"]\s*\{\{[^}]+\}\}',
+        pattern_type="regex",
+        applies_to_globs=["*.py"],
+        fix_type="warn",
+        severity="warning",
+        tags=["python", "fstring"],
+    ),
+    KnowhowEntry(
+        id="py-asyncio-run-in-async",
+        name="asyncio.run inside async function",
+        description="asyncio.run() cannot be called from a running event loop (e.g. inside another async function). Use 'await' directly instead.",
+        pattern=r"asyncio\.run\(",
+        pattern_type="regex",
+        applies_to_globs=["*.py"],
+        fix_type="warn",
+        severity="warning",
+        tags=["python", "async"],
+    ),
+]
+
+
+LLAMA3_8B_STARTER_ENTRIES: list[KnowhowEntry] = [
+    # Placeholder — populate after profiling
+]

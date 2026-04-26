@@ -90,6 +90,7 @@ class EditValidator:
         changed_files: list[str],
         expected_pattern: str | None = None,
         cwd: str = ".",
+        model_name: str | None = None,
     ) -> ValidationResult:
         """Run full validation suite."""
         errors: list[str] = []
@@ -108,9 +109,10 @@ class EditValidator:
                     errors.append(f"Syntax error in {fp}: {err}")
 
                 # --- Knowhow check: scan for known weak-model mistakes ---
+                # Skipped entirely if no knowhow file exists for this model.
                 from pilotcode.services.knowhow import get_knowhow_library
 
-                lib = get_knowhow_library()
+                lib = get_knowhow_library(model_name)
                 file_matches = lib.check_file(str(path))
                 if file_matches:
                     # Try auto-fix

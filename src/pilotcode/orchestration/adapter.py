@@ -853,6 +853,7 @@ def _fix_common_json_errors(text: str) -> str:
                     changed_files=[edit_path],
                     expected_pattern=edit_old,
                     cwd=getattr(engine.config, "cwd", "."),
+                    model_name=self.capability.model_name,
                 )
                 if not val_result.passed:
                     parts.append(f"\n[FRAMEWORK VERIFICATION]\n{val_result.nudge_message}")

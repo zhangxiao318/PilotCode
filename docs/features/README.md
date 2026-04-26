@@ -16,6 +16,7 @@
 | **错误恢复与重试** | 容错与降级 | ✅ 完整 |
 | **会话管理** | 对话持久化与恢复 | ✅ 完整 |
 | **P-EVR 任务编排** | Plan-Execute-Verify-Reflect 闭环 | ✅ 核心骨架 |
+| **弱模型代偿模式** | 框架级多维补偿引擎（Qwen3-Coder-30B 实测有效） | ✅ 完整 |
 
 ---
 
@@ -40,6 +41,7 @@
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
 | [model-configuration.md](./model-configuration.md) | 模型配置与能力验证 | 自定义模型、本地模型部署、参数调优 |
+| [model_capability_adaptation.md](./model_capability_adaptation.md) | 模型能力自适应 + 弱模型多维代偿 | 本地弱模型（7B-30B）、自托管模型、能力评估 |
 
 ### 系统稳定性
 
