@@ -49,8 +49,11 @@ class DagExecutor:
         self.edges: list[DagEdge] = []
         self._in_degree: dict[str, int] = {}
         self._outgoing: dict[str, list[str]] = {}
+        self._adj_in: dict[str, list[str]] = {}  # task -> [dependencies]
+        self._adj_out: dict[str, list[str]] = {}  # task -> [dependents]
         self._topo_order: list[str] = []
         self._built = False
+        self._ready_cache: list[DagNode] | None = None
 
     def build(self) -> list[str]:
         """Build the DAG and return topological order.
@@ -66,6 +69,9 @@ class DagExecutor:
         self.edges.clear()
         self._in_degree.clear()
         self._outgoing.clear()
+        self._adj_in.clear()
+        self._adj_out.clear()
+        self._ready_cache = None
 
         # Create nodes
         for phase in self.mission.phases:
@@ -73,6 +79,8 @@ class DagExecutor:
                 self.nodes[task.id] = DagNode(task_id=task.id, task=task)
                 self._in_degree[task.id] = 0
                 self._outgoing[task.id] = []
+                self._adj_in[task.id] = []
+                self._adj_out[task.id] = []
 
         # Create edges from task dependencies
         for phase in self.mission.phases:
@@ -84,6 +92,8 @@ class DagExecutor:
                     self.edges.append(edge)
                     self._in_degree[task.id] += 1
                     self._outgoing[dep_id].append(task.id)
+                    self._adj_in[task.id].append(dep_id)
+                    self._adj_out[dep_id].append(task.id)
 
         # Topological sort (Kahn's algorithm)
         queue = deque([tid for tid, deg in self._in_degree.items() if deg == 0])
@@ -102,15 +112,10 @@ class DagExecutor:
             cycle_nodes = set(self.nodes.keys()) - set(topo_order)
             raise ValueError(f"Cycle detected in task dependencies: {cycle_nodes}")
 
-        # Calculate depth for each node
-        depths: dict[str, int] = {}
+        # Calculate depth for each node in O(V+E) via topo order
         for tid in topo_order:
-            max_parent_depth = 0
-            for edge in self.edges:
-                if edge.to_task == tid:
-                    max_parent_depth = max(max_parent_depth, depths.get(edge.from_task, 0))
-            depths[tid] = max_parent_depth + 1
-            self.nodes[tid].depth = depths[tid]
+            if self._adj_in[tid]:
+                self.nodes[tid].depth = max(self.nodes[d].depth for d in self._adj_in[tid]) + 1
 
         self._topo_order = topo_order
         self._built = True
@@ -124,26 +129,26 @@ class DagExecutor:
         if not self._built:
             self.build()
 
+        if self._ready_cache is not None:
+            return self._ready_cache
+
         ready = []
         for node in self.nodes.values():
             if node.state != TaskState.PENDING:
                 continue
 
             # Check all dependencies (VERIFIED or DONE counts as satisfied)
-            deps_satisfied = True
-            for edge in self.edges:
-                if edge.to_task == node.task_id:
-                    dep_node = self.nodes[edge.from_task]
-                    if dep_node.state not in {TaskState.VERIFIED, TaskState.DONE}:
-                        deps_satisfied = False
-                        break
-
+            deps_satisfied = all(
+                self.nodes[dep_id].state in {TaskState.VERIFIED, TaskState.DONE}
+                for dep_id in self._adj_in[node.task_id]
+            )
             if deps_satisfied:
                 ready.append(node)
 
         # Sort by depth (shallower first) then by topo order
         order_map = {tid: i for i, tid in enumerate(self._topo_order)}
         ready.sort(key=lambda n: (n.depth, order_map[n.task_id]))
+        self._ready_cache = ready
         return ready
 
     def get_blocked_tasks(self) -> list[tuple[DagNode, list[str]]]:
@@ -159,13 +164,11 @@ class DagExecutor:
             if node.state != TaskState.PENDING:
                 continue
 
-            blocking = []
-            for edge in self.edges:
-                if edge.to_task == node.task_id:
-                    dep_node = self.nodes[edge.from_task]
-                    if dep_node.state != TaskState.VERIFIED:
-                        blocking.append(edge.from_task)
-
+            blocking = [
+                dep_id
+                for dep_id in self._adj_in[node.task_id]
+                if self.nodes[dep_id].state != TaskState.VERIFIED
+            ]
             if blocking:
                 blocked.append((node, blocking))
 
@@ -176,6 +179,7 @@ class DagExecutor:
         if task_id not in self.nodes:
             raise ValueError(f"Unknown task: {task_id}")
         self.nodes[task_id].state = state
+        self._ready_cache = None  # Invalidate cache
 
     def update_task_result(
         self, task_id: str, result: Any, artifacts: dict[str, Any] | None = None
@@ -234,12 +238,11 @@ class DagExecutor:
             # Find the longest path to this node
             best_pred: str | None = None
             best_len = 0
-            for edge in self.edges:
-                if edge.to_task == tid:
-                    pred_len = len(longest.get(edge.from_task, []))
-                    if pred_len > best_len:
-                        best_len = pred_len
-                        best_pred = edge.from_task
+            for dep_id in self._adj_in[tid]:
+                pred_len = len(longest.get(dep_id, []))
+                if pred_len > best_len:
+                    best_len = pred_len
+                    best_pred = dep_id
 
             if best_pred:
                 longest[tid] = longest[best_pred] + [tid]
