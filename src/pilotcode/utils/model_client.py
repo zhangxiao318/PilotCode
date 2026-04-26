@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, AsyncIterator
 from dataclasses import dataclass
@@ -54,6 +56,31 @@ class ServerError(LLMError):
     """Raised on server-side errors (5xx)."""
 
     pass
+
+
+def _parse_retry_after(raw: str) -> float | None:
+    """Parse a Retry-After header value.
+
+    Supports:
+    1. Seconds (e.g. "5", "120")
+    2. HTTP Date (e.g. "Wed, 21 Oct 2025 07:28:00 GMT")
+
+    Returns the delay in seconds, or None if unparseable.
+    """
+    # 1. Try seconds
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+
+    # 2. Try HTTP Date
+    try:
+        dt = parsedate_to_datetime(raw)
+        return max(0.0, (dt - datetime.now(timezone.utc)).total_seconds())
+    except Exception:
+        pass
+
+    return None
 
 
 # Provider inference keywords mapped to canonical provider names
@@ -301,10 +328,7 @@ class ModelClient:
             if headers:
                 raw = headers.get("retry-after") or headers.get("x-ratelimit-reset")
                 if raw:
-                    try:
-                        retry_after = float(raw)
-                    except ValueError:
-                        pass
+                    retry_after = _parse_retry_after(raw)
             return RateLimitError(message, status_code, text, retry_after)
 
         # 401/403 Auth
