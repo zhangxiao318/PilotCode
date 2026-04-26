@@ -727,3 +727,22 @@ class TUIController:
         if self.query_engine:
             return self.query_engine.count_tokens()
         return 0
+
+    def get_token_info(self) -> dict[str, int]:
+        """Get full token info for status bar display.
+
+        Returns dict with:
+        - count: current token count
+        - context_window: model context window
+        - max_output_tokens: model max output tokens
+        - usable: context_window - max_output_tokens
+        """
+        if not self.query_engine:
+            return {"count": 0, "context_window": 0, "max_output_tokens": 0, "usable": 0}
+        qe = self.query_engine
+        return {
+            "count": qe.count_tokens(),
+            "context_window": qe.config.context_window,
+            "max_output_tokens": qe._max_output_tokens,
+            "usable": qe._usable_context,
+        }

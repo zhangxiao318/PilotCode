@@ -152,6 +152,14 @@ class SessionScreen(Screen):
         if self.status_bar and self.controller and self.controller._session_id:
             self.status_bar.set_session_id(self.controller._session_id)
 
+        # Initialize status bar context info
+        if self.status_bar and self.controller:
+            info = self.controller.get_token_info()
+            self.status_bar.set_context_info(
+                info["context_window"],
+                info["max_output_tokens"],
+            )
+
         # Focus prompt
         if self.prompt:
             self.prompt.prompt_input.focus()
@@ -271,10 +279,14 @@ class SessionScreen(Screen):
 
                 self.message_list.add_message(msg)
 
-                # Update token count
+                # Update token count and context info
                 if self.status_bar:
-                    tokens = self.controller.get_token_count()
-                    self.status_bar.set_token_count(tokens)
+                    info = self.controller.get_token_info()
+                    self.status_bar.set_token_count(info["count"])
+                    self.status_bar.set_context_info(
+                        info["context_window"],
+                        info["max_output_tokens"],
+                    )
 
         except Exception as e:
             error_msg = UIMessage(type=UIMessageType.ERROR, content=f"Error: {str(e)}")
@@ -290,6 +302,14 @@ class SessionScreen(Screen):
                 # Update status bar with session info
                 if self.status_bar and self.controller._session_id:
                     self.status_bar.set_session_id(self.controller._session_id)
+                # Final token info update
+                if self.status_bar:
+                    info = self.controller.get_token_info()
+                    self.status_bar.set_token_count(info["count"])
+                    self.status_bar.set_context_info(
+                        info["context_window"],
+                        info["max_output_tokens"],
+                    )
 
     async def _handle_command(self, text: str):
         """Handle slash commands using the command registry."""
