@@ -110,6 +110,11 @@ class MissionAdapter:
         self.adaptive_config = AdaptiveConfigMapper.from_capability(self.capability)
         self.calibrator = RuntimeCalibrator(self.capability)
 
+        # Compensation engine for dimension-specific weak-model compensation
+        from .adaptive_edit import CompensationEngine
+
+        self.compensation = CompensationEngine(self.adaptive_config, self.capability)
+
         # Multi-model router for tiered task routing
         self.router = ModelRouter()
 
@@ -147,7 +152,12 @@ class MissionAdapter:
     def _register_verifiers(self) -> None:
         """Register L1/L2/L3 verifiers based on adaptive configuration."""
         self._orchestrator.register_verifier(1, l1_simple_verifier)
-        self._orchestrator.register_verifier(2, l2_test_verifier)
+
+        # L2: test verifier — optionally enforce tests for weak code-review models
+        if self.adaptive_config.enforce_test_before_mark_complete:
+            self._orchestrator.register_verifier(2, self._enforced_l2_verifier)
+        else:
+            self._orchestrator.register_verifier(2, l2_test_verifier)
 
         if self.adaptive_config.verifier_strategy == VerifierStrategy.FULL_L3:
             self._orchestrator.register_verifier(3, l3_code_review_verifier)
@@ -159,6 +169,22 @@ class MissionAdapter:
             from .verifiers.adaptive_verifiers import static_analysis_l3_verifier
 
             self._orchestrator.register_verifier(3, static_analysis_l3_verifier)
+
+    async def _enforced_l2_verifier(
+        self, task: TaskSpec, exec_result: ExecutionResult
+    ) -> VerificationResult:
+        """L2 verifier wrapper that forces test runs for weak review models."""
+        from .task_spec import AcceptanceCriterion
+
+        # Inject a synthetic test criterion if none exists
+        if not any(ac.verification_method in ("test", "pytest") for ac in task.acceptance_criteria):
+            task.acceptance_criteria.append(
+                AcceptanceCriterion(
+                    description="Run project tests to verify no regressions",
+                    verification_method="test",
+                )
+            )
+        return await l2_test_verifier(task, exec_result)
 
     def _setup_permission_callback(self) -> None:
         """Set a non-interactive permission callback for tool execution."""
@@ -235,6 +261,11 @@ class MissionAdapter:
         )
         strategy_suffix = self.plan_adjuster.get_plan_prompt_suffix()
         system_prompt = base_prompt + strategy_suffix
+
+        # Inject planning compensation for weak planners
+        planning_comp = self.compensation.get_planning_prompt_suffix()
+        if planning_comp:
+            system_prompt += planning_comp
 
         # Inject exploration context if available
         user_content = user_request
@@ -519,6 +550,11 @@ def _fix_common_json_errors(text: str) -> str:
             ]
         )
 
+        # Inject compensation guidance based on dimension-specific weaknesses
+        compensation_guidance = self.compensation.get_worker_prompt_suffix()
+        if compensation_guidance:
+            parts.append(compensation_guidance)
+
         return "\n".join(parts)
 
     async def _llm_worker(self, task: TaskSpec, context: dict[str, Any]) -> ExecutionResult:
@@ -595,7 +631,7 @@ def _fix_common_json_errors(text: str) -> str:
                     if total_turns == 0:
                         user_prompt = prompt
                     else:
-                        user_prompt = self._build_continue_prompt(engine, task)
+                        user_prompt = await self._build_continue_prompt(engine, task)
 
                     pending_tools: list[ToolUseMessage] = []
                     async for result in engine.submit_message(user_prompt):
@@ -741,12 +777,13 @@ def _fix_common_json_errors(text: str) -> str:
     # Continue prompt with context
     # ------------------------------------------------------------------
 
-    def _build_continue_prompt(self, engine: QueryEngine, task: TaskSpec) -> str:
+    async def _build_continue_prompt(self, engine: QueryEngine, task: TaskSpec) -> str:
         """Build a contextual continue prompt instead of bare 'Please continue.'."""
         # Summarize what has happened so far
         actions: list[str] = []
         changed: list[str] = []
         errors: list[str] = []
+        recent_edits: list[tuple[str, str]] = []  # (file_path, old_string)
 
         for msg in engine.messages:
             if isinstance(msg, ToolUseMessage):
@@ -760,8 +797,10 @@ def _fix_common_json_errors(text: str) -> str:
                     changed.append(path)
                 elif name in ("FileEdit", "edit"):
                     path = msg.input.get("file_path") or msg.input.get("path", "?")
+                    old_str = msg.input.get("old_string", "")
                     actions.append(f"edited {path}")
                     changed.append(path)
+                    recent_edits.append((path, old_str))
                 elif name in ("BashTool", "Bash", "bash"):
                     cmd = msg.input.get("command", "?")[:60]
                     actions.append(f"ran bash: {cmd}")
@@ -783,6 +822,45 @@ def _fix_common_json_errors(text: str) -> str:
             parts.append(f"Files modified: {', '.join(changed)}")
         if errors:
             parts.append("Errors encountered:\n" + "\n".join(f"  - {e}" for e in errors[-3:]))
+
+        # --- Detect repeated FileEdit failures and suggest alternatives ---
+        fileedit_errors = [e for e in errors if "FileEdit" in e or "String not found" in e]
+        if len(fileedit_errors) >= 2 and self.compensation.config.enable_smart_edit_planner:
+            parts.append(
+                "\n[FRAMEWORK HINT] You have had multiple FileEdit failures in a row.\n"
+                "1. Use SmartEditPlanner to get the exact checklist of all locations.\n"
+                "2. Re-read the target file before editing to get the exact text.\n"
+                "3. Pay attention to indentation (spaces vs tabs) — copy the exact whitespace.\n"
+                "4. If FileEdit keeps failing, consider using FileWrite for small files ONLY."
+            )
+
+        # --- Auto-verification for weak execution models ---
+        if recent_edits and self.compensation.config.enable_auto_verify:
+            from .adaptive_edit import EditValidator
+
+            # Verify scope depends on config
+            edits_to_verify = (
+                recent_edits[-1:]
+                if not self.compensation.config.verify_after_each_edit
+                else recent_edits
+            )
+
+            for edit_path, edit_old in edits_to_verify:
+                if not edit_old:
+                    continue
+                validator = EditValidator()
+                val_result = validator.validate(
+                    changed_files=[edit_path],
+                    expected_pattern=edit_old,
+                    cwd=getattr(engine.config, "cwd", "."),
+                )
+                if not val_result.passed:
+                    parts.append(f"\n[FRAMEWORK VERIFICATION]\n{val_result.nudge_message}")
+                else:
+                    parts.append(
+                        f"\n[FRAMEWORK VERIFICATION] Edit in {edit_path} passed all checks."
+                    )
+
         parts.append(f"\nTask objective: {task.objective}")
         parts.append("Continue where you left off. Do not repeat completed actions.")
 

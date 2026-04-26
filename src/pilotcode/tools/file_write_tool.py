@@ -100,6 +100,21 @@ async def write_file_atomic(
     created = not path.exists()
     previous_size = path.stat().st_size if path.exists() else None
 
+    # Warn when overwriting a large existing file (weak models often misuse FileWrite)
+    overwrite_warning = ""
+    if not append and not created:
+        try:
+            existing_lines = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+            if existing_lines > 30:
+                overwrite_warning = (
+                    f"\n[WARNING] This file already exists with {existing_lines} lines. "
+                    f"Overwriting large files risks losing code. "
+                    f"Prefer FileEdit for targeted changes. "
+                    f"If you must rewrite, ensure every line is correct — especially string escapes like \\\\n vs \\n."
+                )
+        except Exception:
+            pass
+
     try:
         if append and path.exists():
             # Append mode: read existing content, append, then write
@@ -128,6 +143,7 @@ async def write_file_atomic(
             bytes_written=len(content.encode("utf-8")),
             created=created,
             previous_size=previous_size,
+            error=overwrite_warning if overwrite_warning else None,
         )
     except Exception as e:
         return FileWriteOutput(
@@ -212,13 +228,18 @@ async def file_write_call(
             "hash": hashlib.md5(input_data.content.encode()).hexdigest()[:8],
         }
 
-    if result.error:
+    if result.error and not result.error.startswith("\n[WARNING]"):
         return ToolResult(
             data=result,
             error=result.error,
             output_for_assistant=f"❌ Error writing {Path(result.file_path).name}: {result.error}",
         )
-    return ToolResult(data=result)
+
+    # Build success message with optional overwrite warning
+    msg = f"✅ Wrote {Path(result.file_path).name} ({result.bytes_written} bytes)"
+    if result.error:
+        msg += result.error
+    return ToolResult(data=result, output_for_assistant=msg)
 
 
 async def file_write_description(input_data: FileWriteInput, options: dict[str, Any]) -> str:

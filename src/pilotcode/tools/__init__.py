@@ -77,6 +77,7 @@ from .team_tools import (  # noqa: F401
 from .skill_tool import SkillTool  # noqa: F401
 from .web_browser_tool import WebBrowserTool  # noqa: F401
 from .send_message_tool import SendMessageTool, ReceiveMessageTool  # noqa: F401
+from .smart_edit_planner import SmartEditPlanner  # noqa: F401
 from .repl_tool import REPLTool  # noqa: F401
 from .task_output_tool import TaskOutputTool  # noqa: F401
 from .synthetic_output_tool import SyntheticOutputTool  # noqa: F401

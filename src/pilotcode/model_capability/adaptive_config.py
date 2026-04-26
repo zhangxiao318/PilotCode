@@ -66,6 +66,16 @@ class AdaptiveOrchestratorConfig:
     json_retry_on_failure: bool = True
     json_max_retries: int = 2
 
+    # Weak-model compensation (execution)
+    enable_auto_verify: bool = False
+    verify_after_each_edit: bool = False
+    max_edits_per_round: int = 5
+    enable_smart_edit_planner: bool = False
+
+    # Weak-model compensation (critical decisions)
+    ask_user_on_critical_decisions: bool = False
+    enforce_test_before_mark_complete: bool = False
+
     # Monitoring
     stagnation_threshold_seconds: float = 60.0
 
@@ -96,6 +106,12 @@ class AdaptiveOrchestratorConfig:
             "json_retry_on_failure": self.json_retry_on_failure,
             "json_max_retries": self.json_max_retries,
             "stagnation_threshold_seconds": self.stagnation_threshold_seconds,
+            "enable_auto_verify": self.enable_auto_verify,
+            "verify_after_each_edit": self.verify_after_each_edit,
+            "max_edits_per_round": self.max_edits_per_round,
+            "enable_smart_edit_planner": self.enable_smart_edit_planner,
+            "ask_user_on_critical_decisions": self.ask_user_on_critical_decisions,
+            "enforce_test_before_mark_complete": self.enforce_test_before_mark_complete,
         }
 
 
@@ -165,10 +181,66 @@ class AdaptiveConfigMapper:
         )
         config.redesign_threshold = cls._map_range(overall, 0.15, 0.40)
 
+        # --- Dimension-specific Compensation ---
+        # Planning weak → framework does more planning work
+        if planning_eff < cls.MODERATE_THRESHOLD:
+            config.planning_strategy = PlanningStrategy.TEMPLATE_BASED
+            config.task_granularity = TaskGranularity.FINE
+            config.max_tasks_per_phase = 2
+            config.max_lines_per_task = 50
+            config.max_task_objective_tokens = 200
+            config.max_files_per_task = 1
+            config.force_dependency_declaration = False
+        elif planning_eff < cls.STRONG_THRESHOLD:
+            config.max_tasks_per_phase = min(config.max_tasks_per_phase, 5)
+
+        # JSON formatting weak → stronger validation, simpler schemas
+        if json_eff < cls.MODERATE_THRESHOLD:
+            config.require_json_schema = False
+            config.json_retry_on_failure = True
+            config.json_max_retries = 3
+        elif json_eff < cls.STRONG_THRESHOLD:
+            config.json_retry_on_failure = True
+            config.json_max_retries = 2
+
+        # Task completion weak → atomic edits, auto-verify, more turns
+        if completion_eff < cls.MODERATE_THRESHOLD:
+            config.max_turns_multiplier = max(config.max_turns_multiplier, 1.5)
+            config.enable_auto_verify = True
+            config.verify_after_each_edit = True
+            config.max_edits_per_round = 1
+            config.enable_smart_edit_planner = True
+            config.inject_objective_reminder_every = 1
+        elif completion_eff < cls.STRONG_THRESHOLD:
+            config.max_turns_multiplier = max(config.max_turns_multiplier, 1.2)
+            config.enable_auto_verify = True
+            config.max_edits_per_round = 3
+            config.enable_smart_edit_planner = True
+
+        # Chain-of-thought weak → frequent reminders, ask user on critical decisions
+        if cot_eff < cls.MODERATE_THRESHOLD:
+            config.inject_objective_reminder_every = 1
+            config.ask_user_on_critical_decisions = True
+            config.enable_self_correction = False
+            config.max_rework_attempts = 1
+        elif cot_eff < cls.STRONG_THRESHOLD:
+            config.inject_objective_reminder_every = 2
+
+        # Code review weak → enforce tests before marking complete
+        if review_eff < cls.MODERATE_THRESHOLD:
+            config.enforce_test_before_mark_complete = True
+            config.auto_approve_very_simple = False
+        elif review_eff < cls.STRONG_THRESHOLD:
+            config.enforce_test_before_mark_complete = True
+
         # --- Execution Hints ---
-        config.max_turns_multiplier = cls._map_float(overall, 0.7, 1.5)
-        config.inject_objective_reminder_every = cls._map_range(completion_eff, 2, 5)
-        config.auto_approve_very_simple = overall > cls.STRONG_THRESHOLD
+        config.max_turns_multiplier = max(
+            config.max_turns_multiplier, cls._map_float(overall, 0.7, 1.5)
+        )
+        config.inject_objective_reminder_every = max(1, config.inject_objective_reminder_every)
+        config.auto_approve_very_simple = (
+            overall > cls.STRONG_THRESHOLD and not config.enforce_test_before_mark_complete
+        )
 
         # --- Stagnation Detection ---
         config.stagnation_threshold_seconds = cls._map_float(overall, 30.0, 120.0)

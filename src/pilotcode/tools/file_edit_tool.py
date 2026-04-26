@@ -231,11 +231,17 @@ async def edit_file_content(
                         py_compile.compile(str(path), doraise=True)
                     except py_compile.PyCompileError as e:
                         path.write_text(original_content, encoding="utf-8")
+                        syntax_hint = (
+                            f"\n\nSYNTAX ERROR DETAILS: {e}\n"
+                            f"TIP: Re-read the file to get the EXACT text. "
+                            f"Your old_string may have subtle differences (indentation, quotes, escapes). "
+                            f"For large changes, consider FileWrite ONLY for files under 30 lines."
+                        )
                         return FileEditOutput(
                             file_path=str(path),
                             replacements_made=0,
                             original_content=original_content,
-                            error=f"{fuzzy_note} Fuzzy match introduced Python syntax error, rolled back: {e}",
+                            error=f"{fuzzy_note} Fuzzy match introduced Python syntax error, rolled back.{syntax_hint}",
                         )
 
                 return FileEditOutput(
@@ -262,11 +268,24 @@ async def edit_file_content(
                     # Show first 500 chars of file as reference
                     context_snippet = f"\n\nFile starts with:\n```\n{original_content[:500]}\n```"
 
+            # Build a side-by-side hint showing what the model asked for vs what exists
+            mismatch_hint = ""
+            if len(old_string) <= 200 and search_term:
+                matched_idx = original_content.find(search_term)
+                if matched_idx != -1:
+                    matched_context = original_content[
+                        max(0, matched_idx - 50) : matched_idx + len(search_term) + 50
+                    ]
+                    mismatch_hint = (
+                        f"\n\n[EXPECTED (your old_string)]\n```\n{old_string[:200]}\n```"
+                        f"\n[ACTUAL (closest match in file)]\n```\n{matched_context}\n```"
+                    )
+
             return FileEditOutput(
                 file_path=str(path),
                 replacements_made=0,
                 original_content=original_content,
-                error=f"String not found in file.{context_snippet}\n\nTIP: Make sure old_string matches the file content EXACTLY (including indentation and newlines). If the file was recently modified, re-read it first.",
+                error=f"String not found in file.{context_snippet}{mismatch_hint}\n\nTIP: Make sure old_string matches the file content EXACTLY (including indentation and newlines). If the file was recently modified, re-read it first.",
             )
 
         if expected_replacements is not None:
