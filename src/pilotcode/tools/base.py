@@ -45,6 +45,22 @@ class ToolResult(Generic[OutputT]):
     def is_error(self) -> bool:
         return self.error is not None
 
+    def get_text_for_assistant(self) -> str:
+        """Get a human-readable text representation for the LLM.
+
+        Prefers output_for_assistant if available, otherwise serializes
+        the data model or falls back to str().
+        """
+        if self.output_for_assistant:
+            return self.output_for_assistant
+        if self.error:
+            return f"Error: {self.error}"
+        if self.data is not None:
+            if isinstance(self.data, BaseModel):
+                return self.data.model_dump_json(indent=2, ensure_ascii=False)
+            return str(self.data)
+        return "Success"
+
 
 @dataclass
 class ToolUseContext:

@@ -68,7 +68,7 @@ def load_test_cases(cases_dir: Path, suite_name: str) -> list[E2eCase]:
     if not file_path.exists():
         return []
 
-    with open(file_path) as f:
+    with open(file_path, encoding="utf-8") as f:
         data = json.load(f)
 
     cases = []

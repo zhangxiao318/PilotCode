@@ -450,11 +450,14 @@ class ModelClient:
                     data = response.json()
 
                     # Yield as a single chunk, preserving usage when available
+                    api_choices = data.get("choices") or []
+                    api_choice = api_choices[0] if api_choices else {}
+                    api_message = api_choice.get("message") or {}
                     chunk: dict[str, Any] = {
                         "choices": [
                             {
-                                "delta": data["choices"][0]["message"],
-                                "finish_reason": data["choices"][0].get("finish_reason"),
+                                "delta": api_message,
+                                "finish_reason": api_choice.get("finish_reason"),
                             }
                         ]
                     }

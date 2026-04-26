@@ -759,8 +759,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                     except asyncio.CancelledError:
                         raise
 
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
-                    finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
+                    choices = chunk.get("choices") or []
+                    choice = choices[0] if choices else {}
+                    delta = choice.get("delta") or {}
+                    finish_reason = choice.get("finish_reason")
 
                     # OpenCode-style: capture usage from the final stream chunk
                     usage = chunk.get("usage")
@@ -985,6 +987,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                         + f"\n\n[...truncated {truncated} chars; exceeds context budget ({max_tool_tokens} tokens allowed)]\n\n"
                         + content[-half:]
                     )
+
+        # Strip ANSI escape sequences to keep LLM context clean
+        if isinstance(content, str) and content:
+            content = re.sub(r"\x1b\[[0-9;]*m", "", content)
 
         tool_result_msg = ToolResultMessage(
             tool_use_id=tool_use_id, content=content, is_error=is_error

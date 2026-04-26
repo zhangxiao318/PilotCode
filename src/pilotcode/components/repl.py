@@ -40,7 +40,7 @@ class REPL:
     """Programming Assistant REPL with full tool support."""
 
     # Default max iterations for tool calls (configurable via env var)
-    DEFAULT_MAX_ITERATIONS = 100
+    DEFAULT_MAX_ITERATIONS = 30
 
     WRITE_TOOLS = {
         "FileEdit",
@@ -377,9 +377,7 @@ class REPL:
 
                 result_content = ""
                 if exec_result.success and exec_result.result:
-                    result_content = (
-                        str(exec_result.result.data) if exec_result.result.data else "Success"
-                    )
+                    result_content = exec_result.result.get_text_for_assistant()
                     self._render_conversational_tool_result(
                         tool_msg.name, success=True, message="completed"
                     )
@@ -1065,6 +1063,7 @@ class LoopGuard:
             "GitDiff",
             "GitStatus",
             "FileTree",
+            "WebSearch",  # WebSearch intentionally excluded — external search is never a loop
         }
         if len(flat) >= 5:
             last5_fp = flat[-5:]
@@ -1087,7 +1086,7 @@ async def run_headless(
     prompt: str,
     auto_allow: bool = False,
     json_mode: bool = False,
-    max_iterations: int = 100,
+    max_iterations: int = 30,
     initial_messages: list | None = None,
     cwd: str | None = None,
     progress_callback: Callable[[str], None] | None = None,
@@ -1285,9 +1284,7 @@ async def run_headless(
                     )
                     result_content = ""
                     if exec_result.success and exec_result.result:
-                        result_content = (
-                            str(exec_result.result.data) if exec_result.result.data else "Success"
-                        )
+                        result_content = exec_result.result.get_text_for_assistant()
                     else:
                         result_content = exec_result.message
                         success = False
