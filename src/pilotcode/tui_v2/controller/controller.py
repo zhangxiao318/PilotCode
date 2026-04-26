@@ -162,6 +162,39 @@ class TUIController:
             is_complete=False,
         )
 
+    @staticmethod
+    def _format_task_details(details: list[dict], indent: str = "    ") -> str:
+        """Format task execution details (thinking + tool timeline) for display."""
+        if not details:
+            return ""
+        lines: list[str] = []
+        for item in details:
+            typ = item.get("type", "")
+            if typ == "thinking":
+                content = item.get("content", "").strip()
+                if content:
+                    # Truncate very long thinking blocks
+                    if len(content) > 300:
+                        content = content[:300] + " ..."
+                    lines.append(f"{indent}💭 {content}")
+            elif typ == "tool_started":
+                name = item.get("tool_name", "tool")
+                params = item.get("params", {})
+                param_str = ", ".join(f"{k}={v!r}" for k, v in list(params.items())[:3])
+                if len(params) > 3:
+                    param_str += " ..."
+                lines.append(f"{indent}🔧 {name}({param_str})")
+            elif typ == "tool_completed":
+                name = item.get("tool_name", "tool")
+                success = item.get("success", False)
+                summary = item.get("summary", "")
+                emoji = "✅" if success else "❌"
+                # Truncate long summaries
+                if len(summary) > 200:
+                    summary = summary[:200] + " ..."
+                lines.append(f"{indent}  {emoji} {name} → {summary}")
+        return "\n".join(lines)
+
     def _render_system(self, event_type: str, content: str = "", **kwargs) -> UIMessage:
         """System Layer: notices, warnings, errors."""
         return UIMessage(
@@ -310,6 +343,8 @@ class TUIController:
 
         mission_displayed = False
         last_progress = ""
+        # Progressive disclosure: cache task execution details
+        task_details_map: dict[str, list[dict]] = {}
 
         def progress_cb(event_type: str, data: dict) -> None:
             nonlocal mission_displayed, last_progress
@@ -362,6 +397,11 @@ class TUIController:
                 ):
                     msg = format_task_event(event_type, data)
                     yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
+                elif event_type == "task:details":
+                    # Progressive disclosure: collect task details for final report
+                    tid = data.get("task_id", "")
+                    if tid:
+                        task_details_map[tid] = data.get("details", [])
                 elif event_type == "mission:completed":
                     pass  # Will handle after task finishes
                 elif event_type == "mission:blocked":
@@ -392,9 +432,17 @@ class TUIController:
             for p in phases:
                 lines.append(f"  • Phase: {p.get('title', 'Untitled')}")
                 for t in p.get("tasks", []):
+                    task_id = t.get("id", "")
                     state = t.get("state", "unknown")
                     emoji = _STATE_EMOJI.get(state, "❓")
-                    lines.append(f"    {emoji} {t.get('title', t.get('id', '?'))}")
+                    lines.append(f"    {emoji} {t.get('title', task_id)}")
+                    # Progressive disclosure: append task details if available
+                    if task_id in task_details_map:
+                        detail_lines = self._format_task_details(
+                            task_details_map[task_id], indent="      "
+                        )
+                        if detail_lines:
+                            lines.append(detail_lines)
             report_parts.append("\n".join(lines))
 
         full_report = "\n\n".join(report_parts)

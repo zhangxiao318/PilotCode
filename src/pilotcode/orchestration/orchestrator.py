@@ -373,6 +373,17 @@ class Orchestrator:
                 },
             )
 
+            # Progressive disclosure: emit task execution details
+            if getattr(exec_result, "details", None):
+                self._notify(
+                    "task:details",
+                    {
+                        "mission_id": mission_id,
+                        "task_id": task_id,
+                        "details": exec_result.details,
+                    },
+                )
+
             # 5. VERIFY
             await self._verify_task(mission_id, task, exec_result, sm)
 

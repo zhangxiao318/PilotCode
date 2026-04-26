@@ -606,6 +606,8 @@ class MissionAdapter:
         artifacts: dict[str, Any] = {}
         total_turns = 0
         file_reads_this_task: list[tuple[str, str]] = []  # (path, summary_hint)
+        # Progressive disclosure: collect thinking + tool timeline
+        task_details: list[dict[str, Any]] = []
 
         try:
             async with SessionCleanup() as cleanup:
@@ -636,6 +638,7 @@ class MissionAdapter:
                         user_prompt = await self._build_continue_prompt(engine, task)
 
                     pending_tools: list[ToolUseMessage] = []
+                    turn_thinking = ""
                     async for result in engine.submit_message(user_prompt):
                         if self._cancel_event.is_set():
                             return ExecutionResult(
@@ -648,8 +651,20 @@ class MissionAdapter:
                             from pilotcode.tools.bash_tool import strip_ansi
 
                             final_content = strip_ansi(str(msg.content))
+                            turn_thinking = final_content
+                        # Stream reasoning/thinking content if available (Qwen3/DeepSeek)
+                        delta = getattr(result, "delta", None) or {}
+                        if isinstance(delta, dict):
+                            reasoning = delta.get("reasoning_content") or delta.get("thinking")
+                            if reasoning:
+                                task_details.append(
+                                    {"type": "thinking", "content": str(reasoning)}
+                                )
                         if isinstance(msg, ToolUseMessage):
                             pending_tools.append(msg)
+
+                    if turn_thinking:
+                        task_details.append({"type": "thinking", "content": turn_thinking})
 
                     if not pending_tools:
                         break
@@ -683,6 +698,17 @@ class MissionAdapter:
                             text = er.message or "Tool execution failed"
                         return text, er.success
 
+                    # Record tool invocations before execution
+                    for tu in pending_tools:
+                        params = {k: v for k, v in tu.input.items() if v is not None}
+                        task_details.append(
+                            {
+                                "type": "tool_started",
+                                "tool_name": tu.name,
+                                "params": params,
+                            }
+                        )
+
                     # Run independent tool calls in parallel (e.g., reading 3 files)
                     tool_results = await asyncio.gather(*[_exec_one(tu) for tu in pending_tools])
 
@@ -695,6 +721,16 @@ class MissionAdapter:
                         )
                         self._update_memory_from_tool(
                             tu, result_text, success, file_reads_this_task
+                        )
+                        # Record tool result
+                        summary = result_text[:500] + "..." if len(result_text) > 500 else result_text
+                        task_details.append(
+                            {
+                                "type": "tool_completed",
+                                "tool_name": tu.name,
+                                "success": success,
+                                "summary": summary,
+                            }
                         )
 
                     total_turns += 1
@@ -734,6 +770,7 @@ class MissionAdapter:
                     output=final_content,
                     artifacts=artifacts,
                     token_usage=engine.count_tokens(),
+                    details=task_details,
                 )
 
         except Exception as exc:

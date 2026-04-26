@@ -20,3 +20,5 @@ class ExecutionResult:
     artifacts: dict[str, Any] = field(default_factory=dict)
     token_usage: int = 0
     time_spent_seconds: float = 0.0
+    # Progressive disclosure: timeline of thinking + tool execution
+    details: list[dict[str, Any]] = field(default_factory=list)
