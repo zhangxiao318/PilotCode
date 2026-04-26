@@ -104,6 +104,13 @@ class StateMachine:
         self.state = initial_state
         self._history: list[StateChangeEvent] = []
         self._callbacks: list[Callable[[StateChangeEvent], None]] = []
+        self._state_entered_at: dict[TaskState, str] = {}
+        self._record_state_entry(initial_state)
+
+    def _record_state_entry(self, state: TaskState) -> None:
+        from datetime import datetime, timezone
+
+        self._state_entered_at[state] = datetime.now(timezone.utc).isoformat()
 
     def on_state_change(self, callback: Callable[[StateChangeEvent], None]):
         """Register a callback for state changes."""
@@ -135,6 +142,7 @@ class StateMachine:
         old_state = self.state
         new_state = TRANSITION_TABLE[key]
         self.state = new_state
+        self._record_state_entry(new_state)
 
         from datetime import datetime, timezone
 
@@ -158,6 +166,16 @@ class StateMachine:
                 logging.getLogger(__name__).warning("State change callback failed", exc_info=True)
 
         return new_state
+
+    def time_in_current_state(self) -> float:
+        """Return seconds spent in the current state."""
+        entered = self._state_entered_at.get(self.state)
+        if not entered:
+            return 0.0
+        from datetime import datetime, timezone
+
+        dt = datetime.fromisoformat(entered)
+        return (datetime.now(timezone.utc) - dt).total_seconds()
 
     def get_history(self) -> list[StateChangeEvent]:
         """Get full state change history."""

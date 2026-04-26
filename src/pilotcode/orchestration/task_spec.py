@@ -56,6 +56,7 @@ class TaskSpec:
     context_budget: int = 16000  # tokens
     phase_id: str = ""  # parent phase
     worker_type: str = "auto"  # "simple", "standard", "complex", "debug", "auto"
+    timeout_seconds: float = 300.0  # default 5 minutes
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -80,6 +81,7 @@ class TaskSpec:
             "context_budget": self.context_budget,
             "phase_id": self.phase_id,
             "worker_type": self.worker_type,
+            "timeout_seconds": self.timeout_seconds,
         }
 
     @classmethod
@@ -110,6 +112,7 @@ class TaskSpec:
             context_budget=data.get("context_budget", 16000),
             phase_id=data.get("phase_id", ""),
             worker_type=data.get("worker_type", "auto"),
+            timeout_seconds=data.get("timeout_seconds", 300.0),
             metadata=data.get("metadata", {}),
         )
 

@@ -59,10 +59,12 @@ class Reflector:
         max_in_progress_minutes: float = 30.0,
         max_rework_rate: float = 0.5,
         max_token_budget_ratio: float = 0.9,
+        stall_threshold_seconds: float = 120.0,
     ):
         self.max_in_progress_minutes = max_in_progress_minutes
         self.max_rework_rate = max_rework_rate
         self.max_token_budget_ratio = max_token_budget_ratio
+        self.stall_threshold_seconds = stall_threshold_seconds
 
     def check(self, mission_id: str, tracker: MissionTracker) -> ReflectorResult:
         """Run a full reflection check on a mission.
@@ -187,19 +189,14 @@ class Reflector:
 
     def _find_stalled_tasks(self, mission_id: str, tracker: MissionTracker) -> list[str]:
         """Find tasks that have been in progress for too long."""
-        # This would check state change history for IN_PROGRESS timestamp
-        # For now, return empty list (would need timestamp tracking in StateMachine)
-        stalled = []
-        dag = tracker.get_dag(mission_id)
-        if not dag:
-            return stalled
-
-        for task_id, node in dag.nodes.items():
-            if node.state == TaskState.IN_PROGRESS:
-                # In a full implementation, check how long it's been in this state
-                # by looking at state change history
-                pass
-
+        stalled: list[str] = []
+        state_machines = tracker._state_machines.get(mission_id, {})
+        for task_id, sm in state_machines.items():
+            if (
+                sm.state == TaskState.IN_PROGRESS
+                and sm.time_in_current_state() > self.stall_threshold_seconds
+            ):
+                stalled.append(task_id)
         return stalled
 
     def should_trigger_redesign(self, mission_id: str, tracker: MissionTracker) -> bool:

@@ -150,8 +150,35 @@ class Orchestrator:
             {"mission_id": mid, "total_tasks": len(mission.all_tasks())},
         )
 
+        # Initialize Reflector for periodic health checks
+        from .rework.reflector import Reflector
+
+        reflector = Reflector()
+        last_health_check = asyncio.get_event_loop().time()
+        HEALTH_CHECK_INTERVAL = 30.0  # seconds
+
         # Main execution loop
         while not self.tracker.all_done(mid):
+            # Periodic health check
+            now = asyncio.get_event_loop().time()
+            if now - last_health_check > HEALTH_CHECK_INTERVAL:
+                health = reflector.check(mid, self.tracker)
+                if not health.healthy:
+                    self._notify(
+                        "mission:health_warning",
+                        {
+                            "mission_id": mid,
+                            "risks": health.risks,
+                            "recommendations": health.recommendations,
+                        },
+                    )
+                    if reflector.should_trigger_redesign(mid, self.tracker):
+                        self._notify(
+                            "mission:redesign_triggered",
+                            {"mission_id": mid, "reason": "Critical health risks detected"},
+                        )
+                last_health_check = now
+
             ready = self.tracker.get_ready_tasks(mid)
             if not ready:
                 # Check if anything is in progress
@@ -254,9 +281,43 @@ class Orchestrator:
                 {"mission_id": mission_id, "task_id": task_id, "title": task.title},
             )
 
-            # 3. EXECUTE (Worker)
+            # 3. EXECUTE (Worker) with timeout
             start_time = datetime.now(timezone.utc)
-            exec_result = await self._run_worker(task)
+            try:
+                exec_result = await asyncio.wait_for(
+                    self._run_worker(task),
+                    timeout=task.timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+                exec_result = ExecutionResult(
+                    task_id=task.id,
+                    success=False,
+                    error=f"Task timed out after {task.timeout_seconds}s",
+                    time_spent_seconds=elapsed,
+                )
+                self._notify(
+                    "task:timeout",
+                    {
+                        "mission_id": mission_id,
+                        "task_id": task_id,
+                        "timeout": task.timeout_seconds,
+                        "elapsed": elapsed,
+                    },
+                )
+                # Cancel downstream tasks on timeout
+                self._cancel_downstream_tasks(mission_id, task_id)
+                # Transition to REJECTED
+                try:
+                    sm.transition(
+                        Transition.REJECT,
+                        reason=f"Timeout after {task.timeout_seconds}s",
+                        actor="orchestrator",
+                    )
+                except InvalidTransitionError:
+                    pass
+                return
+
             elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
 
             # 4. SUBMIT
