@@ -145,6 +145,9 @@ class MissionAdapter:
         # Progressive disclosure: allow _llm_worker to emit real-time progress
         self._progress_callback: Callable[[str, dict], None] | None = None
 
+        # Track user's preferred language so workers respond consistently
+        self._user_language: str = "en"
+
     # ------------------------------------------------------------------
     # Internal setup
     # ------------------------------------------------------------------
@@ -267,6 +270,8 @@ class MissionAdapter:
             "- ONLY generate implementation/coding tasks when the user explicitly asks to\n"
             "  CREATE, IMPLEMENT, BUILD, or ADD something.\n"
             "- Match the user's intent: analysis → analysis tasks, implementation → coding tasks.\n"
+            "- ALL task titles, descriptions, and objectives MUST be in the SAME LANGUAGE as the\n"
+            "  user's request. If the user wrote in Chinese, every task must be in Chinese.\n"
         )
         strategy_suffix = self.plan_adjuster.get_plan_prompt_suffix()
         system_prompt = base_prompt + strategy_suffix
@@ -547,15 +552,23 @@ class MissionAdapter:
             for ac in acceptance_criteria:
                 parts.append(f"  - {ac.description}")
 
+        # Language directive
+        lang_instruction = (
+            "Respond in Chinese."
+            if self._user_language == "cn"
+            else "Respond in English."
+        )
+
         parts.extend(
             [
                 "",
                 "[Instructions]",
-                "1. Focus on the task objective. Do not modify unrelated code.",
-                "2. Use the available tools to read, write, and edit files as needed.",
-                "3. Check PROJECT MEMORY before reading files — avoid re-reading known files.",
-                "4. After making changes, verify they meet the acceptance criteria.",
-                "5. Return a concise summary of what you did and any new files discovered.",
+                f"1. {lang_instruction}",
+                "2. Focus on the task objective. Do not modify unrelated code.",
+                "3. Use the available tools to read, write, and edit files as needed.",
+                "4. Check PROJECT MEMORY before reading files — avoid re-reading known files.",
+                "5. After making changes, verify they meet the acceptance criteria.",
+                "6. Return a concise summary of what you did and any new files discovered.",
             ]
         )
 
@@ -986,6 +999,14 @@ class MissionAdapter:
             except Exception:
                 pass
 
+    @staticmethod
+    def _detect_language(text: str) -> str:
+        """Detect if text is primarily Chinese."""
+        for ch in text:
+            if "\u4e00" <= ch <= "\u9fff":
+                return "cn"
+        return "en"
+
     async def run(
         self,
         user_request: str,
@@ -1002,6 +1023,9 @@ class MissionAdapter:
         Returns:
             Execution summary dict with keys: mission_id, snapshot, success, error, mission, metrics.
         """
+        # Detect and preserve user's language preference for all tasks
+        self._user_language = self._detect_language(user_request)
+
         # Wire the progress callback so _llm_worker can emit real-time events
         self._progress_callback = progress_callback
 
