@@ -42,6 +42,16 @@ from .context_strategy import (
     StrategyMetrics,
 )
 from .project_memory import ProjectMemory, FailedAttempt
+from ..model_capability import (
+    load_capability_or_default,
+    AdaptiveConfigMapper,
+    RuntimeCalibrator,
+    TaskOutcome,
+    classify_failure,
+    classify_planning_failure,
+    PlanningStrategy,
+    VerifierStrategy,
+)
 
 
 class MissionAdapter:
@@ -67,17 +77,50 @@ class MissionAdapter:
         max_worker_turns: int | None = None,
         context_budget: int = 16000,
         project_memory: ProjectMemory | None = None,
+        capability_path: str | None = None,
     ):
         self._cancel_event = cancel_event or asyncio.Event()
         self._max_worker_turns = max_worker_turns
         self.context_budget = context_budget
         self.project_memory = project_memory or ProjectMemory()
+
+        # Load model capability profile (adaptive configuration)
+        from pilotcode.utils.config import get_global_config
+
+        current_model = get_global_config().default_model or "unknown"
+        self.capability = load_capability_or_default(
+            path=capability_path,
+            model_name=current_model,
+        )
+
+        # Warn if capability profile is for a different model
+        if self.capability.model_name != current_model and self.capability.model_name != "unknown":
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Capability profile mismatch: stored='%s' vs current='%s'. "
+                "Run 'pilotcode config --test capability' to regenerate.",
+                self.capability.model_name,
+                current_model,
+            )
+
+        self.adaptive_config = AdaptiveConfigMapper.from_capability(self.capability)
+        self.calibrator = RuntimeCalibrator(self.capability)
+
+        # Context strategy (legacy) + adaptive override
         self.strategy = ContextStrategySelector.select(context_budget)
         self.plan_adjuster = MissionPlanAdjuster(strategy=self.strategy)
+
+        # Apply adaptive configuration to strategy config
+        from ..model_capability.adaptive_config import apply_adaptive_config_to_strategy_config
+
+        apply_adaptive_config_to_strategy_config(self.adaptive_config, self.plan_adjuster.config)
 
         # Apply strategy to orchestrator config
         orch_config = OrchestratorConfig()
         self.plan_adjuster.apply_to_orchestrator_config(orch_config)
+        orch_config.default_task_timeout = self.adaptive_config.stagnation_threshold_seconds
         self._orchestrator = Orchestrator(config=orch_config)
 
         self._register_workers()
@@ -94,10 +137,20 @@ class MissionAdapter:
             self._orchestrator.register_worker(worker_type, self._llm_worker)
 
     def _register_verifiers(self) -> None:
-        """Register L1/L2/L3 verifiers."""
+        """Register L1/L2/L3 verifiers based on adaptive configuration."""
         self._orchestrator.register_verifier(1, l1_simple_verifier)
         self._orchestrator.register_verifier(2, l2_test_verifier)
-        self._orchestrator.register_verifier(3, l3_code_review_verifier)
+
+        if self.adaptive_config.verifier_strategy == VerifierStrategy.FULL_L3:
+            self._orchestrator.register_verifier(3, l3_code_review_verifier)
+        elif self.adaptive_config.verifier_strategy == VerifierStrategy.SIMPLIFIED_L3:
+            from .verifiers.adaptive_verifiers import simplified_l3_verifier
+
+            self._orchestrator.register_verifier(3, simplified_l3_verifier)
+        elif self.adaptive_config.verifier_strategy == VerifierStrategy.STATIC_ONLY:
+            from .verifiers.adaptive_verifiers import static_analysis_l3_verifier
+
+            self._orchestrator.register_verifier(3, static_analysis_l3_verifier)
 
     def _setup_permission_callback(self) -> None:
         """Set a non-interactive permission callback for tool execution."""
@@ -213,7 +266,32 @@ class MissionAdapter:
         if not accumulated:
             raise ValueError("LLM returned an empty plan")
 
-        plan_data = self._extract_json(accumulated)
+        # Try to parse JSON, with optional self-correction for weak models
+        try:
+            plan_data = self._extract_json_static(accumulated)
+        except ValueError as exc:
+            if (
+                self.adaptive_config.json_retry_on_failure
+                and self.adaptive_config.json_max_retries > 0
+            ):
+                try:
+                    plan_data = await self._attempt_json_correction(accumulated, user_request)
+                except Exception:
+                    self.calibrator.record_planning_outcome(
+                        task_id="plan_extract",
+                        raw_plan=accumulated,
+                        parse_error=str(exc),
+                        success=False,
+                    )
+                    raise ValueError(f"Failed to parse plan JSON after correction: {exc}") from exc
+            else:
+                self.calibrator.record_planning_outcome(
+                    task_id="plan_extract",
+                    raw_plan=accumulated,
+                    parse_error=str(exc),
+                    success=False,
+                )
+                raise
 
         # Ensure required keys exist before from_dict (LLM may omit fields)
         if "mission_id" not in plan_data:
@@ -252,8 +330,66 @@ class MissionAdapter:
 
         return mission
 
+    async def _attempt_json_correction(self, raw_text: str, original_prompt: str) -> dict[str, Any]:
+        """Ask the model to fix malformed JSON output."""
+        if not self.adaptive_config.enable_self_correction:
+            raise ValueError("JSON self-correction disabled by adaptive config")
+
+        client = get_model_client()
+        correction_prompt = (
+            f"The following text was supposed to be valid JSON but has errors.\n\n"
+            f"Original request: {original_prompt[:200]}\n\n"
+            f"Malformed output:\n```\n{raw_text[:800]}\n```\n\n"
+            f"Please output ONLY the corrected JSON, with no markdown fences or explanations."
+        )
+        accumulated = ""
+        async for chunk in client.chat_completion(
+            messages=[
+                Message(role="system", content="You fix malformed JSON. Output valid JSON only."),
+                Message(role="user", content=correction_prompt),
+            ],
+            temperature=0.1,
+            stream=False,
+        ):
+            delta = chunk.get("choices", [{}])[0].get("delta", {})
+            c = delta.get("content")
+            if c:
+                accumulated += c
+
+        # Try to extract JSON from corrected output
+        corrected = self._extract_json_static(accumulated)
+        if corrected:
+            # Record successful self-correction as positive signal
+            self.calibrator.record_planning_outcome(
+                task_id="json_correction",
+                raw_plan=accumulated,
+                success=True,
+            )
+            return corrected
+
+        raise ValueError("JSON self-correction failed")
+
+    def _extract_json_with_correction(self, text: str, original_prompt: str) -> dict[str, Any]:
+        """Extract JSON with optional self-correction loop."""
+        try:
+            return self._extract_json_static(text)
+        except ValueError as exc:
+            if (
+                self.adaptive_config.json_retry_on_failure
+                and self.adaptive_config.json_max_retries > 0
+            ):
+                # Schedule async correction — since this is called from async context,
+                # we need to handle it in the caller. For now, record the failure.
+                self.calibrator.record_planning_outcome(
+                    task_id="plan_extract",
+                    raw_plan=text,
+                    parse_error=str(exc),
+                    success=False,
+                )
+            raise
+
     @staticmethod
-    def _extract_json(text: str) -> dict[str, Any]:
+    def _extract_json_static(text: str) -> dict[str, Any]:
         """Extract JSON from LLM output, stripping markdown fences if present."""
         text = text.strip()
         if text.startswith("```"):
@@ -272,13 +408,16 @@ class MissionAdapter:
             return json.loads(text)
         except json.JSONDecodeError as exc:
             # Attempt to find the first JSON object in the text
-            match = re.search(r"\{.*?\}", text, re.DOTALL)
+            match = re.search(r"\{.*\}", text, re.DOTALL)
             if match:
                 try:
                     return json.loads(match.group(0))
                 except json.JSONDecodeError:
                     pass
             raise ValueError(f"Failed to parse plan JSON: {exc}") from exc
+
+    # Backward-compatible alias
+    _extract_json = _extract_json_static
 
     # ------------------------------------------------------------------
     # LLM Worker
@@ -683,6 +822,9 @@ class MissionAdapter:
             result["metrics"] = metrics.to_dict()
             result["strategy"] = self.strategy.value
 
+            # Runtime calibration: analyze each task outcome
+            self._calibrate_from_mission_result(mission.mission_id)
+
             return result
 
         except asyncio.CancelledError:
@@ -699,3 +841,57 @@ class MissionAdapter:
                 "error": str(exc),
                 "mission_id": "",
             }
+
+    def _calibrate_from_mission_result(self, mission_id: str) -> None:
+        """Analyze mission execution results and update capability scores."""
+        from .results import ExecutionResult
+        from ..model_capability.runtime_calibrator import TaskOutcome
+
+        dag = self._orchestrator.tracker.get_dag(mission_id)
+        if not dag:
+            return
+
+        for task_id, node in dag.nodes.items():
+            exec_res = node.artifacts.get("_exec_result")
+            if not isinstance(exec_res, ExecutionResult):
+                continue
+
+            # Determine completion percentage and correctness
+            success = exec_res.success
+            error_text = exec_res.error or ""
+            output_text = exec_res.output or ""
+
+            # Check verification results if available
+            verification_passed = True
+            for level in (1, 2, 3):
+                vkey = f"_verification_{level}"
+                vresult = node.artifacts.get(vkey)
+                if vresult is not None and hasattr(vresult, "passed"):
+                    if not vresult.passed:
+                        verification_passed = False
+                        break
+
+            correctness = 1.0 if success and verification_passed else 0.5 if success else 0.0
+            completion_pct = 1.0 if success else 0.0
+
+            outcome = TaskOutcome(
+                task_id=task_id,
+                success=success and verification_passed,
+                completion_percentage=completion_pct,
+                correctness_score=correctness,
+                error_text=error_text,
+                output_text=output_text,
+            )
+            self.calibrator.record_task_outcome(outcome)
+
+        # Log calibration summary
+        import logging
+
+        logger = logging.getLogger(__name__)
+        cap = self.calibrator.get_calibrated_capability()
+        logger.info(
+            "Runtime calibration updated: overall=%.2f -> %.2f (success_rate=%.1f%%)",
+            self.capability.overall_score,
+            cap.overall_score,
+            self.calibrator.get_success_rate() * 100,
+        )

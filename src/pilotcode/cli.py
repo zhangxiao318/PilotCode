@@ -692,7 +692,7 @@ def config(
     set_key: str | None = typer.Option(None, "--set", help="Set configuration key"),
     set_value: str | None = typer.Option(None, "--value", help="Configuration value"),
     test: str | None = typer.Option(
-        None, "--test", "-t", help="Run e2e capability tests: layer1 or layer2"
+        None, "--test", "-t", help="Run e2e capability tests: layer1, layer2, or capability"
     ),
 ):
     """Manage configuration (legacy command, use 'configure' instead)."""
@@ -702,8 +702,34 @@ def config(
         from .commands.config_cmd import _run_layer_test
 
         layer = test.lower().strip()
+        if layer == "capability":
+            from .model_capability import evaluate_model, save_capability, format_evaluation_report
+            from pathlib import Path
+
+            config = get_global_config()
+            model_name = config.default_model or "unknown"
+
+            console.print(f"[bold]⏳ Starting capability benchmark for {model_name}...[/bold]")
+            console.print("[dim]This may take 1–3 minutes depending on model speed[/dim]\n")
+
+            cap = asyncio.run(evaluate_model(model_name))
+
+            save_path = Path.home() / ".pilotcode" / "model_capability.json"
+            save_capability(cap, str(save_path))
+            # Also try cwd
+            try:
+                cwd_path = Path.cwd() / ".pilotcode" / "model_capability.json"
+                save_capability(cap, str(cwd_path))
+            except Exception:
+                pass
+
+            report = format_evaluation_report([], cap)
+            console.print(report)
+            console.print(f"\n[green]✓ Capability profile saved to {save_path}[/green]")
+            raise typer.Exit(0)
+
         if layer not in ("layer1", "layer2"):
-            console.print(f"[red]Unknown layer: {layer}. Use: layer1, layer2[/red]")
+            console.print(f"[red]Unknown test type: {layer}. Use: layer1, layer2, capability[/red]")
             raise typer.Exit(1)
 
         console.print(f"[bold]⏳ Starting Layer {layer[-1]} E2E test...[/bold]")
@@ -896,9 +922,33 @@ def config(
             set_value = set_value.lower() == "true"
 
         if hasattr(config, set_key):
+            old_value = getattr(config, set_key)
             setattr(config, set_key, set_value)
             manager.save_global_config(config)
             console.print(f"[green]Set {set_key} = {set_value}[/green]")
+
+            # Prompt for capability test on model change
+            if set_key == "default_model" and old_value != set_value:
+                from pathlib import Path
+
+                cap_file = Path.home() / ".pilotcode" / "model_capability.json"
+                if cap_file.exists():
+                    console.print(
+                        f"\n[yellow]Model changed from '{old_value}' to '{set_value}'.[/yellow]"
+                    )
+                    if typer.confirm("Run capability benchmark for this model?", default=True):
+                        from .model_capability import evaluate_model, save_capability
+
+                        cap = asyncio.run(evaluate_model(set_value))
+                        save_capability(cap, str(cap_file))
+                        console.print(
+                            f"[green]Capability profile saved. Overall score: {cap.overall_score:.1%}[/green]"
+                        )
+                else:
+                    console.print(
+                        f"\n[yellow]Model changed to '{set_value}'.[/yellow]"
+                        "\nTip: Run 'pilotcode config --test capability' to evaluate this model."
+                    )
         else:
             console.print(f"[red]Unknown configuration key: {set_key}[/red]")
     else:

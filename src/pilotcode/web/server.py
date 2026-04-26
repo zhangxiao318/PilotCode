@@ -633,7 +633,9 @@ class WebSocketManager:
             print(f"[Question] Request {request_id} error: {e}")
             return ""
 
-    async def process_query(self, websocket, session_id: str, query: str, explicit_mode: str | None = None):
+    async def process_query(
+        self, websocket, session_id: str, query: str, explicit_mode: str | None = None
+    ):
         """Process user query and stream results within a Session context.
 
         The QueryEngine is retrieved from the session context, ensuring

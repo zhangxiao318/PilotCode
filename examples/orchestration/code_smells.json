@@ -1,0 +1,141 @@
+{
+  "analysis_date": "2025-01-21",
+  "files_analyzed": [
+    "examples/orchestration/auto_decomposition_demo.py",
+    "examples/orchestration/basic_decomposition.py",
+    "examples/orchestration/complex_task_demo.py",
+    "examples/orchestration/real_world_usage.py"
+  ],
+  "total_smells_found": 12,
+  "code_smells": [
+    {
+      "id": "SMELL-001",
+      "severity": "high",
+      "category": "Hardcoded Values",
+      "file": "examples/orchestration/complex_task_demo.py",
+      "lines": [24, 60],
+      "description": "Four large multiline task description strings hardcoded inside demo_complex_task_decomposition() as inline dict literals. These 36-line data definitions are mixed with presentation logic, making the function unreadable and the data unreusable.",
+      "suggestion": "Extract task data into a separate JSON/YAML file or a module-level TASKS constant."
+    },
+    {
+      "id": "SMELL-002",
+      "severity": "high",
+      "category": "God Object / God Function",
+      "file": "examples/orchestration/complex_task_demo.py",
+      "lines": [21, 95],
+      "description": "Function demo_complex_task_decomposition() spans ~75 lines. It mixes data definition, decomposition logic, and formatted output in one monolithic function with no separation of concerns.",
+      "suggestion": "Split into: load_tasks(), analyze_task(task), print_analysis(result)."
+    },
+    {
+      "id": "SMELL-003",
+      "severity": "high",
+      "category": "Duplicate Code / Tight Coupling",
+      "files": [
+        "examples/orchestration/auto_decomposition_demo.py",
+        "examples/orchestration/real_world_usage.py"
+      ],
+      "lines": [
+        [12, 15],
+        [20, 51]
+      ],
+      "description": "MockAgent class is defined independently in both auto_decomposition_demo.py (line 12) and real_world_usage.py (line 20), with overlapping but inconsistent interfaces (the real_world_usage version adds tools_used, started_at, completed_at, execute()). No shared mock module exists.",
+      "suggestion": "Create a shared examples/orchestration/mocks.py module with a canonical MockAgent."
+    },
+    {
+      "id": "SMELL-004",
+      "severity": "medium",
+      "category": "Improper Error Handling",
+      "file": "examples/orchestration/auto_decomposition_demo.py",
+      "lines": [23, 68],
+      "description": "Zero try/except blocks in the entire file. TaskDecomposer.analyze() and auto_decompose() calls are unguarded. If the decomposer raises (e.g., invalid input, internal error), the demo crashes with an unhelpful traceback rather than a graceful diagnostic.",
+      "suggestion": "Wrap decomposer calls in try/except and print meaningful error context."
+    },
+    {
+      "id": "SMELL-005",
+      "severity": "medium",
+      "category": "Improper Error Handling",
+      "file": "examples/orchestration/real_world_usage.py",
+      "lines": [97, 99],
+      "description": "coordinator.execute() in example_1_feature_implementation() has no error handling. Network failures, decomposition errors, or agent factory exceptions will cause an unhandled crash in an async context, potentially leaving coroutines dangling.",
+      "suggestion": "Wrap await coordinator.execute() in try/except and handle CancelledError, TimeoutError, and generic Exception."
+    },
+    {
+      "id": "SMELL-006",
+      "severity": "medium",
+      "category": "Hardcoded Values / Magic Numbers",
+      "file": "examples/orchestration/complex_task_demo.py",
+      "lines": [225],
+      "description": "time.sleep(0.1) used as a magic number to simulate work duration. Also, import time is placed inside demo_execution_simulation() (line 222) instead of at module top, violating PEP 8.",
+      "suggestion": "Move import time to module top. Define SIMULATED_STEP_DURATION = 0.1 as a named constant."
+    },
+    {
+      "id": "SMELL-007",
+      "severity": "medium",
+      "category": "Hardcoded Values / Magic Numbers",
+      "file": "examples/orchestration/real_world_usage.py",
+      "lines": [41, 42],
+      "description": "Magic numbers asyncio.sleep(0.01) and asyncio.sleep(0.05) used for simulated delays without named constants. Also line 262: magic multiplier 0.7 for 'Parallel Efficiency' calculation with no explanation.",
+      "suggestion": "Define SIMULATED_API_DELAY = 0.01 and SIMULATED_AGENT_DELAY = 0.05. Document the 0.7 parallel efficiency factor."
+    },
+    {
+      "id": "SMELL-008",
+      "severity": "medium",
+      "category": "Lack of Abstraction",
+      "file": "examples/orchestration/basic_decomposition.py",
+      "lines": [12, 77],
+      "description": "All logic resides in a single async main() function. The four examples repeat the same pattern (print header, call decomposer, iterate subtasks, print) four times with only string differences. No helper function abstracts the repeated decomposition-and-display pattern.",
+      "suggestion": "Extract a run_decomposition_example(title, task) helper to eliminate the 4x repeated block."
+    },
+    {
+      "id": "SMELL-009",
+      "severity": "low",
+      "category": "Tight Coupling",
+      "file": "examples/orchestration/real_world_usage.py",
+      "lines": [69, 115, 140, 175, 215, 245],
+      "description": "Six example functions each import orchestration classes locally inside the function body (e.g., line 69: from pilotcode.orchestration import AgentCoordinator). This is an anti-pattern: imports should be at module top. Local imports make dependencies hard to discover and add per-call overhead.",
+      "suggestion": "Move all imports to the top of the module."
+    },
+    {
+      "id": "SMELL-010",
+      "severity": "low",
+      "category": "Tight Coupling / Hardcoded Values",
+      "file": "examples/orchestration/real_world_usage.py",
+      "lines": [43, 48],
+      "description": "MockAgent.execute() contains a hardcoded if/elif chain mapping role strings ('coder', 'debugger', 'tester') to tool lists. Adding a new role requires modifying this method. The role-to-tools mapping is implicit and tightly coupled to string comparisons.",
+      "suggestion": "Use a dictionary dispatch: ROLE_TOOLS = {'coder': [...], ...} or pass tools as a constructor argument."
+    },
+    {
+      "id": "SMELL-011",
+      "severity": "low",
+      "category": "God Function",
+      "file": "examples/orchestration/real_world_usage.py",
+      "lines": [58, 108],
+      "description": "example_1_feature_implementation() is ~50 lines. It defines an inline progress callback (on_progress), manages a progress_log list, configures the coordinator, executes, and formats results — all in one function.",
+      "suggestion": "Extract the progress callback and result formatting into separate helpers."
+    },
+    {
+      "id": "SMELL-012",
+      "severity": "medium",
+      "category": "Improper Error Handling",
+      "file": "examples/orchestration/complex_task_demo.py",
+      "lines": [266, 275],
+      "description": "demo_metrics() defines a metrics dict with string descriptions but never validates or uses them programmatically. If the metrics dict keys don't match the actual system, this silently drifts. No assertion or test validates the metrics schema.",
+      "suggestion": "Add a schema validation step or at minimum an assert that keys match the actual metrics system."
+    }
+  ],
+  "summary": {
+    "by_category": {
+      "Hardcoded Values": 4,
+      "God Object / God Function": 2,
+      "Duplicate Code / Tight Coupling": 1,
+      "Improper Error Handling": 3,
+      "Lack of Abstraction": 1,
+      "Tight Coupling": 1
+    },
+    "by_severity": {
+      "high": 3,
+      "medium": 5,
+      "low": 4
+    }
+  }
+}

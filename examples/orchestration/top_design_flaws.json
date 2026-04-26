@@ -1,0 +1,121 @@
+{
+  "analysis_date": "2025-01-21",
+  "source_documents": [
+    "examples/orchestration/code_smells.json (12 code smells)",
+    "examples/orchestration/ARCHITECTURAL_COMPLIANCE.md (6 architectural flaws)"
+  ],
+  "selection_criteria": {
+    "severity": "How badly does this flaw break the system or block progress?",
+    "frequency": "How many files/modules are affected? How often is it encountered?",
+    "testability": "How severely does this flaw prevent isolated, repeatable testing?"
+  },
+  "top_3_flaws": [
+    {
+      "rank": 1,
+      "id": "ARCH-F1",
+      "title": "God Class: MissionAdapter owns 8 responsibilities in 921 lines",
+      "explanation": "MissionAdapter (adapter.py, 921 lines) violates the Single Responsibility Principle catastrophically. It bundles LLM planning (_plan_mission, ~150 lines), codebase exploration (_explore_codebase, ~60 lines), worker prompt assembly (_build_worker_prompt, ~50 lines), an LLM worker loop (_llm_worker, ~130 lines), three verification levels as static methods (L1/L2/L3, ~130 lines total), project memory updates (_update_memory_from_tool, ~40 lines), and permission setup — all in one class. The verifiers being static methods means no verification level can be tested in isolation without instantiating the entire adapter. Adding a new verification level (e.g., security scan) requires modifying MissionAdapter itself, violating the Open-Closed Principle.",
+      "impact": {
+        "severity": "critical",
+        "files_affected": 1,
+        "lines_at_risk": 921,
+        "testability_blocked": "Cannot unit-test verifiers, planner, or worker loop independently. Requires a real LLM and full adapter instantiation for any test.",
+        "maintainability": "Any change to planning, verification, or worker logic risks merge conflicts in the same 921-line file. New team members face a steep onboarding curve.",
+        "cascading_effects": "Root cause behind ARCH-F4 (concrete dependencies), ARCH-F5 (Orchestrator SRP), and ARCH-F6 (magic verifier keys). Decomposing this class would naturally force extraction of downstream abstractions."
+      },
+      "code_reference": {
+        "file": "src/pilotcode/orchestration/adapter.py",
+        "lines": "1-921",
+        "key_methods": [
+          "_plan_mission (LLM planning, ~150 lines)",
+          "_explore_codebase (codebase scanning, ~60 lines)",
+          "_build_worker_prompt (prompt assembly, ~50 lines)",
+          "_llm_worker (LLM worker loop, ~130 lines)",
+          "_simple_verifier / _test_verifier / _code_review_verifier (static methods, ~130 lines)",
+          "_update_memory_from_tool (memory updates, ~40 lines)"
+        ]
+      },
+      "fix_effort": "High (3-5 days): Extract MissionPlanner, CodebaseExplorer, LlmWorker, StaticVerifier, TestVerifier, CodeReviewVerifier each behind a protocol, with MissionAdapter becoming a thin facade."
+    },
+    {
+      "rank": 2,
+      "id": "ARCH-F2",
+      "title": "Global Mutable Singletons prevent parallel testing and hide coupling",
+      "explanation": "Three module-level global variables serve as 'poor man's dependency injection' across four core files: _tracker in tracker.py (line 322), _smart_coordinator in smart_coordinator.py (line 55), and _auto_config in auto_config.py (line 35). get_tracker(), get_smart_coordinator(), and get_auto_config() are factory functions that return the module-level singleton. reset_tracker() exists precisely because the authors know the singleton breaks tests — it is a workaround for a design flaw, not a solution. Orchestrator.__init__ calls get_tracker() internally rather than accepting it via constructor injection. Parallel test runs share mutable state through these globals, producing non-deterministic failures.",
+      "impact": {
+        "severity": "critical",
+        "files_affected": 4,
+        "singletons_count": 3,
+        "testability_blocked": "Parallel tests share mutable tracker/coordinator/config state. reset_tracker() must be called between test cases. CI pipelines with pytest-xdist will experience flaky, non-reproducible failures.",
+        "maintainability": "Hidden coupling: any module can call get_tracker() without the dependency being visible in the constructor signature. Refactoring tracker internals requires auditing all call sites across the codebase.",
+        "cascading_effects": "Encourages the same anti-pattern elsewhere. New developers see reset_tracker() as a legitimate pattern rather than a code smell."
+      },
+      "code_reference": {
+        "files": {
+          "src/pilotcode/orchestration/tracker.py": {
+            "lines": [322, 336],
+            "globals": ["_tracker: MissionTracker | None = None"],
+            "functions": ["get_tracker()", "reset_tracker()"]
+          },
+          "src/pilotcode/orchestration/smart_coordinator.py": {
+            "lines": [53, 63],
+            "globals": ["_smart_coordinator: SmartCoordinator | None = None"],
+            "functions": ["get_smart_coordinator()"]
+          },
+          "src/pilotcode/orchestration/auto_config.py": {
+            "lines": [35, 78],
+            "globals": ["_auto_config = AutoDecompositionConfig()"],
+            "functions": ["get_auto_config()", "set_auto_config()", "enable_auto_decomposition()", "disable_auto_decomposition()"]
+          },
+          "src/pilotcode/orchestration/orchestrator.py": {
+            "line": 74,
+            "anti_pattern": "self.tracker = get_tracker(db_path=self.config.db_path) — internal singleton fetch instead of constructor injection"
+          }
+        }
+      },
+      "fix_effort": "Medium (1-2 days): Constructor injection throughout. Remove get_tracker(), get_smart_coordinator(), and the module-level _auto_config. Let the application entry point create and wire instances."
+    },
+    {
+      "rank": 3,
+      "id": "ARCH-F4",
+      "title": "Concrete infrastructure dependencies make MissionAdapter untestable without a real LLM",
+      "explanation": "MissionAdapter imports concrete infrastructure directly at the module level rather than accepting dependencies via constructor injection: get_model_client (adapter.py:15), QueryEngine + QueryEngineConfig (line 16), get_all_tools (line 17), and get_permission_manager (line 22). These are called inside _llm_worker, _plan_mission, and _code_review_verifier — the three most critical methods. Writing a unit test for _plan_mission requires either a real LLM (slow, costly, non-deterministic) or unittest.mock.patch across five module paths (fragile, breaks on any import refactor). This is a direct Dependency Inversion Principle violation: high-level policy (mission planning) depends on low-level infrastructure (concrete LLM client, concrete tool registry), not on abstractions.",
+      "impact": {
+        "severity": "high",
+        "files_affected": 1,
+        "concrete_imports": 4,
+        "testability_blocked": "Cannot unit-test _plan_mission, _llm_worker, or _code_review_verifier without either a real LLM (costly, slow, non-deterministic) or fragile mock.patch chains across 5+ module paths. Test suites are slow and flaky.",
+        "maintainability": "Swapping the LLM provider, tool registry, or permission system requires editing MissionAdapter internals rather than passing a different implementation at construction time.",
+        "cascading_effects": "Downstream of ARCH-F1 (God Class). Because MissionAdapter is already a god class, the concrete imports are buried inside methods rather than being constructor parameters. Fixing F1 naturally forces fixing F4."
+      },
+      "code_reference": {
+        "file": "src/pilotcode/orchestration/adapter.py",
+        "lines": [15, 22],
+        "concrete_imports": [
+          "from pilotcode.utils.model_client import get_model_client, Message  (line 15)",
+          "from pilotcode.query_engine import QueryEngine, QueryEngineConfig  (line 16)",
+          "from pilotcode.tools.registry import get_all_tools  (line 17)",
+          "from pilotcode.permissions.permission_manager import get_permission_manager  (line 22)"
+        ],
+        "affected_methods": [
+          "_llm_worker (uses get_model_client, QueryEngine, get_all_tools)",
+          "_plan_mission (uses get_model_client)",
+          "_code_review_verifier (uses get_model_client, get_permission_manager)"
+        ]
+      },
+      "fix_effort": "Medium (1-2 days): Accept model_client, tool_registry, and permission_manager as constructor arguments typed to protocols/ABCs. The application entry point wires concrete implementations."
+    }
+  ],
+  "justification_summary": "ARCH-F1 (God Class) is ranked #1 because it is the root cause behind F4, F5, and F6 per the architectural compliance report. Its 921-line, 8-responsibility class blocks all isolated testing of verification, planning, and worker logic. ARCH-F2 (Global Singletons) is ranked #2 because it affects 4 files with 3 mutable globals, directly causes flaky parallel tests, and the reset_tracker() workaround is an explicit admission of the design flaw. ARCH-F4 (Concrete Dependencies) is ranked #3 over ARCH-F3 (duplicate worker selection) because F4 is a direct testability blocker — you simply cannot write a fast, deterministic unit test for the planner or worker without either a real LLM or fragile mocking — whereas F3's duplicated logic can at least be tested independently in each location. F4 is also downstream of F1, so fixing F1 naturally addresses F4.",
+  "not_selected_but_notable": [
+    "ARCH-F3 (Duplicate worker-type selection in orchestrator.py:323 and context_strategy.py:347) — High severity DRY violation that could cause divergent behavior, but the two implementations are independently testable and the fix is low-effort (2-4 hours).",
+    "ARCH-F5 (Orchestrator mixes scheduling, verification, and retry in 720 lines) — Medium severity SRP violation; becomes straightforward to fix once F1 and F2 are addressed.",
+    "ARCH-F6 (Magic integer verifier keys violate OCP) — Medium severity; adding a security scan verifier requires touching 4 files. Fix is low-effort (enum + pipeline pattern).",
+    "SMELL-003 (Duplicate MockAgent in examples) — High severity in example code but confined to demo files, not core orchestration logic."
+  ],
+  "recommended_fix_order": [
+    "Step 1: Extract MissionAdapter into focused classes (fix ARCH-F1), introducing constructor-injected dependencies (fix ARCH-F4 simultaneously).",
+    "Step 2: Replace global singletons with constructor injection (fix ARCH-F2).",
+    "Step 3: After F1/F2/F4 are resolved, ARCH-F3, F5, and F6 become low-effort cleanup tasks."
+  ]
+}

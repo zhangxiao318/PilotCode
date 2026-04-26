@@ -265,7 +265,6 @@ class ConfigurationWizard:
         table.add_row("Auto Compact", "Yes" if self.config.auto_compact else "No")
 
         console.print(table)
-
         if Confirm.ask("\nSave this configuration?", default=True):
             save_global_config(self.config)
             return True

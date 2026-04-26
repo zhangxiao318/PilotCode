@@ -514,7 +514,9 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             elif isinstance(msg, UserMessage):
                 _flush_assistant()
                 content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                api_messages.append(APIMessage(role="user", content=content))
+                # Skip empty user messages — DeepSeek rejects them.
+                if content.strip():
+                    api_messages.append(APIMessage(role="user", content=content))
             elif isinstance(msg, AssistantMessage):
                 # Don't emit immediately — ToolUseMessages may follow and must be
                 # merged into the same assistant message (required by DeepSeek).

@@ -12,6 +12,42 @@ from .base import CommandHandler, register_command, CommandContext
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Capability benchmark
+# ---------------------------------------------------------------------------
+
+
+async def _run_capability_benchmark() -> str:
+    """Run model capability benchmark suite and return report.
+
+    Returns:
+        Analysis report text with capability scores and file path.
+    """
+    from ..model_capability import evaluate_model, save_capability, format_evaluation_report
+    from ..utils.config import get_global_config
+    from pathlib import Path
+
+    config = get_global_config()
+    model_name = config.default_model or "unknown"
+
+    cap = await evaluate_model(model_name)
+
+    # Save to standard location
+    save_path = Path.home() / ".pilotcode" / "model_capability.json"
+    save_capability(cap, str(save_path))
+
+    # Also save to project root for easy access
+    cwd_path = Path.cwd() / ".pilotcode" / "model_capability.json"
+    try:
+        save_capability(cap, str(cwd_path))
+    except Exception:
+        pass
+
+    report = format_evaluation_report([], cap)
+    report += f"\n\n[Capability profile saved to: {save_path}]"
+    return report
+
+
 async def _run_layer_test(layer: str, extra_pytest_args: list[str] | None = None) -> str:
     """Run Layer 1 or Layer 2 e2e tests and return analysis report.
 
@@ -103,10 +139,49 @@ async def config_command(args: list[str], context: CommandContext) -> str:
     # Handle --test option
     if args and args[0] in ("--test", "-t"):
         if len(args) < 2:
-            return "Usage: /config --test <layer1|layer2>"
+            return "Usage: /config --test <layer1|layer2|capability>"
         layer = args[1].lower()
+        if layer == "capability":
+            notify_msg = (
+                "⏳ Starting model capability benchmark. "
+                "This may take 1–3 minutes depending on model speed..."
+            )
+            print(notify_msg)
+            try:
+                qe = context.query_engine
+                if (
+                    qe
+                    and hasattr(qe, "config")
+                    and qe.config
+                    and getattr(qe.config, "on_notify", None)
+                ):
+                    qe.config.on_notify(
+                        "test_start", {"message": notify_msg, "layer": "capability"}
+                    )
+            except Exception:
+                pass
+
+            report = await _run_capability_benchmark()
+
+            complete_msg = "✅ Capability benchmark completed."
+            print(complete_msg)
+            try:
+                qe = context.query_engine
+                if (
+                    qe
+                    and hasattr(qe, "config")
+                    and qe.config
+                    and getattr(qe.config, "on_notify", None)
+                ):
+                    qe.config.on_notify(
+                        "test_complete", {"message": complete_msg, "layer": "capability"}
+                    )
+            except Exception:
+                pass
+            return report
+
         if layer not in ("layer1", "layer2"):
-            return f"Unknown layer: {layer}. Use: layer1, layer2"
+            return f"Unknown layer: {layer}. Use: layer1, layer2, capability"
 
         # Notify user about long-running test
         notify_msg = (
@@ -211,7 +286,7 @@ async def config_command(args: list[str], context: CommandContext) -> str:
 register_command(
     CommandHandler(
         name="config",
-        description="Manage configuration. Use /config --test <layer1|layer2> to run e2e capability tests",
+        description="Manage configuration. Use /config --test <layer1|layer2|capability> to run tests",
         handler=config_command,
         aliases=["cfg", "settings"],
     )

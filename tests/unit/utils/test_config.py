@@ -17,8 +17,24 @@ from pilotcode.utils.config import (
 class TestGlobalConfig:
     """Tests for GlobalConfig."""
 
-    def test_default_values(self):
+    def test_default_values(self, monkeypatch):
         """Test default global config values."""
+        # Ensure no API key env vars interfere with the test
+        for env_var in (
+            "PILOTCODE_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "DASHSCOPE_API_KEY",
+            "ZHIPU_API_KEY",
+            "MOONSHOT_API_KEY",
+            "BAICHUAN_API_KEY",
+            "ARK_API_KEY",
+            "AZURE_OPENAI_API_KEY",
+            "LOCAL_API_KEY",
+        ):
+            monkeypatch.delenv(env_var, raising=False)
+
         config = GlobalConfig()
 
         assert config.theme == "default"

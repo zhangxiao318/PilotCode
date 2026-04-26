@@ -147,6 +147,11 @@ class ModelClient:
         for msg in messages:
             api_msg: dict[str, Any] = {"role": msg.role}
 
+            # DeepSeek thinking mode: echo reasoning_content back on assistant messages.
+            # Insert immediately after role/content to satisfy provider field-order expectations.
+            if self._is_deepseek and msg.reasoning_content and msg.role == "assistant":
+                api_msg["reasoning_content"] = msg.reasoning_content
+
             # OpenAI-compatible APIs require 'content' to be present (can be empty string)
             api_msg["content"] = msg.content if msg.content is not None else ""
 
@@ -162,12 +167,7 @@ class ModelClient:
 
             if msg.tool_call_id:
                 api_msg["tool_call_id"] = msg.tool_call_id
-                api_msg["name"] = msg.name
-
-            # DeepSeek thinking mode: echo reasoning_content back on assistant messages.
-            # Only DeepSeek requires this field; other providers must not receive it.
-            if self._is_deepseek and msg.reasoning_content and msg.role == "assistant":
-                api_msg["reasoning_content"] = msg.reasoning_content
+                # Do NOT add "name" here — OpenAI tool messages do not accept this field.
 
             result.append(api_msg)
 

@@ -36,19 +36,6 @@ class OrchestratorConfig:
     db_path: str | None = None
 
 
-@dataclass
-class ExecutionResult:
-    """Result of executing a single task."""
-
-    task_id: str
-    success: bool
-    output: Any = None
-    error: str | None = None
-    artifacts: dict[str, Any] = field(default_factory=dict)
-    token_usage: int = 0
-    time_spent_seconds: float = 0.0
-
-
 class Orchestrator:
     """Main orchestrator for P-EVR mission execution.
 
@@ -453,6 +440,7 @@ class Orchestrator:
             return
 
         # L1: Static analysis
+        l1: VerificationResult | None = None
         if self.config.enable_l1_verification:
             l1 = await self._run_verifier(1, task, exec_result)
             if not l1.passed:
@@ -466,6 +454,7 @@ class Orchestrator:
         )
 
         # L2: Tests
+        l2: VerificationResult | None = None
         if self.config.enable_l2_verification and not is_auto_simple:
             l2 = await self._run_verifier(2, task, exec_result)
             if not l2.passed:
@@ -473,6 +462,7 @@ class Orchestrator:
                 return
 
         # L3: Code Review
+        l3: VerificationResult | None = None
         if (
             self.config.enable_l3_verification
             and task.estimated_complexity.value >= 3
@@ -500,6 +490,13 @@ class Orchestrator:
             dag.update_task_result(task_id, exec_result.output, exec_result.artifacts)
             # Store full ExecutionResult for retry analysis
             dag.nodes[task_id].artifacts["_exec_result"] = exec_result
+            # Store verification results for runtime calibration
+            if l1 is not None:
+                dag.nodes[task_id].artifacts["_verification_1"] = l1
+            if l2 is not None:
+                dag.nodes[task_id].artifacts["_verification_2"] = l2
+            if l3 is not None:
+                dag.nodes[task_id].artifacts["_verification_3"] = l3
 
         self._notify(
             "task:verified",

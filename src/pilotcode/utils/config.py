@@ -3,6 +3,7 @@
 import json
 import os
 import asyncio
+import logging
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Any
@@ -14,6 +15,8 @@ from .models_config import (
     get_default_model,
     get_model_from_env,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def is_local_url(url: str) -> bool:
@@ -235,11 +238,80 @@ class ConfigManager:
 
     def save_global_config(self, config: GlobalConfig) -> None:
         """Save global configuration."""
+        # Detect model change before saving
+        old_config = self.load_raw_global_config()
+        old_model = old_config.default_model
+        new_model = config.default_model
+
         self._ensure_config_dir()
         with open(self.SETTINGS_FILE, "w") as f:
             json.dump(asdict(config), f, indent=2)
         self._global_config = config
         self._settings_mtime = self.SETTINGS_FILE.stat().st_mtime
+
+        # If model changed, suggest capability test
+        if new_model and old_model != new_model:
+            self._maybe_suggest_capability_test(new_model)
+
+    def _maybe_suggest_capability_test(self, new_model: str) -> None:
+        """Suggest running capability benchmark when model changes."""
+        import logging
+        from pathlib import Path
+
+        logger = logging.getLogger(__name__)
+
+        # Check if we already have a capability profile for this model
+        cap_paths = [
+            Path.home() / ".pilotcode" / "model_capability.json",
+            Path.cwd() / ".pilotcode" / "model_capability.json",
+        ]
+        existing_model = None
+        for p in cap_paths:
+            if p.exists():
+                try:
+                    import json
+
+                    data = json.loads(p.read_text(encoding="utf-8"))
+                    existing_model = data.get("model_name")
+                    break
+                except Exception:
+                    continue
+
+        if existing_model == new_model:
+            return  # Already have a profile for this model
+
+        # Determine if this looks like a local/weak model
+        is_local = (
+            is_local_url(config.base_url)
+            if (config := self.load_global_config())
+            else False
+            or new_model in ("ollama", "llama", "local")
+            or ".gguf" in new_model
+            or ".bin" in new_model
+            or ":11434" in (config.base_url or "")
+        )
+
+        msg = (
+            f"\n[Model Switch Detected] {existing_model or 'unknown'} -> {new_model}\n"
+            f"Run 'pilotcode config --test capability' to evaluate this model's "
+            f"planning, coding, and reasoning abilities.\n"
+        )
+        if is_local:
+            msg += (
+                "This appears to be a local model — capability testing is strongly "
+                "recommended for optimal task decomposition.\n"
+            )
+
+        # Print to stdout if interactive, log otherwise
+        try:
+            import sys
+
+            if sys.stdout.isatty():
+                print(msg)
+            else:
+                logger.info(msg)
+        except Exception:
+            logger.info(msg)
 
     def load_project_config(self, cwd: str | None = None) -> ProjectConfig | None:
         """Load project configuration from .pilotcode.json."""
