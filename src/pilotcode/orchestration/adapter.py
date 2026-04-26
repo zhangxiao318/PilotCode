@@ -24,7 +24,7 @@ from pilotcode.permissions.permission_manager import (
     PermissionLevel,
     PermissionRequest,
 )
-from pilotcode.types.message import ToolUseMessage
+from pilotcode.types.message import ToolUseMessage, AssistantMessage
 from pilotcode.services.cleanup import SessionCleanup
 
 from .task_spec import Mission, Phase, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion
