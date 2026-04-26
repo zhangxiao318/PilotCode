@@ -155,9 +155,8 @@ class ModelClient:
         )
 
         # Provider flags for provider-specific handling
-        self._is_deepseek = "deepseek" in self.base_url.lower()
-        # Inferred provider name for error messages (not hardcoded "DeepSeek")
         self._provider_name = self._model_info.provider.value if self._model_info else "unknown"
+        self._is_deepseek = self._provider_name == "deepseek"
 
     def _convert_messages(
         self, messages: list[Message] | list[dict[str, Any]]
@@ -257,42 +256,66 @@ class ModelClient:
         if max_tokens:
             payload["max_tokens"] = max_tokens
 
-        if stream:
-            async with self.client.stream("POST", "/chat/completions", json=payload) as response:
-                if response.status_code >= 400:
-                    body = await response.aread()
-                    raise Exception(
-                        f"{self._provider_name.upper()} API error {response.status_code}: "
-                        f"{body.decode('utf-8', errors='replace')}\n"
-                        f"Payload: {json.dumps(payload, ensure_ascii=False, default=str)[:2000]}"
-                    )
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data = line[6:]
-                        if data == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                            # Check for API errors
-                            if chunk.get("error"):
-                                raise Exception(f"API Error: {chunk['error']}")
-                            yield chunk
-                        except json.JSONDecodeError:
-                            continue
-        else:
-            response = await self.client.post("/chat/completions", json=payload)
-            response.raise_for_status()
-            data = response.json()
+        max_retries = 3
+        base_delay = 1.0
+        last_exception: Exception | None = None
 
-            # Yield as a single chunk
-            yield {
-                "choices": [
-                    {
-                        "delta": data["choices"][0]["message"],
-                        "finish_reason": data["choices"][0].get("finish_reason"),
+        for attempt in range(max_retries):
+            try:
+                if stream:
+                    async with self.client.stream(
+                        "POST", "/chat/completions", json=payload
+                    ) as response:
+                        if response.status_code >= 400:
+                            body = await response.aread()
+                            raise Exception(
+                                f"{self._provider_name.upper()} API error {response.status_code}: "
+                                f"{body.decode('utf-8', errors='replace')}\n"
+                                f"Payload: {json.dumps(payload, ensure_ascii=False, default=str)[:2000]}"
+                            )
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                data = line[6:]
+                                if data == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(data)
+                                    # Check for API errors
+                                    if chunk.get("error"):
+                                        raise Exception(f"API Error: {chunk['error']}")
+                                    yield chunk
+                                except json.JSONDecodeError:
+                                    continue
+                    return
+                else:
+                    response = await self.client.post("/chat/completions", json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+
+                    # Yield as a single chunk
+                    yield {
+                        "choices": [
+                            {
+                                "delta": data["choices"][0]["message"],
+                                "finish_reason": data["choices"][0].get("finish_reason"),
+                            }
+                        ]
                     }
-                ]
-            }
+                    return
+            except Exception as exc:
+                last_exception = exc
+                # Retry on 5xx, connection errors, and timeouts
+                is_retryable = (
+                    isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
+                ) or isinstance(
+                    exc, (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)
+                )
+                if not is_retryable or attempt == max_retries - 1:
+                    raise
+                delay = base_delay * (2**attempt)
+                await asyncio.sleep(delay)
+        if last_exception:
+            raise last_exception
 
     async def fetch_model_capabilities(self) -> dict[str, Any] | None:
         """Fetch model capabilities from the API.
