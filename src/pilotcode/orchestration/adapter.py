@@ -397,7 +397,11 @@ class MissionAdapter:
 
     @staticmethod
     def _extract_json_static(text: str) -> dict[str, Any]:
-        """Extract JSON from LLM output, stripping markdown fences if present."""
+        """Extract JSON from LLM output, stripping markdown fences if present.
+
+        Uses bracket-counting to find the first balanced JSON object,
+        avoiding the pitfalls of greedy regex matching.
+        """
         text = text.strip()
         if text.startswith("```"):
             lines = text.splitlines()
@@ -414,14 +418,51 @@ class MissionAdapter:
         try:
             return json.loads(text)
         except json.JSONDecodeError as exc:
-            # Attempt to find the first JSON object in the text
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group(0))
-                except json.JSONDecodeError:
-                    pass
+            # Bracket-counting: find the first balanced { ... } block
+            start = text.find("{")
+            if start != -1:
+                depth = 0
+                in_string = False
+                escape = False
+                for i, ch in enumerate(text[start:], start=start):
+                    if escape:
+                        escape = False
+                        continue
+                    if ch == "\\":
+                        escape = True
+                        continue
+                    if ch == '"' and not in_string:
+                        in_string = True
+                    elif ch == '"' and in_string:
+                        in_string = False
+                    elif not in_string:
+                        if ch == "{":
+                            depth += 1
+                        elif ch == "}":
+                            depth -= 1
+                            if depth == 0:
+                                candidate = text[start : i + 1]
+                                try:
+                                    return json.loads(candidate)
+                                except json.JSONDecodeError:
+                                    # Try common LLM fixes: trailing commas, single quotes
+                                    fixed = _fix_common_json_errors(candidate)
+                                    try:
+                                        return json.loads(fixed)
+                                    except json.JSONDecodeError:
+                                        pass
+                                break
             raise ValueError(f"Failed to parse plan JSON: {exc}") from exc
+
+
+def _fix_common_json_errors(text: str) -> str:
+    """Fix common JSON errors produced by LLMs."""
+    # Remove trailing commas before } or ]
+    text = re.sub(r",(\s*[}\]])", r"\1", text)
+    # Convert single-quoted strings to double-quoted (naive, best-effort)
+    # Only handles simple cases like {'key': 'value'}
+    text = re.sub(r"(?<!\\)'([^']*?)'(\s*[:}\],])", r'"\1"\2', text)
+    return text
 
     # Backward-compatible alias
     _extract_json = _extract_json_static
