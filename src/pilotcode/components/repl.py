@@ -312,6 +312,27 @@ class REPL:
 
             permission_denied = False
             for tool_idx, tool_msg in enumerate(pending_tools, 1):
+                # OpenCode-style doom-loop detection: check at the moment of call
+                doom_reason = self.loop_guard.check_call(tool_msg.name, tool_msg.input)
+                if doom_reason:
+                    self.loop_guard.loop_count += 1
+                    self._render_system("loop_detected", reason=doom_reason)
+                    warning = (
+                        f"[SYSTEM WARNING] DETECTED LOOP: {doom_reason}. "
+                        f"You have been repeating the same tool calls. STOP exploring and "
+                        f"produce your final answer or code changes immediately. "
+                        f"Do NOT call the same tools again."
+                    )
+                    self.query_engine.messages.append(AssistantMessage(content=warning))
+                    # Block remaining tools in this round
+                    for remaining_msg in pending_tools[tool_idx - 1 :]:
+                        self.query_engine.add_tool_result(
+                            remaining_msg.tool_use_id,
+                            f"Blocked by loop guard: {doom_reason}",
+                            is_error=True,
+                        )
+                    break
+
                 self._render_conversational_tool_use(
                     tool_msg.name,
                     tool_msg.input,
@@ -943,12 +964,19 @@ class LoopGuard:
     """Detects repetitive tool-call patterns to break LLM loops.
 
     Works across all PilotCode modes: REPL, headless, TUI, and Web.
+
+    Implements two detection strategies:
+    1. Round-level detection (record): checks across turns for repeating sequences.
+    2. Per-call detection (check_call): OpenCode-style consecutive identical call
+       detection (threshold = 3), triggered at the moment a tool call is issued.
     """
 
     def __init__(self, window_size: int = 6):
         self.window_size = window_size
         self.round_fingerprints: list[tuple[str, ...]] = []
         self.loop_count: int = 0
+        # OpenCode-style per-call history for real-time doom-loop detection
+        self._call_history: list[tuple[str, str]] = []
 
     @staticmethod
     def _fingerprint(tool_msg: ToolUseMessage) -> str:
@@ -957,6 +985,29 @@ class LoopGuard:
         name = tool_msg.name
         input_str = json.dumps(tool_msg.input, sort_keys=True, default=str)
         return f"{name}:{hashlib.md5(input_str.encode()).hexdigest()[:8]}"
+
+    @staticmethod
+    def _hash_input(tool_input: dict[str, Any]) -> str:
+        import hashlib
+
+        input_str = json.dumps(tool_input, sort_keys=True, default=str)
+        return hashlib.md5(input_str.encode()).hexdigest()[:8]
+
+    def check_call(self, tool_name: str, tool_input: dict[str, Any]) -> str | None:
+        """OpenCode-style per-call doom-loop detection.
+
+        Records the call and checks whether the last 3 calls are the same tool
+        with identical input.  Returns a reason string if a loop is detected.
+        """
+        h = self._hash_input(tool_input)
+        self._call_history.append((tool_name, h))
+        # Keep only the last 3 calls (OpenCode DOOM_LOOP_THRESHOLD = 3)
+        if len(self._call_history) > 3:
+            self._call_history.pop(0)
+        if len(self._call_history) == 3:
+            if self._call_history[0] == self._call_history[1] == self._call_history[2]:
+                return f"tool '{tool_name}' called 3 times consecutively with identical input"
+        return None
 
     def record(self, tool_calls: list[ToolUseMessage]) -> str | None:
         """Record a round and return loop reason if detected."""
@@ -969,10 +1020,11 @@ class LoopGuard:
     def reset(self) -> None:
         """Clear history (e.g. when user starts a new task)."""
         self.round_fingerprints.clear()
+        self._call_history.clear()
 
     def _detect(self) -> str | None:
         recent = self.round_fingerprints
-        if len(recent) < 4:
+        if len(recent) < 3:
             return None
 
         flat = [fp for r in recent for fp in r]
@@ -982,7 +1034,7 @@ class LoopGuard:
 
         # Rule 1: Same single tool called repeatedly with identical input
         for fp, cnt in counts.items():
-            if cnt >= 4:
+            if cnt >= 3:
                 return f"tool '{fp.split(':')[0]}' called {cnt} times with identical input"
 
         # Rule 2: Exact sequence repetition (ABAB, ABCABC)
@@ -1174,6 +1226,29 @@ async def run_headless(
                 "CronUpdate",
             }
             for tool_idx, tool_msg in enumerate(pending_tools, 1):
+                # OpenCode-style doom-loop detection: check at the moment of call
+                doom_reason = loop_guard.check_call(tool_msg.name, tool_msg.input)
+                if doom_reason:
+                    loop_guard.loop_count += 1
+                    if progress_callback:
+                        progress_callback(f"[DOOM LOOP] {doom_reason} — blocking remaining tools")
+                    else:
+                        print(f"[DOOM LOOP] {doom_reason} — blocking remaining tools", flush=True)
+                    for remaining_msg in pending_tools[tool_idx - 1 :]:
+                        forced_result = (
+                            f"[SYSTEM ERROR] DOOM LOOP DETECTED: {doom_reason}. "
+                            f"Tool execution has been blocked."
+                        )
+                        query_engine.add_tool_result(
+                            remaining_msg.tool_use_id, forced_result, is_error=True
+                        )
+                    current_prompt = (
+                        "CRITICAL: You are in a tool-call loop. All pending tool calls were blocked. "
+                        "Summarize what you have done so far and declare completion. "
+                        "Do NOT call any more tools."
+                    )
+                    break
+
                 if not json_mode:
                     tool_progress = f"[turn {turn}/{max_iterations}]"
                     if len(pending_tools) > 1:
@@ -1259,8 +1334,12 @@ async def run_headless(
 
             current_prompt = "Please continue based on the tool results above."
     except Exception as e:
+        import traceback as _tb
+
         success = False
         response_text = f"Error: {e}"
+        _error_type = type(e).__name__
+        _traceback = _tb.format_exc()
 
     # Convert Pydantic messages to plain dicts for JSON serialization
     serializable_messages = []
@@ -1285,13 +1364,16 @@ async def run_headless(
                 }
             )
 
-    output = {
+    output: dict[str, Any] = {
         "response": response_text,
         "tool_calls": tool_calls_log,
         "success": success,
         "messages": serializable_messages,  # Include full message history for session persistence
         "env_diagnosis_count": env_diagnosis_count,
     }
+    if not success:
+        output["error_type"] = locals().get("_error_type", "Unknown")
+        output["traceback"] = locals().get("_traceback", "")
 
     if json_mode:
         print(json_mod.dumps(output, indent=2, default=str))

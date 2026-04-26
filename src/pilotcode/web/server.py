@@ -1049,7 +1049,33 @@ class WebSocketManager:
                 # Get tool executor
                 tool_executor = get_tool_executor()
 
-                for tool_msg in pending_tools:
+                for tool_idx, tool_msg in enumerate(pending_tools, 1):
+                    # OpenCode-style doom-loop detection: check at the moment of call
+                    doom_reason = self.loop_guard.check_call(tool_msg.name, tool_msg.input)
+                    if doom_reason:
+                        self.loop_guard.loop_count += 1
+                        print(f"[DOOM LOOP] {doom_reason} — blocking remaining tools")
+                        await _render_system(
+                            f"[DOOM LOOP] {doom_reason}. Repeating tool calls detected. Forcing final answer."
+                        )
+                        for remaining_msg in pending_tools[tool_idx - 1 :]:
+                            forced_result = (
+                                f"[SYSTEM ERROR] DOOM LOOP DETECTED: {doom_reason}. "
+                                f"Tool execution has been blocked. You MUST provide your final answer NOW "
+                                f"without any more tool calls."
+                            )
+                            query_engine.add_tool_result(
+                                remaining_msg.tool_use_id, forced_result, is_error=True
+                            )
+                        query = (
+                            "CRITICAL: You are in a tool-call loop. All pending tool calls were blocked. "
+                            "Summarize what you have done so far and declare completion. "
+                            "Do NOT call any more tools."
+                        )
+                        is_continue_query = True
+                        sent_content_length = 0
+                        break
+
                     # Check for cancellation before executing each tool
                     if asyncio.current_task().cancelled():
                         print("[Query] Task cancelled before tool execution, breaking")
