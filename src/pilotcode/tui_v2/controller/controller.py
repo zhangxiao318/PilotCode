@@ -341,11 +341,7 @@ class TUIController:
         cancel_event = asyncio.Event()
         # Pass actual context window so strategy selector doesn't fall back
         # to the default 16K budget (which triggers BALANCED → 300-line limit).
-        ctx_window = (
-            self.query_engine.config.context_window
-            if self.query_engine
-            else 128_000
-        )
+        ctx_window = self.query_engine.config.context_window if self.query_engine else 128_000
         adapter = MissionAdapter(
             cancel_event=cancel_event,
             context_budget=ctx_window,

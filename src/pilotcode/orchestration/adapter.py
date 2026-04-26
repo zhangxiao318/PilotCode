@@ -554,9 +554,7 @@ class MissionAdapter:
 
         # Language directive
         lang_instruction = (
-            "Respond in Chinese."
-            if self._user_language == "cn"
-            else "Respond in English."
+            "Respond in Chinese." if self._user_language == "cn" else "Respond in English."
         )
 
         parts.extend(
@@ -744,7 +742,9 @@ class MissionAdapter:
                             tu, result_text, success, file_reads_this_task
                         )
                         # Real-time: emit tool result
-                        summary = result_text[:500] + "..." if len(result_text) > 500 else result_text
+                        summary = (
+                            result_text[:500] + "..." if len(result_text) > 500 else result_text
+                        )
                         self._emit_progress(
                             "worker:tool_result",
                             {

@@ -276,6 +276,11 @@ class Orchestrator:
                 # Skip if this task is already being executed
                 if node.task_id in {n.task_id for n in active_workers.values()}:
                     continue
+                # Skip if state machine shows this task is no longer pending
+                # (e.g., after rework completion or state sync issues)
+                sm = self.tracker.get_state_machine(mission_id, node.task_id)
+                if sm and sm.state not in (TaskState.PENDING, TaskState.IN_PROGRESS):
+                    continue
                 task = asyncio.create_task(self._execute_task(mission_id, node))
                 active_workers[task] = node
                 launched = True
@@ -295,97 +300,112 @@ class Orchestrator:
         if sm.state not in (TaskState.PENDING, TaskState.IN_PROGRESS):
             return
 
-        async with self._semaphore:
-            # 1. ASSIGN
-            try:
-                sm.transition(Transition.ASSIGN, actor="orchestrator")
-            except InvalidTransitionError:
-                return
+        try:
+            async with self._semaphore:
+                # 1. ASSIGN (skip if already IN_PROGRESS after rework)
+                if sm.state == TaskState.IN_PROGRESS:
+                    # Rework retry: already transitioned to IN_PROGRESS by _smart_retry
+                    pass
+                else:
+                    try:
+                        sm.transition(Transition.ASSIGN, actor="orchestrator")
+                    except InvalidTransitionError:
+                        return
 
-            # 2. START
-            try:
-                sm.transition(Transition.START, actor="orchestrator")
-            except InvalidTransitionError:
-                return
+                # 2. START (skip if already IN_PROGRESS after rework)
+                if sm.state == TaskState.IN_PROGRESS:
+                    pass
+                else:
+                    try:
+                        sm.transition(Transition.START, actor="orchestrator")
+                    except InvalidTransitionError:
+                        return
 
-            self._notify(
-                "task:started",
-                {"mission_id": mission_id, "task_id": task_id, "title": task.title},
-            )
-
-            # 3. EXECUTE (Worker) with timeout
-            start_time = datetime.now(timezone.utc)
-            try:
-                exec_result = await asyncio.wait_for(
-                    self._run_worker(task),
-                    timeout=task.timeout_seconds,
-                )
-            except asyncio.TimeoutError:
-                elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
-                exec_result = ExecutionResult(
-                    task_id=task.id,
-                    success=False,
-                    error=f"Task timed out after {task.timeout_seconds}s",
-                    time_spent_seconds=elapsed,
-                )
                 self._notify(
-                    "task:timeout",
+                    "task:started",
+                    {"mission_id": mission_id, "task_id": task_id, "title": task.title},
+                )
+
+                # 3. EXECUTE (Worker) with timeout
+                start_time = datetime.now(timezone.utc)
+                try:
+                    exec_result = await asyncio.wait_for(
+                        self._run_worker(task),
+                        timeout=task.timeout_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+                    exec_result = ExecutionResult(
+                        task_id=task.id,
+                        success=False,
+                        error=f"Task timed out after {task.timeout_seconds}s",
+                        time_spent_seconds=elapsed,
+                    )
+                    self._notify(
+                        "task:timeout",
+                        {
+                            "mission_id": mission_id,
+                            "task_id": task_id,
+                            "timeout": task.timeout_seconds,
+                            "elapsed": elapsed,
+                        },
+                    )
+                    # Store exec result for metrics even on timeout
+                    dag = self.tracker.get_dag(mission_id)
+                    if dag:
+                        dag.nodes[task_id].artifacts["_exec_result"] = exec_result
+
+                    # Cancel downstream tasks on timeout
+                    self._cancel_downstream_tasks(mission_id, task_id)
+                    # Transition to REJECTED
+                    try:
+                        sm.transition(
+                            Transition.REJECT,
+                            reason=f"Timeout after {task.timeout_seconds}s",
+                            actor="orchestrator",
+                        )
+                    except InvalidTransitionError:
+                        pass
+                    return
+
+                elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+
+                # 4. SUBMIT
+                try:
+                    sm.transition(Transition.SUBMIT, actor="worker")
+                except InvalidTransitionError:
+                    return
+
+                self._notify(
+                    "task:submitted",
                     {
                         "mission_id": mission_id,
                         "task_id": task_id,
-                        "timeout": task.timeout_seconds,
-                        "elapsed": elapsed,
+                        "success": exec_result.success,
+                        "time_spent": elapsed,
                     },
                 )
-                # Store exec result for metrics even on timeout
+
+                # Progressive disclosure: emit task execution details
+                if getattr(exec_result, "details", None):
+                    self._notify(
+                        "task:details",
+                        {
+                            "mission_id": mission_id,
+                            "task_id": task_id,
+                            "details": exec_result.details,
+                        },
+                    )
+
+                # 5. VERIFY
+                await self._verify_task(mission_id, task, exec_result, sm)
+        finally:
+            # Sync DAG node state with state machine so downstream
+            # dependency checks and ready-queue logic see the true state.
+            if sm:
                 dag = self.tracker.get_dag(mission_id)
                 if dag:
-                    dag.nodes[task_id].artifacts["_exec_result"] = exec_result
-
-                # Cancel downstream tasks on timeout
-                self._cancel_downstream_tasks(mission_id, task_id)
-                # Transition to REJECTED
-                try:
-                    sm.transition(
-                        Transition.REJECT,
-                        reason=f"Timeout after {task.timeout_seconds}s",
-                        actor="orchestrator",
-                    )
-                except InvalidTransitionError:
-                    pass
-                return
-
-            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
-
-            # 4. SUBMIT
-            try:
-                sm.transition(Transition.SUBMIT, actor="worker")
-            except InvalidTransitionError:
-                return
-
-            self._notify(
-                "task:submitted",
-                {
-                    "mission_id": mission_id,
-                    "task_id": task_id,
-                    "success": exec_result.success,
-                    "time_spent": elapsed,
-                },
-            )
-
-            # Progressive disclosure: emit task execution details
-            if getattr(exec_result, "details", None):
-                self._notify(
-                    "task:details",
-                    {
-                        "mission_id": mission_id,
-                        "task_id": task_id,
-                        "details": exec_result.details,
-                    },
-                )
-
-            # 5. VERIFY
-            await self._verify_task(mission_id, task, exec_result, sm)
+                    dag.update_task_state(task_id, sm.state)
 
     async def _run_worker(self, task: TaskSpec) -> ExecutionResult:
         """Run the appropriate worker for a task."""

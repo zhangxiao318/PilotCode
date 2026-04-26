@@ -792,6 +792,65 @@ class TestOrchestrator:
         sm = orch.tracker.get_state_machine("test_linear", "A")
         assert sm.state == TaskState.CANCELLED
 
+    async def test_smart_retry_re_executes_task(self, simple_mission, tmpdir):
+        """Verify that _smart_retry correctly re-executes a task after NEEDS_REWORK.
+
+        Regression test: _execute_task used to fail with InvalidTransitionError
+        when START was called on a task already in IN_PROGRESS (after RESUME).
+        """
+        config = OrchestratorConfig(
+            max_concurrent_workers=1,
+            enable_l3_verification=False,
+            auto_approve_simple=False,
+            max_rework_attempts=3,
+        )
+        orch = Orchestrator(config)
+
+        target_file = os.path.join(tmpdir, "output.txt")
+
+        task_calls = {"A": 0, "B": 0, "C": 0}
+
+        async def flaky_worker(task, ctx):
+            task_calls[task.id] += 1
+            if task.id == "A" and task_calls[task.id] == 1:
+                # First call for A: fail to create the file → L1 verification fails
+                return ExecutionResult(
+                    task_id=task.id,
+                    success=True,  # worker itself succeeded, but file missing
+                    output={},
+                )
+            # Subsequent calls: create the file → L1 verification passes
+            with open(target_file, "w") as f:
+                f.write("done")
+            return ExecutionResult(
+                task_id=task.id,
+                success=True,
+                output={},
+            )
+
+        orch.register_worker("simple", flaky_worker)
+        orch.register_worker("standard", flaky_worker)
+
+        # Register L1 verifier so missing outputs are caught
+        from pilotcode.orchestration.verifier import StaticAnalysisVerifier
+
+        l1_verifier = StaticAnalysisVerifier()
+        orch.register_verifier(1, lambda task, result: l1_verifier.verify(task, result))
+
+        # Set up the first task to require a specific output file
+        for task in simple_mission.all_tasks():
+            task.outputs = [target_file]
+
+        result = await orch.run(simple_mission)
+        snap = result["snapshot"]
+
+        # Task A should have been retried (initial fail + retry success)
+        assert task_calls["A"] == 2, f"Expected 2 calls for A, got {task_calls['A']}"
+        assert task_calls["B"] == 1
+        assert task_calls["C"] == 1
+        # Mission should complete (first task retried and passed; B, C pass)
+        assert snap["completed_tasks"] == 3
+
 
 # ============================================================================
 # Test Suite 6: Verifiers
