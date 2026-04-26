@@ -27,13 +27,19 @@ logger = logging.getLogger(__name__)
 
 
 class PreciseTokenizer:
-    """Exact token counter that tries multiple backends."""
+    """Exact token counter that tries multiple backends.
+
+    Caches /tokenize results to avoid hammering the backend with repeated
+    identical requests.
+    """
 
     def __init__(self, base_url: str = "", model_name: str = ""):
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self._transformers_tokenizer: Any = None
         self._tiktoken_encoder: Any = None
+        self._cache: dict[str, int] = {}
+        self._cache_max_size = 200
 
     # ------------------------------------------------------------------
     # Public API
@@ -43,36 +49,33 @@ class PreciseTokenizer:
         """Count tokens in a single text string.
 
         Returns exact count if any backend succeeds, else None.
+        Results are cached to avoid repeated HTTP requests.
         """
         if not text:
             return 0
 
-        # 1. llama.cpp /tokenize
-        result = self._try_llamacpp_tokenize(text)
-        if result is not None:
-            return result
+        cache_key = f"t:{hash(text)}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
 
-        # 2. vLLM /tokenize
-        result = self._try_vllm_tokenize(text)
-        if result is not None:
-            return result
+        # Try backends in order
+        result = (
+            self._try_llamacpp_tokenize(text)
+            or self._try_vllm_tokenize(text)
+            or self._try_ollama_tokenize(text)
+            or self._try_transformers(text)
+            or self._try_tiktoken(text)
+        )
 
-        # 3. Ollama /api/tokenize
-        result = self._try_ollama_tokenize(text)
         if result is not None:
-            return result
+            self._cache[cache_key] = result
+            self._prune_cache()
+        return result
 
-        # 4. Offline: transformers.AutoTokenizer
-        result = self._try_transformers(text)
-        if result is not None:
-            return result
-
-        # 5. Offline: tiktoken
-        result = self._try_tiktoken(text)
-        if result is not None:
-            return result
-
-        return None
+    def _prune_cache(self):
+        """Keep cache under max size (LRU-style by Python 3.7+ dict ordering)."""
+        while len(self._cache) > self._cache_max_size:
+            self._cache.pop(next(iter(self._cache)))
 
     def count_messages(self, messages: list[dict[str, Any]]) -> int | None:
         """Count tokens for a list of chat messages.
@@ -134,6 +137,7 @@ class PreciseTokenizer:
         if tools:
             try:
                 import json
+
                 text_parts.append(f"tools: {json.dumps(tools, ensure_ascii=False)}")
             except Exception:
                 pass
@@ -148,6 +152,7 @@ class PreciseTokenizer:
         """Count tokens for tool schemas by serializing to JSON and tokenizing."""
         try:
             import json
+
             schema = json.dumps(tools, ensure_ascii=False)
             return self.count_text(schema)
         except Exception:
@@ -165,6 +170,7 @@ class PreciseTokenizer:
             root_url = root_url[:-3]
         try:
             import httpx
+
             with httpx.Client(timeout=5.0) as client:
                 resp = client.post(f"{root_url}/tokenize", json={"content": text})
                 if resp.status_code == 200:
@@ -204,6 +210,7 @@ class PreciseTokenizer:
             root_url = root_url[:-3]
         try:
             import httpx
+
             with httpx.Client(timeout=5.0) as client:
                 resp = client.post(
                     f"{root_url}/tokenize",
@@ -233,6 +240,7 @@ class PreciseTokenizer:
             root_url = root_url[:-3]
         try:
             import httpx
+
             payload: dict[str, Any] = {
                 "messages": messages,
                 "model": self.model_name or "default",
@@ -270,6 +278,7 @@ class PreciseTokenizer:
             root_url = root_url[:-3]
         try:
             import httpx
+
             with httpx.Client(timeout=5.0) as client:
                 resp = client.post(
                     f"{root_url}/api/tokenize",
@@ -312,6 +321,7 @@ class PreciseTokenizer:
         if self._transformers_tokenizer is None:
             try:
                 from transformers import AutoTokenizer
+
                 model_name = self._infer_hf_model_name()
                 if model_name:
                     self._transformers_tokenizer = AutoTokenizer.from_pretrained(
@@ -336,6 +346,7 @@ class PreciseTokenizer:
         if self._tiktoken_encoder is None:
             try:
                 import tiktoken
+
                 self._tiktoken_encoder = tiktoken.get_encoding("cl100k_base")
                 logger.info("Loaded tiktoken encoder: cl100k_base")
             except Exception as exc:
@@ -359,6 +370,7 @@ class PreciseTokenizer:
                 root_url = root_url[:-3]
             try:
                 import httpx
+
                 with httpx.Client(timeout=3.0) as client:
                     # Try llama.cpp /props first
                     resp = client.get(f"{root_url}/props")

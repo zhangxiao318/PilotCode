@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from typing import Any, AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ class TokenUsage:
     def output_tokens(self) -> int:
         """Non-reasoning completion tokens."""
         return max(0, self.completion_tokens - self.reasoning_tokens)
+
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +133,7 @@ class QueryEngine:
 
         # OpenCode-style usable context = context_window - max_output_tokens
         # This ensures we always leave headroom for the model to generate output.
-        self._usable_context = max(
-            1, self.config.context_window - self._max_output_tokens
-        )
+        self._usable_context = max(1, self.config.context_window - self._max_output_tokens)
 
         # Initialize services
         # OpenCode-style: pass backend URL so the estimator can use precise tokenizers
@@ -166,6 +166,15 @@ class QueryEngine:
         # OpenCode-style: cache the most recent API-reported usage so we can
         # use ground-truth token counts instead of pure heuristics.
         self._last_api_usage: TokenUsage | None = None
+        self._last_api_usage_hash: str | None = None
+
+        # Precise tokenizer caching: avoid hammering /tokenize on every
+        # stream event.  We cache the result for a few seconds unless the
+        # conversation state changes.
+        self._last_precise_count: int | None = None
+        self._last_precise_count_at: float = 0.0
+        self._last_precise_count_hash: str | None = None
+        self.MIN_PRECISE_INTERVAL: float = 5.0
 
         # Post-edit review tracking
         self._changed_files: list[str] = []
@@ -780,6 +789,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                             cache_write_tokens=cache_write,
                             reasoning_tokens=reasoning,
                         )
+                        self._last_api_usage_hash = self._compute_state_hash()
 
                     # Handle reasoning content (DeepSeek thinking mode only)
                     if is_deepseek:
@@ -943,9 +953,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                 max_tool_tokens = int(self._usable_context * 0.20)
             elif ratio < 0.85:
                 # Getting tight: allow half of remaining space
-                max_tool_tokens = max(
-                    2_000, int((self._usable_context - tokens_before) * 0.5)
-                )
+                max_tool_tokens = max(2_000, int((self._usable_context - tokens_before) * 0.5))
             elif ratio < 1.0:
                 # Very tight: keep tool result small
                 max_tool_tokens = 2_000
@@ -996,6 +1004,32 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         """Abort current query."""
         self.abort_event.set()
 
+    def _compute_state_hash(self) -> str:
+        """Return a cheap hash of current conversation state.
+
+        Used to detect whether new messages have arrived since the last
+        API call or precise token count.
+        """
+        parts: list[str] = []
+        for m in self.messages:
+            if hasattr(m, "content"):
+                parts.append(f"{getattr(m, 'role', 'user')}:{m.content}")
+            elif hasattr(m, "name") and hasattr(m, "input"):
+                parts.append(f"tool:{m.name}:{m.input}")
+            else:
+                parts.append(str(m))
+        if self.config.tools:
+            try:
+                parts.append(
+                    json.dumps(
+                        [t.to_dict() if hasattr(t, "to_dict") else t for t in self.config.tools],
+                        sort_keys=True,
+                    )
+                )
+            except Exception:
+                pass
+        return str(hash("|".join(parts)))
+
     def _count_with_precise_tokenizer(self) -> int | None:
         """Try to count tokens using the precise backend tokenizer.
 
@@ -1005,18 +1039,19 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         try:
             # Build full API message list including system prompt
             api_msgs: list[dict[str, Any]] = []
-            if self.messages:
-                system_msg = self._build_system_message()
-                api_msgs.append({"role": "system", "content": system_msg.content})
+            system_msg = self._build_system_message()
+            api_msgs.append({"role": "system", "content": system_msg.content})
 
             for m in self.messages:
                 if hasattr(m, "content"):
                     api_msgs.append({"role": getattr(m, "role", "user"), "content": str(m.content)})
                 elif hasattr(m, "name") and hasattr(m, "input"):
-                    api_msgs.append({
-                        "role": "assistant",
-                        "content": f"Tool: {m.name}\nInput: {m.input}",
-                    })
+                    api_msgs.append(
+                        {
+                            "role": "assistant",
+                            "content": f"Tool: {m.name}\nInput: {m.input}",
+                        }
+                    )
 
             # Build tools list if any are configured
             api_tools: list[dict[str, Any]] | None = None
@@ -1025,6 +1060,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                 for tool in self.config.tools:
                     try:
                         import json
+
                         # Ensure each tool is a plain dict
                         if hasattr(tool, "to_dict"):
                             api_tools.append(tool.to_dict())
@@ -1045,17 +1081,24 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             # Fallback: count text components individually, then add tools
             total = 0
             system_msg = self._build_system_message()
-            total += self._precise_tokenizer.count_text(system_msg.content) or self._token_estimator.estimate(system_msg.content)
+            total += self._precise_tokenizer.count_text(
+                system_msg.content
+            ) or self._token_estimator.estimate(system_msg.content)
             for m in self.messages:
                 content = str(getattr(m, "content", getattr(m, "name", "")))
-                total += self._precise_tokenizer.count_text(content) or self._token_estimator.estimate(content)
+                total += self._precise_tokenizer.count_text(
+                    content
+                ) or self._token_estimator.estimate(content)
 
             if api_tools:
                 for tool in api_tools:
                     try:
                         import json
+
                         schema = json.dumps(tool, ensure_ascii=False)
-                        total += self._precise_tokenizer.count_text(schema) or self._token_estimator.estimate(schema)
+                        total += self._precise_tokenizer.count_text(
+                            schema
+                        ) or self._token_estimator.estimate(schema)
                     except Exception:
                         total += 500
             return total
@@ -1105,18 +1148,43 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         2. Use precise backend tokenizer (/tokenize, transformers, tiktoken).
         3. Fall back to heuristic estimation.
 
-        Includes system prompt and tool definitions for accuracy.
+        Caching logic:
+        - If API usage exists and conversation state hasn't changed,
+          return the cached API total immediately.
+        - If API usage exists but new messages arrived (e.g. streaming),
+          return API total + heuristic estimate for the delta.  This avoids
+          calling /tokenize on every stream chunk.
+        - If no API usage yet, rate-limit precise tokenizer calls to
+          once every ``MIN_PRECISE_INTERVAL`` seconds.
         """
-        # Priority 1: API-reported usage is the most authoritative
+        current_hash = self._compute_state_hash()
+
+        # Priority 1: API-reported usage is the most authoritative.
         if self._last_api_usage:
             api_total = self._last_api_usage.total_tokens
-            # New messages may have been added since the last API call,
-            # so take the max of API total and current heuristic count.
+            if current_hash == self._last_api_usage_hash:
+                # Conversation unchanged since last API call → ground truth.
+                return api_total
+            # New messages arrived (streaming, tool results, etc.).
+            # Estimate only the delta with heuristics rather than re-tokenizing
+            # the entire conversation.
             return max(api_total, self._heuristic_count_tokens())
 
-        # Priority 2: Try precise tokenizer (llama.cpp /tokenize, vLLM, etc.)
+        # Priority 2: Try precise tokenizer, but rate-limit to avoid
+        # hammering the backend with /tokenize requests.
+        now = time.monotonic()
+        if (
+            self._last_precise_count is not None
+            and current_hash == self._last_precise_count_hash
+            and (now - self._last_precise_count_at) < self.MIN_PRECISE_INTERVAL
+        ):
+            return self._last_precise_count
+
         precise = self._count_with_precise_tokenizer()
         if precise is not None:
+            self._last_precise_count = precise
+            self._last_precise_count_at = now
+            self._last_precise_count_hash = current_hash
             return precise
 
         # Priority 3: Heuristic fallback
@@ -1145,9 +1213,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
     def get_token_budget(self) -> dict[str, Any]:
         """Get current token budget status."""
-        return self._token_estimator.get_budget_status(
-            self.count_tokens(), self._usable_context
-        )
+        return self._token_estimator.get_budget_status(self.count_tokens(), self._usable_context)
 
     def track_cost(self, tokens: int, cost_usd: float) -> None:
         """Track cost for this session.
