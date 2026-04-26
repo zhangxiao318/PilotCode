@@ -553,7 +553,7 @@ class TUIController:
                 self.query_engine.messages.append(UserMessage(content=text))
                 self.query_engine.messages.append(AssistantMessage(content=full_report))
 
-    async def submit_message(self, text: str) -> AsyncIterator[UIMessage]:
+    async def submit_message(self, text: str, force_plan: bool = False) -> AsyncIterator[UIMessage]:
         """Submit a message and yield UI messages.
 
         This handles the full flow:
@@ -562,9 +562,19 @@ class TUIController:
         3. Intercept tool calls and request permission
         4. Execute tools and return results
         5. Continue until complete
+
+        Args:
+            text: User input text.
+            force_plan: If True, bypass auto-detection and always run P-EVR mode.
         """
         if not self.query_engine:
             yield UIMessage(type=UIMessageType.ERROR, content="Query engine not initialized")
+            return
+
+        # Trigger P-EVR mode when explicitly requested (/plan) or on first message
+        if force_plan:
+            async for msg in self._run_pevr_mode(text):
+                yield msg
             return
 
         # Auto-detect task complexity for the first user message

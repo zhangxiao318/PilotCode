@@ -18,7 +18,7 @@ from pilotcode.tui_v2.components.permission_inline import (
 )
 from pilotcode.tui_v2.components.search_bar import SearchBar, SearchMode, SearchNavigate
 from pilotcode.state.store import get_store
-from pilotcode.commands.base import process_user_input
+from pilotcode.commands.base import process_user_input, parse_command
 from pilotcode.types.command import CommandContext
 
 # Import all commands to ensure they are registered
@@ -242,6 +242,23 @@ class SessionScreen(Screen):
 
         # Check for commands
         if text.startswith("/"):
+            cmd_name, args = parse_command(text)
+            # /plan <description> (without a known sub-command) triggers P-EVR mode
+            if (
+                cmd_name == "plan"
+                and args
+                and args[0] not in ("start", "add", "next", "complete", "cancel")
+            ):
+                description = " ".join(args)
+                if self.message_list:
+                    user_msg = UIMessage(
+                        type=UIMessageType.USER, content=f"/plan {description}", is_complete=True
+                    )
+                    self.message_list.add_message(user_msg)
+                self.run_worker(
+                    self._process_message(description, force_plan=True), exit_on_error=False
+                )
+                return
             await self._handle_command(text)
             return
 
@@ -254,7 +271,7 @@ class SessionScreen(Screen):
         # This prevents blocking the UI event loop
         self.run_worker(self._process_message(text), exit_on_error=False)
 
-    async def _process_message(self, text: str):
+    async def _process_message(self, text: str, force_plan: bool = False):
         """Process a user message."""
         if not self.controller or not self.message_list:
             return
@@ -264,7 +281,7 @@ class SessionScreen(Screen):
             self.status_bar.set_processing(True)
 
         try:
-            async for msg in self.controller.submit_message(text):
+            async for msg in self.controller.submit_message(text, force_plan=force_plan):
                 # Skip user messages as they're already displayed
                 if msg.type == UIMessageType.USER:
                     continue

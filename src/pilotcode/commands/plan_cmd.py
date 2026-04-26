@@ -8,13 +8,26 @@ _current_step = 0
 
 
 async def plan_command(args: list[str], context: CommandContext) -> str:
-    """Handle /plan command."""
+    """Handle /plan command.
+
+    Two usage patterns:
+      /plan <description>     → Launch P-EVR mission mode (e.g. /plan refactor auth)
+      /plan start <desc>      → Start a manual step-by-step plan
+      /plan add <step>        → Add a step to the manual plan
+      /plan next              → Advance to next step
+      /plan complete          → Finish the manual plan
+      /plan cancel            → Cancel the manual plan
+    """
     global _plan_active, _plan_steps, _current_step
 
     if not args:
         # Show current plan
         if not _plan_active:
-            return "No active plan. Start with: /plan start <description>"
+            return (
+                "No active manual plan.\n"
+                "  /plan <description>  → Launch P-EVR mission mode\n"
+                "  /plan start <desc>   → Start a manual plan"
+            )
 
         lines = ["Current Plan:", ""]
         for i, step in enumerate(_plan_steps, 1):
