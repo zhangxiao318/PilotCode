@@ -24,6 +24,9 @@ class HybridMessageList(ScrollableContainer):
         color: $text;
         overflow-y: auto;
     }
+    HybridMessageList > * {
+        margin: 0;
+    }
     """
 
     # Threshold to show warning about large history
@@ -34,7 +37,7 @@ class HybridMessageList(ScrollableContainer):
         self._messages: list[UIMessage] = []
         self._displays: list[MessageDisplay] = []
         self._streaming_message: Optional[MessageDisplay] = None
-        self._pending_tool: Optional[UIMessage] = None
+        self._pending_tool_display: Optional[MessageDisplay] = None
 
     def add_message(self, message: UIMessage) -> MessageDisplay:
         """Add a message to the list."""
@@ -66,6 +69,24 @@ class HybridMessageList(ScrollableContainer):
                 self.scroll_end()
                 return self._displays[-1]
 
+        # Merge TOOL_RESULT into preceding TOOL_USE for compact display
+        from pilotcode.tui_v2.controller.controller import UIMessageType
+
+        if message.type == UIMessageType.TOOL_RESULT and self._pending_tool_display:
+            pending = self._pending_tool_display
+            if pending.message and pending.message.type == UIMessageType.TOOL_USE:
+                # Combine: keep tool name/input from TOOL_USE, add result content
+                pending.message.type = UIMessageType.TOOL_RESULT
+                pending.message.content = message.content
+                pending.message.metadata = {
+                    **pending.message.metadata,
+                    **message.metadata,
+                }
+                pending.refresh(layout=True)
+                self._pending_tool_display = None
+                self.scroll_end(animate=False)
+                return pending
+
         # Create new message display
         display = MessageDisplay(message)
         self._displays.append(display)
@@ -73,6 +94,13 @@ class HybridMessageList(ScrollableContainer):
 
         if message.is_streaming:
             self._streaming_message = display
+
+        # Remember TOOL_USE so next TOOL_RESULT can merge with it
+        if message.type == UIMessageType.TOOL_USE:
+            self._pending_tool_display = display
+        elif message.type != UIMessageType.TOOL_RESULT:
+            # Any non-tool message clears pending tool state
+            self._pending_tool_display = None
 
         # Auto-scroll to bottom immediately and after refresh
         self.scroll_end(animate=False)
@@ -104,7 +132,7 @@ class HybridMessageList(ScrollableContainer):
         self._displays.clear()
         self._messages.clear()
         self._streaming_message = None
-        self._pending_tool = None
+        self._pending_tool_display = None
 
     def scroll_to_bottom(self, animate: bool = False) -> None:
         """Scroll to bottom."""

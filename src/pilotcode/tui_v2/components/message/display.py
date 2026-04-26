@@ -365,10 +365,14 @@ class MessageDisplay(Static):
 
         # Tool result - show output preview (first line, first 70 chars)
         if self.message.type == UIMessageType.TOOL_RESULT:
+            tool_name = self.message.metadata.get("tool_name", "")
             lines = content.strip().split("\n")
             preview = lines[0][:70] if lines else ""
             if len(lines) > 1 or len(content) > 70:
                 preview += " ..."
+            if tool_name:
+                # Compact combined display (merged from preceding TOOL_USE)
+                return Text(f"● {tool_name} → {preview}", style="green")
             return Text(f"→ {preview}", style="white")
 
         # User messages - smiley prefix
