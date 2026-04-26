@@ -10,6 +10,52 @@ import httpx
 from .config import get_global_config
 from .models_config import get_model_info
 
+# ------------------------------------------------------------------
+# Custom exceptions for LLM API errors
+# ------------------------------------------------------------------
+
+
+class LLMError(Exception):
+    """Base class for LLM API errors."""
+
+    def __init__(self, message: str, status_code: int | None = None, body: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.body = body
+
+
+class ContextWindowError(LLMError):
+    """Raised when the request exceeds the model's context window."""
+
+    pass
+
+
+class RateLimitError(LLMError):
+    """Raised when the API rate limit is exceeded (429)."""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        body: str | None = None,
+        retry_after: float | None = None,
+    ):
+        super().__init__(message, status_code, body)
+        self.retry_after = retry_after
+
+
+class AuthError(LLMError):
+    """Raised on authentication/authorization failure (401/403)."""
+
+    pass
+
+
+class ServerError(LLMError):
+    """Raised on server-side errors (5xx)."""
+
+    pass
+
+
 # Provider inference keywords mapped to canonical provider names
 _PROVIDER_KEYWORDS: dict[str, str] = {
     "qwen": "qwen",
@@ -224,6 +270,64 @@ class ModelClient:
             for tool in tools
         ]
 
+    def _classify_error(
+        self, status_code: int, body: bytes, headers: httpx.Headers | None = None
+    ) -> LLMError:
+        """Classify an HTTP error into a typed exception.
+
+        Parses the response body to detect provider-specific error codes
+        (e.g., OpenAI's 'context_length_exceeded', DeepSeek's variants).
+        """
+        text = body.decode("utf-8", errors="replace")[:2000]
+        message = f"{self._provider_name.upper()} API error {status_code}: {text}"
+
+        # Parse JSON body for structured error info
+        error_code = ""
+        try:
+            data = json.loads(body)
+            err = data.get("error", {})
+            if isinstance(err, dict):
+                error_code = err.get("code", "")
+            elif isinstance(err, str):
+                error_code = err
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+        lower_body = text.lower()
+
+        # 429 Rate Limit
+        if status_code == 429:
+            retry_after: float | None = None
+            if headers:
+                raw = headers.get("retry-after") or headers.get("x-ratelimit-reset")
+                if raw:
+                    try:
+                        retry_after = float(raw)
+                    except ValueError:
+                        pass
+            return RateLimitError(message, status_code, text, retry_after)
+
+        # 401/403 Auth
+        if status_code in (401, 403):
+            return AuthError(message, status_code, text)
+
+        # Context window exceeded: can be 413, 400, or 422 depending on provider
+        if status_code in (413, 422) or (
+            status_code == 400
+            and any(
+                k in lower_body or k in error_code.lower()
+                for k in ("context_length_exceeded", "context window", "too long", "max_tokens")
+            )
+        ):
+            return ContextWindowError(message, status_code, text)
+
+        # 5xx Server errors
+        if status_code >= 500:
+            return ServerError(message, status_code, text)
+
+        # Fallback to generic LLMError for unhandled 4xx
+        return LLMError(message, status_code, text)
+
     async def chat_completion(
         self,
         messages: list[Message] | list[dict[str, Any]],
@@ -268,11 +372,7 @@ class ModelClient:
                     ) as response:
                         if response.status_code >= 400:
                             body = await response.aread()
-                            raise Exception(
-                                f"{self._provider_name.upper()} API error {response.status_code}: "
-                                f"{body.decode('utf-8', errors='replace')}\n"
-                                f"Payload: {json.dumps(payload, ensure_ascii=False, default=str)[:2000]}"
-                            )
+                            raise self._classify_error(response.status_code, body, response.headers)
                         async for line in response.aiter_lines():
                             if line.startswith("data: "):
                                 data = line[6:]
@@ -280,16 +380,34 @@ class ModelClient:
                                     break
                                 try:
                                     chunk = json.loads(data)
-                                    # Check for API errors
+                                    # Check for API errors embedded in stream
                                     if chunk.get("error"):
-                                        raise Exception(f"API Error: {chunk['error']}")
+                                        err_msg = chunk["error"]
+                                        if isinstance(err_msg, dict):
+                                            code = err_msg.get("code", "")
+                                            msg = err_msg.get("message", str(err_msg))
+                                        else:
+                                            code = ""
+                                            msg = str(err_msg)
+                                        raise self._classify_error(
+                                            400,
+                                            json.dumps(
+                                                {"error": {"code": code, "message": msg}}
+                                            ).encode(),
+                                        )
                                     yield chunk
                                 except json.JSONDecodeError:
                                     continue
                     return
                 else:
                     response = await self.client.post("/chat/completions", json=payload)
-                    response.raise_for_status()
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        body = await response.aread()
+                        raise self._classify_error(
+                            response.status_code, body, response.headers
+                        ) from exc
                     data = response.json()
 
                     # Yield as a single chunk
@@ -304,11 +422,12 @@ class ModelClient:
                     return
             except Exception as exc:
                 last_exception = exc
-                # Retry on 5xx, connection errors, and timeouts
-                is_retryable = (
-                    isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
-                ) or isinstance(
-                    exc, (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError)
+                # Retry only on server errors and transient network issues.
+                # ContextWindowError, RateLimitError, and AuthError are
+                # forwarded immediately so callers can handle them specifically.
+                is_retryable = isinstance(
+                    exc,
+                    (ServerError, httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError),
                 )
                 if not is_retryable or attempt == max_retries - 1:
                     raise
