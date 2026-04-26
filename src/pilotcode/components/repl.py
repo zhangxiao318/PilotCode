@@ -200,11 +200,23 @@ class REPL:
         pass
 
     def _render_conversational_assistant(self, content: str, is_complete: bool) -> None:
-        """Conversational Layer: assistant response text."""
-        if is_complete and content:
+        """Conversational Layer: assistant response text.
+
+        When is_complete=False, content is streamed in real-time via
+        stdout so the user sees the response as it generates.
+        When is_complete=True, the full response is rendered as Markdown.
+        """
+        if not content:
+            return
+        if is_complete:
             self.console.print()
             self.console.print(Markdown(content))
             self.console.print()
+            sys.stdout.flush()
+        else:
+            # Real-time streaming: write raw text directly to avoid
+            # Markdown parsing overhead and re-rendering artifacts.
+            sys.stdout.write(content)
             sys.stdout.flush()
 
     def _render_conversational_tool_use(
@@ -253,6 +265,7 @@ class REPL:
             status_text = (
                 f"[cyan]Thinking...[/cyan] [dim](turn {iteration}/{self.max_iterations})[/dim]"
             )
+            has_streamed = False
             with Status(status_text, console=self.console, spinner="dots"):
                 try:
                     async for result in self.query_engine.submit_message(prompt):
@@ -267,6 +280,10 @@ class REPL:
                                 else:
                                     if msg.content:
                                         full_content += msg.content
+                                        self._render_conversational_assistant(
+                                            msg.content, is_complete=False
+                                        )
+                                        has_streamed = True
 
                         # -- Conversational Layer: tool use --
                         elif isinstance(msg, ToolUseMessage):
@@ -279,7 +296,14 @@ class REPL:
 
             # -- Conversational Layer: flush assistant response --
             if full_content:
-                self._render_conversational_assistant(full_content, is_complete=True)
+                if has_streamed:
+                    # Already streamed in real-time; just ensure a clean newline
+                    # and skip Markdown re-render to avoid duplicate output.
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    self.console.print()
+                else:
+                    self._render_conversational_assistant(full_content, is_complete=True)
                 full_content = ""
 
             # -- Interactive + Conversational Layer: execute tools --
