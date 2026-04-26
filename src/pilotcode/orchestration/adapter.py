@@ -112,6 +112,9 @@ class MissionAdapter:
         # Multi-model router for tiered task routing
         self.router = ModelRouter()
 
+        # Tool concurrency limit from user config (local models default 2, remote 5)
+        self._tool_concurrency_limit = get_global_config().tool_concurrency_limit
+
         # Context strategy (legacy) + adaptive override
         self.strategy = ContextStrategySelector.select(context_budget, capability=self.capability)
         self.plan_adjuster = MissionPlanAdjuster(strategy=self.strategy)
@@ -565,33 +568,39 @@ class MissionAdapter:
                     cwd=getattr(store.get_state(), "cwd", ""),
                 )
 
-                for tu in pending_tools:
-                    if self._cancel_event.is_set():
-                        return ExecutionResult(
-                            task_id=task.id,
-                            success=False,
-                            error="Cancelled by user",
-                        )
+                if self._cancel_event.is_set():
+                    return ExecutionResult(
+                        task_id=task.id,
+                        success=False,
+                        error="Cancelled by user",
+                    )
 
-                    exec_result = await executor.execute_tool_by_name(tu.name, tu.input, tool_ctx)
+                # Limit concurrent tool execution to avoid overwhelming local
+                # models (Ollama/vLLM typically handle 1-2 concurrent reqs)
+                # or external APIs. Value is configurable via settings.json.
+                _tool_semaphore = asyncio.Semaphore(self._tool_concurrency_limit)
 
-                    if exec_result.success and exec_result.result is not None:
-                        result_text = (
-                            str(exec_result.result.data) if exec_result.result.data else "Success"
-                        )
+                async def _exec_one(tu: ToolUseMessage) -> tuple[str, bool]:
+                    """Execute a single tool and return (result_text, success)."""
+                    async with _tool_semaphore:
+                        er = await executor.execute_tool_by_name(tu.name, tu.input, tool_ctx)
+                    if er.success and er.result is not None:
+                        text = str(er.result.data) if er.result.data else "Success"
                     else:
-                        result_text = exec_result.message or "Tool execution failed"
+                        text = er.message or "Tool execution failed"
+                    return text, er.success
 
+                # Run independent tool calls in parallel (e.g., reading 3 files)
+                tool_results = await asyncio.gather(*[_exec_one(tu) for tu in pending_tools])
+
+                # Feed results back in original order to keep message history consistent
+                for tu, (result_text, success) in zip(pending_tools, tool_results):
                     engine.add_tool_result(
                         tu.tool_use_id,
                         result_text,
-                        is_error=not exec_result.success,
+                        is_error=not success,
                     )
-
-                    # Update project memory from tool results
-                    self._update_memory_from_tool(
-                        tu, result_text, exec_result.success, file_reads_this_task
-                    )
+                    self._update_memory_from_tool(tu, result_text, success, file_reads_this_task)
 
                 total_turns += 1
 

@@ -84,6 +84,9 @@ class GlobalConfig:
     # Per-model overrides for multi-model routing.
     # Example: {"openai": {"api_key": "sk-xxx", "base_url": "..."}, "qwen": {"api_key": "sk-yyy"}}
     model_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Max concurrent tool executions within a single LLM turn.
+    # Local models (Ollama/vLLM) default to 2; remote APIs default to 5.
+    tool_concurrency_limit: int = 0
 
     def get_model_config(self, model_name: str) -> dict[str, str]:
         """Get merged configuration for a specific model.
@@ -112,6 +115,11 @@ class GlobalConfig:
         is_local = is_local_url(self.base_url or "")
         if not is_local and self.default_model in ("ollama", "vllm"):
             is_local = True
+
+        # Default tool concurrency: local models are typically limited to 1-2
+        # concurrent requests (Ollama/vLLM), remote APIs can handle more.
+        if self.tool_concurrency_limit <= 0:
+            self.tool_concurrency_limit = 2 if is_local else 5
 
         if is_local:
             return
