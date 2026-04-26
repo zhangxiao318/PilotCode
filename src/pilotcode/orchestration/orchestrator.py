@@ -150,6 +150,7 @@ class Orchestrator:
             "mission:started",
             {"mission_id": mid, "total_tasks": len(mission.all_tasks())},
         )
+        mission_started_at = datetime.now(timezone.utc)
 
         # Initialize Reflector for periodic health checks
         from .rework.reflector import Reflector
@@ -238,8 +239,9 @@ class Orchestrator:
             {"mission_id": mid, "snapshot": asdict(snapshot) if snapshot else {}},
         )
 
-        # Collect task outputs for reporting
+        # Collect task outputs and metrics for reporting
         task_outputs: dict[str, Any] = {}
+        total_token_usage = 0
         dag = self.tracker.get_dag(mid)
         if dag:
             for task_id, node in dag.nodes.items():
@@ -249,11 +251,28 @@ class Orchestrator:
                         "output": node.result,
                         "artifacts": node.artifacts,
                     }
+                exec_res = node.artifacts.get("_exec_result")
+                if isinstance(exec_res, ExecutionResult):
+                    total_token_usage += exec_res.token_usage
+
+        mission_duration = (datetime.now(timezone.utc) - mission_started_at).total_seconds()
+
+        metrics = {
+            "mission_id": mid,
+            "started_at": mission_started_at.isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "total_tasks": snapshot.total_tasks if snapshot else 0,
+            "completed_tasks": snapshot.completed_tasks if snapshot else 0,
+            "failed_tasks": snapshot.failed_tasks if snapshot else 0,
+            "total_token_usage": total_token_usage,
+            "total_duration_seconds": mission_duration,
+        }
 
         return {
             "mission_id": mid,
             "snapshot": snapshot.to_dict() if snapshot else {},
             "task_outputs": task_outputs,
+            "metrics": metrics,
         }
 
     def _enqueue_ready(self, mission_id: str, active_workers: dict[asyncio.Task, DagNode]) -> None:
@@ -331,6 +350,11 @@ class Orchestrator:
                         "elapsed": elapsed,
                     },
                 )
+                # Store exec result for metrics even on timeout
+                dag = self.tracker.get_dag(mission_id)
+                if dag:
+                    dag.nodes[task_id].artifacts["_exec_result"] = exec_result
+
                 # Cancel downstream tasks on timeout
                 self._cancel_downstream_tasks(mission_id, task_id)
                 # Transition to REJECTED
