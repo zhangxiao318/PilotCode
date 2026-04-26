@@ -312,13 +312,7 @@ class ModelClient:
             return AuthError(message, status_code, text)
 
         # Context window exceeded: can be 413, 400, or 422 depending on provider
-        if status_code in (413, 422) or (
-            status_code == 400
-            and any(
-                k in lower_body or k in error_code.lower()
-                for k in ("context_length_exceeded", "context window", "too long", "max_tokens")
-            )
-        ):
+        if is_context_overflow(status_code, text, error_code):
             return ContextWindowError(message, status_code, text)
 
         # 5xx Server errors
