@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import sys
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -30,6 +29,12 @@ from .task_spec import Mission, Phase, TaskSpec, ComplexityLevel, Constraints, A
 from .orchestrator import Orchestrator, OrchestratorConfig
 from .results import ExecutionResult
 from .verifier.base import VerificationResult, Verdict
+from .verifiers.adapter_verifiers import (
+    l1_simple_verifier,
+    l2_test_verifier,
+    l3_code_review_verifier,
+)
+from .explorers.code_explorer import explore_codebase
 from .context_strategy import (
     ContextStrategy,
     ContextStrategySelector,
@@ -90,9 +95,9 @@ class MissionAdapter:
 
     def _register_verifiers(self) -> None:
         """Register L1/L2/L3 verifiers."""
-        self._orchestrator.register_verifier(1, self._simple_verifier)
-        self._orchestrator.register_verifier(2, self._test_verifier)
-        self._orchestrator.register_verifier(3, self._code_review_verifier)
+        self._orchestrator.register_verifier(1, l1_simple_verifier)
+        self._orchestrator.register_verifier(2, l2_test_verifier)
+        self._orchestrator.register_verifier(3, l3_code_review_verifier)
 
     def _setup_permission_callback(self) -> None:
         """Set a non-interactive permission callback for tool execution."""
@@ -103,169 +108,6 @@ class MissionAdapter:
     async def _auto_allow_permission(request: PermissionRequest) -> PermissionLevel:
         """Auto-allow all tool requests during autonomous execution."""
         return PermissionLevel.ALLOW
-
-    @staticmethod
-    async def _simple_verifier(task: TaskSpec, exec_result: ExecutionResult) -> VerificationResult:
-        """L1: Basic verifier — execution must succeed and produce output."""
-        if not exec_result.success:
-            return VerificationResult(
-                task_id=task.id,
-                level=1,
-                passed=False,
-                score=0.0,
-                feedback=exec_result.error or "Execution failed without details",
-                verdict=Verdict.REJECT,
-            )
-        if not exec_result.output and not exec_result.artifacts.get("changed_files"):
-            return VerificationResult(
-                task_id=task.id,
-                level=1,
-                passed=False,
-                score=30.0,
-                feedback="Execution succeeded but produced no output or file changes",
-                verdict=Verdict.NEEDS_REWORK,
-            )
-        return VerificationResult(
-            task_id=task.id,
-            level=1,
-            passed=True,
-            score=100.0,
-            verdict=Verdict.APPROVE,
-        )
-
-    @staticmethod
-    async def _test_verifier(task: TaskSpec, exec_result: ExecutionResult) -> VerificationResult:
-        """L2: Test verifier — run acceptance criteria as tests if possible."""
-        import subprocess
-        import os
-
-        # If the task mentions tests or pytest, try to run them
-        changed_files = exec_result.artifacts.get("changed_files", [])
-        has_test_file = any("test" in f.lower() for f in changed_files)
-
-        # Run pytest if there are test files or if acceptance criteria suggest testing
-        should_run_tests = has_test_file or any(
-            ac.verification_method in ("test", "pytest") for ac in task.acceptance_criteria
-        )
-
-        if not should_run_tests:
-            # No tests to run — auto-pass L2
-            return VerificationResult(
-                task_id=task.id,
-                level=2,
-                passed=True,
-                score=100.0,
-                verdict=Verdict.APPROVE,
-            )
-
-        cwd = os.getcwd()
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-m",
-                "pytest",
-                "-xvs",
-                "-q",
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
-            output = stdout.decode("utf-8", errors="replace") + stderr.decode(
-                "utf-8", errors="replace"
-            )
-            if proc.returncode == 0:
-                return VerificationResult(
-                    task_id=task.id,
-                    level=2,
-                    passed=True,
-                    score=100.0,
-                    verdict=Verdict.APPROVE,
-                )
-            else:
-                return VerificationResult(
-                    task_id=task.id,
-                    level=2,
-                    passed=False,
-                    score=50.0,
-                    feedback=f"Tests failed:\n{output}",
-                    verdict=Verdict.NEEDS_REWORK,
-                )
-        except Exception as e:
-            return VerificationResult(
-                task_id=task.id,
-                level=2,
-                passed=False,
-                score=0.0,
-                feedback=f"Could not run tests: {e}",
-                verdict=Verdict.NEEDS_REWORK,
-            )
-
-    @staticmethod
-    async def _code_review_verifier(
-        task: TaskSpec, exec_result: ExecutionResult
-    ) -> VerificationResult:
-        """L3: LLM-based code review verifier."""
-        changed_files = exec_result.artifacts.get("changed_files", [])
-        if not changed_files:
-            return VerificationResult(
-                task_id=task.id,
-                level=3,
-                passed=True,
-                score=100.0,
-                verdict=Verdict.APPROVE,
-            )
-
-        client = get_model_client()
-        review_prompt = (
-            f"Review the following code changes for correctness, style, and alignment with the task objective.\n\n"
-            f"Task: {task.title}\n"
-            f"Objective: {task.objective}\n\n"
-            f"Changed files: {', '.join(changed_files)}\n\n"
-            f"Worker output summary:\n{exec_result.output[:2000]}\n\n"
-            f"Provide a brief review: APPROVE if correct, NEEDS_REWORK if issues found."
-        )
-        try:
-            messages = [
-                Message(role="system", content="You are a code reviewer. Be concise."),
-                Message(role="user", content=review_prompt),
-            ]
-            accumulated = ""
-            async for chunk in client.chat_completion(
-                messages=messages, temperature=0.2, stream=False
-            ):
-                delta = chunk.get("choices", [{}])[0].get("delta", {})
-                c = delta.get("content")
-                if c:
-                    accumulated += c
-
-            review = accumulated.lower()
-            if "approve" in review or "looks good" in review or "correct" in review:
-                return VerificationResult(
-                    task_id=task.id,
-                    level=3,
-                    passed=True,
-                    score=100.0,
-                    verdict=Verdict.APPROVE,
-                )
-            else:
-                return VerificationResult(
-                    task_id=task.id,
-                    level=3,
-                    passed=False,
-                    score=60.0,
-                    feedback=f"Code review feedback: {accumulated[:500]}",
-                    verdict=Verdict.NEEDS_REWORK,
-                )
-        except Exception as e:
-            return VerificationResult(
-                task_id=task.id,
-                level=3,
-                passed=False,
-                score=0.0,
-                feedback=f"Review failed: {e}",
-                verdict=Verdict.NEEDS_REWORK,
-            )
 
     # ------------------------------------------------------------------
     # Planning
@@ -765,76 +607,6 @@ class MissionAdapter:
         elif "unittest" in output_lower:
             self.project_memory.record_convention("testing_framework", "unittest")
 
-    # ------------------------------------------------------------------
-    # Explore-Plan Loop (P2)
-    # ------------------------------------------------------------------
-
-    async def _explore_codebase(self, user_request: str) -> dict[str, Any]:
-        """Quickly explore the codebase to understand structure before planning.
-
-        Returns a dict with keys: files, conventions, architecture_notes.
-        """
-        import os
-        import glob as pyglob
-
-        exploration: dict[str, Any] = {"files": [], "conventions": {}, "architecture_notes": []}
-
-        # Quick scan of Python files (offload sync I/O to thread)
-        try:
-            py_files = await asyncio.to_thread(pyglob.glob, "**/*.py", recursive=True)
-            exploration["files"] = py_files[:50]
-        except Exception:
-            import logging
-
-            logging.getLogger(__name__).debug("Exploration glob failed", exc_info=True)
-
-        # Try to find key files mentioned in request
-        keywords = [w for w in user_request.lower().split() if len(w) > 3]
-        key_files_found = []
-        for keyword in keywords[:5]:
-            for fpath in exploration["files"]:
-                if keyword in fpath.lower() and fpath not in key_files_found:
-                    key_files_found.append(fpath)
-                    if len(key_files_found) >= 10:
-                        break
-            if len(key_files_found) >= 10:
-                break
-
-        # Read top-level files to understand project structure
-        top_level_files = [
-            "README.md",
-            "pyproject.toml",
-            "setup.py",
-            "setup.cfg",
-            "requirements.txt",
-        ]
-        for fname in top_level_files:
-            fpath = os.path.join(os.getcwd(), fname)
-            try:
-                exists = await asyncio.to_thread(os.path.exists, fpath)
-                if not exists:
-                    continue
-                content = await asyncio.to_thread(
-                    lambda p: open(p, "r", encoding="utf-8").read(), fpath
-                )
-                self.project_memory.record_file_read(
-                    fname, content, summary=content[:200].replace("\n", " ")
-                )
-                if fname == "pyproject.toml":
-                    if "fastapi" in content.lower():
-                        self.project_memory.record_convention("framework", "FastAPI")
-                    elif "django" in content.lower():
-                        self.project_memory.record_convention("framework", "Django")
-                    elif "flask" in content.lower():
-                        self.project_memory.record_convention("framework", "Flask")
-            except Exception:
-                import logging
-
-                logging.getLogger(__name__).debug(
-                    "Exploration file read failed for %s", fname, exc_info=True
-                )
-
-        exploration["key_files"] = key_files_found
         return exploration
 
     # ------------------------------------------------------------------
@@ -871,7 +643,7 @@ class MissionAdapter:
                 _invoke_progress(
                     "mission:exploring", {"message": "Exploring codebase structure..."}
                 )
-                exploration = await self._explore_codebase(user_request)
+                exploration = await explore_codebase(user_request, self.project_memory)
 
             # Phase 1: Plan mission
             mission = await self._plan_mission(user_request, exploration)
