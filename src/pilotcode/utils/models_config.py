@@ -43,6 +43,8 @@ class ModelInfo:
     max_tokens: int = 4096
     context_window: int = 8192
     env_key: str = ""
+    disabled: bool = False
+    disabled_reason: str = ""
 
     def get_env_key(self) -> str:
         """Get environment variable key for API key."""
@@ -94,6 +96,8 @@ def _load_models_json() -> dict[str, ModelInfo]:
             max_tokens=raw.get("max_tokens", 4096),
             context_window=raw.get("context_window", 8192),
             env_key=raw.get("env_key", ""),
+            disabled=raw.get("disabled", False),
+            disabled_reason=raw.get("disabled_reason", ""),
         )
 
     return models
@@ -327,6 +331,9 @@ def get_model_from_env() -> tuple[str, str] | None:
     for env_var, model_name in env_mappings.items():
         api_key = os.environ.get(env_var)
         if api_key:
+            info = get_model_info(model_name)
+            if info and info.disabled:
+                continue
             return (model_name, api_key)
 
     # Check for generic PILOTCODE env vars

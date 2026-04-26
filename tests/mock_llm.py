@@ -8,6 +8,20 @@ from uuid import uuid4
 from pilotcode.utils.model_client import ModelClient, Message as APIMessage
 
 
+def _to_api_message(msg: APIMessage | dict[str, Any]) -> APIMessage:
+    """Normalize a message to APIMessage dataclass."""
+    if isinstance(msg, APIMessage):
+        return msg
+    return APIMessage(
+        role=msg["role"],
+        content=msg.get("content"),
+        tool_calls=msg.get("tool_calls"),
+        tool_call_id=msg.get("tool_call_id"),
+        name=msg.get("name"),
+        reasoning_content=msg.get("reasoning_content"),
+    )
+
+
 @dataclass
 class MockLLMResponse:
     """A single response from the mock LLM."""
@@ -99,7 +113,7 @@ class MockModelClient(ModelClient):
 
     async def chat_completion(
         self,
-        messages: list[APIMessage],
+        messages: list[APIMessage] | list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
@@ -107,7 +121,7 @@ class MockModelClient(ModelClient):
     ) -> AsyncIterator[dict[str, Any]]:
         """Yield mock response chunks."""
         self._call_count += 1
-        self._history.append(list(messages))
+        self._history.append([_to_api_message(m) for m in messages])
 
         if self._on_chat_completion:
             self._on_chat_completion(messages, tools)

@@ -145,3 +145,83 @@ def deserialize_messages(data: list[dict[str, Any]]) -> list[MessageType]:
             continue
         result.append(cls.model_validate(item))
     return result
+
+
+def to_api_format(messages: list[MessageType]) -> list[dict[str, Any]]:
+    """Convert internal Pydantic messages to OpenAI-compatible API dict format.
+
+    This bridges the internal message type system (types/message.py) and the
+    API client (utils/model_client.py), eliminating ad-hoc conversion logic
+    scattered across callers.
+
+    Handles DeepSeek-critical invariants:
+    - AssistantMessage + following ToolUseMessages → merged single assistant msg
+    - Empty user messages are skipped (DeepSeek rejects them)
+    - reasoning_content is preserved on assistant messages
+    """
+    import json
+
+    result: list[dict[str, Any]] = []
+    pending_assistant: dict[str, Any] | None = None
+    pending_tool_calls: list[dict[str, Any]] = []
+
+    def _flush_assistant() -> None:
+        nonlocal pending_assistant, pending_tool_calls
+        if pending_tool_calls:
+            if pending_assistant is not None:
+                pending_assistant["tool_calls"] = pending_tool_calls
+                result.append(pending_assistant)
+            else:
+                result.append(
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": pending_tool_calls,
+                    }
+                )
+            pending_tool_calls = []
+            pending_assistant = None
+        elif pending_assistant is not None:
+            result.append(pending_assistant)
+            pending_assistant = None
+
+    for msg in messages:
+        if isinstance(msg, SystemMessage):
+            _flush_assistant()
+            result.append({"role": "system", "content": msg.content})
+        elif isinstance(msg, UserMessage):
+            _flush_assistant()
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            if content.strip():
+                result.append({"role": "user", "content": content})
+        elif isinstance(msg, AssistantMessage):
+            _flush_assistant()
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            pending_assistant = {
+                "role": "assistant",
+                "content": content,
+            }
+            if msg.reasoning_content:
+                pending_assistant["reasoning_content"] = msg.reasoning_content
+        elif isinstance(msg, ToolUseMessage):
+            pending_tool_calls.append(
+                {
+                    "id": msg.tool_use_id,
+                    "type": "function",
+                    "function": {"name": msg.name, "arguments": json.dumps(msg.input)},
+                }
+            )
+        elif isinstance(msg, ToolResultMessage):
+            _flush_assistant()
+            result.append(
+                {
+                    "role": "tool",
+                    "content": (
+                        msg.content if isinstance(msg.content, str) else json.dumps(msg.content)
+                    ),
+                    "tool_call_id": msg.tool_use_id,
+                }
+            )
+
+    _flush_assistant()
+    return result

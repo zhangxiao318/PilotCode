@@ -16,10 +16,11 @@ from .types.message import (
     SystemMessage,
     serialize_messages,
     deserialize_messages,
+    to_api_format,
 )
 from .tools.base import Tools
 from .state.app_state import AppState
-from .utils.model_client import Message as APIMessage, ToolCall, get_model_client
+from .utils.model_client import ToolCall, get_model_client
 from .services.token_estimation import get_token_estimator
 from .services.context_compression import get_context_compressor, CompressionResult
 from .services.intelligent_compact import (
@@ -477,75 +478,14 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             result.append(tool_def)
         return result
 
-    def _convert_to_api_messages(self, messages: list[MessageType]) -> list[APIMessage]:
+    def _convert_to_api_messages(self, messages: list[MessageType]) -> list[dict[str, Any]]:
         """Convert internal messages to API format.
 
-        Critical invariant: an AssistantMessage followed by ToolUseMessages
-        must be merged into a SINGLE API assistant message (content + tool_calls).
-        DeepSeek enforces this strictly, especially for reasoning_content.
+        Delegates to types.message.to_api_format() which handles the critical
+        invariant: AssistantMessage + following ToolUseMessages must be merged
+        into a SINGLE API assistant message (content + tool_calls).
         """
-        api_messages = []
-
-        # Using ToolCall objects as expected by model_client
-        pending_tool_calls: list[ToolCall] = []
-        pending_assistant: APIMessage | None = None  # Delayed assistant message
-
-        def _flush_assistant() -> None:
-            """Emit pending assistant + tool calls as a single message."""
-            nonlocal pending_assistant, pending_tool_calls
-            if pending_tool_calls:
-                if pending_assistant:
-                    pending_assistant.tool_calls = pending_tool_calls
-                    api_messages.append(pending_assistant)
-                    pending_assistant = None
-                else:
-                    api_messages.append(
-                        APIMessage(role="assistant", content="", tool_calls=pending_tool_calls)
-                    )
-                pending_tool_calls = []
-            elif pending_assistant:
-                api_messages.append(pending_assistant)
-                pending_assistant = None
-
-        for msg in messages:
-            if isinstance(msg, SystemMessage):
-                _flush_assistant()
-                api_messages.append(APIMessage(role="system", content=msg.content))
-            elif isinstance(msg, UserMessage):
-                _flush_assistant()
-                content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                # Skip empty user messages — DeepSeek rejects them.
-                if content.strip():
-                    api_messages.append(APIMessage(role="user", content=content))
-            elif isinstance(msg, AssistantMessage):
-                # Don't emit immediately — ToolUseMessages may follow and must be
-                # merged into the same assistant message (required by DeepSeek).
-                _flush_assistant()
-                content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                pending_assistant = APIMessage(
-                    role="assistant",
-                    content=content,
-                    reasoning_content=msg.reasoning_content,
-                )
-            elif isinstance(msg, ToolUseMessage):
-                pending_tool_calls.append(
-                    ToolCall(id=msg.tool_use_id, name=msg.name, arguments=msg.input)
-                )
-            elif isinstance(msg, ToolResultMessage):
-                _flush_assistant()
-                api_messages.append(
-                    APIMessage(
-                        role="tool",
-                        content=(
-                            msg.content if isinstance(msg.content, str) else json.dumps(msg.content)
-                        ),
-                        tool_call_id=msg.tool_use_id,
-                        name=msg.tool_use_id,
-                    )
-                )
-
-        _flush_assistant()
-        return api_messages
+        return to_api_format(messages)
 
     # Greeting patterns that can be handled locally without calling the API
     _GREETING_PATTERNS_CN = {
@@ -701,10 +641,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             self._changed_files = []
 
         # Build API messages
-        api_messages = []
+        api_messages: list[dict[str, Any]] = []
         if len(self.messages) == 1:
             system_msg = self._build_system_message()
-            api_messages.append(APIMessage(role="system", content=system_msg.content))
+            api_messages.append({"role": "system", "content": system_msg.content})
 
         api_messages.extend(self._convert_to_api_messages(self.messages))
 

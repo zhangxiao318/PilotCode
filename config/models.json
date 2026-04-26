@@ -32,12 +32,14 @@
       "provider": "anthropic",
       "base_url": "https://api.anthropic.com/v1",
       "default_model": "claude-3-5-sonnet-20241022",
-      "description": "Anthropic Claude 3.5 Sonnet - Excellent coding assistant",
+      "description": "Anthropic Claude 3.5 Sonnet - Excellent coding assistant (Native API adapter coming soon)",
       "supports_tools": true,
       "supports_vision": true,
       "max_tokens": 8192,
       "context_window": 200000,
-      "env_key": "ANTHROPIC_API_KEY"
+      "env_key": "ANTHROPIC_API_KEY",
+      "disabled": true,
+      "disabled_reason": "Anthropic native API is not OpenAI-compatible. Use OpenAI-compatible proxy (e.g., LiteLLM, OneAPI) or wait for native adapter."
     },
     "azure": {
       "name": "azure",

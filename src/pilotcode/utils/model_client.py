@@ -141,10 +141,30 @@ class ModelClient:
         # Provider flags for provider-specific handling
         self._is_deepseek = "deepseek" in self.base_url.lower()
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
-        """Convert messages to API format."""
+    def _convert_messages(
+        self, messages: list[Message] | list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Convert messages to API format.
+
+        If messages are already API dicts they are returned as-is (after
+        provider-specific field ordering for DeepSeek).
+        """
         result = []
         for msg in messages:
+            # Already an API dict — apply provider-specific fixes only
+            if isinstance(msg, dict):
+                api_msg = dict(msg)
+                if (
+                    self._is_deepseek
+                    and api_msg.get("role") == "assistant"
+                    and "reasoning_content" in api_msg
+                ):
+                    # Ensure reasoning_content appears before content for DeepSeek
+                    rc = api_msg.pop("reasoning_content")
+                    api_msg = {"role": api_msg["role"], "reasoning_content": rc, **api_msg}
+                result.append(api_msg)
+                continue
+
             api_msg: dict[str, Any] = {"role": msg.role}
 
             # DeepSeek thinking mode: echo reasoning_content back on assistant messages.
@@ -189,13 +209,17 @@ class ModelClient:
 
     async def chat_completion(
         self,
-        messages: list[Message],
+        messages: list[Message] | list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
         stream: bool = True,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Send chat completion request."""
+        """Send chat completion request.
+
+        Accepts either internal Message dataclasses or raw API dicts
+        (e.g. from types.message.to_api_format).
+        """
         payload = {
             "model": self.model,
             "messages": self._convert_messages(messages),

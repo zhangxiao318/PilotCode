@@ -114,10 +114,8 @@ class ConfigurationWizard:
         table.add_column("Description", style="dim")
         table.add_column("Features", style="blue")
 
-        model_list = list(models.items())
+        model_list = [(k, v) for k, v in models.items() if v is not None and not v.disabled]
         for idx, (key, info) in enumerate(model_list, 1):
-            if info is None:
-                continue
             features = []
             if info.supports_tools:
                 features.append("tools")
@@ -350,8 +348,8 @@ def show_current_config() -> None:
 
 
 def get_available_model_names() -> list[str]:
-    """Get list of available model names."""
-    return list(get_all_models().keys())
+    """Get list of available model names (excluding disabled)."""
+    return [k for k, v in get_all_models().items() if not v.disabled]
 
 
 def main() -> int:

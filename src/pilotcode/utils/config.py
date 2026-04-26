@@ -412,6 +412,14 @@ class ConfigManager:
 
         # Gather static model info as fallback baseline
         model_info = get_model_info(config.default_model)
+        if model_info and model_info.disabled:
+            result["message"] = (
+                f"Model '{config.default_model}' is currently disabled: "
+                f"{model_info.disabled_reason}"
+            )
+            result["error"] = "disabled_model"
+            return result
+
         if model_info:
             result["model_info"] = {
                 "name": config.default_model,
