@@ -23,7 +23,7 @@ from .types.message import (
 )
 from .tools.base import Tools
 from .state.app_state import AppState
-from .utils.model_client import ToolCall, get_model_client, ModelClient
+from .utils.model_client import ToolCall, get_model_client, ModelClient, ContextWindowError
 from .services.token_estimation import get_token_estimator
 from .services.context_compression import get_context_compressor, CompressionResult
 from .services.intelligent_compact import (
@@ -658,110 +658,127 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         # Detect DeepSeek for provider-specific handling
         is_deepseek = "deepseek" in getattr(self.client, "base_url", "").lower()
 
-        # Stream response
-        accumulated_content = ""
-        accumulated_reasoning = ""  # DeepSeek thinking mode content
-        pending_tool_calls: list[ToolCall] = []
-        current_tool_call: dict[int, dict] = {}  # Accumulate tool call parts
-        suppress_streaming = False  # Set to True when XML tool calls appear in content
+        # Stream response with automatic context-window recovery
+        for _context_attempt in range(2):
+            accumulated_content = ""
+            accumulated_reasoning = ""  # DeepSeek thinking mode content
+            pending_tool_calls: list[ToolCall] = []
+            current_tool_call: dict[int, dict] = {}  # Accumulate tool call parts
+            suppress_streaming = False  # Set to True when XML tool calls appear in content
 
-        async for chunk in self.client.chat_completion(
-            messages=api_messages,
-            tools=self._tools_to_api_format(tools) if tools else None,
-            stream=True,
-            temperature=options.get("temperature", 0.7),
-        ):
-            # Check for cancellation during streaming
             try:
-                await asyncio.sleep(0)  # Yield control to allow cancellation
-            except asyncio.CancelledError:
+                async for chunk in self.client.chat_completion(
+                    messages=api_messages,
+                    tools=self._tools_to_api_format(tools) if tools else None,
+                    stream=True,
+                    temperature=options.get("temperature", 0.7),
+                ):
+                    # Check for cancellation during streaming
+                    try:
+                        await asyncio.sleep(0)  # Yield control to allow cancellation
+                    except asyncio.CancelledError:
+                        raise
+
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
+
+                    # Handle reasoning content (DeepSeek thinking mode only)
+                    if is_deepseek:
+                        reasoning = delta.get("reasoning_content")
+                        if reasoning:
+                            accumulated_reasoning += reasoning
+
+                    # Handle content
+                    content = delta.get("content")
+                    if content:
+                        accumulated_content += content
+                        # If accumulated content starts containing XML tool-call markers,
+                        # stop streaming individual chunks to avoid showing raw XML tags.
+                        if not suppress_streaming and (
+                            "<tool_call" in accumulated_content
+                            or "<function=" in accumulated_content
+                        ):
+                            suppress_streaming = True
+                        if not suppress_streaming:
+                            partial_msg = AssistantMessage(content=content)
+                            yield QueryResult(message=partial_msg, is_complete=False)
+
+                    # Handle tool calls (accumulate across chunks)
+                    if delta.get("tool_calls"):
+                        for tc in delta["tool_calls"]:
+                            idx = tc.get("index", 0)
+
+                            if idx not in current_tool_call:
+                                current_tool_call[idx] = {"id": "", "name": "", "arguments": ""}
+
+                            if tc.get("id"):
+                                current_tool_call[idx]["id"] = tc["id"]
+                            if tc.get("function", {}).get("name"):
+                                current_tool_call[idx]["name"] = tc["function"]["name"]
+                            if tc.get("function", {}).get("arguments"):
+                                current_tool_call[idx]["arguments"] += tc["function"]["arguments"]
+
+                    if finish_reason:
+                        break
+            except ContextWindowError:
+                if _context_attempt == 0:
+                    logger.warning("Context window exceeded, auto-compacting and retrying...")
+                    self.intelligent_compact()
+                    if self.count_tokens() > int(self.config.context_window * 0.8):
+                        self.auto_compact_if_needed()
+                    api_messages = self._convert_to_api_messages(self.messages)
+                    if len(self.messages) == 1:
+                        system_msg = self._build_system_message()
+                        api_messages.insert(0, {"role": "system", "content": system_msg.content})
+                    continue
                 raise
 
-            delta = chunk.get("choices", [{}])[0].get("delta", {})
-            finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
+            # Fallback: parse XML-style tool calls from content if API didn't return standard tool_calls
+            # MUST parse before stripping XML, otherwise content is empty for parsing.
+            if not current_tool_call and accumulated_content:
+                xml_tools = self._parse_content_tool_calls(accumulated_content)
+                if xml_tools:
+                    for i, tc in enumerate(xml_tools):
+                        current_tool_call[i] = {
+                            "id": f"xml_tool_{i}_{uuid.uuid4().hex[:6]}",
+                            "name": tc["name"],
+                            "arguments": json.dumps(tc["arguments"]),
+                        }
 
-            # Handle reasoning content (DeepSeek thinking mode only)
-            if is_deepseek:
-                reasoning = delta.get("reasoning_content")
-                if reasoning:
-                    accumulated_reasoning += reasoning
+            # Strip any XML-style tool calls from displayed content unconditionally
+            if accumulated_content and (
+                "<tool_call" in accumulated_content or "<function=" in accumulated_content
+            ):
+                accumulated_content = self._remove_xml_tool_calls(accumulated_content)
 
-            # Handle content
-            content = delta.get("content")
-            if content:
-                accumulated_content += content
-                # If accumulated content starts containing XML tool-call markers,
-                # stop streaming individual chunks to avoid showing raw XML tags.
-                if not suppress_streaming and (
-                    "<tool_call" in accumulated_content or "<function=" in accumulated_content
-                ):
-                    suppress_streaming = True
-                if not suppress_streaming:
-                    partial_msg = AssistantMessage(content=content)
-                    yield QueryResult(message=partial_msg, is_complete=False)
+            # Final assistant message
+            if accumulated_content or accumulated_reasoning or current_tool_call:
+                assistant_msg = AssistantMessage(
+                    content=accumulated_content,
+                    reasoning_content=(accumulated_reasoning or None) if is_deepseek else None,
+                )
+                self.messages.append(assistant_msg)
+                yield QueryResult(message=assistant_msg, is_complete=True)
 
-            # Handle tool calls (accumulate across chunks)
-            if delta.get("tool_calls"):
-                for tc in delta["tool_calls"]:
-                    idx = tc.get("index", 0)
+            # Parse and yield tool calls
+            for idx, tc_data in current_tool_call.items():
+                try:
+                    arguments = json.loads(tc_data.get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    arguments = {}
 
-                    if idx not in current_tool_call:
-                        current_tool_call[idx] = {"id": "", "name": "", "arguments": ""}
+                tool_call = ToolCall(
+                    id=tc_data.get("id", ""), name=tc_data.get("name", ""), arguments=arguments
+                )
+                pending_tool_calls.append(tool_call)
 
-                    if tc.get("id"):
-                        current_tool_call[idx]["id"] = tc["id"]
-                    if tc.get("function", {}).get("name"):
-                        current_tool_call[idx]["name"] = tc["function"]["name"]
-                    if tc.get("function", {}).get("arguments"):
-                        current_tool_call[idx]["arguments"] += tc["function"]["arguments"]
+                tool_use_msg = ToolUseMessage(
+                    tool_use_id=tool_call.id, name=tool_call.name, input=tool_call.arguments
+                )
+                self.messages.append(tool_use_msg)
+                yield QueryResult(message=tool_use_msg, is_complete=False)
 
-            if finish_reason:
-                break
-
-        # Fallback: parse XML-style tool calls from content if API didn't return standard tool_calls
-        # MUST parse before stripping XML, otherwise content is empty for parsing.
-        if not current_tool_call and accumulated_content:
-            xml_tools = self._parse_content_tool_calls(accumulated_content)
-            if xml_tools:
-                for i, tc in enumerate(xml_tools):
-                    current_tool_call[i] = {
-                        "id": f"xml_tool_{i}_{uuid.uuid4().hex[:6]}",
-                        "name": tc["name"],
-                        "arguments": json.dumps(tc["arguments"]),
-                    }
-
-        # Strip any XML-style tool calls from displayed content unconditionally
-        if accumulated_content and (
-            "<tool_call" in accumulated_content or "<function=" in accumulated_content
-        ):
-            accumulated_content = self._remove_xml_tool_calls(accumulated_content)
-
-        # Final assistant message
-        if accumulated_content or accumulated_reasoning or current_tool_call:
-            assistant_msg = AssistantMessage(
-                content=accumulated_content,
-                reasoning_content=(accumulated_reasoning or None) if is_deepseek else None,
-            )
-            self.messages.append(assistant_msg)
-            yield QueryResult(message=assistant_msg, is_complete=True)
-
-        # Parse and yield tool calls
-        for idx, tc_data in current_tool_call.items():
-            try:
-                arguments = json.loads(tc_data.get("arguments", "{}"))
-            except json.JSONDecodeError:
-                arguments = {}
-
-            tool_call = ToolCall(
-                id=tc_data.get("id", ""), name=tc_data.get("name", ""), arguments=arguments
-            )
-            pending_tool_calls.append(tool_call)
-
-            tool_use_msg = ToolUseMessage(
-                tool_use_id=tool_call.id, name=tool_call.name, input=tool_call.arguments
-            )
-            self.messages.append(tool_use_msg)
-            yield QueryResult(message=tool_use_msg, is_complete=False)
+            break
 
     def add_tool_result(self, tool_use_id: str, content: str, is_error: bool = False) -> None:
         """Add a tool result to the conversation history.
