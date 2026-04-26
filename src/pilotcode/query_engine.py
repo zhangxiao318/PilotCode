@@ -23,7 +23,13 @@ from .types.message import (
 )
 from .tools.base import Tools
 from .state.app_state import AppState
-from .utils.model_client import ToolCall, get_model_client, ModelClient, ContextWindowError
+from .utils.model_client import (
+    ToolCall,
+    get_model_client,
+    ModelClient,
+    ContextWindowError,
+    RateLimitError,
+)
 from .services.token_estimation import get_token_estimator
 from .services.context_compression import get_context_compressor, CompressionResult
 from .services.intelligent_compact import (
@@ -659,7 +665,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         is_deepseek = "deepseek" in getattr(self.client, "base_url", "").lower()
 
         # Stream response with automatic context-window recovery
-        for _context_attempt in range(2):
+        _context_attempt = 0
+        _rate_limit_retry = 0
+        _max_rate_limit_retries = 3
+        while _context_attempt < 2:
             accumulated_content = ""
             accumulated_reasoning = ""  # DeepSeek thinking mode content
             pending_tool_calls: list[ToolCall] = []
@@ -730,6 +739,20 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                     if len(self.messages) == 1:
                         system_msg = self._build_system_message()
                         api_messages.insert(0, {"role": "system", "content": system_msg.content})
+                    _context_attempt += 1
+                    continue
+                raise
+            except RateLimitError as exc:
+                if _rate_limit_retry < _max_rate_limit_retries:
+                    wait = exc.retry_after or (2**_rate_limit_retry)
+                    logger.warning(
+                        "Rate limited (429), waiting %.1fs before retry %d/%d...",
+                        wait,
+                        _rate_limit_retry + 1,
+                        _max_rate_limit_retries,
+                    )
+                    await asyncio.sleep(wait)
+                    _rate_limit_retry += 1
                     continue
                 raise
 
