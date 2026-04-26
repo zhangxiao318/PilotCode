@@ -602,8 +602,18 @@ class MissionAdapter:
             else self.DEFAULT_TURN_LIMITS.get(complexity, 20)
         )
 
-        # Exclude interactive/blocking tools from autonomous workers
-        excluded_tools = {"AskUser", "ask", "question"}
+        # Exclude interactive/blocking tools and plan-mode tools from autonomous workers.
+        # Plan-mode tools (EnterPlanMode/ExitPlanMode) are meant for conversational
+        # chat only; inside a P-EVR mission the orchestrator already manages phases
+        # and tasks, so the worker must not create nested sub-plans.
+        excluded_tools = {
+            "AskUser",
+            "ask",
+            "question",
+            "EnterPlanMode",
+            "ExitPlanMode",
+            "UpdatePlanStep",
+        }
         autonomous_tools = [t for t in get_all_tools() if t.name not in excluded_tools]
 
         # Select model client based on task complexity / worker type
