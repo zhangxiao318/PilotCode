@@ -25,6 +25,7 @@ from pilotcode.permissions.permission_manager import (
     PermissionRequest,
 )
 from pilotcode.types.message import ToolUseMessage
+from pilotcode.services.cleanup import SessionCleanup
 
 from .task_spec import Mission, Phase, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion
 from .orchestrator import Orchestrator, OrchestratorConfig
@@ -569,118 +570,133 @@ def _fix_common_json_errors(text: str) -> str:
         file_reads_this_task: list[tuple[str, str]] = []  # (path, summary_hint)
 
         try:
-            while total_turns < max_turns:
-                if self._cancel_event.is_set():
-                    return ExecutionResult(
-                        task_id=task.id,
-                        success=False,
-                        error="Cancelled by user",
-                    )
+            async with SessionCleanup() as cleanup:
+                # Register cleanup: mark any unfinished tool calls as aborted
+                async def _abort_pending_tools():
+                    for msg in engine.messages:
+                        if isinstance(msg, ToolUseMessage) and msg.name != "AskUser":
+                            engine.add_tool_result(
+                                msg.tool_use_id,
+                                "[ABORTED] Session ended before tool completed.",
+                                is_error=True,
+                            )
 
-                # Build continue prompt with progress summary if not first turn
-                if total_turns == 0:
-                    user_prompt = prompt
-                else:
-                    user_prompt = self._build_continue_prompt(engine, task)
+                cleanup.on_cleanup(_abort_pending_tools)
 
-                pending_tools: list[ToolUseMessage] = []
-                async for result in engine.submit_message(user_prompt):
+                while total_turns < max_turns:
                     if self._cancel_event.is_set():
                         return ExecutionResult(
                             task_id=task.id,
                             success=False,
                             error="Cancelled by user",
                         )
-                    msg = result.message
-                    if hasattr(msg, "content") and msg.content and result.is_complete:
-                        from pilotcode.tools.bash_tool import strip_ansi
 
-                        final_content = strip_ansi(str(msg.content))
-                    if isinstance(msg, ToolUseMessage):
-                        pending_tools.append(msg)
-
-                if not pending_tools:
-                    break
-
-                # Execute tools and feed results back
-                tool_ctx = ToolUseContext(
-                    get_app_state=store.get_state,
-                    set_app_state=lambda f: store.set_state(f),
-                    cwd=getattr(store.get_state(), "cwd", ""),
-                )
-
-                if self._cancel_event.is_set():
-                    return ExecutionResult(
-                        task_id=task.id,
-                        success=False,
-                        error="Cancelled by user",
-                    )
-
-                # Limit concurrent tool execution to avoid overwhelming local
-                # models (Ollama/vLLM typically handle 1-2 concurrent reqs)
-                # or external APIs. Value is configurable via settings.json.
-                _tool_semaphore = asyncio.Semaphore(self._tool_concurrency_limit)
-
-                async def _exec_one(tu: ToolUseMessage) -> tuple[str, bool]:
-                    """Execute a single tool and return (result_text, success)."""
-                    async with _tool_semaphore:
-                        er = await executor.execute_tool_by_name(tu.name, tu.input, tool_ctx)
-                    if er.success and er.result is not None:
-                        text = str(er.result.data) if er.result.data else "Success"
+                    # Build continue prompt with progress summary if not first turn
+                    if total_turns == 0:
+                        user_prompt = prompt
                     else:
-                        text = er.message or "Tool execution failed"
-                    return text, er.success
+                        user_prompt = self._build_continue_prompt(engine, task)
 
-                # Run independent tool calls in parallel (e.g., reading 3 files)
-                tool_results = await asyncio.gather(*[_exec_one(tu) for tu in pending_tools])
+                    pending_tools: list[ToolUseMessage] = []
+                    async for result in engine.submit_message(user_prompt):
+                        if self._cancel_event.is_set():
+                            return ExecutionResult(
+                                task_id=task.id,
+                                success=False,
+                                error="Cancelled by user",
+                            )
+                        msg = result.message
+                        if hasattr(msg, "content") and msg.content and result.is_complete:
+                            from pilotcode.tools.bash_tool import strip_ansi
 
-                # Feed results back in original order to keep message history consistent
-                for tu, (result_text, success) in zip(pending_tools, tool_results):
-                    engine.add_tool_result(
-                        tu.tool_use_id,
-                        result_text,
-                        is_error=not success,
+                            final_content = strip_ansi(str(msg.content))
+                        if isinstance(msg, ToolUseMessage):
+                            pending_tools.append(msg)
+
+                    if not pending_tools:
+                        break
+
+                    # Execute tools and feed results back
+                    tool_ctx = ToolUseContext(
+                        get_app_state=store.get_state,
+                        set_app_state=lambda f: store.set_state(f),
+                        cwd=getattr(store.get_state(), "cwd", ""),
                     )
-                    self._update_memory_from_tool(tu, result_text, success, file_reads_this_task)
 
-                total_turns += 1
+                    if self._cancel_event.is_set():
+                        return ExecutionResult(
+                            task_id=task.id,
+                            success=False,
+                            error="Cancelled by user",
+                        )
 
-            # Collect changed files as artifacts
-            changed_files: list[str] = []
-            for msg in engine.messages:
-                if isinstance(msg, ToolUseMessage) and msg.name in (
-                    "FileWrite",
-                    "FileEdit",
-                    "ApplyPatch",
-                ):
-                    for key in ("path", "file_path", "filepath"):
-                        val = msg.input.get(key)
-                        if val and isinstance(val, str):
-                            changed_files.append(val)
-                            break
+                    # Limit concurrent tool execution to avoid overwhelming local
+                    # models (Ollama/vLLM typically handle 1-2 concurrent reqs)
+                    # or external APIs. Value is configurable via settings.json.
+                    _tool_semaphore = asyncio.Semaphore(self._tool_concurrency_limit)
 
-            if changed_files:
-                # Deduplicate while preserving order
-                seen: set[str] = set()
-                artifacts["changed_files"] = [
-                    f for f in changed_files if not (f in seen or seen.add(f))
-                ]
-                self.project_memory.record_changes(artifacts["changed_files"])
+                    async def _exec_one(tu: ToolUseMessage) -> tuple[str, bool]:
+                        """Execute a single tool and return (result_text, success)."""
+                        async with _tool_semaphore:
+                            er = await executor.execute_tool_by_name(tu.name, tu.input, tool_ctx)
+                        if er.success and er.result is not None:
+                            text = str(er.result.data) if er.result.data else "Success"
+                        else:
+                            text = er.message or "Tool execution failed"
+                        return text, er.success
 
-            artifacts["conversation_length"] = len(engine.messages)
-            artifacts["final_response"] = final_content
+                    # Run independent tool calls in parallel (e.g., reading 3 files)
+                    tool_results = await asyncio.gather(*[_exec_one(tu) for tu in pending_tools])
 
-            # Record success conventions from worker output
-            if final_content:
-                self._extract_conventions_from_output(final_content)
+                    # Feed results back in original order to keep message history consistent
+                    for tu, (result_text, success) in zip(pending_tools, tool_results):
+                        engine.add_tool_result(
+                            tu.tool_use_id,
+                            result_text,
+                            is_error=not success,
+                        )
+                        self._update_memory_from_tool(
+                            tu, result_text, success, file_reads_this_task
+                        )
 
-            return ExecutionResult(
-                task_id=task.id,
-                success=True,
-                output=final_content,
-                artifacts=artifacts,
-                token_usage=engine.count_tokens(),
-            )
+                    total_turns += 1
+
+                # Collect changed files as artifacts
+                changed_files: list[str] = []
+                for msg in engine.messages:
+                    if isinstance(msg, ToolUseMessage) and msg.name in (
+                        "FileWrite",
+                        "FileEdit",
+                        "ApplyPatch",
+                    ):
+                        for key in ("path", "file_path", "filepath"):
+                            val = msg.input.get(key)
+                            if val and isinstance(val, str):
+                                changed_files.append(val)
+                                break
+
+                if changed_files:
+                    # Deduplicate while preserving order
+                    seen: set[str] = set()
+                    artifacts["changed_files"] = [
+                        f for f in changed_files if not (f in seen or seen.add(f))
+                    ]
+                    self.project_memory.record_changes(artifacts["changed_files"])
+
+                artifacts["conversation_length"] = len(engine.messages)
+                artifacts["final_response"] = final_content
+
+                # Record success conventions from worker output
+                if final_content:
+                    self._extract_conventions_from_output(final_content)
+
+                return ExecutionResult(
+                    task_id=task.id,
+                    success=True,
+                    output=final_content,
+                    artifacts=artifacts,
+                    token_usage=engine.count_tokens(),
+                )
 
         except Exception as exc:
             # Record failure in project memory
