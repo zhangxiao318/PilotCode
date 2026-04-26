@@ -502,16 +502,24 @@ class TUIController:
         except Exception as exc:
             result = {"success": False, "error": str(exc)}
 
-        # Build comprehensive report
+        # Build concise completion report.
+        # Detailed task outputs were already streamed live during execution,
+        # so the final report only shows mission status + task list.
         try:
             report_parts: list[str] = []
             if result and result.get("success"):
-                report_parts.append(format_completion(result))
+                snapshot = result.get("snapshot", {}) if result else {}
+                total = snapshot.get("total_tasks", 0)
+                completed = snapshot.get("completed_tasks", 0)
+                failed = snapshot.get("failed_tasks", 0)
+                report_parts.append(
+                    f"🏁 Mission Complete  |  {completed}/{total} tasks  |  {failed} failed"
+                )
             else:
                 error = result.get("error", "Unknown error") if result else "Mission failed"
                 report_parts.append(format_failure(result or {}, error))
 
-            # Also show the raw conversation response if available
+            # Show mission plan with final task states
             mission_dict = result.get("mission", {}) if result else {}
             phases = mission_dict.get("phases", [])
             if phases:
