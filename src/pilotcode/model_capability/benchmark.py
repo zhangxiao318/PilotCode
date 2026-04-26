@@ -16,7 +16,6 @@ from typing import Any, Callable, Awaitable
 from pilotcode.utils.model_client import get_model_client, Message
 
 
-
 @dataclass
 class BenchmarkResult:
     """Result of a single benchmark test."""

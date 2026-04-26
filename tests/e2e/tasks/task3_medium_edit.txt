@@ -1,0 +1,16 @@
+【任务3：中等代码修改】
+
+请修改 src/pilotcode/tui_v2/components/status/bar.py 文件：
+
+在 StatusBar 的 _get_right_text 方法中，当 context usage 百分比（pct）超过 80% 时，在 "context: XX.X%" 文本前面添加一个红色警告符号 "⚠"。
+
+具体要求：
+1. 判断条件是 pct > 80.0
+2. 超过 80% 时显示为："⚠ context: 85.2% (50k/60k)"
+3. 不超过时保持原样："context: 45.0% (30k/60k)"
+4. 确保 _get_right_text 返回的字符串格式正确，不影响其他部分（session_id、/help）的分隔符 " | "
+
+注意：
+- 只需要修改 _get_right_text 方法
+- 不要修改其他方法或 CSS
+- 确保代码逻辑简单清晰

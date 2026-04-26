@@ -1,0 +1,10 @@
+【任务1：代码分析】
+
+请分析 src/pilotcode/tui_v2/components/status/bar.py 文件：
+
+1. 说明 StatusBar 类的主要功能和职责
+2. 列出它有哪些 reactive 属性（reactive variables）
+3. 解释 _get_right_text 方法中 context usage 的计算逻辑
+4. 指出这个类使用了哪种 Textual 布局方式（Table/Grid/其他？）
+
+请给出清晰的分析结果，不需要修改任何代码。

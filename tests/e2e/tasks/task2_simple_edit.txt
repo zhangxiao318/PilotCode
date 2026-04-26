@@ -1,0 +1,16 @@
+【任务2：简单代码修改】
+
+请修改 src/pilotcode/commands/status_cmd.py 文件：
+
+在 /status 命令的 "Conversation Context" 部分之后，添加一个 "Disk Usage" 部分，显示当前工作目录的磁盘使用情况。
+
+具体要求：
+1. 使用 shutil.disk_usage(context.cwd) 获取磁盘信息
+2. 显示：总空间、已用空间、可用空间（格式化为人类可读，如 GB/MB）
+3. 显示使用百分比进度条（和 token budget bar 类似的样式）
+
+注意：
+- 需要在文件顶部导入 shutil
+- 添加一个辅助函数 _fmt_bytes(n: int) -> str 来格式化字节数
+- 确保代码风格和现有代码一致
+- 修改要完整，不要遗漏导入
