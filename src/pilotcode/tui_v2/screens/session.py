@@ -3,7 +3,7 @@
 from pathlib import Path
 from textual.screen import Screen
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Static, Header, Footer
+from textual.widgets import Static, Header
 from textual.reactive import reactive
 
 from pilotcode.tui_v2.controller.controller import TUIController, UIMessage, UIMessageType
@@ -37,12 +37,6 @@ class SessionScreen(Screen):
         background: $surface;
         color: $text;
         text-style: bold;
-    }
-    SessionScreen Footer {
-        dock: bottom;
-        height: 1;
-        background: $surface;
-        color: $text-muted;
     }
     SessionScreen #main-container {
         width: 100%;
@@ -135,8 +129,6 @@ class SessionScreen(Screen):
 
         self.status_bar = StatusBar()
         yield self.status_bar
-
-        yield Footer()
 
     def on_mount(self):
         """Called when screen is mounted."""
