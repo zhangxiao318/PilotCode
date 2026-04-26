@@ -69,6 +69,7 @@ class Orchestrator:
         ] = {}
         self._progress_callbacks: list[Callable[[str, dict], None]] = []
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_workers)
+        self._task_completed_event = asyncio.Event()
 
     # ------------------------------------------------------------------
     # Registration
@@ -157,9 +158,28 @@ class Orchestrator:
         last_health_check = asyncio.get_event_loop().time()
         HEALTH_CHECK_INTERVAL = 30.0  # seconds
 
-        # Main execution loop
+        # Hook into state changes to detect task completion events
+        def _on_task_complete(event: Any) -> None:
+            if event.to_state in {
+                TaskState.DONE,
+                TaskState.REJECTED,
+                TaskState.CANCELLED,
+                TaskState.NEEDS_REWORK,
+            }:
+                self._task_completed_event.set()
+
+        for sm in self.tracker._state_machines.get(mid, {}).values():
+            sm.on_state_change(_on_task_complete)
+
+        # Active worker tasks: asyncio.Task -> DagNode mapping
+        active_workers: dict[asyncio.Task, DagNode] = {}
+
+        # Seed initial ready tasks
+        self._enqueue_ready(mid, active_workers)
+
+        # Main event-driven execution loop
         while not self.tracker.all_done(mid):
-            # Periodic health check
+            # --- Periodic health check ---
             now = asyncio.get_event_loop().time()
             if now - last_health_check > HEALTH_CHECK_INTERVAL:
                 health = reflector.check(mid, self.tracker)
@@ -179,51 +199,37 @@ class Orchestrator:
                         )
                 last_health_check = now
 
-            ready = self.tracker.get_ready_tasks(mid)
-            if not ready:
-                # Check if anything is in progress
-                snapshot = self.tracker.get_snapshot(mid)
-                if snapshot and snapshot.in_progress_tasks == 0:
-                    # Nothing ready, nothing in progress
-                    blocked = self.tracker.get_blocked_tasks(mid)
-                    if blocked:
-                        self._notify(
-                            "mission:blocked",
-                            {"mission_id": mid, "blocked_count": len(blocked)},
-                        )
+            # --- Fill worker slots ---
+            self._enqueue_ready(mid, active_workers)
+
+            if not active_workers:
+                # Nothing running and nothing ready — wait for completion event
+                if self.tracker.all_done(mid):
                     break
-                # Wait a bit and retry
-                await asyncio.sleep(0.5)
+                self._task_completed_event.clear()
+                await self._task_completed_event.wait()
                 continue
 
-            # Filter out tasks whose dependencies have failed
-            executable = []
-            for node in ready:
-                if self._has_failed_dependency(mid, node):
-                    self._cancel_downstream_tasks(mid, node.task_id)
-                else:
-                    executable.append(node)
+            # --- Wait for at least one worker to finish ---
+            done, _ = await asyncio.wait(
+                active_workers.keys(),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
 
-            if not executable:
-                await asyncio.sleep(0.5)
-                continue
-
-            # Execute ready tasks (up to concurrency limit)
-            tasks = [self._execute_task(mid, node) for node in executable]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # Process exceptions and trigger retries for NEEDS_REWORK
-            for node, result in zip(executable, results):
-                if isinstance(result, Exception):
+            for task in done:
+                node = active_workers.pop(task)
+                try:
+                    await task
+                except Exception as exc:
                     self._notify(
                         "task:exception",
-                        {"mission_id": mid, "task_id": node.task_id, "error": str(result)},
+                        {"mission_id": mid, "task_id": node.task_id, "error": str(exc)},
                     )
-                else:
-                    sm = self.tracker.get_state_machine(mid, node.task_id)
-                    if sm and sm.state == TaskState.NEEDS_REWORK:
-                        # Auto-retry with analysis (up to config limit)
-                        await self._smart_retry(mid, node.task_id)
+
+                # Handle NEEDS_REWORK
+                sm = self.tracker.get_state_machine(mid, node.task_id)
+                if sm and sm.state == TaskState.NEEDS_REWORK:
+                    await self._smart_retry(mid, node.task_id)
 
         # Final summary
         snapshot = self.tracker.get_snapshot(mid)
@@ -249,6 +255,26 @@ class Orchestrator:
             "snapshot": snapshot.to_dict() if snapshot else {},
             "task_outputs": task_outputs,
         }
+
+    def _enqueue_ready(self, mission_id: str, active_workers: dict[asyncio.Task, DagNode]) -> None:
+        """Launch ready tasks until concurrency limit is reached."""
+        while len(active_workers) < self.config.max_concurrent_workers:
+            ready = self.tracker.get_ready_tasks(mission_id)
+            launched = False
+            for node in ready:
+                if len(active_workers) >= self.config.max_concurrent_workers:
+                    break
+                if self._has_failed_dependency(mission_id, node):
+                    self._cancel_downstream_tasks(mission_id, node.task_id)
+                    continue
+                # Skip if this task is already being executed
+                if node.task_id in {n.task_id for n in active_workers.values()}:
+                    continue
+                task = asyncio.create_task(self._execute_task(mission_id, node))
+                active_workers[task] = node
+                launched = True
+            if not launched:
+                break
 
     async def _execute_task(self, mission_id: str, node: DagNode) -> None:
         """Execute a single task through the full P-EVR cycle."""
