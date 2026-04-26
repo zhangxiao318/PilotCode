@@ -142,6 +142,9 @@ class MissionAdapter:
         self._register_verifiers()
         self._setup_permission_callback()
 
+        # Progressive disclosure: allow _llm_worker to emit real-time progress
+        self._progress_callback: Callable[[str, dict], None] | None = None
+
     # ------------------------------------------------------------------
     # Internal setup
     # ------------------------------------------------------------------
@@ -638,7 +641,7 @@ class MissionAdapter:
                         user_prompt = await self._build_continue_prompt(engine, task)
 
                     pending_tools: list[ToolUseMessage] = []
-                    turn_thinking = ""
+                    turn_buffer = ""
                     async for result in engine.submit_message(user_prompt):
                         if self._cancel_event.is_set():
                             return ExecutionResult(
@@ -647,24 +650,36 @@ class MissionAdapter:
                                 error="Cancelled by user",
                             )
                         msg = result.message
-                        if hasattr(msg, "content") and msg.content and result.is_complete:
-                            from pilotcode.tools.bash_tool import strip_ansi
+                        # Real-time streaming: emit assistant text chunks as they arrive
+                        if isinstance(msg, AssistantMessage) and msg.content:
+                            chunk = str(msg.content)
+                            turn_buffer += chunk
+                            if not result.is_complete:
+                                self._emit_progress(
+                                    "worker:text_delta",
+                                    {"task_id": task.id, "content": chunk},
+                                )
+                            else:
+                                from pilotcode.tools.bash_tool import strip_ansi
 
-                            final_content = strip_ansi(str(msg.content))
-                            turn_thinking = final_content
-                        # Stream reasoning/thinking content if available (Qwen3/DeepSeek)
-                        delta = getattr(result, "delta", None) or {}
-                        if isinstance(delta, dict):
-                            reasoning = delta.get("reasoning_content") or delta.get("thinking")
-                            if reasoning:
-                                task_details.append(
-                                    {"type": "thinking", "content": str(reasoning)}
+                                final_content = strip_ansi(turn_buffer)
+                                self._emit_progress(
+                                    "worker:turn_complete",
+                                    {
+                                        "task_id": task.id,
+                                        "content": final_content,
+                                    },
                                 )
                         if isinstance(msg, ToolUseMessage):
                             pending_tools.append(msg)
-
-                    if turn_thinking:
-                        task_details.append({"type": "thinking", "content": turn_thinking})
+                            self._emit_progress(
+                                "worker:tool_start",
+                                {
+                                    "task_id": task.id,
+                                    "tool_name": msg.name,
+                                    "params": msg.input,
+                                },
+                            )
 
                     if not pending_tools:
                         break
@@ -698,17 +713,6 @@ class MissionAdapter:
                             text = er.message or "Tool execution failed"
                         return text, er.success
 
-                    # Record tool invocations before execution
-                    for tu in pending_tools:
-                        params = {k: v for k, v in tu.input.items() if v is not None}
-                        task_details.append(
-                            {
-                                "type": "tool_started",
-                                "tool_name": tu.name,
-                                "params": params,
-                            }
-                        )
-
                     # Run independent tool calls in parallel (e.g., reading 3 files)
                     tool_results = await asyncio.gather(*[_exec_one(tu) for tu in pending_tools])
 
@@ -722,15 +726,16 @@ class MissionAdapter:
                         self._update_memory_from_tool(
                             tu, result_text, success, file_reads_this_task
                         )
-                        # Record tool result
+                        # Real-time: emit tool result
                         summary = result_text[:500] + "..." if len(result_text) > 500 else result_text
-                        task_details.append(
+                        self._emit_progress(
+                            "worker:tool_result",
                             {
-                                "type": "tool_completed",
+                                "task_id": task.id,
                                 "tool_name": tu.name,
                                 "success": success,
                                 "summary": summary,
-                            }
+                            },
                         )
 
                     total_turns += 1
@@ -966,6 +971,17 @@ class MissionAdapter:
     # Public API
     # ------------------------------------------------------------------
 
+    def _emit_progress(self, event: str, data: dict) -> None:
+        """Emit a progress event to the registered callback (if any)."""
+        cb = self._progress_callback
+        if cb is not None:
+            try:
+                result = cb(event, data)
+                if result is not None and asyncio.iscoroutine(result):
+                    asyncio.create_task(result)
+            except Exception:
+                pass
+
     async def run(
         self,
         user_request: str,
@@ -982,6 +998,9 @@ class MissionAdapter:
         Returns:
             Execution summary dict with keys: mission_id, snapshot, success, error, mission, metrics.
         """
+        # Wire the progress callback so _llm_worker can emit real-time events
+        self._progress_callback = progress_callback
+
         try:
             # Phase 0: Explore codebase (if enabled)
             exploration: dict[str, Any] | None = None

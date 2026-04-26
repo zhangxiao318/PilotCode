@@ -343,8 +343,10 @@ class TUIController:
 
         mission_displayed = False
         last_progress = ""
-        # Progressive disclosure: cache task execution details
-        task_details_map: dict[str, list[dict]] = {}
+        # Progressive disclosure: real-time worker output buffer
+        worker_buffer = ""
+        worker_streaming = False
+        current_task_id = ""
 
         def progress_cb(event_type: str, data: dict) -> None:
             nonlocal mission_displayed, last_progress
@@ -391,17 +393,93 @@ class TUIController:
                     yield UIMessage(type=UIMessageType.SYSTEM, content=plan_text)
                 elif event_type in (
                     "task:started",
-                    "task:verified",
                     "task:rejected",
                     "task:needs_rework",
                 ):
+                    # Finish any ongoing worker stream before showing task status
+                    if worker_streaming:
+                        yield UIMessage(
+                            type=UIMessageType.ASSISTANT,
+                            content=worker_buffer,
+                            is_streaming=False,
+                            is_complete=True,
+                        )
+                        worker_buffer = ""
+                        worker_streaming = False
                     msg = format_task_event(event_type, data)
                     yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
-                elif event_type == "task:details":
-                    # Progressive disclosure: collect task details for final report
-                    tid = data.get("task_id", "")
-                    if tid:
-                        task_details_map[tid] = data.get("details", [])
+                    current_task_id = data.get("task_id", "")
+                elif event_type == "task:verified":
+                    # Finish any ongoing worker stream before showing verified status
+                    if worker_streaming:
+                        yield UIMessage(
+                            type=UIMessageType.ASSISTANT,
+                            content=worker_buffer,
+                            is_streaming=False,
+                            is_complete=True,
+                        )
+                        worker_buffer = ""
+                        worker_streaming = False
+                    msg = format_task_event(event_type, data)
+                    yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
+                elif event_type == "worker:text_delta":
+                    # Real-time assistant streaming (like normal chat mode)
+                    chunk = data.get("content", "")
+                    if chunk:
+                        worker_buffer += chunk
+                        worker_streaming = True
+                        yield UIMessage(
+                            type=UIMessageType.ASSISTANT,
+                            content=worker_buffer,
+                            is_streaming=True,
+                            is_complete=False,
+                        )
+                elif event_type == "worker:turn_complete":
+                    # Turn finished: complete the current assistant message
+                    content = data.get("content", "")
+                    if content:
+                        worker_buffer = content
+                        worker_streaming = True
+                        yield UIMessage(
+                            type=UIMessageType.ASSISTANT,
+                            content=worker_buffer,
+                            is_streaming=False,
+                            is_complete=True,
+                        )
+                        worker_buffer = ""
+                        worker_streaming = False
+                elif event_type == "worker:tool_start":
+                    # Pause streaming to show tool call
+                    if worker_streaming and worker_buffer:
+                        yield UIMessage(
+                            type=UIMessageType.ASSISTANT,
+                            content=worker_buffer,
+                            is_streaming=False,
+                            is_complete=True,
+                        )
+                        worker_buffer = ""
+                        worker_streaming = False
+                    tool_name = data.get("tool_name", "tool")
+                    params = data.get("params", {})
+                    yield UIMessage(
+                        type=UIMessageType.TOOL_USE,
+                        content=tool_name,
+                        metadata={
+                            "tool_name": tool_name,
+                            "tool_input": params,
+                            "tool_use_id": f"{current_task_id}_{tool_name}",
+                        },
+                        is_complete=False,
+                    )
+                elif event_type == "worker:tool_result":
+                    tool_name = data.get("tool_name", "tool")
+                    success = data.get("success", False)
+                    summary = data.get("summary", "")
+                    emoji = "✅" if success else "❌"
+                    yield UIMessage(
+                        type=UIMessageType.SYSTEM,
+                        content=f"{emoji} {tool_name}: {summary}",
+                    )
                 elif event_type == "mission:completed":
                     pass  # Will handle after task finishes
                 elif event_type == "mission:blocked":
