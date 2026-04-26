@@ -812,10 +812,25 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
             if len(content) > max_chars:
                 truncated = len(content) - max_chars
-                content = (
-                    content[:max_chars]
-                    + f"\n\n[...truncated {truncated} chars; exceeds context budget ({max_tool_tokens} tokens allowed)]"
-                )
+                if is_error:
+                    # Errors: prioritize the tail where the actual error details live,
+                    # but keep some head for context.
+                    head_len = int(max_chars * 0.3)
+                    tail_len = max_chars - head_len
+                    content = (
+                        content[:head_len]
+                        + f"\n\n[...truncated {truncated} chars; exceeds context budget ({max_tool_tokens} tokens allowed)]\n\n"
+                        + content[-tail_len:]
+                    )
+                else:
+                    # Normal output: keep both head and tail so the LLM can see
+                    # the beginning of the output and any summary/error at the end.
+                    half = max_chars // 2
+                    content = (
+                        content[:half]
+                        + f"\n\n[...truncated {truncated} chars; exceeds context budget ({max_tool_tokens} tokens allowed)]\n\n"
+                        + content[-half:]
+                    )
 
         tool_result_msg = ToolResultMessage(
             tool_use_id=tool_use_id, content=content, is_error=is_error
