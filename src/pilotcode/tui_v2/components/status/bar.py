@@ -2,10 +2,15 @@
 
 from textual.widgets import Static
 from textual.reactive import reactive
+from rich.table import Table
 
 
 class StatusBar(Static):
-    """Status bar showing current app state."""
+    """Status bar showing current app state.
+
+    Uses a Rich Table with three columns (left / center / right)
+    so the token usage text is truly right-aligned at the bottom-right.
+    """
 
     DEFAULT_CSS = """
     StatusBar {
@@ -16,20 +21,14 @@ class StatusBar(Static):
         padding: 0 1;
         text-style: none;
     }
-    StatusBar .status-left {
-        width: 1fr;
-        content-align: left middle;
-    }
-    StatusBar .status-center {
-        width: 1fr;
-        content-align: center middle;
-    }
-    StatusBar .status-right {
-        width: 1fr;
-        content-align: right middle;
-    }
     StatusBar.processing {
         background: $primary 20%;
+    }
+    StatusBar > .rich-table {
+        width: 100%;
+    }
+    StatusBar > .rich-table .rich-table__cell {
+        padding: 0;
     }
     """
 
@@ -96,12 +95,17 @@ class StatusBar(Static):
         self.max_output_tokens = max_output_tokens
 
     def _update_display(self):
-        """Update the display."""
+        """Update the display using a Rich Table for true 3-column layout."""
         left = self._get_left_text()
         center = self._center_text or self._get_center_text()
         right = self._get_right_text()
 
-        self.update(f"{left} {center} {right}")
+        table = Table(show_header=False, show_edge=False, box=None, pad_edge=False)
+        table.add_column("left", justify="left", ratio=1)
+        table.add_column("center", justify="center", ratio=1)
+        table.add_column("right", justify="right", ratio=1)
+        table.add_row(left, center, right)
+        self.update(table)
 
     def _get_left_text(self) -> str:
         """Get left status text."""
