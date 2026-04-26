@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from enum import Enum, auto
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 
 class TaskState(Enum):
@@ -97,20 +97,39 @@ class StateMachine:
     """State machine for a single task.
 
     Thread-safe within a single async event loop.
+    When a DagNode is bound, state changes are automatically synchronized.
     """
 
-    def __init__(self, task_id: str, initial_state: TaskState = TaskState.PENDING):
+    def __init__(
+        self,
+        task_id: str,
+        initial_state: TaskState = TaskState.PENDING,
+        node: Any = None,
+    ):
         self.task_id = task_id
-        self.state = initial_state
+        self._node = node
+        self._state = initial_state
         self._history: list[StateChangeEvent] = []
         self._callbacks: list[Callable[[StateChangeEvent], None]] = []
         self._state_entered_at: dict[TaskState, str] = {}
         self._record_state_entry(initial_state)
+        if node is not None:
+            node.state = initial_state
 
     def _record_state_entry(self, state: TaskState) -> None:
         from datetime import datetime, timezone
 
         self._state_entered_at[state] = datetime.now(timezone.utc).isoformat()
+
+    @property
+    def state(self) -> TaskState:
+        return self._state
+
+    @state.setter
+    def state(self, value: TaskState) -> None:
+        self._state = value
+        if self._node is not None:
+            self._node.state = value
 
     def on_state_change(self, callback: Callable[[StateChangeEvent], None]):
         """Register a callback for state changes."""
@@ -118,11 +137,11 @@ class StateMachine:
 
     def can_transition(self, transition: Transition) -> bool:
         """Check if a transition is valid from current state."""
-        return (self.state, transition) in TRANSITION_TABLE
+        return (self._state, transition) in TRANSITION_TABLE
 
     def get_valid_transitions(self) -> list[Transition]:
         """Get all valid transitions from current state."""
-        return [t for (s, t), _ in TRANSITION_TABLE.items() if s == self.state]
+        return [t for (s, t), _ in TRANSITION_TABLE.items() if s == self._state]
 
     def transition(
         self,
@@ -135,13 +154,13 @@ class StateMachine:
         Raises:
             InvalidTransitionError: If the transition is not valid.
         """
-        key = (self.state, transition)
+        key = (self._state, transition)
         if key not in TRANSITION_TABLE:
-            raise InvalidTransitionError(self.state, transition)
+            raise InvalidTransitionError(self._state, transition)
 
-        old_state = self.state
+        old_state = self._state
         new_state = TRANSITION_TABLE[key]
-        self.state = new_state
+        self.state = new_state  # Uses property setter (auto-syncs node)
         self._record_state_entry(new_state)
 
         from datetime import datetime, timezone

@@ -120,10 +120,11 @@ class MissionTracker:
             dag.build()
         self._dag_executors[mission.mission_id] = dag
 
-        # Initialize state machines for all tasks
+        # Initialize state machines for all tasks (bind DagNode for auto-sync)
         self._state_machines[mission.mission_id] = {}
         for task in mission.all_tasks():
-            sm = StateMachine(task.id)
+            node = dag.nodes.get(task.id)
+            sm = StateMachine(task.id, node=node)
             sm.on_state_change(lambda evt, mid=mission.mission_id: self._on_state_change(mid, evt))
             self._state_machines[mission.mission_id][task.id] = sm
 
@@ -132,10 +133,11 @@ class MissionTracker:
 
     def _on_state_change(self, mission_id: str, event: StateChangeEvent) -> None:
         """Handle state change events from StateMachines."""
-        # Update DAG node state
+        # NOTE: DagNode state is already synchronized by StateMachine.state setter.
+        # We only need to invalidate the ready-task cache here.
         dag = self._dag_executors.get(mission_id)
         if dag:
-            dag.update_task_state(event.task_id, event.to_state)
+            dag._ready_cache = None
 
         # Persist to DB (reuse single connection)
         if self._db_conn:
