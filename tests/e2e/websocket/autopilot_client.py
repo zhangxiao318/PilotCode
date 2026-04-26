@@ -233,6 +233,7 @@ class AutopilotClient(PilotCodeWebSocketClient):
                 result.success = True
                 self._log("Stream complete.")
                 self._stream_ended.set()
+                break
 
             elif msg_type == "streaming_error":
                 error = msg.get("error", "Unknown error")
