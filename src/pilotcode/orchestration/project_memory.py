@@ -110,6 +110,14 @@ class ProjectMemory:
     # Changed files across all tasks (cumulative)
     changed_files: list[str] = field(default_factory=list)
 
+    # Persistent project context (merged from context/project_memory.py)
+    tech_stack: list[str] = field(default_factory=list)
+    architecture_patterns: list[str] = field(default_factory=list)
+    api_conventions: list[str] = field(default_factory=list)
+    code_style_rules: list[str] = field(default_factory=list)
+    learned_patterns: list[dict[str, Any]] = field(default_factory=list)
+    custom_rules: dict[str, Any] = field(default_factory=dict)
+
     # Updated timestamp
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -190,6 +198,36 @@ class ProjectMemory:
             self.updated_at = datetime.now(timezone.utc).isoformat()
 
     # ------------------------------------------------------------------
+    # Learned patterns (from context/project_memory.py)
+    # ------------------------------------------------------------------
+
+    def learn_from_rework(self, pattern: str, context: str, effectiveness: float) -> None:
+        """Record a learned pattern from a rework cycle."""
+        self.learned_patterns.append(
+            {
+                "pattern": pattern,
+                "context": context,
+                "effectiveness": effectiveness,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        self.updated_at = datetime.now(timezone.utc).isoformat()
+
+    def get_context_for_task(self, task_type: str) -> dict[str, Any]:
+        """Get relevant project context for a task type."""
+        return {
+            "tech_stack": self.tech_stack,
+            "relevant_patterns": [
+                p
+                for p in self.learned_patterns
+                if task_type.lower() in p.get("context", "").lower()
+            ],
+            "conventions": list(self.conventions.items())
+            + self.api_conventions
+            + self.code_style_rules,
+        }
+
+    # ------------------------------------------------------------------
     # Changed files
     # ------------------------------------------------------------------
 
@@ -213,6 +251,12 @@ class ProjectMemory:
             "failed_attempts": [f.to_dict() for f in self.failed_attempts],
             "architecture_notes": self.architecture_notes,
             "changed_files": self.changed_files,
+            "tech_stack": self.tech_stack,
+            "architecture_patterns": self.architecture_patterns,
+            "api_conventions": self.api_conventions,
+            "code_style_rules": self.code_style_rules,
+            "learned_patterns": self.learned_patterns,
+            "custom_rules": self.custom_rules,
             "updated_at": self.updated_at,
         }
 
@@ -228,20 +272,59 @@ class ProjectMemory:
             failed_attempts=[FailedAttempt.from_dict(f) for f in data.get("failed_attempts", [])],
             architecture_notes=data.get("architecture_notes", []),
             changed_files=data.get("changed_files", []),
+            tech_stack=data.get("tech_stack", []),
+            architecture_patterns=data.get("architecture_patterns", []),
+            api_conventions=data.get("api_conventions", []),
+            code_style_rules=data.get("code_style_rules", []),
+            learned_patterns=data.get("learned_patterns", []),
+            custom_rules=data.get("custom_rules", {}),
             updated_at=data.get("updated_at", ""),
         )
 
-    def save(self, path: str) -> None:
-        """Save to JSON file."""
+    def save(self, path: str | None = None) -> None:
+        """Save to JSON file.
+
+        If path is not provided, uses ``.pilotcode/project_memory.json``
+        under :attr:`project_path`.
+        """
+        if path is None:
+            if not self.project_path:
+                raise ValueError("Cannot save: project_path is not set and no path provided")
+            path = str(Path(self.project_path) / ".pilotcode" / "project_memory.json")
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
 
     @classmethod
-    def load(cls, path: str) -> ProjectMemory:
-        """Load from JSON file."""
+    def load(cls, path: str | None = None) -> ProjectMemory:
+        """Load from JSON file or project directory.
+
+        If *path* points to a directory, it is treated as a project path
+        and the file ``.pilotcode/project_memory.json`` underneath it is
+        loaded.  If the file does not exist, a fresh instance is returned.
+
+        If *path* is a file path, it is read directly.
+
+        If *path* is not provided, uses ``.pilotcode/project_memory.json``
+        under the current working directory.
+        """
+        if path is None:
+            path = str(Path.cwd())
+
+        p = Path(path)
+        if p.is_dir():
+            project_path = str(p)
+            file_path = p / ".pilotcode" / "project_memory.json"
+            if not file_path.exists():
+                return cls(project_path=project_path)
+            path = str(file_path)
+        else:
+            project_path = str(p.parent.parent) if ".pilotcode" in str(p) else str(p.parent)
+
         with open(path, "r", encoding="utf-8") as f:
-            return cls.from_dict(json.load(f))
+            data = json.load(f)
+        data["project_path"] = data.get("project_path", project_path)
+        return cls.from_dict(data)
 
     # ------------------------------------------------------------------
     # Prompt injection
