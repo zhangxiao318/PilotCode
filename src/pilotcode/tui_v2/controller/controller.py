@@ -531,7 +531,10 @@ class TUIController:
                         state = t.get("state", "unknown")
                         emoji = _STATE_EMOJI.get(state, "❓")
                         lines.append(f"    {emoji} {t.get('title', task_id)}")
-                report_parts.append("\n".join(lines))
+                # Append two trailing spaces to each line so Markdown
+                # renders them as hard line breaks instead of collapsing
+                # single \n into a space.
+                report_parts.append("\n".join(line + "  " for line in lines))
 
             full_report = "\n\n".join(report_parts)
 

@@ -71,17 +71,20 @@ async def status_command(args: list[str], context: CommandContext) -> str:
     if context.query_engine is not None:
         qe = context.query_engine
         msg_count = len(qe.messages)
-        from ..services.token_estimation import estimate_tokens
 
-        total_tokens = sum(estimate_tokens(str(getattr(m, "content", ""))) for m in qe.messages)
-        ctx_window = ctx
+        # Use the same token count source as the status bar (API usage > precise tokenizer > heuristic)
+        total_tokens = qe.count_tokens()
+        ctx_window = qe.config.context_window or ctx
+        qe_usable = getattr(qe, "_usable_context", usable)
+        if not isinstance(qe_usable, int):
+            qe_usable = usable
         used_pct = total_tokens * 100 // ctx_window if ctx_window > 0 else 0
-        usable_pct = total_tokens * 100 // usable if usable > 0 else 0
+        usable_pct = total_tokens * 100 // qe_usable if qe_usable > 0 else 0
         lines.append("")
         lines.append("Conversation Context:")
         lines.append(f"  Messages:   {msg_count}")
         lines.append(f"  Tokens:     {total_tokens} / {ctx_window} ({used_pct}%)")
-        lines.append(f"  Usable:     {usable}  ({usable_pct}% used)")
+        lines.append(f"  Usable:     {qe_usable}  ({usable_pct}% used)")
         lines.append(f"  Remaining:  {ctx_window - total_tokens}")
         # Budget bar
         bar_len = 20
