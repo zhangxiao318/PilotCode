@@ -258,11 +258,15 @@ class MissionAdapter:
             "CRITICAL RULES:\n"
             "- complexity: 1 (very simple) to 5 (very complex)\n"
             "- dependencies: list of task ids that must complete before this task\n"
-            "- Keep tasks granular (ideally 50-200 lines of code each)\n"
             "- Use snake_case for all IDs\n"
             "- Include at least one phase, but no more than 5 phases for typical requests\n"
             "- ONLY reference files that actually exist in the codebase (see exploration data below)\n"
-            "- If a file doesn't exist, the task must create it\n"
+            "- If the user asks to ANALYZE, REVIEW, UNDERSTAND, or EXPLAIN existing code,\n"
+            "  generate READ-ONLY analysis tasks ONLY (e.g. 'Examine...', 'Analyze...', 'Summarize...').\n"
+            "  Do NOT generate tasks that write new code, create new files, or modify existing code.\n"
+            "- ONLY generate implementation/coding tasks when the user explicitly asks to\n"
+            "  CREATE, IMPLEMENT, BUILD, or ADD something.\n"
+            "- Match the user's intent: analysis → analysis tasks, implementation → coding tasks.\n"
         )
         strategy_suffix = self.plan_adjuster.get_plan_prompt_suffix()
         system_prompt = base_prompt + strategy_suffix
