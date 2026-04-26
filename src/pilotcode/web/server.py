@@ -471,7 +471,8 @@ class WebSocketManager:
                         old_task.cancel()
                         print("[Query] Cancelled previous task for client")
                 # Process query in background task to avoid blocking message loop
-                task = asyncio.create_task(self.process_query(websocket, sid, query))
+                explicit_mode = data.get("mode")
+                task = asyncio.create_task(self.process_query(websocket, sid, query, explicit_mode))
                 self.current_tasks[websocket] = task
 
             elif msg_type == "interrupt":
@@ -632,7 +633,7 @@ class WebSocketManager:
             print(f"[Question] Request {request_id} error: {e}")
             return ""
 
-    async def process_query(self, websocket, session_id: str, query: str):
+    async def process_query(self, websocket, session_id: str, query: str, explicit_mode: str | None = None):
         """Process user query and stream results within a Session context.
 
         The QueryEngine is retrieved from the session context, ensuring
@@ -683,7 +684,11 @@ class WebSocketManager:
             )
 
             # Auto-detect task complexity
-            mode = await classify_task_complexity(query)
+            # Allow explicit mode override from client message
+            if explicit_mode == "PLAN":
+                mode = "PLAN"
+            else:
+                mode = await classify_task_complexity(query)
             if mode == "PLAN":
                 await self.send_to_client(
                     websocket,

@@ -852,27 +852,29 @@ class MissionAdapter:
         try:
             # Phase 0: Explore codebase (if enabled)
             exploration: dict[str, Any] | None = None
-            if explore_first:
+            def _invoke_progress(event: str, data: dict) -> None:
                 if progress_callback:
-                    progress_callback(
-                        "mission:exploring", {"message": "Exploring codebase structure..."}
-                    )
+                    result = progress_callback(event, data)
+                    if result is not None and asyncio.iscoroutine(result):
+                        asyncio.create_task(result)
+
+            if explore_first:
+                _invoke_progress("mission:exploring", {"message": "Exploring codebase structure..."})
                 exploration = await self._explore_codebase(user_request)
 
             # Phase 1: Plan mission
             mission = await self._plan_mission(user_request, exploration)
 
-            if progress_callback:
-                progress_callback(
-                    "mission:planned",
-                    {
-                        "mission_id": mission.mission_id,
-                        "title": mission.title,
-                        "phases": [p.to_dict() for p in mission.phases],
-                        "strategy": self.strategy.value,
-                        "context_budget": self.context_budget,
-                    },
-                )
+            _invoke_progress(
+                "mission:planned",
+                {
+                    "mission_id": mission.mission_id,
+                    "title": mission.title,
+                    "phases": [p.to_dict() for p in mission.phases],
+                    "strategy": self.strategy.value,
+                    "context_budget": self.context_budget,
+                },
+            )
 
             # Wire cancellation through progress callbacks
             # Clear previous callbacks to prevent memory leak on repeated runs
@@ -883,8 +885,7 @@ class MissionAdapter:
                     mid = data.get("mission_id")
                     if mid:
                         self._orchestrator.cancel_mission(mid)
-                if progress_callback:
-                    progress_callback(event, data)
+                _invoke_progress(event, data)
 
             self._orchestrator.on_progress(_wrapped_progress)
 
