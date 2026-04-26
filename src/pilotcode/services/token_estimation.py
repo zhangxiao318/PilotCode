@@ -35,6 +35,7 @@ class TokenEstimator:
         if self._precise is None:
             try:
                 from .precise_tokenizer import get_precise_tokenizer
+
                 self._precise = get_precise_tokenizer(self._base_url, self._model_name)
             except Exception:
                 self._precise = False

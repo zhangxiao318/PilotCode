@@ -488,7 +488,6 @@ class MissionAdapter:
                                 break
             raise ValueError(f"Failed to parse plan JSON: {exc}") from exc
 
-
     @staticmethod
     def _fix_common_json_errors(text: str) -> str:
         """Fix common JSON errors produced by LLMs."""
