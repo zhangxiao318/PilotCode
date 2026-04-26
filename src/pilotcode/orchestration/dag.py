@@ -254,6 +254,64 @@ class DagExecutor:
 
         return max(longest.values(), key=len)
 
+    def add_task(self, task: TaskSpec, dependencies: list[str]) -> None:
+        """Add a task to the DAG at runtime. Rebuilds topological order.
+
+        Raises:
+            ValueError: If task already exists or dependency is unknown.
+        """
+        if task.id in self.nodes:
+            raise ValueError(f"Task '{task.id}' already exists in DAG")
+        for dep in dependencies:
+            if dep not in self.nodes:
+                raise ValueError(f"Unknown dependency '{dep}' for task '{task.id}'")
+
+        self.nodes[task.id] = DagNode(task_id=task.id, task=task)
+        self._adj_in[task.id] = list(dependencies)
+        self._adj_out[task.id] = []
+        for dep in dependencies:
+            self._adj_out[dep].append(task.id)
+            self.edges.append(DagEdge(from_task=dep, to_task=task.id))
+
+        self._built = False
+        self._ready_cache = None
+        self.build()
+
+    def remove_task(self, task_id: str) -> None:
+        """Remove a task and its edges from the DAG.
+
+        Raises:
+            ValueError: If the task has active dependents.
+        """
+        if task_id not in self.nodes:
+            return
+
+        dependents = self._adj_out.get(task_id, [])
+        active_dependents = [
+            d
+            for d in dependents
+            if self.nodes[d].state not in {TaskState.DONE, TaskState.CANCELLED, TaskState.REJECTED}
+        ]
+        if active_dependents:
+            raise ValueError(
+                f"Cannot remove task '{task_id}': has active dependents {active_dependents}"
+            )
+
+        del self.nodes[task_id]
+        self.edges = [e for e in self.edges if e.from_task != task_id and e.to_task != task_id]
+        for dep in self._adj_in.get(task_id, []):
+            if task_id in self._adj_out.get(dep, []):
+                self._adj_out[dep].remove(task_id)
+        for dep in dependents:
+            if task_id in self._adj_in.get(dep, []):
+                self._adj_in[dep].remove(task_id)
+        del self._adj_in[task_id]
+        del self._adj_out[task_id]
+
+        self._built = False
+        self._ready_cache = None
+        self.build()
+
 
 def build_dag_from_phases(phases: list[Phase]) -> DagExecutor:
     """Convenience function to build a DAG from phases."""
