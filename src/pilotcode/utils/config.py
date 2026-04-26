@@ -81,6 +81,24 @@ class GlobalConfig:
     mcp_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
     auto_review: bool = False
     max_review_iterations: int = 3
+    # Per-model overrides for multi-model routing.
+    # Example: {"openai": {"api_key": "sk-xxx", "base_url": "..."}, "qwen": {"api_key": "sk-yyy"}}
+    model_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    def get_model_config(self, model_name: str) -> dict[str, str]:
+        """Get merged configuration for a specific model.
+
+        Returns a dict with 'api_key', 'base_url' for the given model,
+        falling back to global values. Used by multi-model routing.
+        """
+        override = self.model_overrides.get(model_name, {})
+        info = get_model_info(model_name)
+        return {
+            "api_key": override.get("api_key") or self.api_key or "",
+            "base_url": override.get("base_url")
+            or self.base_url
+            or (info.base_url if info else ""),
+        }
 
     def __post_init__(self):
         """Validate and set defaults after initialization."""

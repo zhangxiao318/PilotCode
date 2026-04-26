@@ -11,14 +11,15 @@ from enum import Enum, auto
 from typing import Any, AsyncIterator
 
 from .model_client import ModelClient
+from .models_config import get_all_models, get_model_info, ModelInfo
 
 
 class ModelTier(Enum):
     """Model tiers for different use cases."""
 
-    FAST = auto()  # Fast/cheap models for simple tasks (Haiku equivalent)
-    BALANCED = auto()  # Balanced performance/cost (Sonnet equivalent)
-    POWERFUL = auto()  # Most capable models (Opus equivalent)
+    FAST = auto()  # Fast/cheap models for simple tasks
+    BALANCED = auto()  # Balanced performance/cost
+    POWERFUL = auto()  # Most capable models
 
 
 class TaskType(Enum):
@@ -56,47 +57,103 @@ class ModelConfig:
     supports_vision: bool = False
 
 
-# Default model configurations
-DEFAULT_MODELS: dict[str, ModelConfig] = {
-    # Fast tier (Haiku-like)
-    "fast": ModelConfig(
-        name=os.environ.get("PILOTCODE_FAST_MODEL", "haiku"),
-        tier=ModelTier.FAST,
-        context_window=200_000,
-        cost_per_1k_input=0.00025,
-        cost_per_1k_output=0.00125,
-        supports_tools=True,
-    ),
-    # Balanced tier (Sonnet-like)
-    "balanced": ModelConfig(
-        name=os.environ.get("PILOTCODE_BALANCED_MODEL", "sonnet"),
-        tier=ModelTier.BALANCED,
-        context_window=200_000,
-        cost_per_1k_input=0.003,
-        cost_per_1k_output=0.015,
-        supports_tools=True,
-        supports_vision=True,
-    ),
-    # Powerful tier (Opus-like)
-    "powerful": ModelConfig(
-        name=os.environ.get("PILOTCODE_POWERFUL_MODEL", "opus"),
-        tier=ModelTier.POWERFUL,
-        context_window=200_000,
-        cost_per_1k_input=0.015,
-        cost_per_1k_output=0.075,
-        supports_tools=True,
-        supports_vision=True,
-    ),
-    # Default model
-    "default": ModelConfig(
-        name=os.environ.get("PILOTCODE_DEFAULT_MODEL", "default"),
-        tier=ModelTier.BALANCED,
-        context_window=200_000,
-        cost_per_1k_input=0.003,
-        cost_per_1k_output=0.015,
-        supports_tools=True,
-    ),
-}
+def _infer_tier(model_info: ModelInfo) -> ModelTier:
+    """Infer model tier from model metadata."""
+    name = model_info.name.lower()
+    # Fast tier indicators
+    if any(k in name for k in ("flash", "lite", "mini", "haiku", "fast")):
+        return ModelTier.FAST
+    # Powerful tier indicators
+    if any(k in name for k in ("pro", "max", "opus", "gpt-4o", "claude-3-5", "claude-4")):
+        return ModelTier.POWERFUL
+    # Balanced is the default
+    return ModelTier.BALANCED
+
+
+def _build_default_models() -> dict[str, ModelConfig]:
+    """Build DEFAULT_MODELS from the project's actual models.json config."""
+    all_models = get_all_models()
+    if not all_models:
+        # Fallback to env vars if no models configured
+        return {
+            "fast": ModelConfig(
+                name=os.environ.get("PILOTCODE_FAST_MODEL", "deepseek-v4-flash"),
+                tier=ModelTier.FAST,
+                context_window=1_000_000,
+                cost_per_1k_input=0.0005,
+                cost_per_1k_output=0.0015,
+                supports_tools=True,
+            ),
+            "balanced": ModelConfig(
+                name=os.environ.get("PILOTCODE_BALANCED_MODEL", "deepseek"),
+                tier=ModelTier.BALANCED,
+                context_window=1_000_000,
+                cost_per_1k_input=0.001,
+                cost_per_1k_output=0.002,
+                supports_tools=True,
+            ),
+            "powerful": ModelConfig(
+                name=os.environ.get("PILOTCODE_POWERFUL_MODEL", "deepseek-v4-pro"),
+                tier=ModelTier.POWERFUL,
+                context_window=1_000_000,
+                cost_per_1k_input=0.003,
+                cost_per_1k_output=0.006,
+                supports_tools=True,
+            ),
+            "default": ModelConfig(
+                name=os.environ.get("PILOTCODE_DEFAULT_MODEL", "deepseek"),
+                tier=ModelTier.BALANCED,
+                context_window=1_000_000,
+                cost_per_1k_input=0.001,
+                cost_per_1k_output=0.002,
+                supports_tools=True,
+            ),
+        }
+
+    # Group available models by inferred tier
+    by_tier: dict[ModelTier, list[ModelInfo]] = {
+        ModelTier.FAST: [],
+        ModelTier.BALANCED: [],
+        ModelTier.POWERFUL: [],
+    }
+    for info in all_models.values():
+        if info.disabled:
+            continue
+        tier = _infer_tier(info)
+        by_tier[tier].append(info)
+
+    def _pick(tier: ModelTier, fallback_name: str) -> ModelConfig:
+        candidates = by_tier.get(tier, [])
+        info = candidates[0] if candidates else get_model_info(fallback_name)
+        if info is None:
+            info = list(all_models.values())[0]
+        # Tier-specific cost defaults
+        cost_map = {
+            ModelTier.FAST: (0.0005, 0.0015),
+            ModelTier.BALANCED: (0.003, 0.015),
+            ModelTier.POWERFUL: (0.015, 0.075),
+        }
+        in_cost, out_cost = cost_map.get(tier, (0.003, 0.015))
+        return ModelConfig(
+            name=info.default_model or info.name,
+            tier=tier,
+            context_window=info.context_window,
+            cost_per_1k_input=in_cost,
+            cost_per_1k_output=out_cost,
+            supports_tools=info.supports_tools,
+            supports_vision=info.supports_vision,
+        )
+
+    return {
+        "fast": _pick(ModelTier.FAST, "deepseek-v4-flash"),
+        "balanced": _pick(ModelTier.BALANCED, "deepseek"),
+        "powerful": _pick(ModelTier.POWERFUL, "deepseek-v4-pro"),
+        "default": _pick(ModelTier.BALANCED, "deepseek"),
+    }
+
+
+# Lazily evaluated so that models.json is loaded at import time
+DEFAULT_MODELS: dict[str, ModelConfig] = _build_default_models()
 
 
 # Task to tier mapping
@@ -142,12 +199,13 @@ class ModelRouter:
     def get_model_for_task(self, task_type: TaskType) -> ModelConfig:
         """Get the appropriate model for a task type."""
         tier = TASK_ROUTING.get(task_type, ModelTier.BALANCED)
+        return self.get_model_for_tier(tier)
 
-        # Find model for tier
+    def get_model_for_tier(self, tier: ModelTier) -> ModelConfig:
+        """Get the model configured for a specific tier."""
         for key, config in self.models.items():
             if config.tier == tier:
                 return config
-
         # Fallback to default
         return self.models.get("default", list(self.models.values())[0])
 
@@ -198,8 +256,11 @@ class ModelRouter:
             {"role": "user", "content": user_prompt},
         ]
 
-        async for chunk in client.chat_completion_stream(messages, **kwargs):
-            yield chunk
+        async for chunk in client.chat_completion(messages, stream=True, **kwargs):
+            delta = chunk.get("choices", [{}])[0].get("delta", {})
+            content = delta.get("content", "")
+            if content:
+                yield content
 
 
 # Global router instance

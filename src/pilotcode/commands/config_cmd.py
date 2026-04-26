@@ -236,12 +236,28 @@ async def config_command(args: list[str], context: CommandContext) -> str:
 
     elif action == "set":
         if len(args) < 3:
-            return "Usage: /config set <key> <value>"
+            return "Usage: /config set <key> <value>  or  /config set model_overrides.<model>.<key> <value>"
 
         key = args[1]
         value = " ".join(args[2:])
 
         config = get_global_config()
+
+        # Handle nested model_overrides: model_overrides.<model>.<field>
+        if key.startswith("model_overrides."):
+            parts = key.split(".")
+            if len(parts) != 3:
+                return "Usage: /config set model_overrides.<model>.<api_key|base_url> <value>"
+            _, model_name, field = parts
+            if field not in ("api_key", "base_url"):
+                return f"Unknown model override field: {field}. Use: api_key, base_url"
+            overrides = dict(config.model_overrides)
+            model_cfg = dict(overrides.get(model_name, {}))
+            model_cfg[field] = value
+            overrides[model_name] = model_cfg
+            config.model_overrides = overrides
+            get_config_manager().save_global_config(config)
+            return f"Set model_overrides.{model_name}.{field} = {value[:4]}..."
 
         if not hasattr(config, key):
             return f"Unknown key: {key}"

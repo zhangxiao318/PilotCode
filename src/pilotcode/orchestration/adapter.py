@@ -11,7 +11,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from pilotcode.utils.model_client import get_model_client, Message
+from pilotcode.utils.model_client import get_model_client, Message, ModelClient
+from pilotcode.utils.model_router import ModelRouter, ModelTier, TaskType
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
 from pilotcode.tools.registry import get_all_tools
 from pilotcode.state.app_state import get_default_app_state
@@ -107,6 +108,9 @@ class MissionAdapter:
 
         self.adaptive_config = AdaptiveConfigMapper.from_capability(self.capability)
         self.calibrator = RuntimeCalibrator(self.capability)
+
+        # Multi-model router for tiered task routing
+        self.router = ModelRouter()
 
         # Context strategy (legacy) + adaptive override
         self.strategy = ContextStrategySelector.select(context_budget)
@@ -501,12 +505,16 @@ class MissionAdapter:
         excluded_tools = {"AskUser", "ask", "question"}
         autonomous_tools = [t for t in get_all_tools() if t.name not in excluded_tools]
 
+        # Select model client based on task complexity / worker type
+        model_client = self._select_model_client(task)
+
         config = QueryEngineConfig(
             cwd=app_state.cwd,
             tools=autonomous_tools,
             get_app_state=store.get_state,
             set_app_state=store.set_state,
             max_turns=max(5, max_turns // 2),  # QueryEngine internal budget
+            model_client=model_client,
         )
         engine = QueryEngine(config)
         executor = get_tool_executor()
@@ -638,6 +646,30 @@ class MissionAdapter:
                 success=False,
                 error=f"Worker execution failed: {exc}",
             )
+
+    # ------------------------------------------------------------------
+    # Model selection
+    # ------------------------------------------------------------------
+
+    def _select_model_client(self, task: TaskSpec) -> ModelClient:
+        """Select an appropriate ModelClient based on task characteristics.
+
+        Maps task complexity / worker_type to ModelTier and returns the
+        corresponding client from the multi-model router.
+        """
+        # Map complexity to tier
+        complexity = task.estimated_complexity
+        worker_type = task.worker_type.lower()
+
+        if worker_type == "simple" or complexity.value <= 2:
+            tier = ModelTier.FAST
+        elif worker_type == "complex" or complexity.value >= 4:
+            tier = ModelTier.POWERFUL
+        else:
+            tier = ModelTier.BALANCED
+
+        model_config = self.router.get_model_for_tier(tier)
+        return self.router._get_client(model_config.name)
 
     # ------------------------------------------------------------------
     # Continue prompt with context

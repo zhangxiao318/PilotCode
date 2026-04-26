@@ -79,20 +79,31 @@ class ModelClient:
             self._loop = None
         config = get_global_config()
 
-        self.api_key = api_key or config.api_key or "sk-placeholder"
-
         # Determine model name: use provided, or config, or fallback
         model_key = model or config.default_model or "default"
+
+        # For multi-model routing: if a specific model is requested and has
+        # overrides in settings.json, use the per-model config.
+        model_override = config.get_model_config(model_key) if model else {}
+        effective_api_key = (
+            api_key or model_override.get("api_key") or config.api_key or "sk-placeholder"
+        )
+        effective_base_url = base_url or model_override.get("base_url") or config.base_url or ""
+
+        self.api_key = effective_api_key
 
         # For local models, use config directly without models.json lookup.
         # Local model config lives entirely in settings.json.
         from .config import is_local_url
 
-        is_local = is_local_url(config.base_url or "")
+        is_local = is_local_url(effective_base_url)
+        if not is_local and model_key in ("ollama", "vllm"):
+            is_local = True
+
         if is_local:
             self.model = model_key
         else:
-            config_base = (base_url or config.base_url or "").lower()
+            config_base = effective_base_url.lower()
 
             # Provider-aware model selection: when base_url points to a known
             # provider but default_model belongs to another, auto-correct.
@@ -117,16 +128,15 @@ class ModelClient:
                     self.model = model_key
 
         # Determine base URL: use provided, or from config, or from model info as fallback
-        if base_url:
-            self.base_url = base_url
-        elif config.base_url:
-            # Respect user's explicit configuration first
-            self.base_url = config.base_url
-        elif model_info and model_info.base_url:
-            # Use model-specific base URL as fallback
-            self.base_url = model_info.base_url
+        if effective_base_url:
+            self.base_url = effective_base_url
         else:
-            self.base_url = ""
+            model_info = get_model_info(model_key)
+            if model_info and model_info.base_url:
+                # Use model-specific base URL as fallback
+                self.base_url = model_info.base_url
+            else:
+                self.base_url = ""
 
         # Local models often use self-signed HTTPS certs; disable verification.
         verify_ssl = not is_local

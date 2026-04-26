@@ -20,7 +20,7 @@ from .types.message import (
 )
 from .tools.base import Tools
 from .state.app_state import AppState
-from .utils.model_client import ToolCall, get_model_client
+from .utils.model_client import ToolCall, get_model_client, ModelClient
 from .services.token_estimation import get_token_estimator
 from .services.context_compression import get_context_compressor, CompressionResult
 from .services.intelligent_compact import (
@@ -48,6 +48,7 @@ class QueryEngineConfig:
     cache_tool_results: bool = False
     on_notify: Callable[[str, dict[str, Any]], None] | None = None
     auto_review: bool = False
+    model_client: ModelClient | None = None  # Custom model client (for multi-model routing)
     max_review_iterations: int = 3
 
 
@@ -74,7 +75,7 @@ class QueryEngine:
     def __init__(self, config: QueryEngineConfig):
         self.config = config
         self.messages: list[MessageType] = []
-        self.client = get_model_client()
+        self.client = config.model_client if config.model_client is not None else get_model_client()
         self.abort_event = asyncio.Event()
 
         # Auto-detect context_window from model config if not set
