@@ -121,6 +121,69 @@ class ProjectMemory:
     # Updated timestamp
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+    # SQLite persistence (optional)
+    _db_path: str | None = field(default=None, repr=False)
+    _db_conn: sqlite3.Connection | None = field(default=None, repr=False)
+
+    def __post_init__(self):
+        if self._db_path:
+            self._init_db()
+            self._load_from_db()
+
+    def _init_db(self) -> None:
+        """Initialize SQLite persistence."""
+        if not self._db_path:
+            return
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._db_conn = sqlite3.connect(self._db_path)
+        self._db_conn.execute("PRAGMA journal_mode=WAL")
+        self._db_conn.execute("""
+            CREATE TABLE IF NOT EXISTS project_memory (
+                key TEXT PRIMARY KEY,
+                data TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        self._db_conn.commit()
+
+    def _persist(self) -> None:
+        """Persist to SQLite."""
+        if not self._db_conn:
+            return
+        data = self.to_dict()
+        self._db_conn.execute(
+            "INSERT OR REPLACE INTO project_memory (key, data, updated_at) VALUES (?, ?, ?)",
+            ("global", json.dumps(data), datetime.now(timezone.utc).isoformat()),
+        )
+        self._db_conn.commit()
+
+    def _load_from_db(self) -> None:
+        """Load from SQLite if data exists."""
+        if not self._db_conn:
+            return
+        row = self._db_conn.execute(
+            "SELECT data FROM project_memory WHERE key = ?", ("global",)
+        ).fetchone()
+        if row:
+            try:
+                loaded = self.from_dict(json.loads(row[0]))
+                # Copy loaded fields into self
+                self.file_index = loaded.file_index
+                self.conventions = loaded.conventions
+                self.module_graph = loaded.module_graph
+                self.failed_attempts = loaded.failed_attempts
+                self.architecture_notes = loaded.architecture_notes
+                self.changed_files = loaded.changed_files
+                self.tech_stack = loaded.tech_stack
+                self.architecture_patterns = loaded.architecture_patterns
+                self.api_conventions = loaded.api_conventions
+                self.code_style_rules = loaded.code_style_rules
+                self.learned_patterns = loaded.learned_patterns
+                self.custom_rules = loaded.custom_rules
+                self.updated_at = loaded.updated_at
+            except Exception:
+                pass
+
     # ------------------------------------------------------------------
     # File tracking
     # ------------------------------------------------------------------
@@ -135,6 +198,7 @@ class ProjectMemory:
             read_at=datetime.now(timezone.utc).isoformat(),
         )
         self.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist()
 
     def get_file_summary(self, path: str) -> str:
         """Get summary of a previously read file."""
@@ -153,6 +217,7 @@ class ProjectMemory:
         """Record a discovered code convention."""
         self.conventions[key] = value
         self.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist()
 
     # ------------------------------------------------------------------
     # Failure tracking
@@ -172,6 +237,7 @@ class ProjectMemory:
             )
         )
         self.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist()
 
     def get_failures_for_task(self, task_id: str) -> list[FailedAttempt]:
         """Get all failed attempts for a specific task."""
@@ -196,6 +262,7 @@ class ProjectMemory:
         if note not in self.architecture_notes:
             self.architecture_notes.append(note)
             self.updated_at = datetime.now(timezone.utc).isoformat()
+            self._persist()
 
     # ------------------------------------------------------------------
     # Learned patterns (from context/project_memory.py)
@@ -212,6 +279,7 @@ class ProjectMemory:
             }
         )
         self.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist()
 
     def get_context_for_task(self, task_type: str) -> dict[str, Any]:
         """Get relevant project context for a task type."""
@@ -237,6 +305,7 @@ class ProjectMemory:
             if p not in self.changed_files:
                 self.changed_files.append(p)
         self.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist()
 
     # ------------------------------------------------------------------
     # Serialization
