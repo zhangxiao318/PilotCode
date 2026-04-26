@@ -2,10 +2,13 @@
 
 import asyncio
 import json
+import logging
 import re
 import uuid
 from typing import Any, AsyncIterator, Callable
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 from .types.message import (
     MessageType,
@@ -954,9 +957,14 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             if token_count < critical:
                 return False
 
-        # DEBUG: print actual values when compaction is triggered
-        print(
-            f"[DEBUG auto_compact] tokens={token_count} threshold={threshold} critical={critical} context_window={self.config.context_window} msg_count={len(self.messages)}"
+        # Log compaction trigger details for debugging
+        logger.debug(
+            "auto_compact triggered: tokens=%d threshold=%d critical=%d context_window=%d msg_count=%d",
+            token_count,
+            threshold,
+            critical,
+            self.config.context_window,
+            len(self.messages),
         )
 
         tokens_before = self.count_tokens()
