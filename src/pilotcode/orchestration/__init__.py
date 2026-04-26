@@ -7,7 +7,9 @@ from .task_spec import TaskSpec, Phase, Mission, Constraints, AcceptanceCriterio
 from .state_machine import TaskState, StateMachine, Transition, InvalidTransitionError
 from .dag import DagNode, DagEdge, DagExecutor, build_dag_from_phases
 from .tracker import MissionTracker, AgentProgress, MissionSnapshot
-from .orchestrator import Orchestrator, OrchestratorConfig, ExecutionResult, VerificationResult
+from .orchestrator import Orchestrator, OrchestratorConfig
+from .results import ExecutionResult
+from .verifier.base import VerificationResult, Verdict
 from .adapter import MissionAdapter
 from .project_memory import ProjectMemory, FileSnapshot, FailedAttempt
 from .context_strategy import ContextStrategy, ContextStrategySelector, MissionPlanAdjuster
@@ -41,6 +43,7 @@ __all__ = [
     "OrchestratorConfig",
     "ExecutionResult",
     "VerificationResult",
+    "Verdict",
     # Adapter & Memory
     "MissionAdapter",
     "ProjectMemory",

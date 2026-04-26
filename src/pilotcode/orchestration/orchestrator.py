@@ -19,6 +19,8 @@ from .task_spec import Mission, TaskSpec, ComplexityLevel
 from .state_machine import TaskState, StateMachine, Transition, InvalidTransitionError
 from .dag import DagExecutor, DagNode
 from .tracker import MissionTracker, get_tracker, AgentProgress
+from .results import ExecutionResult
+from .verifier.base import VerificationResult, Verdict
 
 
 @dataclass
@@ -45,19 +47,6 @@ class ExecutionResult:
     artifacts: dict[str, Any] = field(default_factory=dict)
     token_usage: int = 0
     time_spent_seconds: float = 0.0
-
-
-@dataclass
-class VerificationResult:
-    """Result of verifying a task."""
-
-    task_id: str
-    level: int  # 1, 2, or 3
-    passed: bool
-    score: float = 0.0  # 0-100
-    issues: list[dict[str, Any]] = field(default_factory=list)
-    feedback: str = ""
-    verdict: str = "PENDING"  # "APPROVE", "NEEDS_REWORK", "REJECT"
 
 
 class Orchestrator:
@@ -418,7 +407,7 @@ class Orchestrator:
                 level=level,
                 passed=True,
                 score=100.0,
-                verdict="APPROVE",
+                verdict=Verdict.APPROVE,
             )
 
         try:
@@ -430,7 +419,7 @@ class Orchestrator:
                 passed=False,
                 score=0.0,
                 feedback=f"Verifier error: {e}",
-                verdict="REJECT",
+                verdict=Verdict.REJECT,
             )
 
     def _handle_verification_failure(
@@ -444,7 +433,7 @@ class Orchestrator:
         task_id = task.id
 
         # Determine severity
-        if v_result.verdict == "REJECT":
+        if v_result.verdict == Verdict.REJECT:
             # Critical - reject and potentially trigger redesign
             try:
                 sm.transition(Transition.REJECT, reason=v_result.feedback, actor="verifier")

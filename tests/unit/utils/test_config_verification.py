@@ -263,6 +263,71 @@ class TestConfigVerification:
             # Response should be truncated to 200 chars
             assert len(result["response"]) <= 200
 
+    @pytest.mark.asyncio
+    async def test_verify_deepseek_reasoning_content(self, isolated_manager):
+        """Test verification with DeepSeek reasoning_content (no content field)."""
+        from pilotcode.utils.config import GlobalConfig
+
+        config = GlobalConfig(
+            api_key="test-key",
+            default_model="deepseek-v4-pro",
+            base_url="https://api.deepseek.com",
+        )
+        isolated_manager.save_global_config(config)
+
+        # DeepSeek V4 may return reasoning_content instead of content
+        mock_response = [
+            {"choices": [{"delta": {"reasoning_content": "I am an AI assistant"}}]},
+        ]
+
+        with patch("pilotcode.utils.model_client.ModelClient") as MockClient:
+            mock_client = AsyncMock()
+            mock_client.chat_completion = MagicMock(
+                return_value=mock_async_generator(mock_response)
+            )
+            mock_client.close = AsyncMock()
+            MockClient.return_value = mock_client
+
+            result = await isolated_manager.verify_configuration(timeout=5.0)
+
+            assert result["success"] is True
+            assert "responded successfully" in result["message"]
+            assert result["response"] == "I am an AI assistant"
+            mock_client.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_verify_deepseek_mixed_content_and_reasoning(self, isolated_manager):
+        """Test verification with both content and reasoning_content."""
+        from pilotcode.utils.config import GlobalConfig
+
+        config = GlobalConfig(
+            api_key="test-key",
+            default_model="deepseek-v4-pro",
+            base_url="https://api.deepseek.com",
+        )
+        isolated_manager.save_global_config(config)
+
+        # DeepSeek V4 may return both reasoning_content and content
+        mock_response = [
+            {"choices": [{"delta": {"reasoning_content": "Let me think... "}}]},
+            {"choices": [{"delta": {"content": "I am an AI assistant."}}]},
+        ]
+
+        with patch("pilotcode.utils.model_client.ModelClient") as MockClient:
+            mock_client = AsyncMock()
+            mock_client.chat_completion = MagicMock(
+                return_value=mock_async_generator(mock_response)
+            )
+            mock_client.close = AsyncMock()
+            MockClient.return_value = mock_client
+
+            result = await isolated_manager.verify_configuration(timeout=5.0)
+
+            assert result["success"] is True
+            assert "responded successfully" in result["message"]
+            assert "Let me think... I am an AI assistant." in result["response"]
+            mock_client.close.assert_called_once()
+
 
 class TestConfigVerificationWithRealOllama:
     """Test with real Ollama instance if available."""

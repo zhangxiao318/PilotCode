@@ -391,6 +391,10 @@ class ConfigManager:
                     content = delta.get("content", "")
                     if content:
                         response_chunks.append(content)
+                    # DeepSeek thinking mode returns content in reasoning_content
+                    reasoning = delta.get("reasoning_content", "")
+                    if reasoning:
+                        response_chunks.append(reasoning)
 
                 # Early exit if we have enough response
                 if len(response_chunks) >= 5:

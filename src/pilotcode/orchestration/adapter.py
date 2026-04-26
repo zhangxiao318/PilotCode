@@ -27,7 +27,9 @@ from pilotcode.permissions.permission_manager import (
 from pilotcode.types.message import ToolUseMessage
 
 from .task_spec import Mission, Phase, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion
-from .orchestrator import Orchestrator, OrchestratorConfig, ExecutionResult, VerificationResult
+from .orchestrator import Orchestrator, OrchestratorConfig
+from .results import ExecutionResult
+from .verifier.base import VerificationResult, Verdict
 from .context_strategy import (
     ContextStrategy,
     ContextStrategySelector,
@@ -112,7 +114,7 @@ class MissionAdapter:
                 passed=False,
                 score=0.0,
                 feedback=exec_result.error or "Execution failed without details",
-                verdict="REJECT",
+                verdict=Verdict.REJECT,
             )
         if not exec_result.output and not exec_result.artifacts.get("changed_files"):
             return VerificationResult(
@@ -121,14 +123,14 @@ class MissionAdapter:
                 passed=False,
                 score=30.0,
                 feedback="Execution succeeded but produced no output or file changes",
-                verdict="NEEDS_REWORK",
+                verdict=Verdict.NEEDS_REWORK,
             )
         return VerificationResult(
             task_id=task.id,
             level=1,
             passed=True,
             score=100.0,
-            verdict="APPROVE",
+            verdict=Verdict.APPROVE,
         )
 
     @staticmethod
@@ -153,7 +155,7 @@ class MissionAdapter:
                 level=2,
                 passed=True,
                 score=100.0,
-                verdict="APPROVE",
+                verdict=Verdict.APPROVE,
             )
 
         cwd = os.getcwd()
@@ -178,7 +180,7 @@ class MissionAdapter:
                     level=2,
                     passed=True,
                     score=100.0,
-                    verdict="APPROVE",
+                    verdict=Verdict.APPROVE,
                 )
             else:
                 return VerificationResult(
@@ -187,7 +189,7 @@ class MissionAdapter:
                     passed=False,
                     score=50.0,
                     feedback=f"Tests failed:\n{output}",
-                    verdict="NEEDS_REWORK",
+                    verdict=Verdict.NEEDS_REWORK,
                 )
         except Exception as e:
             return VerificationResult(
@@ -196,7 +198,7 @@ class MissionAdapter:
                 passed=False,
                 score=0.0,
                 feedback=f"Could not run tests: {e}",
-                verdict="NEEDS_REWORK",
+                verdict=Verdict.NEEDS_REWORK,
             )
 
     @staticmethod
@@ -211,7 +213,7 @@ class MissionAdapter:
                 level=3,
                 passed=True,
                 score=100.0,
-                verdict="APPROVE",
+                verdict=Verdict.APPROVE,
             )
 
         client = get_model_client()
@@ -244,7 +246,7 @@ class MissionAdapter:
                     level=3,
                     passed=True,
                     score=100.0,
-                    verdict="APPROVE",
+                    verdict=Verdict.APPROVE,
                 )
             else:
                 return VerificationResult(
@@ -253,7 +255,7 @@ class MissionAdapter:
                     passed=False,
                     score=60.0,
                     feedback=f"Code review feedback: {accumulated[:500]}",
-                    verdict="NEEDS_REWORK",
+                    verdict=Verdict.NEEDS_REWORK,
                 )
         except Exception as e:
             return VerificationResult(
@@ -262,7 +264,7 @@ class MissionAdapter:
                 passed=False,
                 score=0.0,
                 feedback=f"Review failed: {e}",
-                verdict="NEEDS_REWORK",
+                verdict=Verdict.NEEDS_REWORK,
             )
 
     # ------------------------------------------------------------------
@@ -852,6 +854,7 @@ class MissionAdapter:
         try:
             # Phase 0: Explore codebase (if enabled)
             exploration: dict[str, Any] | None = None
+
             def _invoke_progress(event: str, data: dict) -> None:
                 if progress_callback:
                     result = progress_callback(event, data)
@@ -859,7 +862,9 @@ class MissionAdapter:
                         asyncio.create_task(result)
 
             if explore_first:
-                _invoke_progress("mission:exploring", {"message": "Exploring codebase structure..."})
+                _invoke_progress(
+                    "mission:exploring", {"message": "Exploring codebase structure..."}
+                )
                 exploration = await self._explore_codebase(user_request)
 
             # Phase 1: Plan mission

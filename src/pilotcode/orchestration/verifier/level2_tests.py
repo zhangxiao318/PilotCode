@@ -12,7 +12,7 @@ from typing import Any
 
 from .base import BaseVerifier, VerificationResult, Verdict
 from ..task_spec import TaskSpec
-from ..orchestrator import ExecutionResult
+from ..results import ExecutionResult
 
 
 class PytestRunnerVerifier(BaseVerifier):

@@ -14,7 +14,7 @@ from typing import Any
 
 from .base import BaseVerifier, VerificationResult, Verdict
 from ..task_spec import TaskSpec, AcceptanceCriterion
-from ..orchestrator import ExecutionResult
+from ..results import ExecutionResult
 
 
 class CodeReviewVerifier(BaseVerifier):

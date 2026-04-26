@@ -7,7 +7,7 @@ from typing import Any, Awaitable, Callable
 from abc import ABC, abstractmethod
 
 from ..task_spec import TaskSpec
-from ..orchestrator import ExecutionResult
+from ..results import ExecutionResult
 
 
 @dataclass
