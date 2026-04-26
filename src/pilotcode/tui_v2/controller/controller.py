@@ -482,14 +482,14 @@ class TUIController:
                     tool_name = data.get("tool_name", "tool")
                     success = data.get("success", False)
                     summary = data.get("summary", "")
-                    emoji = "✅" if success else "❌"
-                    # Compact single-line result (same style as normal mode)
-                    result_line = f"{emoji} {tool_name}"
-                    if summary:
-                        result_line += f" → {summary}"
+                    # Single-line: collapse newlines so display.py's first-line
+                    # truncation works exactly like normal chat mode.
+                    summary_oneline = summary.replace("\n", " ").replace("\r", "")
                     yield UIMessage(
-                        type=UIMessageType.SYSTEM,
-                        content=result_line,
+                        type=UIMessageType.TOOL_RESULT,
+                        content=summary_oneline,
+                        metadata={"tool_name": tool_name, "error": not success},
+                        is_complete=True,
                     )
                 elif event_type == "mission:completed":
                     pass  # Will handle after task finishes
