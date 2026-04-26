@@ -178,18 +178,40 @@ class ContextStrategySelector:
     LONG_CTX_THRESHOLD = 48_000  # > 48K: LLM_HEAVY
 
     @classmethod
-    def select(cls, context_budget: int) -> ContextStrategy:
-        """Select strategy based on context budget in tokens.
+    def select(
+        cls,
+        context_budget: int,
+        capability: Any | None = None,
+    ) -> ContextStrategy:
+        """Select strategy based on context budget and optional model capability.
 
         Args:
             context_budget: Available context window size in tokens.
+            capability: Optional ModelCapability to adjust thresholds dynamically.
+                Lower capability scores shift selection toward FRAMEWORK_HEAVY
+                (more decomposition, less reliance on model reasoning).
 
         Returns:
             The recommended ContextStrategy.
         """
-        if context_budget <= cls.SHORT_CTX_THRESHOLD:
+        short_threshold = cls.SHORT_CTX_THRESHOLD
+        long_threshold = cls.LONG_CTX_THRESHOLD
+
+        # Adjust thresholds based on model capability
+        if capability is not None:
+            overall = getattr(capability, "overall_score", 0.5)
+            if overall < 0.5:
+                # Weak model: be more conservative
+                short_threshold = int(cls.SHORT_CTX_THRESHOLD * 1.5)
+                long_threshold = int(cls.LONG_CTX_THRESHOLD * 1.25)
+            elif overall > 0.8:
+                # Strong model: can handle more context
+                short_threshold = int(cls.SHORT_CTX_THRESHOLD * 0.75)
+                long_threshold = int(cls.LONG_CTX_THRESHOLD * 0.9)
+
+        if context_budget <= short_threshold:
             return ContextStrategy.FRAMEWORK_HEAVY
-        elif context_budget <= cls.LONG_CTX_THRESHOLD:
+        elif context_budget <= long_threshold:
             return ContextStrategy.BALANCED
         else:
             return ContextStrategy.LLM_HEAVY

@@ -113,7 +113,7 @@ class MissionAdapter:
         self.router = ModelRouter()
 
         # Context strategy (legacy) + adaptive override
-        self.strategy = ContextStrategySelector.select(context_budget)
+        self.strategy = ContextStrategySelector.select(context_budget, capability=self.capability)
         self.plan_adjuster = MissionPlanAdjuster(strategy=self.strategy)
 
         # Apply adaptive configuration to strategy config
