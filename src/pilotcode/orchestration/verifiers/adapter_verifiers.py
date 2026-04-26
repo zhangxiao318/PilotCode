@@ -66,13 +66,30 @@ async def l2_test_verifier(task: TaskSpec, exec_result: ExecutionResult) -> Veri
         )
 
     cwd = os.getcwd()
+
+    # Build targeted pytest args: only run tests related to changed files.
+    # If changed test files exist, run those. Otherwise fall back to full suite.
+    pytest_args = [sys.executable, "-m", "pytest", "-xvs", "-q"]
+    test_files = [f for f in changed_files if "test" in os.path.basename(f).lower()]
+    if test_files:
+        # Run only the changed test files
+        pytest_args.extend(test_files)
+    else:
+        # No test files changed: try to discover tests for changed modules.
+        # Use pytest -k with module names as a best-effort filter.
+        module_names: list[str] = []
+        for f in changed_files:
+            if f.endswith(".py"):
+                name = os.path.splitext(os.path.basename(f))[0]
+                if name and name not in module_names:
+                    module_names.append(name)
+        if module_names:
+            pytest_args.extend(["-k", " or ".join(module_names)])
+        # If no modules found either, pytest_args stays as full-suite default
+
     try:
         proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            "pytest",
-            "-xvs",
-            "-q",
+            *pytest_args,
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
