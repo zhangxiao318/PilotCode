@@ -339,7 +339,17 @@ class TUIController:
         import asyncio
 
         cancel_event = asyncio.Event()
-        adapter = MissionAdapter(cancel_event=cancel_event)
+        # Pass actual context window so strategy selector doesn't fall back
+        # to the default 16K budget (which triggers BALANCED → 300-line limit).
+        ctx_window = (
+            self.query_engine.config.context_window
+            if self.query_engine
+            else 128_000
+        )
+        adapter = MissionAdapter(
+            cancel_event=cancel_event,
+            context_budget=ctx_window,
+        )
 
         mission_displayed = False
         last_progress = ""
@@ -435,11 +445,8 @@ class TUIController:
                             is_complete=False,
                         )
                 elif event_type == "worker:turn_complete":
-                    # Turn finished: complete the current assistant message
-                    content = data.get("content", "")
-                    if content:
-                        worker_buffer = content
-                        worker_streaming = True
+                    # Turn finished: just mark the current stream as complete
+                    if worker_streaming:
                         yield UIMessage(
                             type=UIMessageType.ASSISTANT,
                             content=worker_buffer,
@@ -449,7 +456,7 @@ class TUIController:
                         worker_buffer = ""
                         worker_streaming = False
                 elif event_type == "worker:tool_start":
-                    # Pause streaming to show tool call
+                    # Pause streaming to show tool call (same style as normal mode)
                     if worker_streaming and worker_buffer:
                         yield UIMessage(
                             type=UIMessageType.ASSISTANT,
@@ -476,9 +483,13 @@ class TUIController:
                     success = data.get("success", False)
                     summary = data.get("summary", "")
                     emoji = "✅" if success else "❌"
+                    # Compact single-line result (same style as normal mode)
+                    result_line = f"{emoji} {tool_name}"
+                    if summary:
+                        result_line += f" → {summary}"
                     yield UIMessage(
                         type=UIMessageType.SYSTEM,
-                        content=f"{emoji} {tool_name}: {summary}",
+                        content=result_line,
                     )
                 elif event_type == "mission:completed":
                     pass  # Will handle after task finishes
@@ -489,55 +500,54 @@ class TUIController:
             await asyncio.sleep(0.2)
 
         # Get final result
+        full_report = ""
         try:
             result = mission_task.result()
         except Exception as exc:
             result = {"success": False, "error": str(exc)}
 
         # Build comprehensive report
-        report_parts: list[str] = []
-        if result and result.get("success"):
-            report_parts.append(format_completion(result))
-        else:
-            error = result.get("error", "Unknown error") if result else "Mission failed"
-            report_parts.append(format_failure(result or {}, error))
+        try:
+            report_parts: list[str] = []
+            if result and result.get("success"):
+                report_parts.append(format_completion(result))
+            else:
+                error = result.get("error", "Unknown error") if result else "Mission failed"
+                report_parts.append(format_failure(result or {}, error))
 
-        # Also show the raw conversation response if available
-        mission_dict = result.get("mission", {}) if result else {}
-        phases = mission_dict.get("phases", [])
-        if phases:
-            lines = ["📋 Mission Plan Executed:"]
-            for p in phases:
-                lines.append(f"  • Phase: {p.get('title', 'Untitled')}")
-                for t in p.get("tasks", []):
-                    task_id = t.get("id", "")
-                    state = t.get("state", "unknown")
-                    emoji = _STATE_EMOJI.get(state, "❓")
-                    lines.append(f"    {emoji} {t.get('title', task_id)}")
-                    # Progressive disclosure: append task details if available
-                    if task_id in task_details_map:
-                        detail_lines = self._format_task_details(
-                            task_details_map[task_id], indent="      "
-                        )
-                        if detail_lines:
-                            lines.append(detail_lines)
-            report_parts.append("\n".join(lines))
+            # Also show the raw conversation response if available
+            mission_dict = result.get("mission", {}) if result else {}
+            phases = mission_dict.get("phases", [])
+            if phases:
+                lines = ["📋 Mission Plan Executed:"]
+                for p in phases:
+                    lines.append(f"  • Phase: {p.get('title', 'Untitled')}")
+                    for t in p.get("tasks", []):
+                        task_id = t.get("id", "")
+                        state = t.get("state", "unknown")
+                        emoji = _STATE_EMOJI.get(state, "❓")
+                        lines.append(f"    {emoji} {t.get('title', task_id)}")
+                report_parts.append("\n".join(lines))
 
-        full_report = "\n\n".join(report_parts)
+            full_report = "\n\n".join(report_parts)
 
-        # Yield to UI
-        if result and result.get("success"):
-            yield UIMessage(type=UIMessageType.ASSISTANT, content=full_report)
-        else:
-            yield UIMessage(type=UIMessageType.ERROR, content=full_report)
+            # Yield to UI
+            if result and result.get("success"):
+                yield UIMessage(type=UIMessageType.ASSISTANT, content=full_report)
+            else:
+                yield UIMessage(type=UIMessageType.ERROR, content=full_report)
+        except Exception as exc:
+            error_msg = f"Mission report generation failed: {exc}"
+            yield UIMessage(type=UIMessageType.ERROR, content=error_msg)
+            full_report = error_msg
+        finally:
+            # Persist the conversation into the main query_engine so follow-up
+            # questions have context.  This runs even if report generation fails.
+            if self.query_engine:
+                from pilotcode.types.message import UserMessage, AssistantMessage
 
-        # Persist the conversation into the main query_engine so follow-up
-        # questions have context.
-        if self.query_engine:
-            from pilotcode.types.message import UserMessage, AssistantMessage
-
-            self.query_engine.messages.append(UserMessage(content=text))
-            self.query_engine.messages.append(AssistantMessage(content=full_report))
+                self.query_engine.messages.append(UserMessage(content=text))
+                self.query_engine.messages.append(AssistantMessage(content=full_report))
 
     async def submit_message(self, text: str) -> AsyncIterator[UIMessage]:
         """Submit a message and yield UI messages.
