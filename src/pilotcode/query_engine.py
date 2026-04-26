@@ -8,6 +8,37 @@ import uuid
 from typing import Any, AsyncIterator, Callable
 from dataclasses import dataclass, field
 
+
+@dataclass
+class TokenUsage:
+    """OpenCode-style token usage breakdown.
+
+    Mirrors LanguageModelV2Usage from the AI SDK:
+    - prompt_tokens: total input tokens (includes cached)
+    - completion_tokens: total output tokens
+    - total_tokens: prompt + completion
+    - cache_read_tokens: prompt cache read (e.g. Anthropic prompt caching)
+    - cache_write_tokens: prompt cache write (e.g. Anthropic cache creation)
+    - reasoning_tokens: thinking/reasoning tokens inside completion
+    """
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    reasoning_tokens: int = 0
+
+    @property
+    def adjusted_prompt_tokens(self) -> int:
+        """Prompt tokens excluding cache read/write (for cost calculation)."""
+        return max(0, self.prompt_tokens - self.cache_read_tokens - self.cache_write_tokens)
+
+    @property
+    def output_tokens(self) -> int:
+        """Non-reasoning completion tokens."""
+        return max(0, self.completion_tokens - self.reasoning_tokens)
+
 logger = logging.getLogger(__name__)
 
 from .types.message import (
@@ -31,6 +62,7 @@ from .utils.model_client import (
     RateLimitError,
 )
 from .services.token_estimation import get_token_estimator
+from .services.precise_tokenizer import get_precise_tokenizer
 from .services.stream_events import EventBus, StreamEvent
 from .services.context_compression import get_context_compressor, CompressionResult
 from .services.intelligent_compact import (
@@ -38,7 +70,7 @@ from .services.intelligent_compact import (
     CompactConfig,
 )
 from .services.tool_orchestrator import get_tool_orchestrator
-from .utils.models_config import get_model_context_window
+from .utils.models_config import get_model_context_window, get_model_max_tokens
 
 
 @dataclass
@@ -88,21 +120,38 @@ class QueryEngine:
         self.client = config.model_client if config.model_client is not None else get_model_client()
         self.abort_event = asyncio.Event()
 
-        # Auto-detect context_window from model config if not set
+        # Auto-detect context_window and max_output_tokens from backend
         if self.config.context_window <= 0:
-            ctx = get_model_context_window()
-            self.config.context_window = ctx
+            self.config.context_window = get_model_context_window()
+        self._max_output_tokens = get_model_max_tokens()
+        if self._max_output_tokens <= 0:
+            self._max_output_tokens = 4096
+        # Cap at OpenCode-style OUTPUT_TOKEN_MAX (32K) so we don't over-reserve
+        self._max_output_tokens = min(self._max_output_tokens, 32_000)
+
+        # OpenCode-style usable context = context_window - max_output_tokens
+        # This ensures we always leave headroom for the model to generate output.
+        self._usable_context = max(
+            1, self.config.context_window - self._max_output_tokens
+        )
 
         # Initialize services
-        self._token_estimator = get_token_estimator()
+        # OpenCode-style: pass backend URL so the estimator can use precise tokenizers
+        self._token_estimator = get_token_estimator(
+            base_url=config.model_client.base_url if config.model_client else "",
+            model_name=getattr(config.model_client, "model", "") if config.model_client else "",
+        )
+        self._precise_tokenizer = get_precise_tokenizer(
+            base_url=config.model_client.base_url if config.model_client else "",
+            model_name=getattr(config.model_client, "model", "") if config.model_client else "",
+        )
         self._context_compressor = get_context_compressor()
 
-        # Create a dedicated compactor instance configured with our context_window
+        # Create a dedicated compactor instance configured with usable context
         compact_config = CompactConfig()
-        if self.config.context_window > 0:
-            # Use max(1, ...) to avoid 0 which triggers auto-detection in the compactor
-            compact_config.compact_threshold = max(1, int(self.config.context_window * 0.8))
-            compact_config.critical_threshold = max(1, int(self.config.context_window * 0.95))
+        if self._usable_context > 0:
+            compact_config.compact_threshold = max(1, int(self._usable_context * 0.85))
+            compact_config.critical_threshold = max(1, int(self._usable_context * 0.98))
         self._intelligent_compactor = IntelligentContextCompactor(config=compact_config)
 
         if config.cache_tool_results:
@@ -113,6 +162,10 @@ class QueryEngine:
         # Compaction tracking (token-based cooldown is more reliable)
         self._last_compaction_token_count: int = 0
         self._compaction_count = 0
+
+        # OpenCode-style: cache the most recent API-reported usage so we can
+        # use ground-truth token counts instead of pure heuristics.
+        self._last_api_usage: TokenUsage | None = None
 
         # Post-edit review tracking
         self._changed_files: list[str] = []
@@ -700,6 +753,34 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                     delta = chunk.get("choices", [{}])[0].get("delta", {})
                     finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
 
+                    # OpenCode-style: capture usage from the final stream chunk
+                    usage = chunk.get("usage")
+                    if usage and isinstance(usage, dict):
+                        # Extract detailed token usage (cache, reasoning, etc.)
+                        prompt_tok = usage.get("prompt_tokens", 0)
+                        comp_tok = usage.get("completion_tokens", 0)
+                        total_tok = usage.get("total_tokens", 0)
+
+                        # Cache details (OpenAI-style prompt_tokens_details)
+                        ptd = usage.get("prompt_tokens_details") or {}
+                        cache_read = ptd.get("cached_tokens", 0) if isinstance(ptd, dict) else 0
+
+                        # Anthropic-style cache creation tokens
+                        cache_write = usage.get("cache_creation_input_tokens", 0)
+
+                        # Reasoning tokens (DeepSeek/Qwen3 thinking mode)
+                        ctd = usage.get("completion_tokens_details") or {}
+                        reasoning = ctd.get("reasoning_tokens", 0) if isinstance(ctd, dict) else 0
+
+                        self._last_api_usage = TokenUsage(
+                            prompt_tokens=prompt_tok,
+                            completion_tokens=comp_tok,
+                            total_tokens=total_tok or (prompt_tok + comp_tok),
+                            cache_read_tokens=cache_read,
+                            cache_write_tokens=cache_write,
+                            reasoning_tokens=reasoning,
+                        )
+
                     # Handle reasoning content (DeepSeek thinking mode only)
                     if is_deepseek:
                         reasoning = delta.get("reasoning_content")
@@ -748,7 +829,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                 if _context_attempt == 0:
                     logger.warning("Context window exceeded, auto-compacting and retrying...")
                     self.intelligent_compact()
-                    if self.count_tokens() > int(self.config.context_window * 0.8):
+                    if self.count_tokens() > self._usable_context:
                         self.auto_compact_if_needed()
                     api_messages = self._convert_to_api_messages(self.messages)
                     if len(self.messages) == 1:
@@ -851,18 +932,19 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                     break
 
         # Dynamic truncation based on available context budget.
-        # This is the primary gatekeeper: tool layer only has a loose memory safety cap.
-        if isinstance(content, str) and self.config.context_window > 0:
+        # OpenCode-style: use usable_context (context_window - max_output_tokens)
+        # so we never steal headroom reserved for the model's reply.
+        if isinstance(content, str) and self._usable_context > 0:
             tokens_before = self.count_tokens()
-            ratio = tokens_before / self.config.context_window
+            ratio = tokens_before / self._usable_context
 
             if ratio < 0.5:
-                # Plenty of room: allow up to 20 % of total context
-                max_tool_tokens = int(self.config.context_window * 0.20)
-            elif ratio < 0.8:
+                # Plenty of room: allow up to 20 % of usable context
+                max_tool_tokens = int(self._usable_context * 0.20)
+            elif ratio < 0.85:
                 # Getting tight: allow half of remaining space
                 max_tool_tokens = max(
-                    2_000, int((self.config.context_window - tokens_before) * 0.5)
+                    2_000, int((self._usable_context - tokens_before) * 0.5)
                 )
             elif ratio < 1.0:
                 # Very tight: keep tool result small
@@ -914,12 +996,74 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         """Abort current query."""
         self.abort_event.set()
 
-    def count_tokens(self) -> int:
-        """Count tokens in current conversation.
+    def _count_with_precise_tokenizer(self) -> int | None:
+        """Try to count tokens using the precise backend tokenizer.
 
-        Uses the token estimator service for accurate counting.
-        Includes system prompt and tool definitions for accuracy.
+        Sends the full message list (system + messages + tools) to the
+        backend's /tokenize endpoint when available.
         """
+        try:
+            # Build full API message list including system prompt
+            api_msgs: list[dict[str, Any]] = []
+            if self.messages:
+                system_msg = self._build_system_message()
+                api_msgs.append({"role": "system", "content": system_msg.content})
+
+            for m in self.messages:
+                if hasattr(m, "content"):
+                    api_msgs.append({"role": getattr(m, "role", "user"), "content": str(m.content)})
+                elif hasattr(m, "name") and hasattr(m, "input"):
+                    api_msgs.append({
+                        "role": "assistant",
+                        "content": f"Tool: {m.name}\nInput: {m.input}",
+                    })
+
+            # Build tools list if any are configured
+            api_tools: list[dict[str, Any]] | None = None
+            if self.config.tools:
+                api_tools = []
+                for tool in self.config.tools:
+                    try:
+                        import json
+                        # Ensure each tool is a plain dict
+                        if hasattr(tool, "to_dict"):
+                            api_tools.append(tool.to_dict())
+                        elif isinstance(tool, dict):
+                            api_tools.append(tool)
+                        else:
+                            api_tools.append(json.loads(json.dumps(tool, default=str)))
+                    except Exception:
+                        continue
+                if not api_tools:
+                    api_tools = None
+
+            # Try precise message+tools tokenization first (vLLM supports this)
+            count = self._precise_tokenizer.count_messages_with_tools(api_msgs, tools=api_tools)
+            if count is not None:
+                return count
+
+            # Fallback: count text components individually, then add tools
+            total = 0
+            system_msg = self._build_system_message()
+            total += self._precise_tokenizer.count_text(system_msg.content) or self._token_estimator.estimate(system_msg.content)
+            for m in self.messages:
+                content = str(getattr(m, "content", getattr(m, "name", "")))
+                total += self._precise_tokenizer.count_text(content) or self._token_estimator.estimate(content)
+
+            if api_tools:
+                for tool in api_tools:
+                    try:
+                        import json
+                        schema = json.dumps(tool, ensure_ascii=False)
+                        total += self._precise_tokenizer.count_text(schema) or self._token_estimator.estimate(schema)
+                    except Exception:
+                        total += 500
+            return total
+        except Exception:
+            return None
+
+    def _heuristic_count_tokens(self) -> int:
+        """Pure heuristic token count (fallback when API usage is unavailable)."""
         total = 0
 
         # Count system prompt (always sent on first message, or prepended)
@@ -929,11 +1073,9 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
         # Count conversation messages
         for m in self.messages:
-            # Get content based on message type
             if hasattr(m, "content"):
                 content = str(m.content)
             elif hasattr(m, "name") and hasattr(m, "input"):
-                # ToolUseMessage - serialize name and input
                 content = f"Tool: {m.name}\nInput: {m.input}"
             else:
                 content = str(m)
@@ -945,8 +1087,6 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         tools = self.config.tools if self.config.tools else []
         if tools:
             for tool in tools:
-                # Rough estimate: tool schema is typically 200-2000 tokens
-                # Use JSON serialization length as proxy
                 try:
                     import json
 
@@ -957,10 +1097,56 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
         return total
 
+    def count_tokens(self) -> int:
+        """Count tokens in current conversation.
+
+        OpenCode-style priority:
+        1. Use API-reported usage from the most recent turn (ground truth).
+        2. Use precise backend tokenizer (/tokenize, transformers, tiktoken).
+        3. Fall back to heuristic estimation.
+
+        Includes system prompt and tool definitions for accuracy.
+        """
+        # Priority 1: API-reported usage is the most authoritative
+        if self._last_api_usage:
+            api_total = self._last_api_usage.total_tokens
+            # New messages may have been added since the last API call,
+            # so take the max of API total and current heuristic count.
+            return max(api_total, self._heuristic_count_tokens())
+
+        # Priority 2: Try precise tokenizer (llama.cpp /tokenize, vLLM, etc.)
+        precise = self._count_with_precise_tokenizer()
+        if precise is not None:
+            return precise
+
+        # Priority 3: Heuristic fallback
+        return self._heuristic_count_tokens()
+
+    def is_overflow(self) -> bool:
+        """OpenCode-style context overflow detection.
+
+        Matches the exact logic from OpenCode's session/overflow.ts:
+
+            count  = total_tokens
+            reserved = min(COMPACTION_BUFFER, max_output_tokens)
+            usable   = context_window - max_output_tokens
+            overflow = count >= usable
+
+        Returns True if the conversation has reached or exceeded the usable
+        input context (i.e. there is no longer guaranteed headroom for the
+        model to generate its full max_output_tokens).
+        """
+        count = self.count_tokens()
+        reserved = min(20_000, self._max_output_tokens)
+        usable = self.config.context_window - reserved
+        if usable <= 0:
+            usable = self._usable_context
+        return count >= usable
+
     def get_token_budget(self) -> dict[str, Any]:
         """Get current token budget status."""
         return self._token_estimator.get_budget_status(
-            self.count_tokens(), self.config.context_window
+            self.count_tokens(), self._usable_context
         )
 
     def track_cost(self, tokens: int, cost_usd: float) -> None:
@@ -978,12 +1164,12 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
     async def smart_compact(self) -> CompressionResult | None:
         """Intelligently compress conversation using summarization.
 
-        Triggers at 80% of context_window to leave headroom.
+        Triggers at 85% of usable context to leave headroom for output.
 
         Returns compression result or None if not needed.
         """
         token_count = self.count_tokens()
-        threshold = int(self.config.context_window * 0.8)
+        threshold = int(self._usable_context * 0.85)
         if token_count < threshold:
             return None
 
@@ -1012,20 +1198,23 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
         Returns True if compaction was performed.
 
+        OpenCode-style overflow detection:
+        - ``usable = context_window - max_output_tokens``
+        - Compaction triggers at 85% of usable space
+        - Critical compaction at 98% of usable space
+
         Uses intelligent compaction which clears old tool result content
         while preserving conversation structure and key context.
         Falls back to simple compaction if intelligent compaction doesn't
         effectively reduce token usage.
-
-        If compaction is performed and ``on_auto_compact`` is configured,
-        the callback is invoked with compaction statistics.
         """
         if not self.config.auto_compact:
             return False
 
         token_count = self.count_tokens()
-        threshold = int(self.config.context_window * 0.8)
-        critical = int(self.config.context_window * 0.95)
+        # OpenCode-style: usable = context - max_output_tokens
+        threshold = int(self._usable_context * 0.85)
+        critical = int(self._usable_context * 0.98)
         if token_count < threshold:
             return False
 
@@ -1038,11 +1227,13 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
 
         # Log compaction trigger details for debugging
         logger.debug(
-            "auto_compact triggered: tokens=%d threshold=%d critical=%d context_window=%d msg_count=%d",
+            "auto_compact triggered: tokens=%d threshold=%d critical=%d usable=%d context_window=%d max_output=%d msg_count=%d",
             token_count,
             threshold,
             critical,
+            self._usable_context,
             self.config.context_window,
+            self._max_output_tokens,
             len(self.messages),
         )
 

@@ -10,6 +10,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ModelProvider(Enum):
@@ -207,76 +210,184 @@ def get_domestic_models() -> dict[str, ModelInfo]:
     return {k: v for k, v in SUPPORTED_MODELS.items() if v.provider in domestic}
 
 
-def get_default_model() -> str:
-    """Get default model name."""
-    return "deepseek"
+# ------------------------------------------------------------------
+# Backend capability probing (llama.cpp /props, etc.)
+# ------------------------------------------------------------------
+
+_backend_limits_cache: dict[str, dict[str, int]] = {}
+
+
+def _probe_backend_limits(base_url: str) -> dict[str, int] | None:
+    """Synchronously probe the backend for actual model limits.
+
+    Queries llama-server /props, Ollama /api/show, and OpenAI-compatible
+    /v1/models to get the real context_window and max_tokens rather than
+    relying on static fallbacks.
+
+    Returns a dict with ``context_window`` and/or ``max_tokens`` keys,
+    or None if probing failed.
+    """
+    if not base_url:
+        return None
+
+    # Use cached result if available
+    if base_url in _backend_limits_cache:
+        return _backend_limits_cache[base_url]
+
+    try:
+        import httpx
+    except ImportError:
+        return None
+
+    root_url = base_url.rstrip("/")
+    if root_url.endswith("/v1"):
+        root_url = root_url[:-3]
+
+    cap: dict[str, int] = {}
+
+    # 1. llama.cpp / llama-server -> GET /props
+    try:
+        with httpx.Client(timeout=3.0, follow_redirects=True) as client:
+            resp = client.get(f"{root_url}/props")
+            if resp.status_code == 200:
+                data = resp.json()
+                dgs = data.get("default_generation_settings", {})
+                n_ctx = dgs.get("n_ctx")
+                if n_ctx is not None:
+                    cap["context_window"] = int(n_ctx)
+                params = dgs.get("params", {})
+                max_tok = params.get("max_tokens", params.get("n_predict"))
+                if max_tok is not None and max_tok > 0:
+                    cap["max_tokens"] = int(max_tok)
+    except Exception as exc:
+        logger.debug("Backend probe /props failed: %s", exc)
+
+    # 2. Ollama -> POST /api/show
+    if "context_window" not in cap:
+        try:
+            with httpx.Client(timeout=3.0, follow_redirects=True) as client:
+                resp = client.post(f"{root_url}/api/show", json={"model": "default"})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    model_info = data.get("model_info", {})
+                    for key in ("context_length", "context_window"):
+                        val = model_info.get(key)
+                        if val is not None:
+                            cap["context_window"] = int(val)
+                            break
+        except Exception as exc:
+            logger.debug("Backend probe /api/show failed: %s", exc)
+
+    # 3. OpenAI-compatible -> GET /v1/models
+    if "context_window" not in cap:
+        try:
+            with httpx.Client(timeout=3.0, follow_redirects=True) as client:
+                resp = client.get(f"{root_url}/v1/models")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    models = data.get("data", [])
+                    if models:
+                        model_data = models[0]
+                        for key in ("context_length", "context_window", "max_model_len"):
+                            val = model_data.get(key)
+                            if val is not None:
+                                cap["context_window"] = int(val)
+                                break
+        except Exception as exc:
+            logger.debug("Backend probe /v1/models failed: %s", exc)
+
+    if cap:
+        _backend_limits_cache[base_url] = cap
+        logger.debug("Probed backend limits for %s: %s", base_url, cap)
+        return cap
+
+    return None
+
+
+def get_model_limits(model_name: str | None = None) -> dict[str, int]:
+    """Get both context_window and max_tokens for the current model.
+
+    Follows OpenCode-style priority:
+        1. Probe the actual backend (llama.cpp /props, etc.)
+        2. User's explicit config (settings.json)
+        3. Static model config (models.json) for remote models
+        4. Safe fallback
+
+    Returns:
+        Dict with ``context_window`` and ``max_tokens`` keys.
+    """
+    from .config import get_global_config, is_local_url
+
+    config = get_global_config()
+    base_url = config.base_url or ""
+    is_local = is_local_url(base_url)
+
+    result = {"context_window": 128_000, "max_tokens": 4096}
+
+    # Priority 1: Probe backend for actual limits (especially critical for local)
+    probed: dict[str, int] | None = None
+    probed_context = False
+    if base_url:
+        probed = _probe_backend_limits(base_url)
+        if probed:
+            result.update(probed)
+            if "context_window" in probed:
+                probed_context = True
+
+    # Priority 2: User's explicit config (but cap at probed value if probed is smaller)
+    if config.context_window > 0:
+        user_ctx = config.context_window
+        if "context_window" in result and result["context_window"] > 0:
+            # Trust the smaller value: backend reality wins over user config
+            result["context_window"] = min(user_ctx, result["context_window"])
+        else:
+            result["context_window"] = user_ctx
+
+    # Priority 3: Static model config (remote models only)
+    if not is_local:
+        if model_name is None:
+            model_name = config.default_model
+        info = get_model_info(model_name)
+        if info:
+            if info.context_window > 0 and result.get("context_window", 0) <= 0:
+                result["context_window"] = info.context_window
+            if info.max_tokens > 0 and result.get("max_tokens", 0) <= 0:
+                result["max_tokens"] = info.max_tokens
+
+    # Ensure we have sensible fallbacks
+    if result.get("context_window", 0) <= 0:
+        result["context_window"] = 128_000
+
+    # If backend was probed but didn't report max_tokens, compute a conservative
+    # default based on the actual context window so usable space stays reasonable.
+    if result.get("max_tokens", 0) <= 0 or (probed_context and "max_tokens" not in (probed or {})):
+        ctx = result.get("context_window", 128_000)
+        result["max_tokens"] = min(8_192, max(1_024, ctx // 4))
+
+    return result
 
 
 def get_model_context_window(model_name: str | None = None) -> int:
     """Get the context window for a model.
 
-    Priority:
-        1. User's GlobalConfig.context_window (settings.json)
-        2. For remote models: static model config (models.json)
-        3. Safe fallback (128K)
-
-    Local models NEVER fall back to models.json — all local config lives in
-    settings.json and is probed at startup.
-
-    Args:
-        model_name: Model key. If None, uses the currently configured model.
-
-    Returns:
-        Context window size in tokens.
+    Uses :func:`get_model_limits` so that local backends are probed for
+    their real ``n_ctx`` instead of falling back to a hard-coded 128K.
     """
-    from .config import get_global_config, is_local_url
-
-    config = get_global_config()
-
-    # Priority 1: User's explicit config (settings.json)
-    if config.context_window > 0:
-        return config.context_window
-
-    # For local models, don't fall back to models.json
-    if is_local_url(config.base_url or ""):
-        return 128_000
-
-    # Priority 2: Static model config (models.json) for remote models
-    if model_name is None:
-        model_name = config.default_model
-    info = get_model_info(model_name)
-    if info and info.context_window > 0:
-        return info.context_window
-
-    return 128_000  # Safe fallback
+    return get_model_limits(model_name)["context_window"]
 
 
 def get_model_max_tokens(model_name: str | None = None) -> int:
     """Get the max output tokens for a model.
 
-    Local models NEVER fall back to models.json.
-
-    Args:
-        model_name: Model key. If None, uses the currently configured model.
-
-    Returns:
-        Max output tokens.
+    Uses :func:`get_model_limits` so that local backends are probed for
+    their real ``max_tokens`` instead of falling back to a hard-coded 4096.
     """
-    from .config import get_global_config, is_local_url
+    return get_model_limits(model_name)["max_tokens"]
 
-    config = get_global_config()
 
-    # For local models, don't fall back to models.json
-    if is_local_url(config.base_url or ""):
-        return 4096
-
-    if model_name is None:
-        model_name = config.default_model
-
-    info = get_model_info(model_name)
-    if info and info.max_tokens > 0:
-        return info.max_tokens
-    return 4096  # Safe fallback
+def get_default_model() -> str:
+    """Get default model name."""
+    return "deepseek"
 
 
 def check_api_key_configured(model_name: str) -> bool:

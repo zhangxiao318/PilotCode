@@ -369,6 +369,11 @@ class ModelClient:
             "stream": stream,
         }
 
+        # Ask the backend to include usage in the stream (OpenAI-compatible).
+        # Most modern backends (llama.cpp server, vLLM, etc.) honour this.
+        if stream:
+            payload["stream_options"] = {"include_usage": True}
+
         if tools:
             payload["tools"] = self._convert_tools(tools)
             # Only send tool_choice if the provider supports it
@@ -445,8 +450,8 @@ class ModelClient:
                         ) from exc
                     data = response.json()
 
-                    # Yield as a single chunk
-                    yield {
+                    # Yield as a single chunk, preserving usage when available
+                    chunk: dict[str, Any] = {
                         "choices": [
                             {
                                 "delta": data["choices"][0]["message"],
@@ -454,6 +459,9 @@ class ModelClient:
                             }
                         ]
                     }
+                    if "usage" in data:
+                        chunk["usage"] = data["usage"]
+                    yield chunk
                     return
             except Exception as exc:
                 last_exception = exc

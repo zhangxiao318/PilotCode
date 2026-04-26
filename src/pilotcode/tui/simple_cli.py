@@ -762,20 +762,26 @@ class SimpleCLI:
         rather than raw message count.
         """
         from pilotcode.services.token_estimation import estimate_tokens
-        from pilotcode.utils.models_config import get_model_context_window
+        from pilotcode.utils.models_config import get_model_limits
 
         # Calculate actual token usage
         total_tokens = sum(
             estimate_tokens(str(getattr(m, "content", ""))) for m in self.query_engine.messages
         )
-        ctx_window = get_model_context_window()
-        threshold = int(ctx_window * 0.80)
+        limits = get_model_limits()
+        ctx_window = limits.get("context_window", 128_000)
+        max_out = limits.get("max_tokens", 4096)
+        if max_out <= 0:
+            max_out = 4096
+        max_out = min(max_out, 32_000)
+        usable = max(1, ctx_window - max_out)
+        threshold = int(usable * 0.85)
 
         if total_tokens < threshold:
             return
 
         print(
-            f"\n🔄 Context at {total_tokens}/{ctx_window} tokens ({total_tokens * 100 // ctx_window}%), compressing..."
+            f"\n🔄 Context at {total_tokens}/{ctx_window} tokens (usable={usable}, {total_tokens * 100 // ctx_window}%), compressing..."
         )
 
         # Get compressor

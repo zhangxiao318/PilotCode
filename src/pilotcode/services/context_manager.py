@@ -110,7 +110,7 @@ class ContextBudget:
     context_window: int = 0  # 0 = auto-detect from model config
     warning_threshold: float = 0.75  # Warn at 75% capacity
     critical_threshold: float = 0.80  # Force compact at 80% capacity
-    reserved_tokens: int = 500  # Reserve for system messages
+    reserved_tokens: int = 4096  # Reserve for output headroom (OpenCode-style min)
 
     @property
     def warning_limit(self) -> int:
@@ -149,7 +149,7 @@ class ContextConfig(BaseModel):
     context_window: int = Field(default=0, description="Maximum tokens in context (0=auto)")
     warning_threshold: float = Field(default=0.75, description="Warning threshold (0-1)")
     critical_threshold: float = Field(default=0.80, description="Critical threshold (0-1)")
-    reserved_tokens: int = Field(default=500, description="Reserved tokens for system")
+    reserved_tokens: int = Field(default=4096, description="Reserved tokens for output headroom")
     compact_strategy: CompactStrategy = Field(
         default=CompactStrategy.PRIORITY, description="Default compaction strategy"
     )
@@ -185,12 +185,13 @@ class ContextManager:
 
     def __init__(self, config: Optional[ContextConfig] = None):
         self.config = config or ContextConfig()
-        # Resolve auto context_window from model config
+        # Resolve auto context_window from backend probe (OpenCode-style)
         context_window = self.config.context_window
         if context_window <= 0:
-            from ..utils.models_config import get_model_context_window
+            from ..utils.models_config import get_model_limits
 
-            context_window = get_model_context_window()
+            limits = get_model_limits()
+            context_window = limits.get("context_window", 128_000)
             self.config.context_window = context_window
 
         self.messages: list[ContextMessage] = []

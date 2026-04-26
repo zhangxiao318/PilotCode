@@ -94,21 +94,30 @@ class IntelligentContextCompactor:
         self.config = config or CompactConfig()
         self.preserved_tool_results: dict[str, ToolResultSummary] = {}
 
-        # Resolve auto thresholds from model context window
+        # Resolve auto thresholds from model limits (OpenCode-style).
+        # Use usable_context = context_window - max_output_tokens so we never
+        # steal the headroom reserved for the model's reply.
         if (
             self.config.warning_threshold == 0
             or self.config.compact_threshold == 0
             or self.config.critical_threshold == 0
         ):
-            from ..utils.models_config import get_model_context_window
+            from ..utils.models_config import get_model_limits
 
-            ctx = get_model_context_window()
+            limits = get_model_limits()
+            ctx = limits.get("context_window", 128_000)
+            max_out = limits.get("max_tokens", 4096)
+            if max_out <= 0:
+                max_out = 4096
+            max_out = min(max_out, 32_000)
+            usable = max(1, ctx - max_out)
+
             if self.config.warning_threshold == 0:
-                self.config.warning_threshold = int(ctx * self.config.warning_pct)
+                self.config.warning_threshold = int(usable * self.config.warning_pct)
             if self.config.compact_threshold == 0:
-                self.config.compact_threshold = int(ctx * self.config.compact_pct)
+                self.config.compact_threshold = int(usable * self.config.compact_pct)
             if self.config.critical_threshold == 0:
-                self.config.critical_threshold = int(ctx * self.config.critical_pct)
+                self.config.critical_threshold = int(usable * self.config.critical_pct)
 
     def estimate_tokens(self, text: str) -> int:
         """Rough token estimation (1 token ≈ 4 chars for English)."""
