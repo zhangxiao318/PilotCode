@@ -31,6 +31,7 @@ from .utils.model_client import (
     RateLimitError,
 )
 from .services.token_estimation import get_token_estimator
+from .services.stream_events import EventBus, StreamEvent
 from .services.context_compression import get_context_compressor, CompressionResult
 from .services.intelligent_compact import (
     IntelligentContextCompactor,
@@ -116,6 +117,14 @@ class QueryEngine:
         # Post-edit review tracking
         self._changed_files: list[str] = []
         self._review_iteration_count: int = 0
+
+        # OpenCode-style event bus for fine-grained stream observation
+        self._event_bus = EventBus()
+
+    @property
+    def event_bus(self) -> EventBus:
+        """Expose the internal event bus for external consumers (REPL, TUI, Headless, Web)."""
+        return self._event_bus
 
     def change_cwd(self, cwd: str) -> None:
         """Change working directory and sync to app_state.
@@ -696,6 +705,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                         reasoning = delta.get("reasoning_content")
                         if reasoning:
                             accumulated_reasoning += reasoning
+                            await self._event_bus.emit(StreamEvent.reasoning_delta(reasoning))
 
                     # Handle content
                     content = delta.get("content")
@@ -711,6 +721,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                         if not suppress_streaming:
                             partial_msg = AssistantMessage(content=content)
                             yield QueryResult(message=partial_msg, is_complete=False)
+                            await self._event_bus.emit(StreamEvent.text_delta(content))
 
                     # Handle tool calls (accumulate across chunks)
                     if delta.get("tool_calls"):
@@ -728,8 +739,12 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                                 current_tool_call[idx]["arguments"] += tc["function"]["arguments"]
 
                     if finish_reason:
+                        await self._event_bus.emit(
+                            StreamEvent.finish_step(finish_reason=finish_reason)
+                        )
                         break
-            except ContextWindowError:
+            except ContextWindowError as exc:
+                await self._event_bus.emit(StreamEvent.error(exc))
                 if _context_attempt == 0:
                     logger.warning("Context window exceeded, auto-compacting and retrying...")
                     self.intelligent_compact()
@@ -743,6 +758,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                     continue
                 raise
             except RateLimitError as exc:
+                await self._event_bus.emit(StreamEvent.error(exc))
                 if _rate_limit_retry < _max_rate_limit_retries:
                     wait = exc.retry_after or (2**_rate_limit_retry)
                     logger.warning(
@@ -782,6 +798,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                 )
                 self.messages.append(assistant_msg)
                 yield QueryResult(message=assistant_msg, is_complete=True)
+                await self._event_bus.emit(StreamEvent.text_end())
 
             # Parse and yield tool calls
             for idx, tc_data in current_tool_call.items():
@@ -800,6 +817,13 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                 )
                 self.messages.append(tool_use_msg)
                 yield QueryResult(message=tool_use_msg, is_complete=False)
+                await self._event_bus.emit(
+                    StreamEvent.tool_call_start(
+                        tool_call_id=tool_call.id,
+                        tool_name=tool_call.name,
+                        tool_input=tool_call.arguments,
+                    )
+                )
 
             break
 
