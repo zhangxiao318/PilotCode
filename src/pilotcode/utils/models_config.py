@@ -335,8 +335,8 @@ def get_model_limits(model_name: str | None = None) -> dict[str, int]:
                 probed_context = True
 
     # Priority 2: User's explicit config (but cap at probed value if probed is smaller)
-    if config.context_window > 0:
-        user_ctx = config.context_window
+    user_ctx = getattr(config, "context_window", 0)
+    if isinstance(user_ctx, int) and user_ctx > 0:
         if "context_window" in result and result["context_window"] > 0:
             # Trust the smaller value: backend reality wins over user config
             result["context_window"] = min(user_ctx, result["context_window"])

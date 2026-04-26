@@ -322,7 +322,8 @@ class TestLoadCapabilityOrDefault:
     def test_default_is_strong_model(self):
         from pilotcode.model_capability import load_capability_or_default
 
-        cap = load_capability_or_default(model_name="test")
+        # Use a non-existent path to force fallback to default strong model
+        cap = load_capability_or_default(path="/nonexistent/capability.json", model_name="test")
         assert cap.overall_score == 0.88
         assert cap.planning.score == 0.85
         assert cap.json_formatting.score == 0.92

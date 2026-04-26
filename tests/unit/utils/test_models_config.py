@@ -8,6 +8,7 @@ from pilotcode.utils.models_config import (
     get_model_max_tokens,
     get_model_info,
     ModelProvider,
+    _probe_backend_limits,
 )
 
 
@@ -34,7 +35,8 @@ class TestGetModelContextWindow:
         mock_config.default_model = "ollama"
 
         with patch("pilotcode.utils.config.get_global_config", return_value=mock_config):
-            result = get_model_context_window()
+            with patch("pilotcode.utils.models_config._probe_backend_limits", return_value=None):
+                result = get_model_context_window()
 
         # Must return safe fallback, NOT the ollama static value (131072)
         assert result == 128_000
@@ -75,7 +77,8 @@ class TestGetModelMaxTokens:
         mock_config.default_model = "ollama"
 
         with patch("pilotcode.utils.config.get_global_config", return_value=mock_config):
-            result = get_model_max_tokens()
+            with patch("pilotcode.utils.models_config._probe_backend_limits", return_value=None):
+                result = get_model_max_tokens()
 
         # Must return safe fallback, NOT the ollama static value (4096)
         assert result == 4096

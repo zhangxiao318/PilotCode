@@ -1,6 +1,7 @@
 """Tests for token_estimation module."""
 
 import pytest
+from unittest.mock import patch
 
 from pilotcode.services.token_estimation import (
     TokenEstimator,
@@ -67,19 +68,21 @@ def hello_world():
         assert count > 0
 
     def test_caching(self, estimator):
-        """Test that short texts are cached."""
+        """Test that short texts are cached in heuristic path."""
         text = "Short text for caching"
 
-        # First estimate
-        count1 = estimator.estimate(text)
+        # Force heuristic path by disabling precise tokenizer
+        with patch.object(estimator, "_get_precise", return_value=None):
+            # First estimate
+            count1 = estimator.estimate(text)
 
-        # Should be cached
-        cache_key = f"{hash(text)}:False:"
-        assert cache_key in estimator._cache
+            # Should be cached
+            cache_key = f"{hash(text)}:False:"
+            assert cache_key in estimator._cache
 
-        # Second estimate should use cache
-        count2 = estimator.estimate(text)
-        assert count1 == count2
+            # Second estimate should use cache
+            count2 = estimator.estimate(text)
+            assert count1 == count2
 
     def test_no_caching_long_text(self, estimator):
         """Test that long texts are not cached."""

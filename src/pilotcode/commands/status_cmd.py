@@ -61,7 +61,9 @@ async def status_command(args: list[str], context: CommandContext) -> str:
     if context.query_engine is not None:
         qe = context.query_engine
         qe_ctx = qe.config.context_window
-        qe_usable = qe._usable_context
+        qe_usable = getattr(qe, "_usable_context", 0)
+        if not isinstance(qe_usable, int):
+            qe_usable = 0
         qe_threshold = int(qe_usable * 0.85) if qe_usable > 0 else "auto"
         lines.append(f"QE context_window: {qe_ctx}  (usable={qe_usable}, threshold={qe_threshold})")
 
