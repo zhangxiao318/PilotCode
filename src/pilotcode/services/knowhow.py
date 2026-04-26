@@ -263,6 +263,23 @@ def _get_knowhow_dir() -> Path:
     return Path.home() / ".pilotcode" / "knowhow"
 
 
+def _get_builtin_knowhow_dir() -> Path | None:
+    """Return the bundled knowhow directory inside the project tree.
+
+    This is used as a fallback when the user has not run install.sh yet.
+    Returns None if the bundled directory does not exist.
+    """
+    try:
+        # knowhow.py is at src/pilotcode/services/knowhow.py
+        # project root is three levels up.
+        builtin = Path(__file__).parents[3] / "config" / "knowhow"
+        if builtin.exists():
+            return builtin
+    except (OSError, IndexError):
+        pass
+    return None
+
+
 def model_slug(model_name: str) -> str:
     """Convert a model name to a filesystem-safe slug.
 
@@ -301,23 +318,29 @@ class KnowhowLibrary:
         1. Built-in rules (_BUILTIN_KNOWHOW)
         2. global.json   — universal rules (optional)
         3. {slug}.json   — model-specific rules (optional)
+        4. Fallback to bundled config/knowhow/{slug}.json if user dir missing
 
-        If the model-specific file does NOT exist, detection is skipped
-        entirely (check() returns []), avoiding false positives on unprofiled
-        models.
+        If the model-specific file does NOT exist anywhere, detection is
+        skipped entirely (check() returns []), avoiding false positives on
+        unprofiled models.
         """
         knowhow_dir = _get_knowhow_dir()
+        builtin_dir = _get_builtin_knowhow_dir()
         slug = model_slug(model_name)
 
         entries: list[KnowhowEntry] = list(_BUILTIN_KNOWHOW)
 
-        # 1. Global rules (always loaded if present)
+        # 1. Global rules (user dir优先, 其次 bundled)
         global_path = knowhow_dir / "global.json"
+        if not global_path.exists() and builtin_dir:
+            global_path = builtin_dir / "global.json"
         if global_path.exists():
             entries.extend(cls._load_json_file(global_path))
 
-        # 2. Model-specific rules
+        # 2. Model-specific rules (user dir优先, 其次 bundled)
         model_path = knowhow_dir / f"{slug}.json"
+        if not model_path.exists() and builtin_dir:
+            model_path = builtin_dir / f"{slug}.json"
         has_model_file = model_path.exists()
         if has_model_file:
             entries.extend(cls._load_json_file(model_path))

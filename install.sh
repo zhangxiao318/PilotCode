@@ -26,6 +26,14 @@ pip install --upgrade pip
 echo "Installing dependencies..."
 pip install -r requirements.txt
 
+# Copy default knowhow templates to user config directory
+KNOWHOW_DIR="$HOME/.pilotcode/knowhow"
+if [ ! -d "$KNOWHOW_DIR" ]; then
+    echo "Copying default knowhow templates..."
+    mkdir -p "$KNOWHOW_DIR"
+    cp config/knowhow/*.json "$KNOWHOW_DIR/" 2>/dev/null || true
+fi
+
 # Install package in editable mode
 echo "Installing PilotCode..."
 pip install -e .
