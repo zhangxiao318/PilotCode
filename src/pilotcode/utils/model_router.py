@@ -71,10 +71,39 @@ def _infer_tier(model_info: ModelInfo) -> ModelTier:
 
 
 def _build_default_models() -> dict[str, ModelConfig]:
-    """Build DEFAULT_MODELS from the project's actual models.json config."""
+    """Build DEFAULT_MODELS from the user's *configured* models only.
+
+    models.json contains metadata for 15+ providers, but most users only
+    have API keys for 1-3 of them. We filter to models that the user has
+    actually configured (api_key present in settings.json, model_overrides,
+    or environment variables).
+    """
+    from .config import get_global_config
+
+    config = get_global_config()
     all_models = get_all_models()
+
+    # Determine which models the user has actually configured
+    def _is_configured(name: str) -> bool:
+        """Check if user has provided an api_key for this model."""
+        # Explicit override in settings.json?
+        override = config.model_overrides.get(name, {})
+        if override.get("api_key"):
+            return True
+        # Is this the default model and global api_key is set?
+        if name == config.default_model and config.api_key:
+            return True
+        # Environment variable for this provider?
+        info = get_model_info(name)
+        if info and info.env_key:
+            import os
+
+            if os.environ.get(info.env_key):
+                return True
+        return False
+
+    # If no models.json, fall back to env vars
     if not all_models:
-        # Fallback to env vars if no models configured
         return {
             "fast": ModelConfig(
                 name=os.environ.get("PILOTCODE_FAST_MODEL", "deepseek-v4-flash"),
@@ -110,21 +139,30 @@ def _build_default_models() -> dict[str, ModelConfig]:
             ),
         }
 
-    # Group available models by inferred tier
+    # Group *configured* models by inferred tier
     by_tier: dict[ModelTier, list[ModelInfo]] = {
         ModelTier.FAST: [],
         ModelTier.BALANCED: [],
         ModelTier.POWERFUL: [],
     }
-    for info in all_models.values():
+    for key, info in all_models.items():
         if info.disabled:
+            continue
+        if not _is_configured(key):
             continue
         tier = _infer_tier(info)
         by_tier[tier].append(info)
 
+    # The user's default model is the ultimate fallback
+    default_model_key = config.default_model or "deepseek"
+    default_info = get_model_info(default_model_key)
+    default_tier = _infer_tier(default_info) if default_info else ModelTier.BALANCED
+
     def _pick(tier: ModelTier, fallback_name: str) -> ModelConfig:
         candidates = by_tier.get(tier, [])
         info = candidates[0] if candidates else get_model_info(fallback_name)
+        if info is None:
+            info = default_info
         if info is None:
             info = list(all_models.values())[0]
         # Tier-specific cost defaults
@@ -145,10 +183,10 @@ def _build_default_models() -> dict[str, ModelConfig]:
         )
 
     return {
-        "fast": _pick(ModelTier.FAST, "deepseek-v4-flash"),
-        "balanced": _pick(ModelTier.BALANCED, "deepseek"),
-        "powerful": _pick(ModelTier.POWERFUL, "deepseek-v4-pro"),
-        "default": _pick(ModelTier.BALANCED, "deepseek"),
+        "fast": _pick(ModelTier.FAST, default_model_key),
+        "balanced": _pick(ModelTier.BALANCED, default_model_key),
+        "powerful": _pick(ModelTier.POWERFUL, default_model_key),
+        "default": _pick(default_tier, default_model_key),
     }
 
 
