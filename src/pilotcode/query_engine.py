@@ -999,10 +999,31 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             self.messages = compressed
             did_compact = True
 
-        # Fallback 2: if still over critical threshold, aggressive truncation
-        # Keep only last 2 messages (emergency measure; system prompt is injected dynamically)
+        # Fallback 2: if still over critical threshold, aggressive truncation.
+        # Preserve system messages and the most recent user message so the LLM
+        # doesn't "forget" its role or the current task objective.
         if self.count_tokens() > critical and len(self.messages) > 3:
-            self.messages = self.messages[-2:]
+            from .types.message import SystemMessage, UserMessage
+
+            to_preserve: set[int] = set()
+            # Always preserve system messages
+            for i, msg in enumerate(self.messages):
+                if isinstance(msg, SystemMessage):
+                    to_preserve.add(i)
+            # Always preserve the most recent user message (task objective)
+            for i in range(len(self.messages) - 1, -1, -1):
+                if isinstance(self.messages[i], UserMessage):
+                    to_preserve.add(i)
+                    break
+            # Fill remaining slots with most recent non-preserved messages
+            recent: list[int] = []
+            slots = max(0, 2 - len(to_preserve))
+            for i in range(len(self.messages) - 1, -1, -1):
+                if i not in to_preserve and len(recent) < slots:
+                    recent.append(i)
+            # Combine and preserve original order
+            kept = sorted(to_preserve | set(recent))
+            self.messages = [self.messages[i] for i in kept]
             did_compact = True
 
         # Fallback 3: if still over threshold, truncate message content
