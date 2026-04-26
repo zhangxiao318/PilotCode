@@ -27,7 +27,11 @@ def get_project_memory(project_path: str | None = None) -> ProjectMemory:
         try:
             return ProjectMemory.load(str(memory_path))
         except Exception:
-            pass
+            import logging
+
+            logging.getLogger(__name__).debug(
+                "Project memory load failed for %s", project_path, exc_info=True
+            )
 
     return ProjectMemory(project_path=project_path)
 

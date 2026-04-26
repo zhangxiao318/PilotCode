@@ -163,7 +163,9 @@ class StaticAnalysisVerifier(BaseVerifier):
                     if re.search(pattern, line):
                         matches.append((i, line.strip()))
         except Exception:
-            pass
+            import logging
+
+            logging.getLogger(__name__).debug("Pattern search failed in %s", path, exc_info=True)
         return matches
 
     def _read_file(self, path: str) -> str:

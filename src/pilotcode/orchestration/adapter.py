@@ -784,7 +784,9 @@ class MissionAdapter:
             py_files = await asyncio.to_thread(pyglob.glob, "**/*.py", recursive=True)
             exploration["files"] = py_files[:50]
         except Exception:
-            pass
+            import logging
+
+            logging.getLogger(__name__).debug("Exploration glob failed", exc_info=True)
 
         # Try to find key files mentioned in request
         keywords = [w for w in user_request.lower().split() if len(w) > 3]
@@ -826,7 +828,11 @@ class MissionAdapter:
                     elif "flask" in content.lower():
                         self.project_memory.record_convention("framework", "Flask")
             except Exception:
-                pass
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    "Exploration file read failed for %s", fname, exc_info=True
+                )
 
         exploration["key_files"] = key_files_found
         return exploration

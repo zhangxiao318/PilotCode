@@ -45,7 +45,9 @@ class AgentCoordinator:
             try:
                 cb(event, data)
             except Exception:
-                pass
+                import logging
+
+                logging.getLogger(__name__).warning("Progress callback failed", exc_info=True)
 
     async def execute(
         self,

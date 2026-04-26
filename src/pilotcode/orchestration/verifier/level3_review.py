@@ -46,7 +46,11 @@ class CodeReviewVerifier(BaseVerifier):
                     with open(output_path, "r", encoding="utf-8", errors="replace") as f:
                         outputs_content[output_path] = f.read()
                 except Exception:
-                    pass
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        "Output file read failed for %s", output_path, exc_info=True
+                    )
 
         total_lines = sum(len(c.splitlines()) for c in outputs_content.values())
         metrics["total_output_lines"] = total_lines

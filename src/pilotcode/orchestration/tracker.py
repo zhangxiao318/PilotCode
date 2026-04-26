@@ -306,7 +306,11 @@ class MissionTracker:
             try:
                 cb(event_type, data)
             except Exception:
-                pass
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Event callback failed for %s", event_type, exc_info=True
+                )
 
     def list_missions(self) -> list[str]:
         """List all registered mission IDs."""

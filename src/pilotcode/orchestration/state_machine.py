@@ -153,7 +153,9 @@ class StateMachine:
             try:
                 cb(event)
             except Exception:
-                pass
+                import logging
+
+                logging.getLogger(__name__).warning("State change callback failed", exc_info=True)
 
         return new_state
 
