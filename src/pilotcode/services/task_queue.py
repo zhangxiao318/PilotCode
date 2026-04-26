@@ -51,6 +51,7 @@ class Task:
     started_at: float | None = None
     completed_at: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    priority: int = 5  # Lower = higher priority (0-9)
     _cancelled: bool = False
 
 
@@ -66,12 +67,13 @@ class BackgroundTaskQueue:
 
     def __init__(self, max_concurrent: int = 3):
         self.max_concurrent = max_concurrent
-        self._queue: asyncio.Queue[Task] = asyncio.Queue()
+        self._queue: asyncio.PriorityQueue[tuple[int, int, str]] = asyncio.PriorityQueue()
         self._tasks: dict[str, Task] = {}
         self._running: set[asyncio.Task] = set()
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._worker_task: asyncio.Task | None = None
         self._running_flag = False
+        self._seq = 0  # Tie-breaker for same-priority tasks
 
         # Callbacks
         self._on_complete: list[Callable[[Task], Any]] = []
@@ -107,6 +109,7 @@ class BackgroundTaskQueue:
         coro: Coroutine[Any, Any, Any],
         name: str | None = None,
         metadata: dict[str, Any] | None = None,
+        priority: int = 5,
     ) -> Task:
         """Submit a task to the queue.
 
@@ -114,6 +117,7 @@ class BackgroundTaskQueue:
             coro: Coroutine to execute
             name: Optional task name
             metadata: Optional metadata
+            priority: Task priority (0=highest, 9=lowest, default=5)
 
         Returns:
             Task object
@@ -123,10 +127,12 @@ class BackgroundTaskQueue:
             name=name or f"task_{uuid.uuid4().hex[:6]}",
             coro=coro,
             metadata=metadata or {},
+            priority=priority,
         )
 
         self._tasks[task.id] = task
-        await self._queue.put(task)
+        self._seq += 1
+        await self._queue.put((priority, self._seq, task.id))
 
         return task
 
@@ -182,7 +188,10 @@ class BackgroundTaskQueue:
         """Main worker loop."""
         while self._running_flag:
             try:
-                task = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                priority, seq, task_id = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                task = self._tasks.get(task_id)
+                if not task:
+                    continue
 
                 # Execute task
                 exec_task = asyncio.create_task(self._execute_task(task))
