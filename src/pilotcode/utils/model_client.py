@@ -128,28 +128,36 @@ class ModelClient:
                     self.model = model_key
 
         # Determine base URL: use provided, or from config, or from model info as fallback
+        self._model_info = get_model_info(model_key)
         if effective_base_url:
             self.base_url = effective_base_url
+        elif self._model_info and self._model_info.base_url:
+            self.base_url = self._model_info.base_url
         else:
-            model_info = get_model_info(model_key)
-            if model_info and model_info.base_url:
-                # Use model-specific base URL as fallback
-                self.base_url = model_info.base_url
-            else:
-                self.base_url = ""
+            self.base_url = ""
 
         # Local models often use self-signed HTTPS certs; disable verification.
         verify_ssl = not is_local
 
+        # Use model-specific timeout if available, otherwise default 300s
+        timeout = self._model_info.timeout if self._model_info else 300.0
+        if model_override and "timeout" in model_override:
+            try:
+                timeout = float(model_override["timeout"])
+            except ValueError:
+                pass
+
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-            timeout=300.0,
+            timeout=timeout,
             verify=verify_ssl,
         )
 
         # Provider flags for provider-specific handling
         self._is_deepseek = "deepseek" in self.base_url.lower()
+        # Inferred provider name for error messages (not hardcoded "DeepSeek")
+        self._provider_name = self._model_info.provider.value if self._model_info else "unknown"
 
     def _convert_messages(
         self, messages: list[Message] | list[dict[str, Any]]
@@ -239,8 +247,11 @@ class ModelClient:
 
         if tools:
             payload["tools"] = self._convert_tools(tools)
-            # Some providers (e.g. DeepSeek) do not accept tool_choice; skip for them
-            if "deepseek" not in self.base_url.lower():
+            # Only send tool_choice if the provider supports it
+            supports_tool_choice = (
+                self._model_info.supports_tool_choice if self._model_info else True
+            )
+            if supports_tool_choice:
                 payload["tool_choice"] = "auto"
 
         if max_tokens:
@@ -251,7 +262,8 @@ class ModelClient:
                 if response.status_code >= 400:
                     body = await response.aread()
                     raise Exception(
-                        f"DeepSeek API error {response.status_code}: {body.decode('utf-8', errors='replace')}\n"
+                        f"{self._provider_name.upper()} API error {response.status_code}: "
+                        f"{body.decode('utf-8', errors='replace')}\n"
                         f"Payload: {json.dumps(payload, ensure_ascii=False, default=str)[:2000]}"
                     )
                 async for line in response.aiter_lines():

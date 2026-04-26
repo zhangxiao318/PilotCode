@@ -63,8 +63,10 @@
       "description": "DeepSeek V4 Pro - 1M context, tool calls & JSON output. Note: deepseek-chat and deepseek-reasoner are deprecated on 2026/07/24; use deepseek-v4-flash or deepseek-v4-pro instead.",
       "supports_tools": true,
       "supports_vision": false,
+      "supports_tool_choice": false,
       "max_tokens": 8192,
       "context_window": 1000000,
+      "timeout": 300,
       "env_key": "DEEPSEEK_API_KEY"
     },
     "deepseek-v4-pro": {
@@ -171,6 +173,34 @@
       "context_window": 256000,
       "env_key": "ARK_API_KEY"
     },
+    "gemini": {
+      "name": "gemini",
+      "display_name": "Google Gemini",
+      "provider": "custom",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "default_model": "gemini-2.5-pro-preview-03-25",
+      "description": "Google Gemini - Multimodal, long context, OpenAI-compatible endpoint",
+      "supports_tools": true,
+      "supports_vision": true,
+      "max_tokens": 8192,
+      "context_window": 1000000,
+      "timeout": 300,
+      "env_key": "GEMINI_API_KEY"
+    },
+    "grok": {
+      "name": "grok",
+      "display_name": "xAI Grok",
+      "provider": "custom",
+      "base_url": "https://api.x.ai/v1",
+      "default_model": "grok-3-beta",
+      "description": "xAI Grok - Real-time knowledge, coding, reasoning",
+      "supports_tools": true,
+      "supports_vision": true,
+      "max_tokens": 8192,
+      "context_window": 128000,
+      "timeout": 300,
+      "env_key": "XAI_API_KEY"
+    },
     "custom": {
       "name": "custom",
       "display_name": "Custom/OpenAI-compatible",
@@ -182,6 +212,7 @@
       "supports_vision": false,
       "max_tokens": 4096,
       "context_window": 128000,
+      "timeout": 300,
       "env_key": "OPENAI_API_KEY"
     },
     "vllm": {

@@ -40,8 +40,10 @@ class ModelInfo:
     description: str
     supports_tools: bool = True
     supports_vision: bool = False
+    supports_tool_choice: bool = True
     max_tokens: int = 4096
     context_window: int = 8192
+    timeout: float = 300.0
     env_key: str = ""
     disabled: bool = False
     disabled_reason: str = ""
@@ -93,8 +95,10 @@ def _load_models_json() -> dict[str, ModelInfo]:
             description=raw.get("description", ""),
             supports_tools=raw.get("supports_tools", True),
             supports_vision=raw.get("supports_vision", False),
+            supports_tool_choice=raw.get("supports_tool_choice", True),
             max_tokens=raw.get("max_tokens", 4096),
             context_window=raw.get("context_window", 8192),
+            timeout=raw.get("timeout", 300.0),
             env_key=raw.get("env_key", ""),
             disabled=raw.get("disabled", False),
             disabled_reason=raw.get("disabled_reason", ""),

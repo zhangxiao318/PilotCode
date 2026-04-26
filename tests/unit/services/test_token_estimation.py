@@ -74,7 +74,7 @@ def hello_world():
         count1 = estimator.estimate(text)
 
         # Should be cached
-        cache_key = f"{hash(text)}:False"
+        cache_key = f"{hash(text)}:False:"
         assert cache_key in estimator._cache
 
         # Second estimate should use cache

@@ -22,12 +22,27 @@ class TokenEstimator:
     def __init__(self):
         self._cache: dict[str, int] = {}
 
-    def estimate(self, text: str, is_code: bool = False) -> int:
+    # Provider-specific CJK token ratios (chars per token)
+    PROVIDER_CJK_RATIOS: dict[str, float] = {
+        "openai": 1.5,
+        "anthropic": 1.3,
+        "deepseek": 1.8,
+        "qwen": 1.5,
+        "zhipu": 1.5,
+        "moonshot": 1.5,
+        "baichuan": 1.5,
+        "doubao": 1.5,
+        "gemini": 1.5,
+        "grok": 1.5,
+    }
+
+    def estimate(self, text: str, is_code: bool = False, provider: str = "") -> int:
         """Estimate token count for text.
 
         Args:
             text: Input text
             is_code: Whether text is code (affects punctuation handling)
+            provider: Model provider name for provider-specific CJK ratios
 
         Returns:
             Estimated token count
@@ -36,7 +51,7 @@ class TokenEstimator:
             return 0
 
         # Check cache for short texts
-        cache_key = f"{hash(text)}:{is_code}"
+        cache_key = f"{hash(text)}:{is_code}:{provider}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 
@@ -44,10 +59,11 @@ class TokenEstimator:
         cjk_chars = len(re.findall(r"[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]", text))
         cjk_ratio = cjk_chars / len(text) if text else 0
 
-        # Method 1: Character count (adaptive per language)
-        # CJK: ~1.5 chars/token, English: ~4 chars/token
+        # Method 1: Character count (adaptive per language + provider)
+        # CJK ratios vary by tokenizer; default ~1.5 chars/token
         if cjk_ratio > 0.3:
-            chars_per_token = 1.5 if not is_code else 2.0
+            base_ratio = self.PROVIDER_CJK_RATIOS.get(provider.lower(), 1.5)
+            chars_per_token = base_ratio if not is_code else base_ratio + 0.5
         else:
             chars_per_token = self.CODE_CHARS_PER_TOKEN if is_code else self.CHARS_PER_TOKEN
         char_estimate = len(text) / chars_per_token
