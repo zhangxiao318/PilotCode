@@ -1,13 +1,10 @@
 """Tests for SmartEditPlanner tool."""
 
-import pytest
 import tempfile
 from pathlib import Path
 
 from pilotcode.tools.smart_edit_planner import (
     plan_edits,
-    SmartEditPlannerInput,
-    SmartEditPlannerOutput,
 )
 
 

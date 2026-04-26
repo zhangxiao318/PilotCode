@@ -6,7 +6,6 @@ and produces a complete ModelCapability profile.
 
 from __future__ import annotations
 
-from typing import Any
 
 from .schema import (
     ModelCapability,

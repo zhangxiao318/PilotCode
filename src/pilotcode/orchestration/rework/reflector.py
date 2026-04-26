@@ -14,7 +14,6 @@ from typing import Any
 from datetime import datetime, timezone
 
 from ..tracker import MissionTracker
-from ..dag import DagExecutor
 from ..state_machine import TaskState
 
 

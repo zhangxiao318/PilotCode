@@ -11,14 +11,14 @@ Drives the full lifecycle:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Awaitable
 from datetime import datetime, timezone
 
 from .task_spec import Mission, TaskSpec, ComplexityLevel
 from .state_machine import TaskState, StateMachine, Transition, InvalidTransitionError
 from .dag import DagExecutor, DagNode
-from .tracker import MissionTracker, get_tracker, AgentProgress
+from .tracker import get_tracker
 from .results import ExecutionResult
 from .verifier.base import VerificationResult, Verdict
 

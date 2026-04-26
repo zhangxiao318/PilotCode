@@ -100,7 +100,7 @@ class CodeReviewVerifier(BaseVerifier):
             lines = content.splitlines()
 
             # Check for TODO/FIXME comments
-            todos = [l for l in lines if "TODO" in l or "FIXME" in l or "HACK" in l]
+            todos = [line for line in lines if "TODO" in line or "FIXME" in line or "HACK" in line]
             if todos:
                 issues.append(
                     {

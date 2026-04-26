@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import traceback
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Callable
 
 
 @dataclass
@@ -192,7 +191,7 @@ class PilotCodeWebSocketClient:
                 msg = await asyncio.wait_for(self._recv_any(), timeout=recv_timeout)
             except asyncio.TimeoutError:
                 result.success = False
-                result.error = f"Timeout waiting for server response"
+                result.error = "Timeout waiting for server response"
                 break
 
             msg_type = msg.get("type")

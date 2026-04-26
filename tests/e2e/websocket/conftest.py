@@ -14,9 +14,6 @@ Skip (default):
     # All llm_e2e tests are skipped automatically
 """
 
-import asyncio
-import json
-import os
 import pytest
 from pathlib import Path
 
@@ -144,6 +141,6 @@ async def ws_client_with_session(ws_url, e2e_timeout, request):
 
     client = PilotCodeWebSocketClient(ws_url, default_timeout=e2e_timeout)
     await client.connect()
-    session_id = await client.create_session()
+    await client.create_session()
     yield client
     await client.close()

@@ -12,15 +12,12 @@ Salt file location:       <CONFIG_DIR>/credentials.salt
 
 from __future__ import annotations
 
-import base64
 import hashlib
-import json
 import os
 import secrets
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from platformdirs import user_config_dir
 

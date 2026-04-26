@@ -1,6 +1,5 @@
 """Tests for compensation engine and edit validator."""
 
-import pytest
 import tempfile
 from pathlib import Path
 
@@ -19,7 +18,6 @@ from pilotcode.model_capability.adaptive_config import (
 from pilotcode.orchestration.adaptive_edit import (
     CompensationEngine,
     EditValidator,
-    ValidationResult,
 )
 
 

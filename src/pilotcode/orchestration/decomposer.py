@@ -55,11 +55,6 @@ class TaskDecomposer:
         lower = task.lower()
         has_and = " and " in lower or "," in task
         has_then = " then " in lower or "first" in lower
-        has_test = "test" in lower
-        has_refactor = "refactor" in lower
-        has_implement = "implement" in lower or "build" in lower or "create" in lower
-        has_fix = "fix" in lower or "bug" in lower or "debug" in lower
-
         if word_count < 10 and not has_and:
             return DecompositionResult(
                 strategy=DecompositionStrategy.NONE,

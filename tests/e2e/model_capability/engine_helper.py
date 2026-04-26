@@ -19,7 +19,6 @@ from pilotcode.query_engine import QueryEngine
 from pilotcode.permissions.tool_executor import ToolExecutor, ToolExecutionResult
 from pilotcode.tools.base import ToolUseContext, ToolResult
 from pilotcode.permissions.permission_manager import (
-    PermissionManager,
     PermissionRequest,
     PermissionLevel,
 )
@@ -169,7 +168,6 @@ async def run_with_tools(
 
     deadline = asyncio.get_event_loop().time() + timeout
     current_query = query
-    is_continue_query = False
 
     # Build a strong continue prompt that references the original task.
     # DeepSeek V4 tends to give a "final answer" after receiving tool results
@@ -280,7 +278,6 @@ async def run_with_tools(
         # Step 3: Prepare next turn
         # ------------------------------------------------------------------
         current_query = _continue_prompt
-        is_continue_query = True
 
     else:
         # max_turns reached without breaking

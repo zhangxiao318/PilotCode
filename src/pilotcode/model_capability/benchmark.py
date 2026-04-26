@@ -15,14 +15,6 @@ from typing import Any, Callable, Awaitable
 
 from pilotcode.utils.model_client import get_model_client, Message
 
-from .schema import (
-    ModelCapability,
-    PlanningDimension,
-    TaskCompletionDimension,
-    JsonFormattingDimension,
-    ChainOfThoughtDimension,
-    CodeReviewDimension,
-)
 
 
 @dataclass
@@ -287,6 +279,8 @@ Output ONLY the function code, no explanation, no markdown.
     code = re.sub(r"\s*```$", "", code)
 
     # Try to parse and execute
+    has_fibonacci = False
+    error_msg = ""
     try:
         tree = ast.parse(code)
         func_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
@@ -314,7 +308,7 @@ Output ONLY the function code, no explanation, no markdown.
                     },
                 )
     except Exception as e:
-        pass
+        error_msg = str(e)
 
     return BenchmarkResult(
         test_name="code_generation_correctness",
@@ -322,7 +316,7 @@ Output ONLY the function code, no explanation, no markdown.
         sub_dimension="code_correctness",
         score=0.0 if not has_fibonacci else 0.3,
         raw_output=code[:300],
-        error=f"Execution failed: {e}" if "e" in dir() else "Could not execute",
+        error=f"Execution failed: {error_msg}" if error_msg else "Could not execute",
     )
 
 

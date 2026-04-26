@@ -79,7 +79,6 @@ def is_context_overflow(status_code: int, body_text: str, error_code: str = "") 
     if status_code not in (400, 422):
         return False
 
-    lower_body = body_text.lower()
     lower_code = error_code.lower()
 
     # Check compiled regex patterns against the body text

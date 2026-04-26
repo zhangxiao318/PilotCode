@@ -10,8 +10,8 @@ PENDING → ASSIGNED → IN_PROGRESS → SUBMITTED → UNDER_REVIEW
 
 from __future__ import annotations
 
-from enum import Enum, auto
-from dataclasses import dataclass, field
+from enum import Enum
+from dataclasses import dataclass
 from typing import Any, Callable
 
 

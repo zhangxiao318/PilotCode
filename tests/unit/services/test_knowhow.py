@@ -6,7 +6,6 @@ from pathlib import Path
 from pilotcode.services.knowhow import (
     KnowhowLibrary,
     KnowhowEntry,
-    KnowhowMatch,
     get_knowhow_library,
     clear_knowhow_cache,
     model_slug,
@@ -285,7 +284,6 @@ class TestKnowhowSerialization:
         assert restored.fix_replacement == original.fix_replacement
 
     def test_json_file_roundtrip(self, tmp_path):
-        import json
 
         entries = [
             KnowhowEntry(

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Set, Dict, Any
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
+import websockets
 
 from pilotcode.types.message import SystemMessage
 
@@ -398,7 +399,6 @@ class WebSocketManager:
                 sid = self.client_sessions.get(websocket)
                 if sid:
                     from pilotcode.services.session_persistence import get_session_persistence
-                    from pilotcode.types.message import serialize_messages
 
                     ctx = await self._get_session(sid)
                     if ctx:
@@ -674,7 +674,6 @@ class WebSocketManager:
             from pilotcode.components.repl import classify_task_complexity
             from pilotcode.orchestration.adapter import MissionAdapter
             from pilotcode.orchestration.report import (
-                format_plan,
                 format_completion,
                 format_failure,
                 format_task_event,

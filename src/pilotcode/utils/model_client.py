@@ -11,6 +11,7 @@ import httpx
 
 from .config import get_global_config
 from .models_config import get_model_info
+from ..provider.error_patterns import is_context_overflow
 
 # ------------------------------------------------------------------
 # Custom exceptions for LLM API errors
@@ -322,8 +323,6 @@ class ModelClient:
                 error_code = err
         except (json.JSONDecodeError, AttributeError):
             pass
-
-        lower_body = text.lower()
 
         # 429 Rate Limit
         if status_code == 429:

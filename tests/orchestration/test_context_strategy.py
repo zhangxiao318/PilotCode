@@ -23,7 +23,6 @@ from pilotcode.orchestration.task_spec import (
     TaskSpec,
     ComplexityLevel,
     Constraints,
-    AcceptanceCriterion,
 )
 
 # =============================================================================

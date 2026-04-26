@@ -5,7 +5,6 @@ Connects the unified P-EVR orchestration layer with existing PilotCode component
 
 from __future__ import annotations
 
-from typing import Any
 
 from .adapter import MissionAdapter
 

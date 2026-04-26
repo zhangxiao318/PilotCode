@@ -5,7 +5,6 @@ Strategy: Load full project context, design documents, and all relevant files.
 
 from __future__ import annotations
 
-from typing import Any
 
 from .base import BaseWorker, WorkerContext
 from ..task_spec import TaskSpec

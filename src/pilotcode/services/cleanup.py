@@ -6,7 +6,6 @@ callbacks run regardless of success, failure, or cancellation.
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import logging
 from typing import Awaitable, Callable

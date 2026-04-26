@@ -21,7 +21,6 @@ from rich.panel import Panel
 from .components.repl import (
     run_repl,
     run_headless,
-    run_headless_with_feedback,
     classify_task_complexity,
 )
 from .orchestration.adapter import MissionAdapter

@@ -37,8 +37,6 @@ class TestSearchVsRead:
 
         tool_names = [tc.name for tc in result.tool_calls]
         preferred = {"Grep", "CodeSearch", "LSP", "CodeContext"}
-        acceptable = preferred | {"Glob"}  # Glob to find files first is OK
-
         # Should not read more than 4 files individually (model may read a few extras)
         file_read_count = tool_names.count("FileRead")
         assert file_read_count <= 4, (
@@ -67,7 +65,6 @@ class TestSearchVsRead:
         )
 
         tool_names = [tc.name for tc in result.tool_calls]
-        acceptable = {"Glob", "Bash", "FileRead"}  # FileRead after Glob is fine
         # At minimum Glob or Bash should appear
         assert "Glob" in tool_names or "Bash" in tool_names, (
             f"Should use Glob or Bash for file listing, got: {tool_names}\n"

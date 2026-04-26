@@ -13,10 +13,9 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from .base import BaseVerifier, VerificationResult, Verdict
-from ..task_spec import TaskSpec, Constraints
+from ..task_spec import TaskSpec
 from ..results import ExecutionResult
 
 

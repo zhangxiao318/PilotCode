@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import pytest
-import tempfile
-from pathlib import Path
 
 from ..engine_helper import run_with_tools, ToolRunResult
 

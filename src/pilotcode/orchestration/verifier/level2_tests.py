@@ -5,8 +5,8 @@ Runs unit tests and integration tests for task outputs.
 
 from __future__ import annotations
 
+import asyncio
 import os
-import subprocess
 import sys
 from typing import Any
 
@@ -196,6 +196,3 @@ class PytestRunnerVerifier(BaseVerifier):
         if match:
             return float(match.group(1))
         return None
-
-
-import asyncio

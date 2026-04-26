@@ -28,9 +28,6 @@ from pilotcode.state.app_state import AppState
 from pilotcode.components.repl import classify_task_complexity
 from pilotcode.orchestration.adapter import MissionAdapter
 from pilotcode.orchestration.report import (
-    format_plan,
-    format_progress,
-    format_completion,
     format_failure,
     format_task_event,
     _STATE_EMOJI,

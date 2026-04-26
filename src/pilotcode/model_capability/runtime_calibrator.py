@@ -16,9 +16,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
-from .schema import ModelCapability, RuntimeAdjustment
+from .schema import ModelCapability
 
 # Patterns for classifying execution failures
 _JSON_ERROR_PATTERNS = [

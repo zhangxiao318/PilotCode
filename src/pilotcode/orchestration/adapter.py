@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from pilotcode.utils.model_client import get_model_client, Message, ModelClient
-from pilotcode.utils.model_router import ModelRouter, ModelTier, TaskType
+from pilotcode.utils.model_router import ModelRouter, ModelTier
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
 from pilotcode.tools.registry import get_all_tools
 from pilotcode.state.app_state import get_default_app_state
@@ -27,10 +27,10 @@ from pilotcode.permissions.permission_manager import (
 from pilotcode.types.message import ToolUseMessage, AssistantMessage
 from pilotcode.services.cleanup import SessionCleanup
 
-from .task_spec import Mission, Phase, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion
+from .task_spec import Mission, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion
 from .orchestrator import Orchestrator, OrchestratorConfig
 from .results import ExecutionResult
-from .verifier.base import VerificationResult, Verdict
+from .verifier.base import VerificationResult
 from .verifiers.adapter_verifiers import (
     l1_simple_verifier,
     l2_test_verifier,
@@ -38,20 +38,15 @@ from .verifiers.adapter_verifiers import (
 )
 from .explorers.code_explorer import explore_codebase
 from .context_strategy import (
-    ContextStrategy,
     ContextStrategySelector,
     MissionPlanAdjuster,
     StrategyMetrics,
 )
-from .project_memory import ProjectMemory, FailedAttempt
+from .project_memory import ProjectMemory
 from ..model_capability import (
     load_capability_or_default,
     AdaptiveConfigMapper,
     RuntimeCalibrator,
-    TaskOutcome,
-    classify_failure,
-    classify_planning_failure,
-    PlanningStrategy,
     VerifierStrategy,
 )
 
@@ -182,7 +177,6 @@ class MissionAdapter:
         self, task: TaskSpec, exec_result: ExecutionResult
     ) -> VerificationResult:
         """L2 verifier wrapper that forces test runs for weak review models."""
-        from .task_spec import AcceptanceCriterion
 
         # Inject a synthetic test criterion if none exists
         if not any(ac.verification_method in ("test", "pytest") for ac in task.acceptance_criteria):
@@ -492,7 +486,7 @@ class MissionAdapter:
                                     return json.loads(candidate)
                                 except json.JSONDecodeError:
                                     # Try common LLM fixes: trailing commas, single quotes
-                                    fixed = _fix_common_json_errors(candidate)
+                                    fixed = MissionAdapter._fix_common_json_errors(candidate)
                                     try:
                                         return json.loads(fixed)
                                     except json.JSONDecodeError:

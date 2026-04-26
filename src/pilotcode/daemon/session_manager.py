@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ..components.repl import run_headless, classify_task_complexity, run_headless_with_planning
+from ..components.repl import run_headless, classify_task_complexity
 from ..orchestration.adapter import MissionAdapter
 from ..orchestration.report import format_completion, format_failure
 from ..services.session_persistence import (

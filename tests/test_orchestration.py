@@ -16,9 +16,7 @@ import sys
 import os
 import tempfile
 import shutil
-import asyncio
 import pytest
-from dataclasses import replace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -32,34 +30,24 @@ from pilotcode.orchestration import (
     StateMachine,
     Transition,
     InvalidTransitionError,
-    DagNode,
-    DagEdge,
     DagExecutor,
-    build_dag_from_phases,
     MissionTracker,
     AgentProgress,
-    MissionSnapshot,
     Orchestrator,
     OrchestratorConfig,
     ExecutionResult,
 )
 from pilotcode.orchestration.verifier import (
     StaticAnalysisVerifier,
-    TestRunnerVerifier,
     CodeReviewVerifier,
-    VerificationResult,
-    Verdict,
 )
 from pilotcode.orchestration.context import (
     ProjectMemory,
     SessionMemory,
     WorkingMemory,
-    ExecutionTrace,
 )
 from pilotcode.orchestration.workers import (
     SimpleWorker,
-    StandardWorker,
-    ComplexWorker,
     DebugWorker,
     WorkerContext,
 )
@@ -947,7 +935,7 @@ class TestMemoryLayers:
     def test_session_memory_archive(self, tmpdir):
         sm = SessionMemory(archive_dir=os.path.join(tmpdir, "sessions"))
         mission = Mission("m1", "Test", "R")
-        state = sm.start_session(mission)
+        sm.start_session(mission)
         sm.update_task_state("m1", "A", TaskState.VERIFIED)
         sm.record_artifact("m1", "A", ["a.txt"])
 

@@ -12,6 +12,7 @@ from .reflector import Reflector, ReflectorResult
 __all__ = [
     "ReworkContext",
     "ReworkAttempt",
+    "ReworkSeverity",
     "Reflector",
     "ReflectorResult",
 ]

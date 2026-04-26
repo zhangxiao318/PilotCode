@@ -5,7 +5,6 @@ Strategy: Load only the target file, make minimal changes.
 
 from __future__ import annotations
 
-from typing import Any
 
 from .base import BaseWorker, WorkerContext
 from ..task_spec import TaskSpec

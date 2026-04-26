@@ -18,6 +18,7 @@ Features:
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta

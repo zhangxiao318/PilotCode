@@ -9,7 +9,6 @@ For new code, import directly from pilotcode.orchestration.project_memory.
 from __future__ import annotations
 
 import os
-import warnings
 from pathlib import Path
 
 from ..project_memory import ProjectMemory

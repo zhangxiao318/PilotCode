@@ -31,7 +31,6 @@ import sys
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from .client import PilotCodeWebSocketClient, QueryResult
 
@@ -449,8 +448,6 @@ class TestWebSocketContextRetention:
             timeout=e2e_timeout,
         )
         assert r1.success
-        first_line = r1.response
-
         # Turns 2-4: Consume context with other queries
         for _ in range(3):
             r = await client.query(

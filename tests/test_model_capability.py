@@ -4,7 +4,6 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from pilotcode.model_capability.schema import (
     ModelCapability,
@@ -13,8 +12,6 @@ from pilotcode.model_capability.schema import (
     JsonFormattingDimension,
     ChainOfThoughtDimension,
     CodeReviewDimension,
-    RuntimeAdjustment,
-    CalibrationRecord,
     PlanningStrategy,
     TaskGranularity,
     VerifierStrategy,

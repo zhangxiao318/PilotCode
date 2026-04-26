@@ -8,7 +8,6 @@ from pilotcode.utils.models_config import (
     get_model_max_tokens,
     get_model_info,
     ModelProvider,
-    _probe_backend_limits,
 )
 
 

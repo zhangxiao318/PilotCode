@@ -8,11 +8,8 @@ alternatives.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-import re
 import sys
-from typing import Any
 
 from pilotcode.utils.model_client import get_model_client, Message
 

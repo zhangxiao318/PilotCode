@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass, field, asdict
-from typing import Any, Callable
+from typing import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .task_spec import Mission, TaskSpec
+from .task_spec import Mission
 from .state_machine import TaskState, StateMachine, StateChangeEvent
 from .dag import DagExecutor, DagNode
 
@@ -62,7 +62,6 @@ class MissionSnapshot:
     task_states: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        from dataclasses import asdict
 
         return asdict(self)
 

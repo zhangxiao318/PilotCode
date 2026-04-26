@@ -113,7 +113,6 @@ def load_capability(path: str | None = None) -> ModelCapability:
     Raises:
         FileNotFoundError: If no capability file exists.
     """
-    import os
     from pathlib import Path
 
     path = path or DEFAULT_CAPABILITY_PATH

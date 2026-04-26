@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 import json
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,6 @@ from pilotcode.orchestration.context_strategy import (
     ContextStrategy,
     ContextStrategySelector,
     MissionPlanAdjuster,
-    StrategyMetrics,
 )
 from pilotcode.orchestration.task_spec import (
     Mission,
@@ -208,19 +207,16 @@ def simulate_task_execution(
     if strategy == ContextStrategy.FRAMEWORK_HEAVY:
         # Aggressive decomposition: each sub-task is simpler
         # But overhead from many small tasks
-        effective_complexity = max(1, task.base_complexity - 1)
         decomposition_bonus = 0.15  # Simpler tasks = higher success
         context_penalty = -0.05 if task.required_files > 2 else 0.0
         token_multiplier = 1.3  # Overhead from many tasks
         time_multiplier = 1.4
     elif strategy == ContextStrategy.BALANCED:
-        effective_complexity = task.base_complexity
         decomposition_bonus = 0.05
         context_penalty = -0.02 if task.required_files > 4 else 0.0
         token_multiplier = 1.0
         time_multiplier = 1.0
     else:  # LLM_HEAVY
-        effective_complexity = task.base_complexity
         decomposition_bonus = 0.0
         # Large context handles multi-file well
         context_penalty = 0.0
@@ -394,7 +390,6 @@ def print_report(results: list[SimResult]) -> None:
     # Analysis
     if len(results) >= 3:
         short = results[0]
-        medium = results[1]
         long = results[-1]
 
         print("Key Findings:")
@@ -409,7 +404,7 @@ def print_report(results: list[SimResult]) -> None:
                 f"    success to LLM_HEAVY ({long.success_rate():.1%}) despite 8x smaller context"
             )
         else:
-            print(f"  ⚠ FINDING 1: Success rate gap is significant")
+            print("  ⚠ FINDING 1: Success rate gap is significant")
             print(
                 f"    FRAMEWORK_HEAVY: {short.success_rate():.1%} vs LLM_HEAVY: {long.success_rate():.1%}"
             )
@@ -424,7 +419,7 @@ def print_report(results: list[SimResult]) -> None:
             print(f"    than FRAMEWORK_HEAVY ({short.token_per_task():.0f} τ/task)")
             print(f"    Savings: {1 - long.token_per_task()/short.token_per_task():.1%}")
         else:
-            print(f"  ⚠ FINDING 2: FRAMEWORK_HEAVY overhead is higher than expected")
+            print("  ⚠ FINDING 2: FRAMEWORK_HEAVY overhead is higher than expected")
 
         print()
 
@@ -433,7 +428,7 @@ def print_report(results: list[SimResult]) -> None:
             print(f"  ✓ FINDING 3: LLM_HEAVY requires fewer reworks ({long.rework_count})")
             print(f"    than FRAMEWORK_HEAVY ({short.rework_count})")
         else:
-            print(f"  ✓ FINDING 3: Despite smaller context, FRAMEWORK_HEAVY decomposition")
+            print("  ✓ FINDING 3: Despite smaller context, FRAMEWORK_HEAVY decomposition")
             print(f"    controls rework effectively ({short.rework_count} vs {long.rework_count})")
 
         print()
@@ -442,11 +437,11 @@ def print_report(results: list[SimResult]) -> None:
         time_ratio = short.time_seconds / long.time_seconds if long.time_seconds > 0 else 0
         print(f"  ✓ FINDING 4: Execution time ratio (short/long): {time_ratio:.2f}x")
         if time_ratio > 1.5:
-            print(f"    FRAMEWORK_HEAVY takes significantly longer due to task overhead")
+            print("    FRAMEWORK_HEAVY takes significantly longer due to task overhead")
         elif time_ratio < 0.8:
-            print(f"    Surprisingly, FRAMEWORK_HEAVY is faster (more parallelizable)")
+            print("    Surprisingly, FRAMEWORK_HEAVY is faster (more parallelizable)")
         else:
-            print(f"    Time difference is moderate between strategies")
+            print("    Time difference is moderate between strategies")
 
     print()
     print("=" * 80)

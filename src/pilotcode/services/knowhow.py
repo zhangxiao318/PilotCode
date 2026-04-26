@@ -158,7 +158,7 @@ class KnowhowEntry:
         """AST-based detection (placeholder for future rules)."""
         matches: list[KnowhowMatch] = []
         try:
-            tree = ast.parse(source)
+            _ = ast.parse(source)
         except SyntaxError:
             return matches
         # AST walking would go here

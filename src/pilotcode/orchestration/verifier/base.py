@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any
 from enum import Enum
 
-from ..results import ExecutionResult
 
 
 class Verdict(Enum):
