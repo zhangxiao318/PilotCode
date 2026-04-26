@@ -394,7 +394,21 @@ class ModelClient:
                         if response.status_code >= 400:
                             body = await response.aread()
                             raise self._classify_error(response.status_code, body, response.headers)
+                        # Defensive counter: if the remote side closes the
+                        # connection but aiter_lines() keeps yielding empty
+                        # strings we could spin forever.  Bail after too many.
+                        _empty_line_count = 0
+                        _max_empty_lines = 500
                         async for line in response.aiter_lines():
+                            if not line:
+                                _empty_line_count += 1
+                                if _empty_line_count > _max_empty_lines:
+                                    raise LLMError(
+                                        "Stream broke: excessive empty lines from "
+                                        "half-closed connection (CLOSE-WAIT)."
+                                    )
+                                continue
+                            _empty_line_count = 0
                             if line.startswith("data: "):
                                 data = line[6:]
                                 if data == "[DONE]":
