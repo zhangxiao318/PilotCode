@@ -87,11 +87,12 @@ async def code_search_call(
     # Get codebase indexer
     indexer = get_codebase_indexer()
 
-    # Auto-index if empty so the user doesn't need to call CodeIndex first
+    # Auto-index if empty so the user doesn't need to call CodeIndex first.
+    # Cap at 500 files to avoid overwhelming context on large repositories.
     stats = indexer.get_stats()
     if stats.total_files == 0:
         try:
-            await indexer.index_codebase(incremental=True)
+            await indexer.index_codebase(incremental=True, max_files=500)
         except Exception:
             pass  # Continue even if auto-index fails
 
