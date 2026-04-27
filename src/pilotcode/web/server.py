@@ -561,8 +561,8 @@ class WebSocketManager:
                         from dataclasses import replace
 
                         ctx["store"].set_state(lambda s: replace(s, cwd=restored_cwd))
-                        ctx["query_engine"].config = ctx["query_engine"].config.replace(
-                            cwd=restored_cwd
+                        ctx["query_engine"].config = replace(
+                            ctx["query_engine"].config, cwd=restored_cwd
                         )
                         self._update_recent_directories(restored_cwd)
                     self.client_sessions[websocket] = sid

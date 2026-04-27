@@ -243,10 +243,12 @@ class VectorStore:
                     self._matrix[idx] = np.array(vector.vector, dtype=np.float32)
                 else:
                     self._ids.append(vector.id)
-                    self._matrix = np.vstack([
-                        self._matrix,
-                        np.array([vector.vector], dtype=np.float32),
-                    ])
+                    self._matrix = np.vstack(
+                        [
+                            self._matrix,
+                            np.array([vector.vector], dtype=np.float32),
+                        ]
+                    )
             else:
                 self._rebuild_matrix()
 

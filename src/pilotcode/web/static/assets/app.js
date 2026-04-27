@@ -160,6 +160,7 @@ function handleMessage(data) {
                 recent: data.recent || [],
             };
             renderCwdModal();
+            showCwdModal();
             break;
         case 'session_created':
             currentSessionId = data.session_id;

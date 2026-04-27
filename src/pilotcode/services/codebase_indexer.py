@@ -178,25 +178,25 @@ class CodebaseIndexer:
         "_temp",
         "_tmp",
         # C/C++ build artifacts (Linux kernel, embedded, etc.)
-        "*.d",          # dependency files
-        "*.cmd",        # kernel build cmd files
-        "*.o",          # object files
-        "*.ko",         # kernel modules
-        "*.mod",        # module files
-        "*.mod.c",      # generated module C files
-        "*.order",      # module order files
-        "*.symvers",    # symbol versions
-        "*.a",          # static libraries
-        "*.so",         # shared libraries
-        "*.dll",        # Windows DLLs
-        "*.exe",        # executables
-        "*.elf",        # ELF binaries
-        "*.hex",        # hex firmware
-        "*.bin",        # binary firmware
-        "*.map",        # linker map files
-        "*.lst",        # listing files
-        "*.srec",       # S-record files
-        "*.ihex",       # Intel hex
+        "*.d",  # dependency files
+        "*.cmd",  # kernel build cmd files
+        "*.o",  # object files
+        "*.ko",  # kernel modules
+        "*.mod",  # module files
+        "*.mod.c",  # generated module C files
+        "*.order",  # module order files
+        "*.symvers",  # symbol versions
+        "*.a",  # static libraries
+        "*.so",  # shared libraries
+        "*.dll",  # Windows DLLs
+        "*.exe",  # executables
+        "*.elf",  # ELF binaries
+        "*.hex",  # hex firmware
+        "*.bin",  # binary firmware
+        "*.map",  # linker map files
+        "*.lst",  # listing files
+        "*.srec",  # S-record files
+        "*.ihex",  # Intel hex
         # Java/Gradle/Maven build
         "*.class",
         "*.jar",
@@ -582,8 +582,7 @@ class CodebaseIndexer:
             and self._hierarchical_builder.get_master_index() is not None
         ):
             last_indexed = set(
-                self._hierarchical_builder.get_master_index().total_files
-                and [] or []
+                self._hierarchical_builder.get_master_index().total_files and [] or []
             )
             # We don't have the exact file set stored in the old master index,
             # so we use a hash of the sorted file list as a cheap fingerprint.

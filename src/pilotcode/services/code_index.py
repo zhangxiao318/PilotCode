@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 try:
     from tree_sitter import Language, Parser
+
     HAS_TREE_SITTER = True
 except ImportError:
     HAS_TREE_SITTER = False
@@ -29,12 +30,40 @@ _tsp_parsers: dict[str, Parser] = {}
 _tsp_node_maps: dict[str, dict[str, str]] = {
     "python": {"class_definition": "class", "function_definition": "function"},
     "c": {"function_definition": "function", "struct_specifier": "struct"},
-    "cpp": {"class_specifier": "class", "struct_specifier": "struct", "function_definition": "function", "namespace_definition": "namespace"},
-    "javascript": {"class_declaration": "class", "function_declaration": "function", "method_definition": "method"},
-    "typescript": {"class_declaration": "class", "interface_declaration": "interface", "function_declaration": "function", "method_definition": "method"},
-    "go": {"function_declaration": "function", "method_declaration": "method", "type_declaration": "class"},
-    "rust": {"function_item": "function", "struct_item": "struct", "trait_item": "trait", "enum_item": "enum", "impl_item": "class"},
-    "java": {"class_declaration": "class", "interface_declaration": "interface", "method_declaration": "method"},
+    "cpp": {
+        "class_specifier": "class",
+        "struct_specifier": "struct",
+        "function_definition": "function",
+        "namespace_definition": "namespace",
+    },
+    "javascript": {
+        "class_declaration": "class",
+        "function_declaration": "function",
+        "method_definition": "method",
+    },
+    "typescript": {
+        "class_declaration": "class",
+        "interface_declaration": "interface",
+        "function_declaration": "function",
+        "method_definition": "method",
+    },
+    "go": {
+        "function_declaration": "function",
+        "method_declaration": "method",
+        "type_declaration": "class",
+    },
+    "rust": {
+        "function_item": "function",
+        "struct_item": "struct",
+        "trait_item": "trait",
+        "enum_item": "enum",
+        "impl_item": "class",
+    },
+    "java": {
+        "class_declaration": "class",
+        "interface_declaration": "interface",
+        "method_declaration": "method",
+    },
 }
 
 
@@ -223,7 +252,12 @@ class CodeIndexer:
 
         def _find_name(node):
             """Recursively find the first identifier-like child node."""
-            if node.type in ("identifier", "type_identifier", "field_identifier", "property_identifier"):
+            if node.type in (
+                "identifier",
+                "type_identifier",
+                "field_identifier",
+                "property_identifier",
+            ):
                 text = node.text
                 if text:
                     return text.decode("utf-8", errors="ignore")
