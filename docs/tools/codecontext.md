@@ -7,6 +7,8 @@
 - 根据查询构建代码上下文
 - 为 LLM 提供相关代码片段
 - 支持 Token 预算管理
+- **自动注入项目记忆知识库**（`.pilotcode/memory/` 中的事实、Bug、决策、Q&A，relevance_score=0.95）
+- **支持分层索引子图过滤**（`subgraph` 参数聚焦特定模块）
 
 ## 参数
 
@@ -15,6 +17,7 @@
 | `query` | string | ✅ | 查询主题 |
 | `max_tokens` | integer | ❌ | Token 上限 |
 | `include_related` | boolean | ❌ | 包含相关符号 |
+| `subgraph` | string | ❌ | 聚焦特定子图（分层索引 drill-down） |
 
 ## 使用示例
 
@@ -37,12 +40,23 @@ CodeContext(
 )
 ```
 
+### 聚焦子图（大型项目）
+
+```python
+# 深入特定模块分析，避免全库上下文溢出
+CodeContext(
+    query="路由分发逻辑",
+    max_tokens=4000,
+    subgraph="src/router"
+)
+```
+
 ## 使用场景
 
 ### 场景1：理解复杂功能
 
 ```python
-# 获取认证系统的完整上下文
+# 获取认证系统的完整上下文（自动注入相关记忆）
 CodeContext(
     query="authentication flow",
     max_tokens=4000
@@ -69,10 +83,24 @@ CodeContext(
 )
 ```
 
+### 场景4：大型项目模块分析
+
+```python
+# 聚焦支付模块，避免加载整个代码库
+CodeContext(
+    query="退款流程",
+    max_tokens=4000,
+    subgraph="src/payment"
+)
+```
+
 ## 输出格式
 
 ```
 # Code Context for: authentication flow
+
+## Project Memory
+- [Fact] Project uses asyncio everywhere (relevance: 0.95)
 
 ## Retrieved Code Snippets
 
@@ -96,14 +124,15 @@ Coverage: 3 files, ~500 tokens
 
 ## 工作原理
 
-1. 语义搜索相关代码
-2. 符号搜索精确匹配
-3. 获取相关符号（同文件、调用关系）
-4. 按 Token 预算组装
+1. **项目记忆检索** — 从 `.pilotcode/memory/` 搜索相关事实/Bug/决策/Q&A（relevance=0.95）
+2. **语义搜索相关代码** — 使用 numpy 批量向量相似度
+3. **符号搜索精确匹配** — 利用桶索引快速定位
+4. **获取相关符号**（同文件、调用关系）
+5. **按 Token 预算组装** — 记忆片段优先，然后是代码片段
 
 ## 前提条件
 
-必须先建立代码索引。
+必须先建立代码索引。超过 10 个文件的项目会自动构建分层索引，支持 `subgraph` 参数 drill-down。
 
 ## 相关工具
 
