@@ -76,11 +76,13 @@ class MissionAdapter:
         context_budget: int = 16000,
         project_memory: ProjectMemory | None = None,
         capability_path: str | None = None,
+        cwd: str | None = None,
     ):
         self._cancel_event = cancel_event or asyncio.Event()
         self._max_worker_turns = max_worker_turns
         self.context_budget = context_budget
         self.project_memory = project_memory or ProjectMemory()
+        self._cwd = cwd or str(Path.cwd())
 
         # Load model capability profile (adaptive configuration)
         from pilotcode.utils.config import get_global_config
@@ -183,8 +185,26 @@ class MissionAdapter:
             # Optionally inject test criterion for weak models (only if code was produced)
             if self.adaptive_config.enforce_test_before_mark_complete:
                 changed_files = exec_result.artifacts.get("changed_files", []) or []
-                code_files = [f for f in changed_files if f.endswith(
-                    (".py", ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".rs", ".go", ".js", ".ts", ".java"))]
+                code_files = [
+                    f
+                    for f in changed_files
+                    if f.endswith(
+                        (
+                            ".py",
+                            ".c",
+                            ".cpp",
+                            ".cc",
+                            ".cxx",
+                            ".h",
+                            ".hpp",
+                            ".rs",
+                            ".go",
+                            ".js",
+                            ".ts",
+                            ".java",
+                        )
+                    )
+                ]
                 if code_files and not any(
                     ac.verification_method in ("test", "pytest") for ac in task.acceptance_criteria
                 ):
@@ -525,6 +545,10 @@ class MissionAdapter:
         """Build execution prompt for a single task."""
         parts = []
 
+        # Inject project root so the worker knows where it is operating
+        parts.append(f"[Project Root] {self._cwd}")
+        parts.append("")
+
         # Inject project memory so worker knows what has been discovered
         if self.project_memory:
             mem_section = self.project_memory.to_prompt_section()
@@ -556,6 +580,17 @@ class MissionAdapter:
             for ac in acceptance_criteria:
                 parts.append(f"  - {ac.description}")
 
+        # Extract explicit file references from objective and inputs to tighten scope
+        allowed_files = self._extract_allowed_files(task)
+        if allowed_files:
+            parts.extend(["", "[Allowed Files]"])
+            for f in allowed_files:
+                parts.append(f"  - {f}")
+            parts.append(
+                "CRITICAL: Only read files listed above. "
+                "Do NOT browse, search, or glob for other files unless the task explicitly asks you to."
+            )
+
         # Language directive
         lang_instruction = (
             "Respond in Chinese." if self._user_language == "cn" else "Respond in English."
@@ -581,6 +616,22 @@ class MissionAdapter:
 
         return "\n".join(parts)
 
+    @staticmethod
+    def _extract_allowed_files(task: TaskSpec) -> list[str]:
+        """Extract explicit file paths mentioned in task objective or inputs."""
+        import re
+
+        candidates: list[str] = []
+        text = " ".join([task.objective or "", *(task.inputs or [])])
+        # Match Unix/Windows absolute or relative paths with common source extensions
+        pattern = re.compile(r"(?:[\w\-]+/)*[\w\-]+(?:\.[a-zA-Z0-9]+)+")
+        for m in pattern.finditer(text):
+            val = m.group(0)
+            # Keep only values that look like file paths (contain a dot and a slash)
+            if "/" in val and "." in val and val not in candidates:
+                candidates.append(val)
+        return candidates
+
     async def _llm_worker(self, task: TaskSpec, context: dict[str, Any]) -> ExecutionResult:
         """Execute a task using QueryEngine with tool access.
 
@@ -597,6 +648,9 @@ class MissionAdapter:
 
         app_state = get_default_app_state()
         store = Store(app_state)
+        from dataclasses import replace
+
+        store.set_state(lambda s: replace(s, cwd=self._cwd))
 
         # Determine turn limit based on task complexity
         complexity = task.estimated_complexity
@@ -624,7 +678,7 @@ class MissionAdapter:
         model_client = self._select_model_client(task)
 
         config = QueryEngineConfig(
-            cwd=app_state.cwd,
+            cwd=self._cwd,
             tools=autonomous_tools,
             get_app_state=store.get_state,
             set_app_state=store.set_state,
@@ -717,7 +771,7 @@ class MissionAdapter:
                     tool_ctx = ToolUseContext(
                         get_app_state=store.get_state,
                         set_app_state=lambda f: store.set_state(f),
-                        cwd=getattr(store.get_state(), "cwd", ""),
+                        cwd=self._cwd,
                     )
 
                     if self._cancel_event.is_set():
@@ -1081,7 +1135,11 @@ class MissionAdapter:
         user_request: str,
         progress_callback: Callable[[str, dict], None] | None = None,
         explore_first: bool = True,
+        cwd: str | None = None,
     ) -> dict[str, Any]:
+        # Allow per-run override of the working directory
+        if cwd:
+            self._cwd = cwd
         """Plan and execute a mission from a natural language request.
 
         Args:
@@ -1112,7 +1170,9 @@ class MissionAdapter:
                 _invoke_progress(
                     "mission:exploring", {"message": "Exploring codebase structure..."}
                 )
-                exploration = await explore_codebase(user_request, self.project_memory)
+                exploration = await explore_codebase(
+                    user_request, self.project_memory, cwd=self._cwd
+                )
 
             # Phase 1: Plan mission
             mission = await self._plan_mission(user_request, exploration)
@@ -1156,14 +1216,17 @@ class MissionAdapter:
                         if vresult is not None and hasattr(vresult, "issues"):
                             for issue in vresult.issues:
                                 if issue.get("severity") == "warning" or (
-                                    issue.get("severity") == "error" and not issue.get("blocking", True)
+                                    issue.get("severity") == "error"
+                                    and not issue.get("blocking", True)
                                 ):
-                                    warnings.append({
-                                        "task_id": task_id,
-                                        "level": level,
-                                        "category": issue.get("category", "unknown"),
-                                        "message": issue.get("message", ""),
-                                    })
+                                    warnings.append(
+                                        {
+                                            "task_id": task_id,
+                                            "level": level,
+                                            "category": issue.get("category", "unknown"),
+                                            "message": issue.get("message", ""),
+                                        }
+                                    )
             result["warnings"] = warnings
 
             # Collect strategy metrics

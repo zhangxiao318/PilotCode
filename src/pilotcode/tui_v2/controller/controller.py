@@ -841,9 +841,7 @@ class TUIController:
                 tool_name, result.success, output
             )
             if compensation_hint:
-                self.query_engine.messages.append(
-                    SystemMessage(content=compensation_hint)
-                )
+                self.query_engine.messages.append(SystemMessage(content=compensation_hint))
                 yield UIMessage(
                     type=UIMessageType.SYSTEM,
                     content="⚠️ FileEdit compensation activated",

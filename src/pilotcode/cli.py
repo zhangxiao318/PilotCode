@@ -464,8 +464,8 @@ def main(
                 mode = "DIRECT"
             if mode == "PLAN":
                 console.print("[dim]⚡ Task classified as complex — entering P-EVR PLAN mode[/dim]")
-                adapter = MissionAdapter()
-                result = await adapter.run(prompt)
+                adapter = MissionAdapter(cwd=cwd)
+                result = await adapter.run(prompt, cwd=cwd)
                 if result.get("success"):
                     console.print(format_completion(result))
                 else:

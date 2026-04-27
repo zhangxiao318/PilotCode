@@ -137,7 +137,9 @@ def format_completion(result: dict[str, Any]) -> str:
         lines.append("⚠️  Warnings (non-blocking)")
         lines.append("=" * 40)
         for w in warnings:
-            lines.append(f"  [{w.get('task_id', '?')}] L{w.get('level', '?')} {w.get('category', '?')}: {w.get('message', '')}")
+            lines.append(
+                f"  [{w.get('task_id', '?')}] L{w.get('level', '?')} {w.get('category', '?')}: {w.get('message', '')}"
+            )
         lines.append("")
         lines.append("These warnings do not affect task completion but suggest improvements.")
 

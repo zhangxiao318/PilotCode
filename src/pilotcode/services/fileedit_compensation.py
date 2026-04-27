@@ -82,8 +82,10 @@ class FileEditCompensationTracker:
         if self._shared_stats is not None:
             self._shared_stats.clear()
             self._shared_stats.update(stats)
-        print(f"[FileEditStats] edits={self.lifetime_edits} failures={self.lifetime_failures} "
-              f"degradations={self.lifetime_degradations} weak={self.persistent_weak}")
+        print(
+            f"[FileEditStats] edits={self.lifetime_edits} failures={self.lifetime_failures} "
+            f"degradations={self.lifetime_degradations} weak={self.persistent_weak}"
+        )
 
     @property
     def lifetime_failure_rate(self) -> float:

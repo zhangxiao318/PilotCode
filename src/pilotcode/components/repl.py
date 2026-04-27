@@ -424,9 +424,7 @@ class REPL:
                     tool_msg.name, exec_result.success, result_content
                 )
                 if compensation_hint:
-                    self.query_engine.messages.append(
-                        AssistantMessage(content=compensation_hint)
-                    )
+                    self.query_engine.messages.append(AssistantMessage(content=compensation_hint))
                     self.console.print(
                         f"[yellow]⚠️  FileEdit compensation activated after "
                         f"{self._fileedit_tracker.failure_streak} consecutive failures[/yellow]"

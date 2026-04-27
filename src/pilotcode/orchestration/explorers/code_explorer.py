@@ -12,19 +12,31 @@ from ..project_memory import ProjectMemory
 logger = logging.getLogger(__name__)
 
 
-async def explore_codebase(user_request: str, project_memory: ProjectMemory) -> dict[str, Any]:
+async def explore_codebase(
+    user_request: str, project_memory: ProjectMemory, cwd: str | None = None
+) -> dict[str, Any]:
     """Quickly explore the codebase to understand structure before planning.
 
-    Returns a dict with keys: files, conventions, architecture_notes.
+    Args:
+        user_request: The user's natural language request.
+        project_memory: Shared project memory to record findings.
+        cwd: Working directory to explore. Defaults to the current process directory.
+
+    Returns:
+        A dict with keys: files, conventions, architecture_notes.
     """
     import glob as pyglob
 
+    base_dir = cwd or os.getcwd()
     exploration: dict[str, Any] = {"files": [], "conventions": {}, "architecture_notes": []}
 
     # Quick scan of Python files (offload sync I/O to thread)
     try:
-        py_files = await asyncio.to_thread(pyglob.glob, "**/*.py", recursive=True)
-        exploration["files"] = py_files[:50]
+        py_files = await asyncio.to_thread(
+            pyglob.glob, os.path.join(base_dir, "**/*.py"), recursive=True
+        )
+        # Strip base_dir prefix for consistent relative paths
+        exploration["files"] = [os.path.relpath(f, base_dir) for f in py_files[:50]]
     except Exception:
         logger.debug("Exploration glob failed", exc_info=True)
 
@@ -49,7 +61,7 @@ async def explore_codebase(user_request: str, project_memory: ProjectMemory) -> 
         "requirements.txt",
     ]
     for fname in top_level_files:
-        fpath = os.path.join(os.getcwd(), fname)
+        fpath = os.path.join(base_dir, fname)
         try:
             exists = await asyncio.to_thread(os.path.exists, fpath)
             if not exists:

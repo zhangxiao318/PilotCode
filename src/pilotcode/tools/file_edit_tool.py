@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
-
 # ---------------------------------------------------------------------------
 # Auto-degradation helpers for weak models (P0)
 # ---------------------------------------------------------------------------
@@ -31,9 +30,7 @@ def _extract_anchor_lines(text: str) -> list[str]:
     return anchors
 
 
-def _try_line_level_match(
-    content: str, old_str: str, new_str: str
-) -> tuple[str | None, str]:
+def _try_line_level_match(content: str, old_str: str, new_str: str) -> tuple[str | None, str]:
     """Attempt line-level split matching when exact match fails.
 
     Strategy:
@@ -85,9 +82,7 @@ def _try_line_level_match(
     return None, f"Line-level match failed: could not find {len(anchors)} anchor lines in order."
 
 
-def _try_block_level_match(
-    content: str, old_str: str, new_str: str
-) -> tuple[str | None, str]:
+def _try_block_level_match(content: str, old_str: str, new_str: str) -> tuple[str | None, str]:
     """Attempt function/class block matching when line-level match fails.
 
     Strategy:

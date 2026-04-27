@@ -17,7 +17,6 @@ from .base import BaseVerifier, VerificationResult, Verdict
 from ..task_spec import TaskSpec
 from ..results import ExecutionResult
 
-
 # ---------------------------------------------------------------------------
 # Language detection
 # ---------------------------------------------------------------------------
@@ -167,9 +166,13 @@ class PytestRunnerVerifier(BaseVerifier):
         # If no code files to verify, skip
         if not langs:
             return self._make_result(
-                task, passed=True, score=80.0, issues=[],
+                task,
+                passed=True,
+                score=80.0,
+                issues=[],
                 feedback="No code outputs to verify.",
-                verdict=Verdict.APPROVE, metrics=metrics,
+                verdict=Verdict.APPROVE,
+                metrics=metrics,
             )
 
         results: list[dict[str, Any]] = []
@@ -188,8 +191,7 @@ class PytestRunnerVerifier(BaseVerifier):
         score = max(0.0, min(100.0, score))
         # Blocking errors trigger NEEDS_REWORK; warnings are recorded but don't block
         has_blocking_error = any(
-            i["severity"] == "error" and i.get("blocking", True)
-            for i in issues
+            i["severity"] == "error" and i.get("blocking", True) for i in issues
         )
         passed = score >= 60.0 and not has_blocking_error
 
@@ -208,9 +210,13 @@ class PytestRunnerVerifier(BaseVerifier):
         metrics["passed"] = passed
 
         return self._make_result(
-            task, passed=passed, score=score,
-            issues=issues, feedback=feedback,
-            verdict=verdict, metrics=metrics,
+            task,
+            passed=passed,
+            score=score,
+            issues=issues,
+            feedback=feedback,
+            verdict=verdict,
+            metrics=metrics,
         )
 
     # ------------------------------------------------------------------
@@ -228,16 +234,19 @@ class PytestRunnerVerifier(BaseVerifier):
         for f in files:
             try:
                 import py_compile as pc
+
                 pc.compile(f, doraise=True)
             except Exception as e:
                 ok = False
                 penalty += 20.0
-                issues.append({
-                    "severity": "error",
-                    "category": "syntax_error",
-                    "message": f"{os.path.basename(f)}: {e}",
-                    "blocking": True,
-                })
+                issues.append(
+                    {
+                        "severity": "error",
+                        "category": "syntax_error",
+                        "message": f"{os.path.basename(f)}: {e}",
+                        "blocking": True,
+                    }
+                )
 
         # Second: pytest if available
         test_files = self._discover_tests(task)
@@ -247,12 +256,14 @@ class PytestRunnerVerifier(BaseVerifier):
                 ok = False
                 penalty += 30.0
                 failed = self._parse_failures(result["stdout"] + result["stderr"])
-                issues.append({
-                    "severity": "error",
-                    "category": "test_failure",
-                    "message": f"pytest exit={result['exit_code']}, failed: {failed[:3]}",
-                    "blocking": True,
-                })
+                issues.append(
+                    {
+                        "severity": "error",
+                        "category": "test_failure",
+                        "message": f"pytest exit={result['exit_code']}, failed: {failed[:3]}",
+                        "blocking": True,
+                    }
+                )
                 feedback = f"pytest failed ({len(failed)} failures)"
             else:
                 feedback = "pytest passed"
@@ -291,12 +302,14 @@ class PytestRunnerVerifier(BaseVerifier):
             return {
                 "lang": lang,
                 "ok": True,
-                "issues": [{
-                    "severity": "warning",
-                    "category": "compiler_missing",
-                    "message": f"{binary} not found; skipping {lang} compile check. {hint}",
-                    "blocking": False,
-                }],
+                "issues": [
+                    {
+                        "severity": "warning",
+                        "category": "compiler_missing",
+                        "message": f"{binary} not found; skipping {lang} compile check. {hint}",
+                        "blocking": False,
+                    }
+                ],
                 "score_penalty": 0.0,
                 "feedback": f"{binary} not installed; skipped ({hint})",
             }
@@ -312,12 +325,14 @@ class PytestRunnerVerifier(BaseVerifier):
                 ok = False
                 penalty += 25.0
                 err = (result["stderr"] or result["stdout"])[:300]
-                issues.append({
-                    "severity": "error",
-                    "category": "compile_error",
-                    "message": f"{os.path.basename(f)}: {err}",
-                    "blocking": True,
-                })
+                issues.append(
+                    {
+                        "severity": "error",
+                        "category": "compile_error",
+                        "message": f"{os.path.basename(f)}: {err}",
+                        "blocking": True,
+                    }
+                )
 
         if ok:
             feedback = f"{binary} syntax check passed for {len(files)} file(s)"
@@ -339,12 +354,14 @@ class PytestRunnerVerifier(BaseVerifier):
         for f in files:
             if os.path.getsize(f) == 0:
                 ok = False
-                issues.append({
-                    "severity": "warning",
-                    "category": "empty_file",
-                    "message": f"{os.path.basename(f)} is empty",
-                    "blocking": True,
-                })
+                issues.append(
+                    {
+                        "severity": "warning",
+                        "category": "empty_file",
+                        "message": f"{os.path.basename(f)} is empty",
+                        "blocking": True,
+                    }
+                )
         return {
             "lang": "generic",
             "ok": ok,
@@ -357,7 +374,9 @@ class PytestRunnerVerifier(BaseVerifier):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _detect_languages(self, task: TaskSpec, execution_result: ExecutionResult | None = None) -> dict[str, list[str]]:
+    def _detect_languages(
+        self, task: TaskSpec, execution_result: ExecutionResult | None = None
+    ) -> dict[str, list[str]]:
         """Group task outputs or changed files by detected language."""
         # Prefer actual changed files from execution result
         files: list[str] = []

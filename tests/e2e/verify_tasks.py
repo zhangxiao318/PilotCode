@@ -89,8 +89,7 @@ class GenericVerifier:
         if check_type == "file_exists":
             exists = file_path.exists()
             return CheckResult(
-                name, exists,
-                f"{rel_file} exists" if exists else f"{rel_file} missing"
+                name, exists, f"{rel_file} exists" if exists else f"{rel_file} missing"
             )
 
         # ---- contains check ----
@@ -101,8 +100,7 @@ class GenericVerifier:
             pattern = check.get("pattern", "")
             found = pattern in source
             return CheckResult(
-                name, found,
-                f"found '{pattern}'" if found else f"missing '{pattern}'"
+                name, found, f"found '{pattern}'" if found else f"missing '{pattern}'"
             )
 
         # ---- function_exists check ----
@@ -114,8 +112,7 @@ class GenericVerifier:
             func = self._find_function(tree, func_name) if tree else None
             found = func is not None
             return CheckResult(
-                name, found,
-                f"{func_name}() defined" if found else f"{func_name}() missing"
+                name, found, f"{func_name}() defined" if found else f"{func_name}() missing"
             )
 
         # ---- function_contains check ----
@@ -131,8 +128,13 @@ class GenericVerifier:
             func_source = ast.unparse(func)
             found = pattern in func_source
             return CheckResult(
-                name, found,
-                f"{func_name}() contains '{pattern}'" if found else f"{func_name}() missing '{pattern}'"
+                name,
+                found,
+                (
+                    f"{func_name}() contains '{pattern}'"
+                    if found
+                    else f"{func_name}() missing '{pattern}'"
+                ),
             )
 
         # ---- max_functions check ----
@@ -140,12 +142,21 @@ class GenericVerifier:
             if not file_path.exists():
                 return CheckResult(name, False, f"{rel_file} not found")
             tree = self._ast_parse(rel_file)
-            func_count = sum(1 for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)) if tree else 0
+            func_count = (
+                sum(1 for node in ast.walk(tree) if isinstance(node, ast.FunctionDef))
+                if tree
+                else 0
+            )
             max_count = check.get("max_count", 999)
             ok = func_count <= max_count
             return CheckResult(
-                name, ok,
-                f"{func_count} functions (max {max_count})" if ok else f"{func_count} functions (exceeds max {max_count})"
+                name,
+                ok,
+                (
+                    f"{func_count} functions (max {max_count})"
+                    if ok
+                    else f"{func_count} functions (exceeds max {max_count})"
+                ),
             )
 
         return CheckResult(name, False, f"unknown check type: {check_type}")
@@ -194,12 +205,16 @@ def main() -> int:
     if args.json:
         output = []
         for r in results:
-            output.append({
-                "task": r.task_name,
-                "description": r.description,
-                "passed": r.passed,
-                "checks": [{"name": c.name, "passed": c.passed, "message": c.message} for c in r.checks],
-            })
+            output.append(
+                {
+                    "task": r.task_name,
+                    "description": r.description,
+                    "passed": r.passed,
+                    "checks": [
+                        {"name": c.name, "passed": c.passed, "message": c.message} for c in r.checks
+                    ],
+                }
+            )
         print(json.dumps(output, indent=2, ensure_ascii=False))
     else:
         all_passed = True

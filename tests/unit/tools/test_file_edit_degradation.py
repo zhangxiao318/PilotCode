@@ -57,16 +57,8 @@ class TestBlockLevelMatch:
             "    def other(self):\n"
             "        pass\n"
         )
-        old = (
-            "    def method(self):\n"
-            "        a = 1\n"
-            "        return a\n"
-        )
-        new = (
-            "    def method(self):\n"
-            "        b = 2\n"
-            "        return b\n"
-        )
+        old = "    def method(self):\n" "        a = 1\n" "        return a\n"
+        new = "    def method(self):\n" "        b = 2\n" "        return b\n"
         matched, replacement = _try_block_level_match(content, old, new)
         assert matched is not None
         assert "def method(self):" in matched
@@ -81,21 +73,9 @@ class TestBlockLevelMatch:
         assert matched is None
 
     def test_class_block_match(self):
-        content = (
-            "class A:\n"
-            "    x = 1\n"
-            "\n"
-            "class B:\n"
-            "    y = 2\n"
-        )
-        old = (
-            "class A:\n"
-            "    x = 1\n"
-        )
-        new = (
-            "class A:\n"
-            "    z = 3\n"
-        )
+        content = "class A:\n" "    x = 1\n" "\n" "class B:\n" "    y = 2\n"
+        old = "class A:\n" "    x = 1\n"
+        new = "class A:\n" "    z = 3\n"
         matched, replacement = _try_block_level_match(content, old, new)
         assert matched is not None
         assert "class A:" in matched

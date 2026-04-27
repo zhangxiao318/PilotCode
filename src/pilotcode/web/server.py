@@ -253,6 +253,7 @@ class WebSocketManager:
         # P0: Use server-level shared stats so lifetime counters accumulate
         # across sessions (persistent weak-model detection).
         from pilotcode.state.store import get_store
+
         global_store = get_store()
         shared_stats: dict = getattr(global_store.get_state(), "fileedit_stats", {}) or {}
         if not shared_stats:
@@ -718,7 +719,7 @@ class WebSocketManager:
                 )
 
                 cancel_event = asyncio.Event()
-                adapter = MissionAdapter(cancel_event=cancel_event)
+                adapter = MissionAdapter(cancel_event=cancel_event, cwd=self.cwd)
 
                 async def _ws_progress(event_type: str, data: dict):
                     if event_type == "mission:planned":
@@ -773,7 +774,7 @@ class WebSocketManager:
                             },
                         )
 
-                result = await adapter.run(query, progress_callback=_ws_progress)
+                result = await adapter.run(query, progress_callback=_ws_progress, cwd=self.cwd)
 
                 if result.get("success"):
                     summary = format_completion(result)
@@ -1207,9 +1208,7 @@ class WebSocketManager:
                         tool_msg.name, exec_result.success, result_content
                     )
                     if compensation_hint:
-                        query_engine.messages.append(
-                            SystemMessage(content=compensation_hint)
-                        )
+                        query_engine.messages.append(SystemMessage(content=compensation_hint))
                         print(
                             f"[FileEditCompensation] Activated after "
                             f"{tracker.failure_streak} consecutive failures"
