@@ -220,7 +220,7 @@ class TUIController:
 
         global_cfg = get_global_config()
         config = QueryEngineConfig(
-            cwd=str(Path.cwd()),
+            cwd=self.session_options.get("cwd", str(Path.cwd())),
             tools=tools,
             get_app_state=self.get_app_state,
             set_app_state=self.set_app_state,
@@ -346,9 +346,11 @@ class TUIController:
         # Pass actual context window so strategy selector doesn't fall back
         # to the default 16K budget (which triggers BALANCED → 300-line limit).
         ctx_window = self.query_engine.config.context_window if self.query_engine else 128_000
+        cwd = self.session_options.get("cwd", str(Path.cwd()))
         adapter = MissionAdapter(
             cancel_event=cancel_event,
             context_budget=ctx_window,
+            cwd=cwd,
         )
 
         mission_displayed = False
@@ -366,7 +368,9 @@ class TUIController:
         self._pevr_events: list[tuple[str, dict]] = []
 
         # Start mission execution in background
-        mission_task = asyncio.create_task(adapter.run(text, progress_callback=progress_cb))
+        mission_task = asyncio.create_task(
+            adapter.run(text, progress_callback=progress_cb, cwd=cwd)
+        )
 
         yield UIMessage(
             type=UIMessageType.SYSTEM,
@@ -586,7 +590,9 @@ class TUIController:
 
         # Auto-detect task complexity for the first user message
         if len(self.query_engine.messages) == 0:
-            mode = await classify_task_complexity(text)
+            mode = await classify_task_complexity(
+                text, cwd=self.session_options.get("cwd", str(Path.cwd()))
+            )
             if mode == "PLAN":
                 async for msg in self._run_pevr_mode(text):
                     yield msg
