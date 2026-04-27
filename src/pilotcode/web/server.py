@@ -1563,7 +1563,7 @@ def run_websocket_server_sync(host: str, port: int):
 
 def run_server_standalone(host: str = "127.0.0.1", port: int = 8080, cwd: str = "."):
     """Run both HTTP and WebSocket servers."""
-    ws_manager.cwd = cwd
+    ws_manager.cwd = str(Path(cwd).resolve())
 
     print("=" * 60)
     print("PilotCode Web UI Server")
