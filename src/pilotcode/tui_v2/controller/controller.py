@@ -226,6 +226,12 @@ class TUIController:
             self.query_engine.config = self.query_engine.config.replace(cwd=new_cwd)
         if self.set_app_state:
             self.set_app_state(lambda s: s.replace(cwd=new_cwd))
+        # Also change the actual OS working directory so external tools
+        # (e.g. git, file dialogs) operate in the correct path.
+        try:
+            os.chdir(new_cwd)
+        except OSError as e:
+            self._notify("system", {"text": f"Warning: could not change directory to {new_cwd}: {e}"})
 
     def _init_engine(self) -> None:
         """Initialize QueryEngine and session."""

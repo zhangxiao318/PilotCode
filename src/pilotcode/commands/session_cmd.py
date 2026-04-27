@@ -28,7 +28,7 @@ def _pad(text: str, width: int) -> str:
     return text + " " * (width - w)
 
 
-async def session_command(args: list[str], context: CommandContext) -> str:
+async def session_command(args: list[str], context: CommandContext) -> str | dict:
     """Handle /session command."""
     persistence = get_session_persistence()
 
@@ -91,18 +91,37 @@ async def session_command(args: list[str], context: CommandContext) -> str:
             return "Usage: /session load <session_id>"
 
         session_id = args[1]
-        result = persist_load_session(session_id)
 
+        # 1. Save the current session first so nothing is lost
+        current_session_id = context.session_id if context else None
+        if current_session_id and context.query_engine and hasattr(context.query_engine, "messages"):
+            persist_save_session(
+                session_id=current_session_id,
+                messages=context.query_engine.messages,
+                name="Auto-save before load",
+                project_path=context.cwd if context else None,
+            )
+
+        # 2. Load the target session
+        result = persist_load_session(session_id)
         if result is None:
             return f"Session not found: {session_id}"
 
         messages, metadata = result
 
-        # Actually load messages into the current query_engine
+        # 3. Apply loaded messages into the current query_engine
         if context and context.query_engine and hasattr(context.query_engine, "messages"):
             context.query_engine.messages = messages
             loaded_name = metadata.get("name", session_id)
-            return f"✅ Loaded session: {loaded_name} ({len(messages)} messages)"
+            restored_cwd = metadata.get("project_path")
+            return {
+                "action": "load_session",
+                "session_id": session_id,
+                "session_name": loaded_name,
+                "project_path": restored_cwd,
+                "message_count": len(messages),
+                "message": f"✅ Loaded session: {loaded_name} ({len(messages)} messages)",
+            }
         else:
             return f"⚠️ Session data loaded but cannot apply (no query_engine in context): {metadata.get('name', session_id)} ({len(messages)} messages)"
 

@@ -352,7 +352,25 @@ class SessionScreen(Screen):
                     return
 
             # Display command result
-            if isinstance(result, str):
+            if isinstance(result, dict) and result.get("action") == "load_session":
+                # Session switch: update controller state, sync cwd, refresh UI
+                if self.controller:
+                    self.controller._session_id = result["session_id"]
+                    self.controller._session_name = result["session_name"]
+                    restored_cwd = result.get("project_path")
+                    if restored_cwd:
+                        self.controller._update_session_cwd(restored_cwd)
+                    # Refresh UI message list from restored session
+                    if self.message_list:
+                        self.message_list.clear_messages()
+                        self._restore_ui_messages()
+                    # Update status bar
+                    if self.status_bar:
+                        self.status_bar.set_session_id(result["session_id"])
+                msg = UIMessage(type=UIMessageType.SYSTEM, content=result["message"])
+                if self.message_list:
+                    self.message_list.add_message(msg)
+            elif isinstance(result, str):
                 msg = UIMessage(type=UIMessageType.SYSTEM, content=result)
                 if self.message_list:
                     self.message_list.add_message(msg)
