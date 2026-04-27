@@ -1,0 +1,29 @@
+task_name: "Task 3: Medium Edit"
+description: "Add warning symbol when context usage exceeds 80%"
+checks:
+  - name: syntax
+    type: syntax
+    file: src/pilotcode/tui_v2/components/status/bar.py
+
+  - name: warning_symbol
+    type: function_contains
+    file: src/pilotcode/tui_v2/components/status/bar.py
+    function: _get_right_text
+    pattern: "⚠"
+
+  - name: threshold_80
+    type: function_contains
+    file: src/pilotcode/tui_v2/components/status/bar.py
+    function: _get_right_text
+    pattern: "80.0"
+
+  - name: format_preserved
+    type: function_contains
+    file: src/pilotcode/tui_v2/components/status/bar.py
+    function: _get_right_text
+    pattern: 'return " | ".join(parts)'
+
+  - name: no_new_functions
+    type: max_functions
+    file: src/pilotcode/tui_v2/components/status/bar.py
+    max_count: 20

@@ -1,0 +1,49 @@
+task_name: "Task 4: Multi-File Edit"
+description: "Create /timestamp command and integrate into /status"
+checks:
+  - name: timestamp_file_exists
+    type: file_exists
+    file: src/pilotcode/commands/timestamp_cmd.py
+
+  - name: timestamp_syntax
+    type: syntax
+    file: src/pilotcode/commands/timestamp_cmd.py
+
+  - name: timestamp_time_format
+    type: contains
+    file: src/pilotcode/commands/timestamp_cmd.py
+    pattern: "%Y-%m-%d %H:%M:%S"
+
+  - name: timestamp_cwd
+    type: contains
+    file: src/pilotcode/commands/timestamp_cmd.py
+    pattern: "context.cwd"
+
+  - name: timestamp_python_version
+    type: contains
+    file: src/pilotcode/commands/timestamp_cmd.py
+    pattern: "sys.version"
+
+  - name: timestamp_registered
+    type: contains
+    file: src/pilotcode/commands/timestamp_cmd.py
+    pattern: "register_command"
+
+  - name: timestamp_alias
+    type: contains
+    file: src/pilotcode/commands/timestamp_cmd.py
+    pattern: '"ts"'
+
+  - name: init_imports_timestamp
+    type: contains
+    file: src/pilotcode/commands/__init__.py
+    pattern: "timestamp_cmd"
+
+  - name: status_last_check
+    type: contains
+    file: src/pilotcode/commands/status_cmd.py
+    pattern: "Last Check"
+
+  - name: status_syntax
+    type: syntax
+    file: src/pilotcode/commands/status_cmd.py

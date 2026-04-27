@@ -1,0 +1,34 @@
+task_name: "Task 2: Simple Edit"
+description: "Add disk usage display to /status command"
+checks:
+  - name: syntax
+    type: syntax
+    file: src/pilotcode/commands/status_cmd.py
+
+  - name: import_shutil
+    type: contains
+    file: src/pilotcode/commands/status_cmd.py
+    pattern: "import shutil"
+
+  - name: _fmt_bytes_exists
+    type: function_exists
+    file: src/pilotcode/commands/status_cmd.py
+    function: _fmt_bytes
+
+  - name: disk_usage_logic
+    type: function_contains
+    file: src/pilotcode/commands/status_cmd.py
+    function: status_command
+    pattern: "shutil.disk_usage"
+
+  - name: exception_handling
+    type: function_contains
+    file: src/pilotcode/commands/status_cmd.py
+    function: status_command
+    pattern: "try:"
+
+  - name: exception_handling_except
+    type: function_contains
+    file: src/pilotcode/commands/status_cmd.py
+    function: status_command
+    pattern: "except"
