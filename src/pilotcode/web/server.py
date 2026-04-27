@@ -568,7 +568,9 @@ class WebSocketManager:
                             "messages": _serialize_messages_for_web(messages),
                         },
                     )
-                    print(f"[Session] Attached to in-memory session {sid} ({len(messages)} messages)")
+                    print(
+                        f"[Session] Attached to in-memory session {sid} ({len(messages)} messages)"
+                    )
                 else:
                     from pilotcode.services.session_persistence import get_session_persistence
 
