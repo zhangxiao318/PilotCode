@@ -51,3 +51,9 @@ playwright>=1.40.0
 
 # Validation (optional, for input validation)
 # zod  # Not available on PyPI, uses type hints instead
+
+# Dev / test dependencies
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=5.0.0
+respx>=0.21.0
