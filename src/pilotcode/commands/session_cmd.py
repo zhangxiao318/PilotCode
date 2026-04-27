@@ -94,7 +94,11 @@ async def session_command(args: list[str], context: CommandContext) -> str | dic
 
         # 1. Save the current session first so nothing is lost
         current_session_id = context.session_id if context else None
-        if current_session_id and context.query_engine and hasattr(context.query_engine, "messages"):
+        if (
+            current_session_id
+            and context.query_engine
+            and hasattr(context.query_engine, "messages")
+        ):
             persist_save_session(
                 session_id=current_session_id,
                 messages=context.query_engine.messages,

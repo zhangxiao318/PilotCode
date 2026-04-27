@@ -231,7 +231,9 @@ class TUIController:
         try:
             os.chdir(new_cwd)
         except OSError as e:
-            self._notify("system", {"text": f"Warning: could not change directory to {new_cwd}: {e}"})
+            self._notify(
+                "system", {"text": f"Warning: could not change directory to {new_cwd}: {e}"}
+            )
 
     def _init_engine(self) -> None:
         """Initialize QueryEngine and session."""

@@ -262,6 +262,7 @@ class WebSocketManager:
 
         ctx = {
             "session_id": session_id,
+            "name": session_id,
             "query_engine": query_engine,
             "store": store,
             "created_at": asyncio.get_event_loop().time(),
@@ -306,18 +307,47 @@ class WebSocketManager:
         return False
 
     async def _list_sessions(self) -> list[dict]:
-        """List all active sessions."""
+        """List all sessions (memory + disk)."""
         result = []
+        memory_ids = set()
         async with self._session_lock:
             for sid, ctx in self._session_contexts.items():
+                memory_ids.add(sid)
                 result.append(
                     {
                         "session_id": sid,
+                        "name": ctx.get("name", sid),
                         "message_count": len(ctx["query_engine"].messages),
                         "created_at": ctx["created_at"],
                         "last_activity": ctx["last_activity"],
+                        "source": "memory",
+                        "project_path": getattr(ctx["query_engine"].config, "cwd", self.cwd),
                     }
                 )
+
+        # Also include disk sessions not currently in memory
+        from pilotcode.services.session_persistence import get_session_persistence
+
+        persist = get_session_persistence()
+        try:
+            for meta in persist.list_sessions():
+                if meta.session_id not in memory_ids:
+                    result.append(
+                        {
+                            "session_id": meta.session_id,
+                            "name": meta.name or meta.session_id,
+                            "message_count": meta.message_count,
+                            "created_at": meta.created_at,
+                            "last_activity": meta.updated_at,
+                            "source": "disk",
+                            "project_path": meta.project_path,
+                        }
+                    )
+        except Exception as e:
+            print(f"[Session] Error listing disk sessions: {e}")
+
+        # Sort by last_activity desc
+        result.sort(key=lambda s: s.get("last_activity", ""), reverse=True)
         return result
 
     def _touch_session(self, session_id: str):
@@ -439,8 +469,51 @@ class WebSocketManager:
                         {"type": "session_error", "error": "No active session"},
                     )
 
+            elif msg_type == "session_load":
+                sid = data.get("session_id", "")
+                from pilotcode.services.session_persistence import get_session_persistence
+
+                persist = get_session_persistence()
+                result = persist.load_session(sid)
+                if result is None:
+                    await self.send_to_client(
+                        websocket,
+                        {"type": "session_error", "error": f"Session not found: {sid}"},
+                    )
+                else:
+                    messages, metadata = result
+                    # Create/replace in-memory session context
+                    ctx = await self._create_session_context(sid)
+                    ctx["query_engine"].messages = messages
+                    ctx["name"] = metadata.get("name", sid)
+                    restored_cwd = metadata.get("project_path", self.cwd)
+                    if restored_cwd:
+                        from dataclasses import replace
+
+                        ctx["store"].set_state(lambda s: replace(s, cwd=restored_cwd))
+                        ctx["query_engine"].config = ctx["query_engine"].config.replace(
+                            cwd=restored_cwd
+                        )
+                    self.client_sessions[websocket] = sid
+                    await self.send_to_client(
+                        websocket,
+                        {
+                            "type": "session_loaded",
+                            "session_id": sid,
+                            "name": metadata.get("name", sid),
+                            "message_count": len(messages),
+                            "project_path": restored_cwd,
+                        },
+                    )
+                    print(f"[Session] Loaded {sid} ({len(messages)} messages) from disk")
+
             elif msg_type == "session_delete":
                 sid = data.get("session_id", "")
+                # Also delete from disk
+                from pilotcode.services.session_persistence import get_session_persistence
+
+                persist = get_session_persistence()
+                persist.delete_session(sid)
                 success = await self._delete_session(sid)
                 await self.send_to_client(
                     websocket,
@@ -1265,6 +1338,20 @@ class WebSocketManager:
                 del self.current_tasks[websocket]
             # Update session activity
             self._touch_session(session_id)
+            # Auto-save session after query
+            try:
+                if session_ctx:
+                    from pilotcode.services.session_persistence import get_session_persistence
+
+                    persist = get_session_persistence()
+                    persist.save_session(
+                        session_id=session_id,
+                        messages=session_ctx["query_engine"].messages,
+                        name=session_ctx.get("name", session_id),
+                        project_path=getattr(session_ctx["query_engine"].config, "cwd", self.cwd),
+                    )
+            except Exception as e:
+                print(f"[Session] Auto-save error: {e}")
 
 
 ws_manager = WebSocketManager()

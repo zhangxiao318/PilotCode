@@ -4,6 +4,8 @@ let messageId = 0;
 let pendingMessages = new Map();
 let currentStreamId = null;
 let isConnected = false;
+let currentSessionId = null;
+let sessions = [];
 
 // DOM elements
 const chatArea = document.getElementById('chatArea');
@@ -42,6 +44,8 @@ function connectWebSocket() {
         isConnected = true;
         updateConnectionStatus(true);
         showToast('Connected to PilotCode', 'success');
+        // Request session list on connect
+        sendMessage({type: 'session_list'});
     };
     
     ws.onclose = () => {
@@ -130,6 +134,40 @@ function handleMessage(data) {
             break;
         case 'user_question_request':
             handleUserQuestionRequest(data);
+            break;
+        case 'session_created':
+            currentSessionId = data.session_id;
+            renderSessionList();
+            showToast('New session created', 'success');
+            break;
+        case 'session_attached':
+            currentSessionId = data.session_id;
+            renderSessionList();
+            showToast(`Attached to session ${data.session_id.slice(0, 8)}`, 'success');
+            break;
+        case 'session_loaded':
+            currentSessionId = data.session_id;
+            clearChatUI();
+            renderSessionList();
+            showToast(`Loaded: ${data.name || data.session_id}`, 'success');
+            break;
+        case 'session_list':
+            sessions = data.sessions || [];
+            renderSessionList();
+            break;
+        case 'session_saved':
+            showToast('Session saved', 'success');
+            break;
+        case 'session_deleted':
+            sessions = sessions.filter(s => s.session_id !== data.session_id);
+            renderSessionList();
+            if (currentSessionId === data.session_id) {
+                currentSessionId = null;
+                clearChatUI();
+            }
+            break;
+        case 'session_error':
+            showToast(data.error || 'Session error', 'error');
             break;
     }
 }
@@ -508,15 +546,13 @@ function setupEventListeners() {
     
     // New session
     newSessionBtn.addEventListener('click', () => {
-        messagesContainer.innerHTML = '';
-        messagesContainer.classList.add('hidden');
-        welcomeMessage.classList.remove('hidden');
-        messageInput.value = '';
-        messageInput.style.height = 'auto';
-        sendBtn.disabled = true;
-        messageId = 0;
-        pendingMessages.clear();
-        currentStreamId = null;
+        // Save current session first
+        if (currentSessionId) {
+            sendMessage({type: 'session_save', name: currentSessionId});
+        }
+        // Request new session
+        sendMessage({type: 'session_create'});
+        clearChatUI();
     });
     
     // Sidebar toggle
@@ -542,7 +578,8 @@ function sendUserMessage() {
     sendMessage({
         type: 'query',
         message: content,
-        message_id: msgId
+        message_id: msgId,
+        session_id: currentSessionId
     });
     
     messageInput.value = '';
@@ -669,6 +706,66 @@ function showToast(message, type = 'info') {
     setTimeout(() => {
         toast.remove();
     }, 3000);
+}
+
+// Session management helpers
+function clearChatUI() {
+    messagesContainer.innerHTML = '';
+    messagesContainer.classList.add('hidden');
+    welcomeMessage.classList.remove('hidden');
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+    sendBtn.disabled = true;
+    messageId = 0;
+    pendingMessages.clear();
+    currentStreamId = null;
+}
+
+function renderSessionList() {
+    const list = document.getElementById('sessionsList');
+    list.innerHTML = '';
+
+    if (sessions.length === 0) {
+        list.innerHTML = '<div style="padding: 12px; color: #999; font-size: 13px;">No sessions</div>';
+        return;
+    }
+
+    sessions.forEach(session => {
+        const item = document.createElement('div');
+        const isActive = session.session_id === currentSessionId;
+        item.className = 'session-item' + (isActive ? ' active' : '');
+        item.dataset.sessionId = session.session_id;
+
+        const msgCount = session.message_count || 0;
+        const countBadge = msgCount > 0 ? `<span class="session-count">${msgCount}</span>` : '';
+        const deleteBtn = `<button class="session-delete" onclick="event.stopPropagation(); deleteSession('${session.session_id}')" title="Delete">×</button>`;
+
+        item.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; flex-shrink: 0;">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>${escapeHtml(session.name || session.session_id)}</span>
+            ${countBadge}
+            ${deleteBtn}
+        `;
+
+        item.addEventListener('click', () => switchSession(session.session_id));
+        list.appendChild(item);
+    });
+}
+
+function switchSession(sessionId) {
+    if (sessionId === currentSessionId) return;
+    // Save current before switching
+    if (currentSessionId) {
+        sendMessage({type: 'session_save', name: currentSessionId});
+    }
+    sendMessage({type: 'session_load', session_id: sessionId});
+}
+
+function deleteSession(sessionId) {
+    if (!confirm(`Delete session ${sessionId.slice(0, 16)}?`)) return;
+    sendMessage({type: 'session_delete', session_id: sessionId});
 }
 
 // Initialize on load
