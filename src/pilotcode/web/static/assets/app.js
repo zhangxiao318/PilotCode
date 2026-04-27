@@ -22,6 +22,7 @@ const sidebarToggle = document.getElementById('sidebarToggle');
 const sidebar = document.querySelector('.sidebar');
 const attachBtn = document.getElementById('attachBtn');
 const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
 const inputStatus = document.getElementById('inputStatus');
 
 // Modal elements
@@ -87,10 +88,10 @@ function connectWebSocket() {
 function updateConnectionStatus(connected) {
     if (connected) {
         statusDot.classList.remove('disconnected');
-        statusDot.title = 'Connected';
+        statusText.textContent = 'Connected';
     } else {
         statusDot.classList.add('disconnected');
-        statusDot.title = 'Disconnected';
+        statusText.textContent = 'Disconnected';
     }
 }
 
@@ -1038,14 +1039,22 @@ function showContextMenu(event, sessionId) {
     menu.classList.remove('hidden');
     menu.style.left = event.clientX + 'px';
     menu.style.top = event.clientY + 'px';
-    // Update archive menu text based on current state
+
     const session = sessions.find(s => s.session_id === sessionId);
+    const isArchived = session && session.archived;
+
+    const renameItem = menu.querySelector('[data-action="rename"]');
     const archiveItem = menu.querySelector('[data-action="archive"]');
+    const sep = menu.querySelector('.context-sep');
+
+    if (renameItem) renameItem.style.display = isArchived ? 'none' : 'flex';
     if (archiveItem) {
-        archiveItem.innerHTML = session && session.archived
-            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Unarchive`
-            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Archive`;
+        archiveItem.style.display = isArchived ? 'none' : 'flex';
+        if (!isArchived) {
+            archiveItem.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Archive`;
+        }
     }
+    if (sep) sep.style.display = isArchived ? 'none' : 'block';
 }
 
 function hideContextMenu() {
