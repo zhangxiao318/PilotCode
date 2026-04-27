@@ -25,6 +25,29 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 # ------------------------------------------------------------------
+# Helper: serialize messages for web frontend history rendering
+# ------------------------------------------------------------------
+
+
+def _serialize_messages_for_web(messages: list) -> list[dict]:
+    """Convert message objects to a web-friendly format for UI rendering."""
+    result = []
+    for msg in messages:
+        msg_type = msg.__class__.__name__
+        if msg_type == "UserMessage":
+            result.append({"role": "user", "content": msg.content})
+        elif msg_type == "AssistantMessage":
+            result.append({"role": "assistant", "content": msg.content or ""})
+        elif msg_type == "ToolUseMessage":
+            result.append({"role": "tool_use", "name": msg.name, "input": msg.input})
+        elif msg_type == "ToolResultMessage":
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            result.append({"role": "tool_result", "content": content})
+        # SystemMessage is intentionally skipped for history view
+    return result
+
+
+# ------------------------------------------------------------------
 # Helper: detect explicit tool-use intent in user query / response
 # ------------------------------------------------------------------
 
@@ -503,6 +526,7 @@ class WebSocketManager:
                             "name": metadata.get("name", sid),
                             "message_count": len(messages),
                             "project_path": restored_cwd,
+                            "messages": _serialize_messages_for_web(messages),
                         },
                     )
                     print(f"[Session] Loaded {sid} ({len(messages)} messages) from disk")

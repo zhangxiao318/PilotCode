@@ -148,6 +148,9 @@ function handleMessage(data) {
         case 'session_loaded':
             currentSessionId = data.session_id;
             clearChatUI();
+            if (data.messages && data.messages.length > 0) {
+                renderHistoryMessages(data.messages);
+            }
             renderSessionList();
             showToast(`Loaded: ${data.name || data.session_id}`, 'success');
             break;
@@ -766,6 +769,56 @@ function switchSession(sessionId) {
 function deleteSession(sessionId) {
     if (!confirm(`Delete session ${sessionId.slice(0, 16)}?`)) return;
     sendMessage({type: 'session_delete', session_id: sessionId});
+}
+
+function renderHistoryMessages(messages) {
+    hideWelcome();
+    messages.forEach(msg => {
+        if (msg.role === 'user') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `<div class="user-query">${escapeHtml(msg.content)}</div><div class="stream-content"></div>`;
+            messagesContainer.appendChild(div);
+        } else if (msg.role === 'assistant') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'stream-content';
+            const finalDiv = document.createElement('div');
+            finalDiv.className = 'final-response';
+            finalDiv.innerHTML = renderMarkdown(msg.content);
+            contentDiv.appendChild(finalDiv);
+            div.appendChild(contentDiv);
+            messagesContainer.appendChild(div);
+        } else if (msg.role === 'tool_use') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            const inputStr = formatToolInput(msg.input);
+            div.innerHTML = `
+                <div class="tool-call">
+                    <div class="tool-header" onclick="toggleTool(this)">
+                        <span class="icon">[T]</span>
+                        <span>${escapeHtml(msg.name)} ${inputStr}</span>
+                        <span style="margin-left: auto; color: #999;">▼</span>
+                    </div>
+                    <div class="tool-content hidden">
+                        <pre><code>${escapeHtml(JSON.stringify(msg.input, null, 2))}</code></pre>
+                    </div>
+                </div>
+            `;
+            messagesContainer.appendChild(div);
+        } else if (msg.role === 'tool_result') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            let content = msg.content || '';
+            if (content.length > 120) {
+                content = content.substring(0, 50) + ' ... ' + content.substring(content.length - 30);
+            }
+            div.innerHTML = `<div class="stream-block result"><pre><code>${escapeHtml(content)}</code></pre></div>`;
+            messagesContainer.appendChild(div);
+        }
+    });
+    scrollToBottom();
 }
 
 // Initialize on load
