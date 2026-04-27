@@ -173,21 +173,8 @@ class ToolExecutor:
         try:
             self.console.print(f"[dim][T] Executing {tool_name}...[/dim]")
 
-            # Validate input if validation function exists
-            if tool.validate_input:
-                input_valid, validation_error = await tool.validate_input(
-                    tool.input_schema(**tool_input), context
-                )
-                if not input_valid:
-                    return ToolExecutionResult(
-                        success=False,
-                        result=None,
-                        permission_granted=True,
-                        message=f"Validation failed: {validation_error}",
-                        tool_name=tool_name,
-                    )
-
-            # Parse input through schema
+            # Parse input through schema first — if this fails, return a friendly
+            # error so the LLM can retry instead of getting a raw exception.
             try:
                 parsed_input = tool.input_schema(**tool_input)
             except Exception as e:
@@ -198,6 +185,18 @@ class ToolExecutor:
                     message=f"Invalid input: {str(e)}",
                     tool_name=tool_name,
                 )
+
+            # Validate input if validation function exists
+            if tool.validate_input:
+                input_valid, validation_error = await tool.validate_input(parsed_input, context)
+                if not input_valid:
+                    return ToolExecutionResult(
+                        success=False,
+                        result=None,
+                        permission_granted=True,
+                        message=f"Validation failed: {validation_error}",
+                        tool_name=tool_name,
+                    )
 
             result = await tool.call(
                 parsed_input,

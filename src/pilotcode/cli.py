@@ -17,6 +17,7 @@ if sys.platform == "win32":
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 
 from .components.repl import (
     run_repl,
@@ -972,6 +973,37 @@ def tools(
             aliases = f" [dim](aliases: {', '.join(tool.aliases)})[/dim]" if tool.aliases else ""
             console.print(f"  [cyan]{tool.name}[/cyan]{aliases}")
             console.print(f"     {desc[:80]}...\n" if len(desc) > 80 else f"     {desc}\n")
+
+
+@app.command("sessions")
+def list_sessions_cmd():
+    """List all saved sessions."""
+    from pilotcode.services.session_persistence import get_session_persistence
+
+    persistence = get_session_persistence()
+    sessions = persistence.list_sessions()
+
+    if not sessions:
+        console.print("[dim]No saved sessions found.[/dim]")
+        return
+
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    table.add_column("Session ID", style="cyan", no_wrap=True)
+    table.add_column("Messages", justify="right", style="green")
+    table.add_column("Project Path", style="yellow")
+    table.add_column("Summary", style="white")
+
+    for s in sessions:
+        # Truncate long paths and summaries for clean display
+        path = s.project_path or "—"
+        if len(path) > 35:
+            path = "..." + path[-32:]
+        summary = s.summary or "—"
+        if len(summary) > 40:
+            summary = summary[:37] + "..."
+        table.add_row(s.session_id, str(s.message_count), path, summary)
+
+    console.print(table)
 
 
 def cli_main():
