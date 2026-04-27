@@ -15,6 +15,7 @@ import websockets
 
 from pilotcode.types.message import SystemMessage
 from pilotcode.services.fileedit_compensation import FileEditCompensationTracker
+from pilotcode.version import __version__
 
 # Suppress websockets verbose logging - only show errors, not warnings
 logging.getLogger("websockets").setLevel(logging.ERROR)
@@ -406,6 +407,10 @@ class WebSocketManager:
         self.clients.add(websocket)
         client_info = getattr(websocket, "remote_address", ("unknown", 0))
         print(f"[WebSocket] Client connected from {client_info}. Total: {len(self.clients)}")
+        await self.send_to_client(
+            websocket,
+            {"type": "server_info", "version": __version__},
+        )
 
     async def unregister(self, websocket):
         """Unregister a client."""

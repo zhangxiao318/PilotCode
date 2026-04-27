@@ -22,7 +22,6 @@ const sidebarToggle = document.getElementById('sidebarToggle');
 const sidebar = document.querySelector('.sidebar');
 const attachBtn = document.getElementById('attachBtn');
 const statusDot = document.getElementById('statusDot');
-const statusText = document.getElementById('statusText');
 const inputStatus = document.getElementById('inputStatus');
 
 // Modal elements
@@ -88,10 +87,10 @@ function connectWebSocket() {
 function updateConnectionStatus(connected) {
     if (connected) {
         statusDot.classList.remove('disconnected');
-        statusText.textContent = 'Connected';
+        statusDot.title = 'Connected';
     } else {
         statusDot.classList.add('disconnected');
-        statusText.textContent = 'Disconnected';
+        statusDot.title = 'Disconnected';
     }
 }
 
@@ -119,6 +118,11 @@ function handleMessage(data) {
             break;
         case 'streaming_end':
             handleStreamingEnd(data);
+            break;
+        case 'streaming_complete':
+            pendingMessages.delete(data.stream_id);
+            currentStreamId = null;
+            setInputState(false);
             break;
         case 'streaming_error':
             handleStreamingError(data);
@@ -200,6 +204,10 @@ function handleMessage(data) {
             sessions = sessions.map(s => s.session_id === data.session_id ? {...s, archived: data.archived} : s);
             renderSessionList();
             showToast(data.archived ? 'Session archived' : 'Session unarchived', 'success');
+            break;
+        case 'server_info':
+            const versionEl = document.getElementById('brandVersion');
+            if (versionEl && data.version) versionEl.textContent = 'v' + data.version;
             break;
         case 'session_error':
             showToast(data.error || 'Session error', 'error');
