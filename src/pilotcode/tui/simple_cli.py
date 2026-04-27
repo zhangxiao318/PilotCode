@@ -52,12 +52,14 @@ class SimpleCLI:
         model_name: str = "kimi-k2-0713-preview",
         auto_allow: bool = False,
         max_iterations: int = 50,
+        cwd: str | None = None,
     ):
         self.config = get_global_config()
         self.query_engine: Optional[QueryEngine] = None
         self.auto_allow = auto_allow
         self.max_iterations = max_iterations
         self.session_file: Optional[str] = None
+        self._cwd = cwd or str(Path.cwd())
 
         # Initialize session context manager for maintaining project context
         self.session_context = get_session_context_manager()
@@ -81,6 +83,9 @@ class SimpleCLI:
             # Initialize store for state management
             app_state = get_default_app_state()
             self.store = Store(app_state)
+            from dataclasses import replace
+
+            self.store.set_state(lambda s: replace(s, cwd=self._cwd))
             set_global_store(self.store)
 
             def _on_notify(event_type: str, payload: dict) -> None:
@@ -99,7 +104,7 @@ class SimpleCLI:
             tools = get_all_tools()
             global_cfg = get_global_config()
             config = QueryEngineConfig(
-                cwd=str(Path.cwd()),
+                cwd=self._cwd,
                 tools=tools,
                 get_app_state=self.store.get_state,
                 set_app_state=lambda f: self.store.set_state(f),
@@ -447,7 +452,7 @@ class SimpleCLI:
                 global_cfg = get_global_config()
                 self.query_engine = QueryEngine(
                     config=QueryEngineConfig(
-                        cwd=str(Path.cwd()),
+                        cwd=self.query_engine.config.cwd,
                         tools=self.query_engine.config.tools,
                         get_app_state=self.store.get_state,
                         set_app_state=lambda f: self.store.set_state(f),

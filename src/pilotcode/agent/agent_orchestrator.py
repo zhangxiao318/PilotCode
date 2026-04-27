@@ -53,9 +53,10 @@ class WorkflowResult:
 class AgentOrchestrator:
     """Orchestrates multi-agent workflows."""
 
-    def __init__(self):
+    def __init__(self, cwd: str | None = None):
         self.agent_manager = get_agent_manager()
         self._progress_callbacks: list[Callable[[str, dict], None]] = []
+        self._cwd = cwd or str(os.getcwd())
 
     def register_progress_callback(self, callback: Callable[[str, dict], None]):
         """Register progress callback."""
@@ -91,11 +92,12 @@ class AgentOrchestrator:
         try:
             from ..orchestration.adapter import MissionAdapter
 
-            adapter = MissionAdapter()
+            adapter = MissionAdapter(cwd=self._cwd)
             result = await adapter.run(
                 request,
                 progress_callback=self._notify_progress,
                 explore_first=False,
+                cwd=self._cwd,
             )
 
             success = result.get("success", False)

@@ -18,8 +18,8 @@ class SmartCoordinator:
     Uses the unified MissionAdapter for all complex tasks.
     """
 
-    def __init__(self, config: Optional[Any] = None):
-        self.adapter = MissionAdapter()
+    def __init__(self, config: Optional[Any] = None, cwd: str | None = None):
+        self.adapter = MissionAdapter(cwd=cwd)
         self.config = config or get_auto_config()
 
     async def run(
@@ -27,6 +27,7 @@ class SmartCoordinator:
         task: str,
         context: dict = None,
         force_decompose: Optional[bool] = None,
+        cwd: str | None = None,
     ) -> dict:
         """Run a task with intelligent automatic decomposition.
 
@@ -34,6 +35,7 @@ class SmartCoordinator:
             task: The task to execute
             context: Additional context (unused, kept for API compatibility)
             force_decompose: Force decomposition (True/False) or auto (None)
+            cwd: Working directory override
 
         Returns:
             Execution result dict
@@ -44,11 +46,12 @@ class SmartCoordinator:
         else:
             should_decompose = should_auto_decompose(task, complexity_score=3)
 
+        effective_cwd = cwd or self.adapter._cwd
         if should_decompose:
-            return await self.adapter.run(user_request=task, explore_first=True)
+            return await self.adapter.run(user_request=task, explore_first=True, cwd=effective_cwd)
         else:
             # For simple tasks, run with minimal planning
-            return await self.adapter.run(user_request=task, explore_first=False)
+            return await self.adapter.run(user_request=task, explore_first=False, cwd=effective_cwd)
 
 
 # Global instance

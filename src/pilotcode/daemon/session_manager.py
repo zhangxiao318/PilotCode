@@ -145,10 +145,10 @@ class SessionManager:
         # Execute query (outside lock to allow concurrent queries on different sessions)
         try:
             if not session.messages:
-                mode = await classify_task_complexity(query)
+                mode = await classify_task_complexity(query, cwd=effective_cwd)
                 if mode == "PLAN":
-                    adapter = MissionAdapter()
-                    result = await adapter.run(query)
+                    adapter = MissionAdapter(cwd=effective_cwd)
+                    result = await adapter.run(query, cwd=effective_cwd)
                     if result.get("success"):
                         result["response"] = format_completion(result)
                     else:
