@@ -101,8 +101,12 @@ class PytestRunnerVerifier(BaseVerifier):
             score -= res.get("score_penalty", 0.0)
 
         score = max(0.0, min(100.0, score))
-        has_error = any(i["severity"] == "error" for i in issues)
-        passed = score >= 60.0 and not has_error
+        # Blocking errors trigger NEEDS_REWORK; warnings are recorded but don't block
+        has_blocking_error = any(
+            i["severity"] == "error" and i.get("blocking", True)
+            for i in issues
+        )
+        passed = score >= 60.0 and not has_blocking_error
 
         verdict = Verdict.APPROVE if passed else Verdict.NEEDS_REWORK
         if score < 30.0:
@@ -147,6 +151,7 @@ class PytestRunnerVerifier(BaseVerifier):
                     "severity": "error",
                     "category": "syntax_error",
                     "message": f"{os.path.basename(f)}: {e}",
+                    "blocking": True,
                 })
 
         # Second: pytest if available
@@ -161,6 +166,7 @@ class PytestRunnerVerifier(BaseVerifier):
                     "severity": "error",
                     "category": "test_failure",
                     "message": f"pytest exit={result['exit_code']}, failed: {failed[:3]}",
+                    "blocking": True,
                 })
                 feedback = f"pytest failed ({len(failed)} failures)"
             else:
@@ -203,6 +209,7 @@ class PytestRunnerVerifier(BaseVerifier):
                     "severity": "warning",
                     "category": "compiler_missing",
                     "message": f"{binary} not found; skipping {lang} compile check",
+                    "blocking": False,
                 }],
                 "score_penalty": 0.0,
                 "feedback": f"{binary} not installed; skipped",
@@ -223,6 +230,7 @@ class PytestRunnerVerifier(BaseVerifier):
                     "severity": "error",
                     "category": "compile_error",
                     "message": f"{os.path.basename(f)}: {err}",
+                    "blocking": True,
                 })
 
         if ok:
@@ -249,6 +257,7 @@ class PytestRunnerVerifier(BaseVerifier):
                     "severity": "warning",
                     "category": "empty_file",
                     "message": f"{os.path.basename(f)} is empty",
+                    "blocking": True,
                 })
         return {
             "lang": "generic",

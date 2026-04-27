@@ -1138,6 +1138,27 @@ class MissionAdapter:
             result["mission"] = mission.to_dict()
             result["success"] = result.get("snapshot", {}).get("status") == "completed"
 
+            # Collect non-blocking verification warnings from all tasks
+            warnings: list[dict[str, Any]] = []
+            dag = self._orchestrator.tracker.get_dag(mission.mission_id)
+            if dag:
+                for task_id, node in dag.nodes.items():
+                    for level in (1, 2, 3):
+                        vkey = f"_verification_{level}"
+                        vresult = node.artifacts.get(vkey)
+                        if vresult is not None and hasattr(vresult, "issues"):
+                            for issue in vresult.issues:
+                                if issue.get("severity") == "warning" or (
+                                    issue.get("severity") == "error" and not issue.get("blocking", True)
+                                ):
+                                    warnings.append({
+                                        "task_id": task_id,
+                                        "level": level,
+                                        "category": issue.get("category", "unknown"),
+                                        "message": issue.get("message", ""),
+                                    })
+            result["warnings"] = warnings
+
             # Collect strategy metrics
             metrics = StrategyMetrics(self.strategy, self.context_budget)
             metrics.total_tasks = len(mission.all_tasks())
