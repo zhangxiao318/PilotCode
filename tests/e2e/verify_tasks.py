@@ -63,9 +63,9 @@ class GenericVerifier:
         except SyntaxError:
             return None
 
-    def _find_function(self, tree: ast.AST, name: str) -> ast.FunctionDef | None:
+    def _find_function(self, tree: ast.AST, name: str) -> ast.AST | None:
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == name:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
                 return node
         return None
 
@@ -119,13 +119,15 @@ class GenericVerifier:
         if check_type == "function_contains":
             if not file_path.exists():
                 return CheckResult(name, False, f"{rel_file} not found")
+            source = self._read_file(rel_file)
             tree = self._ast_parse(rel_file)
             func_name = check.get("function", "")
             pattern = check.get("pattern", "")
             func = self._find_function(tree, func_name) if tree else None
             if func is None:
                 return CheckResult(name, False, f"{func_name}() not found")
-            func_source = ast.unparse(func)
+            func_lines = source.splitlines()[func.lineno - 1:func.end_lineno]
+            func_source = "\n".join(func_lines)
             found = pattern in func_source
             return CheckResult(
                 name,

@@ -20,64 +20,244 @@ def strip_ansi(text: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
+# Platform detection cache: detected on first Bash tool call
+_platform_info: dict[str, Any] = {"detected": False, "is_windows": False, "shell": None}
+
+
+def _detect_platform() -> dict[str, Any]:
+    """Detect the operating platform and preferred shell."""
+    global _platform_info
+    if _platform_info["detected"]:
+        return _platform_info
+
+    is_win = sys.platform == "win32"
+    _platform_info = {
+        "detected": True,
+        "is_windows": is_win,
+        "shell": "cmd" if is_win else "bash",
+    }
+
+    # On Windows, prefer PowerShell Core (pwsh) if available, else Windows PowerShell
+    if is_win:
+        for ps_name in ("pwsh.exe", "powershell.exe"):
+            for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+                ps_path = os.path.join(path_dir, ps_name)
+                if os.path.isfile(ps_path):
+                    _platform_info["shell"] = ps_name.replace(".exe", "")
+                    break
+            if _platform_info["shell"] != "cmd":
+                break
+
+    return _platform_info
+
+
 def is_windows() -> bool:
     """Check if running on Windows."""
     return sys.platform == "win32"
 
 
+def _wrap_powershell(cmd: str) -> str:
+    """Wrap a command to run via PowerShell on Windows."""
+    ps = _detect_platform().get("shell", "powershell")
+    # Escape double quotes for PowerShell -Command
+    escaped = cmd.replace('"', '\\"')
+    return f'{ps} -NoProfile -Command "{escaped}"'
+
+
 def translate_command_for_windows(command: str) -> str:
-    """Translate common Unix commands to Windows equivalents."""
+    """Translate common Unix commands to Windows equivalents.
+
+    On Windows we try two strategies:
+    1. Direct cmd.exe translation for very simple, common commands.
+    2. PowerShell translation for everything else (especially pipes,
+       head/tail/wc/grep/find, and multi-arg commands).
+    """
     if not is_windows():
         return command
 
-    # Handle simple command translations
-    cmd_stripped = command.strip()
+    # Detect & cache platform on first call
+    _detect_platform()
 
-    # pwd -> cd (Windows equivalent to print working directory)
+    cmd_stripped = command.strip()
+    if not cmd_stripped:
+        return command
+
+    # If the command already starts with a Windows shell invocation,
+    # leave it alone.
+    if cmd_stripped.lower().startswith(("powershell ", "pwsh ", "cmd /c ", "cmd /k ")):
+        return command
+
+    # ------------------------------------------------------------------
+    # 1. Pure cmd.exe translations (fast, no PowerShell overhead)
+    # ------------------------------------------------------------------
     if cmd_stripped == "pwd":
         return "cd"
 
-    # date -> PowerShell Get-Date (Windows date command waits for input)
-    if cmd_stripped == "date":
-        return "powershell -Command Get-Date -Format 'ddd MMM dd HH:mm:ss yyyy'"
-
-    # cat FILE1 [FILE2...] -> type FILE1 [FILE2...] (Windows equivalent)
-    # Handles: cat file.txt, cat file1.txt file2.txt, cat file1 file2 > output.txt
+    # cat FILE1 [FILE2...] -> type FILE1 [FILE2...]
     cat_match = re.match(r"^cat\s+(.+)$", cmd_stripped)
     if cat_match:
         args = cat_match.group(1)
-        # Replace cat with type, keep the rest of arguments (files, redirections)
         return f"type {args}"
 
-    # seq N -> PowerShell equivalent
-    if re.match(r"^seq\s+\d+$", cmd_stripped):
-        n = cmd_stripped.split()[1]
-        return "powershell -Command " + f'"for ($i = 1; $i -le {n}; $i++) {{ Write-Output $i }}"'
+    # If the command contains a pipe, run the *whole* command through
+    # PowerShell.  PowerShell pipes are far more capable than cmd.exe.
+    # We do this early so that "ls -la | head -20" isn't mis-parsed as
+    # a plain ls command.
+    if "|" in cmd_stripped and "tr" not in cmd_stripped:
+        return _wrap_powershell(cmd_stripped)
 
-    # seq START END -> PowerShell equivalent
-    if re.match(r"^seq\s+\d+\s+\d+$", cmd_stripped):
-        parts = cmd_stripped.split()
-        start, end = parts[1], parts[2]
-        return (
-            "powershell -Command "
-            + f'"for ($i = {start}; $i -le {end}; $i++) {{ Write-Output $i }}"'
+    # ------------------------------------------------------------------
+    # 2. PowerShell translations (richer semantics)
+    # ------------------------------------------------------------------
+
+    # date
+    if cmd_stripped == "date":
+        return _wrap_powershell("Get-Date -Format 'ddd MMM dd HH:mm:ss yyyy'")
+
+    # seq N
+    m = re.match(r"^seq\s+(\d+)$", cmd_stripped)
+    if m:
+        n = m.group(1)
+        return _wrap_powershell(
+            f'for ($i = 1; $i -le {n}; $i++) {{ Write-Output $i }}'
         )
 
-    # sleep N -> PowerShell equivalent
-    if re.match(r"^sleep\s+\d+$", cmd_stripped):
-        n = cmd_stripped.split()[1]
-        return f"powershell -Command Start-Sleep -Seconds {n}"
+    # seq START END
+    m = re.match(r"^seq\s+(\d+)\s+(\d+)$", cmd_stripped)
+    if m:
+        start, end = m.group(1), m.group(2)
+        return _wrap_powershell(
+            f'for ($i = {start}; $i -le {end}; $i++) {{ Write-Output $i }}'
+        )
 
-    # Handle pipe commands with tr (e.g., "echo 'hello world' | tr ' ' '-'")
+    # sleep N
+    m = re.match(r"^sleep\s+(\d+(?:\.\d+)?)$", cmd_stripped)
+    if m:
+        return _wrap_powershell(f"Start-Sleep -Seconds {m.group(1)}")
+
+    # ls variants  -> Get-ChildItem
+    m = re.match(r"^ls\s*(.*)$", cmd_stripped)
+    if m:
+        args = m.group(1).strip()
+        # ls -la, ls -l, ls -a, ls -lah …
+        if re.search(r"-[\w]*l", args) or re.search(r"-[\w]*a", args):
+            path = re.sub(r"-\w+", "", args).strip()
+            path_part = f" -Path '{path}'" if path else ""
+            return _wrap_powershell(
+                f"Get-ChildItem -Force{path_part} | Select-Object Mode, LastWriteTime, Length, Name | Format-Table -AutoSize"
+            )
+        # plain ls [path]
+        path = args if args else "."
+        return _wrap_powershell(
+            f"Get-ChildItem -Path '{path}' | Select-Object -ExpandProperty Name"
+        )
+
+    # wc -l FILE
+    m = re.match(r"^wc\s+-l\s+(.+)$", cmd_stripped)
+    if m:
+        filepath = m.group(1).strip().strip('"').strip("'")
+        return _wrap_powershell(f"(Get-Content -Path '{filepath}').Count")
+
+    # head -n N FILE / head -N FILE (e.g. head -20 file.txt)
+    m = re.match(r"^head\s+(?:-n\s+)?-?(\d+)\s+(.+)$", cmd_stripped)
+    if m:
+        n, filepath = m.group(1), m.group(2).strip().strip('"').strip("'")
+        return _wrap_powershell(
+            f"Get-Content -Path '{filepath}' | Select-Object -First {n}"
+        )
+
+    # tail -n N FILE / tail -N FILE (e.g. tail -10 file.txt)
+    m = re.match(r"^tail\s+(?:-n\s+)?-?(\d+)\s+(.+)$", cmd_stripped)
+    if m:
+        n, filepath = m.group(1), m.group(2).strip().strip('"').strip("'")
+        return _wrap_powershell(
+            f"Get-Content -Path '{filepath}' | Select-Object -Last {n}"
+        )
+
+    # grep PATTERN FILE / grep -i PATTERN FILE / grep -r PATTERN DIR
+    m = re.match(r"^grep\s+(-i\s+)?(-r\s+)?(.+?)\s+(.+)$", cmd_stripped)
+    if m:
+        case_flag = " -CaseSensitive" if not m.group(1) else ""
+        recursive = " -Recurse" if m.group(2) else ""
+        pattern = m.group(3).strip().strip('"').strip("'")
+        target = m.group(4).strip().strip('"').strip("'")
+        # If target is a directory and -r, use Get-ChildItem; else Select-String on file
+        if m.group(2):
+            return _wrap_powershell(
+                f"Get-ChildItem -Path '{target}'{recursive} -File | Select-String -Pattern '{pattern}'{case_flag} | Select-Object -ExpandProperty Line"
+            )
+        return _wrap_powershell(
+            f"Select-String -Path '{target}' -Pattern '{pattern}'{case_flag} | Select-Object -ExpandProperty Line"
+        )
+
+    # find DIR -name PATTERN
+    m = re.match(r"^find\s+(\S+)\s+-name\s+(.+)$", cmd_stripped)
+    if m:
+        directory, pattern = m.group(1), m.group(2).strip().strip('"').strip("'")
+        return _wrap_powershell(
+            f"Get-ChildItem -Path '{directory}' -Recurse -Filter '{pattern}' | Select-Object -ExpandProperty FullName"
+        )
+
+    # touch FILE
+    m = re.match(r"^touch\s+(.+)$", cmd_stripped)
+    if m:
+        filepath = m.group(1).strip().strip('"').strip("'")
+        return _wrap_powershell(
+            f"New-Item -Path '{filepath}' -ItemType File -Force | Out-Null"
+        )
+
+    # mkdir -p DIR / mkdir DIR
+    m = re.match(r"^mkdir\s+(?:-p\s+)?(.+)$", cmd_stripped)
+    if m:
+        dirpath = m.group(1).strip().strip('"').strip("'")
+        return _wrap_powershell(
+            f"New-Item -Path '{dirpath}' -ItemType Directory -Force | Out-Null"
+        )
+
+    # rm FILE
+    m = re.match(r"^rm\s+([^\s-].*)$", cmd_stripped)
+    if m:
+        target = m.group(1).strip().strip('"').strip("'")
+        return _wrap_powershell(f"Remove-Item -Path '{target}' -Force")
+
+    # rm -rf DIR / rm -r DIR
+    m = re.match(r"^rm\s+-rf?\s+(.+)$", cmd_stripped)
+    if m:
+        target = m.group(1).strip().strip('"').strip("'")
+        return _wrap_powershell(f"Remove-Item -Path '{target}' -Recurse -Force")
+
+    # cp SRC DST / cp -r SRC DST
+    m = re.match(r"^cp\s+(?:-r\s+)?(.+?)\s+(.+)$", cmd_stripped)
+    if m:
+        src, dst = m.group(1).strip().strip('"').strip("'"), m.group(2).strip().strip('"').strip("'")
+        recurse = " -Recurse" if "-r" in cmd_stripped.split()[:2] else ""
+        return _wrap_powershell(f"Copy-Item -Path '{src}' -Destination '{dst}'{recurse} -Force")
+
+    # mv SRC DST
+    m = re.match(r"^mv\s+(.+?)\s+(.+)$", cmd_stripped)
+    if m:
+        src, dst = m.group(1).strip().strip('"').strip("'"), m.group(2).strip().strip('"').strip("'")
+        return _wrap_powershell(f"Move-Item -Path '{src}' -Destination '{dst}' -Force")
+
+    # which CMD
+    m = re.match(r"^which\s+(.+)$", cmd_stripped)
+    if m:
+        cmd_name = m.group(1).strip()
+        return _wrap_powershell(f"(Get-Command {cmd_name} -ErrorAction SilentlyContinue).Source")
+
+    # echo text | tr OLD NEW  (simple pipe with tr)
+    # Supports: echo 'hello' | tr ' ' '-', echo hello | tr " " "-", echo hello | tr ' ' '-'
     if "|" in cmd_stripped and "tr" in cmd_stripped:
-        # Try to convert simple tr commands to PowerShell
-        # echo 'hello world' | tr ' ' '-' -> echo 'hello world' | ForEach-Object { $_ -replace ' ', '-' }
         match = re.match(
-            r"echo\s+['\"](.+)['\"]\s*\|\s*tr\s+['\"](.)['\"]\s+['\"](.)['\"]", cmd_stripped
+            r"echo\s+(['\"]?)(.+?)\1\s*\|\s*tr\s+(['\"]?)(.)\3\s+(['\"]?)(.)\5", cmd_stripped
         )
         if match:
-            text, old_char, new_char = match.groups()
-            return f"powershell -Command \"echo '{text}' | ForEach-Object {{ $_ -replace '{old_char}', '{new_char}' }}\""
+            text = match.group(2)
+            old_char = match.group(4)
+            new_char = match.group(6)
+            return _wrap_powershell(
+                f"echo '{text}' | ForEach-Object {{ $_ -replace '{old_char}', '{new_char}' }}"
+            )
 
     return command
 
