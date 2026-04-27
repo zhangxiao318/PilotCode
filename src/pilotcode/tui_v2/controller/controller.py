@@ -270,28 +270,39 @@ class TUIController:
 
         persistence = get_session_persistence()
 
+        def _apply_restored_session(session_id: str, messages: list, metadata: dict) -> None:
+            """Apply restored session data and sync cwd."""
+            self.query_engine.messages = messages
+            self._session_id = session_id
+            self._session_name = metadata.get("name", session_id)
+            # Sync the session's original project directory back into the
+            # active session so file tools target the correct workspace.
+            restored_cwd = metadata.get("project_path") or cwd
+            if restored_cwd:
+                self._update_session_cwd(restored_cwd)
+            self._notify_session_change()
+
         if sid:
             # Restore specific session
             result = load_session(sid)
             if result:
                 messages, metadata = result
-                self.query_engine.messages = messages
-                self._session_id = sid
-                self._session_name = metadata.get("name", sid)
-                self._notify_session_change()
+                _apply_restored_session(sid, messages, metadata)
                 return
+            print(f"[Session] Warning: session '{sid}' not found or corrupt, starting new session.")
         elif restore:
-            # Restore most recent session for this project
+            # First try: most recent session for this project
             last = persistence.get_last_session(project_path=cwd)
+            if not last:
+                # Fallback: global most recent session regardless of project
+                last = persistence.get_last_session(project_path=None)
             if last:
                 result = load_session(last.session_id)
                 if result:
                     messages, metadata = result
-                    self.query_engine.messages = messages
-                    self._session_id = last.session_id
-                    self._session_name = metadata.get("name", last.session_id)
-                    self._notify_session_change()
+                    _apply_restored_session(last.session_id, messages, metadata)
                     return
+            print(f"[Session] Warning: no saved session found for '{cwd}', starting new session.")
 
         # Create new session
         now = datetime.now()

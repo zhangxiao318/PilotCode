@@ -98,9 +98,13 @@ async def session_command(args: list[str], context: CommandContext) -> str:
 
         messages, metadata = result
 
-        # Would load messages into current session here
-        # For now, just show info
-        return f"Loaded session: {metadata.get('name', session_id)} ({len(messages)} messages)"
+        # Actually load messages into the current query_engine
+        if context and context.query_engine and hasattr(context.query_engine, "messages"):
+            context.query_engine.messages = messages
+            loaded_name = metadata.get("name", session_id)
+            return f"✅ Loaded session: {loaded_name} ({len(messages)} messages)"
+        else:
+            return f"⚠️ Session data loaded but cannot apply (no query_engine in context): {metadata.get('name', session_id)} ({len(messages)} messages)"
 
     elif action == "delete":
         if len(args) < 2:
