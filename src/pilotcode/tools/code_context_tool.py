@@ -19,7 +19,7 @@ class CodeContextInput(BaseModel):
     """Input for CodeContext tool."""
 
     query: str = Field(
-        description="The query or topic to build context for (e.g., 'authentication logic', 'database models')"
+        description="The query or topic to build context for (e.g., 'authentication logic', 'database models'). For large codebases, the first call without 'subgraph' returns a master index of all components. Use 'subgraph' to drill down into a specific component."
     )
     max_tokens: int = Field(
         default=4000, ge=500, le=8000, description="Maximum tokens for context window"
@@ -31,6 +31,10 @@ class CodeContextInput(BaseModel):
         default=None, description="Restrict to files matching pattern"
     )
     language: Optional[str] = Field(default=None, description="Restrict to specific language")
+    subgraph: Optional[str] = Field(
+        default=None,
+        description="Name or ID of a subgraph to explore in detail. For large codebases, first query without this to get the master index, then use the subgraph name here to drill down.",
+    )
 
 
 class CodeSnippetInfo(BaseModel):
@@ -116,6 +120,8 @@ async def code_context_call(
             query=input_data.query,
             max_tokens=input_data.max_tokens,
             include_related=input_data.include_related,
+            subgraph_filter=input_data.subgraph,
+            use_hierarchy=True,
         )
     except Exception as e:
         return ToolResult(

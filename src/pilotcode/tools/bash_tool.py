@@ -66,11 +66,11 @@ def _wrap_powershell(cmd: str) -> str:
     lowered = cmd.lower()
     if "grep" in lowered:
         compat.append(
-            'function global:grep { '
-            'param([string]$p, [string]$f); '
-            'if ($f) { Select-String -Pattern $p -Path $f | Select-Object -ExpandProperty Line } '
-            'else { $input | Select-String -Pattern $p | Select-Object -ExpandProperty Line } '
-            '}'
+            "function global:grep { "
+            "param([string]$p, [string]$f); "
+            "if ($f) { Select-String -Pattern $p -Path $f | Select-Object -ExpandProperty Line } "
+            "else { $input | Select-String -Pattern $p | Select-Object -ExpandProperty Line } "
+            "}"
         )
     if "head" in lowered:
         compat.append(
@@ -90,11 +90,11 @@ def _wrap_powershell(cmd: str) -> str:
         )
     if "wc" in lowered:
         compat.append(
-            'function global:wc { '
-            'param([switch]$l); '
-            'if ($l) { ($input | Measure-Object -Line).Lines } '
-            'else { $input | Measure-Object -Line -Word -Character } '
-            '}'
+            "function global:wc { "
+            "param([switch]$l); "
+            "if ($l) { ($input | Measure-Object -Line).Lines } "
+            "else { $input | Measure-Object -Line -Word -Character } "
+            "}"
         )
 
     # Escape double quotes for PowerShell -Command
@@ -159,17 +159,13 @@ def translate_command_for_windows(command: str) -> str:
     m = re.match(r"^seq\s+(\d+)$", cmd_stripped)
     if m:
         n = m.group(1)
-        return _wrap_powershell(
-            f'for ($i = 1; $i -le {n}; $i++) {{ Write-Output $i }}'
-        )
+        return _wrap_powershell(f"for ($i = 1; $i -le {n}; $i++) {{ Write-Output $i }}")
 
     # seq START END
     m = re.match(r"^seq\s+(\d+)\s+(\d+)$", cmd_stripped)
     if m:
         start, end = m.group(1), m.group(2)
-        return _wrap_powershell(
-            f'for ($i = {start}; $i -le {end}; $i++) {{ Write-Output $i }}'
-        )
+        return _wrap_powershell(f"for ($i = {start}; $i -le {end}; $i++) {{ Write-Output $i }}")
 
     # sleep N
     m = re.match(r"^sleep\s+(\d+(?:\.\d+)?)$", cmd_stripped)
@@ -203,17 +199,13 @@ def translate_command_for_windows(command: str) -> str:
     m = re.match(r"^head\s+(?:-n\s+)?-?(\d+)\s+(.+)$", cmd_stripped)
     if m:
         n, filepath = m.group(1), m.group(2).strip().strip('"').strip("'")
-        return _wrap_powershell(
-            f"Get-Content -Path '{filepath}' | Select-Object -First {n}"
-        )
+        return _wrap_powershell(f"Get-Content -Path '{filepath}' | Select-Object -First {n}")
 
     # tail -n N FILE / tail -N FILE (e.g. tail -10 file.txt)
     m = re.match(r"^tail\s+(?:-n\s+)?-?(\d+)\s+(.+)$", cmd_stripped)
     if m:
         n, filepath = m.group(1), m.group(2).strip().strip('"').strip("'")
-        return _wrap_powershell(
-            f"Get-Content -Path '{filepath}' | Select-Object -Last {n}"
-        )
+        return _wrap_powershell(f"Get-Content -Path '{filepath}' | Select-Object -Last {n}")
 
     # grep PATTERN FILE / grep -i PATTERN FILE / grep -r PATTERN DIR
     m = re.match(r"^grep\s+(-i\s+)?(-r\s+)?(.+?)\s+(.+)$", cmd_stripped)
@@ -243,17 +235,13 @@ def translate_command_for_windows(command: str) -> str:
     m = re.match(r"^touch\s+(.+)$", cmd_stripped)
     if m:
         filepath = m.group(1).strip().strip('"').strip("'")
-        return _wrap_powershell(
-            f"New-Item -Path '{filepath}' -ItemType File -Force | Out-Null"
-        )
+        return _wrap_powershell(f"New-Item -Path '{filepath}' -ItemType File -Force | Out-Null")
 
     # mkdir -p DIR / mkdir DIR
     m = re.match(r"^mkdir\s+(?:-p\s+)?(.+)$", cmd_stripped)
     if m:
         dirpath = m.group(1).strip().strip('"').strip("'")
-        return _wrap_powershell(
-            f"New-Item -Path '{dirpath}' -ItemType Directory -Force | Out-Null"
-        )
+        return _wrap_powershell(f"New-Item -Path '{dirpath}' -ItemType Directory -Force | Out-Null")
 
     # rm FILE
     m = re.match(r"^rm\s+([^\s-].*)$", cmd_stripped)
@@ -276,14 +264,18 @@ def translate_command_for_windows(command: str) -> str:
     # cp SRC DST / cp -r SRC DST
     m = re.match(r"^cp\s+(?:-r\s+)?(.+?)\s+(.+)$", cmd_stripped)
     if m:
-        src, dst = m.group(1).strip().strip('"').strip("'"), m.group(2).strip().strip('"').strip("'")
+        src, dst = m.group(1).strip().strip('"').strip("'"), m.group(2).strip().strip('"').strip(
+            "'"
+        )
         recurse = " -Recurse" if "-r" in cmd_stripped.split()[:2] else ""
         return _wrap_powershell(f"Copy-Item -Path '{src}' -Destination '{dst}'{recurse} -Force")
 
     # mv SRC DST
     m = re.match(r"^mv\s+(.+?)\s+(.+)$", cmd_stripped)
     if m:
-        src, dst = m.group(1).strip().strip('"').strip("'"), m.group(2).strip().strip('"').strip("'")
+        src, dst = m.group(1).strip().strip('"').strip("'"), m.group(2).strip().strip('"').strip(
+            "'"
+        )
         return _wrap_powershell(f"Move-Item -Path '{src}' -Destination '{dst}' -Force")
 
     # which CMD

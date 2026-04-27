@@ -131,7 +131,7 @@ class GenericVerifier:
             func = self._find_function(tree, func_name) if tree else None
             if func is None:
                 return CheckResult(name, False, f"{func_name}() not found")
-            func_lines = source.splitlines()[func.lineno - 1:func.end_lineno]
+            func_lines = source.splitlines()[func.lineno - 1 : func.end_lineno]
             func_source = "\n".join(func_lines)
             found = pattern in func_source
             return CheckResult(

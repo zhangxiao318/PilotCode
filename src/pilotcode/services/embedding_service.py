@@ -34,6 +34,14 @@ try:
 except ImportError:
     HAS_HTTPX = False
 
+# Try to import numpy for batch cosine similarity
+try:
+    import numpy as np
+
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+
 
 @dataclass
 class EmbeddingVector:
@@ -195,15 +203,52 @@ class VectorStore:
         self.vectors: dict[str, EmbeddingVector] = {}
         self.persist = persist
         self.name = name
+        self._matrix: Any = None
+        self._ids: list[str] = []
 
         if persist:
             self._store_dir = Path(user_data_dir("pilotcode", "pilotcode")) / "embeddings"
             self._store_dir.mkdir(parents=True, exist_ok=True)
             self._load_from_disk()
+            if HAS_NUMPY:
+                self._rebuild_matrix()
+
+    def _rebuild_matrix(self) -> None:
+        """Rebuild the numpy matrix and ID list from stored vectors."""
+        if not self.vectors or not HAS_NUMPY:
+            self._matrix = None
+            self._ids = []
+            return
+
+        # Ensure all vectors have the same dimension before stacking
+        first_vec = next(iter(self.vectors.values()))
+        dim = len(first_vec.vector)
+        if not all(len(v.vector) == dim for v in self.vectors.values()):
+            self._matrix = None
+            self._ids = []
+            return
+
+        self._ids = list(self.vectors.keys())
+        self._matrix = np.array([self.vectors[vid].vector for vid in self._ids], dtype=np.float32)
 
     def add(self, vector: EmbeddingVector) -> None:
         """Add a vector to the store."""
+        replacing = vector.id in self.vectors
         self.vectors[vector.id] = vector
+
+        if HAS_NUMPY:
+            if self._matrix is not None and len(vector.vector) == self._matrix.shape[1]:
+                if replacing and vector.id in self._ids:
+                    idx = self._ids.index(vector.id)
+                    self._matrix[idx] = np.array(vector.vector, dtype=np.float32)
+                else:
+                    self._ids.append(vector.id)
+                    self._matrix = np.vstack([
+                        self._matrix,
+                        np.array([vector.vector], dtype=np.float32),
+                    ])
+            else:
+                self._rebuild_matrix()
 
         if self.persist:
             self._save_vector_to_disk(vector)
@@ -211,7 +256,12 @@ class VectorStore:
     def add_many(self, vectors: list[EmbeddingVector]) -> None:
         """Add multiple vectors."""
         for vector in vectors:
-            self.add(vector)
+            self.vectors[vector.id] = vector
+            if self.persist:
+                self._save_vector_to_disk(vector)
+
+        if HAS_NUMPY:
+            self._rebuild_matrix()
 
     def get(self, id: str) -> Optional[EmbeddingVector]:
         """Get vector by ID."""
@@ -222,6 +272,9 @@ class VectorStore:
         if id in self.vectors:
             del self.vectors[id]
 
+            if HAS_NUMPY:
+                self._rebuild_matrix()
+
             if self.persist:
                 file_path = self._store_dir / f"{id}.json.gz"
                 if file_path.exists():
@@ -230,6 +283,27 @@ class VectorStore:
             return True
         return False
 
+    def delete_by_file_path(self, file_path: str) -> int:
+        """Delete all vectors associated with a file path.
+
+        Returns:
+            Number of vectors deleted.
+        """
+        ids_to_delete = [
+            vid for vid, vec in self.vectors.items() if vec.metadata.get("file_path") == file_path
+        ]
+        for vid in ids_to_delete:
+            del self.vectors[vid]
+            if self.persist:
+                fp = self._store_dir / f"{vid}.json.gz"
+                if fp.exists():
+                    fp.unlink()
+
+        if HAS_NUMPY and ids_to_delete:
+            self._rebuild_matrix()
+
+        return len(ids_to_delete)
+
     def search(
         self, query_vector: list[float], top_k: int = 5, min_score: float = 0.0
     ) -> list[SearchResult]:
@@ -237,7 +311,30 @@ class VectorStore:
         if not self.vectors:
             return []
 
-        # Calculate cosine similarity for all vectors
+        # Use numpy batch computation if available and vectors > 100
+        if HAS_NUMPY and self._matrix is not None and len(self.vectors) > 100:
+            scores = self._cosine_similarity_batch(
+                np.array(query_vector, dtype=np.float32),
+                self._matrix,
+            )
+
+            # Filter by min_score and build results
+            scored = []
+            for i, score in enumerate(scores):
+                if score >= min_score:
+                    scored.append((self._ids[i], float(score)))
+
+            # Sort by score (descending)
+            scored.sort(key=lambda x: x[1], reverse=True)
+
+            # Return top-k
+            results = []
+            for rank, (vid, score) in enumerate(scored[:top_k], 1):
+                results.append(SearchResult(vector=self.vectors[vid], score=score, rank=rank))
+
+            return results
+
+        # Fall back to Python loop
         scored = []
         for vector in self.vectors.values():
             score = self._cosine_similarity(query_vector, vector.vector)
@@ -275,9 +372,28 @@ class VectorStore:
 
         return dot_product / (magnitude_a * magnitude_b)
 
+    @staticmethod
+    def _cosine_similarity_batch(query: Any, matrix: Any) -> Any:
+        """Calculate cosine similarity between a query vector and a matrix of vectors.
+
+        Args:
+            query: (d,) numpy array
+            matrix: (n, d) numpy array
+
+        Returns:
+            (n,) numpy array of cosine similarities
+        """
+        dot = matrix @ query  # (n,)
+        norm_query = np.linalg.norm(query)
+        norm_matrix = np.linalg.norm(matrix, axis=1)
+        return dot / (norm_query * norm_matrix + 1e-10)
+
     def clear(self) -> None:
         """Clear all vectors."""
         self.vectors.clear()
+        if HAS_NUMPY:
+            self._matrix = None
+            self._ids = []
 
         if self.persist:
             for file in self._store_dir.glob("*.json.gz"):
@@ -397,6 +513,17 @@ class EmbeddingService:
     def delete(self, id: str) -> bool:
         """Delete an embedding by ID."""
         return self.vector_store.delete(id)
+
+    def delete_by_file_path(self, file_path: str) -> int:
+        """Delete all embeddings for a given file path.
+
+        Used during incremental re-indexing to clear old vectors
+        before embedding the updated file content.
+
+        Returns:
+            Number of embeddings deleted.
+        """
+        return self.vector_store.delete_by_file_path(file_path)
 
     def clear(self) -> None:
         """Clear all embeddings."""

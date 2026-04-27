@@ -17,6 +17,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+try:
+    from tree_sitter import Language, Parser
+    HAS_TREE_SITTER = True
+except ImportError:
+    HAS_TREE_SITTER = False
+
+
+# Module-level cache for tree-sitter parsers
+_tsp_parsers: dict[str, Parser] = {}
+_tsp_node_maps: dict[str, dict[str, str]] = {
+    "python": {"class_definition": "class", "function_definition": "function"},
+    "c": {"function_definition": "function", "struct_specifier": "struct"},
+    "cpp": {"class_specifier": "class", "struct_specifier": "struct", "function_definition": "function", "namespace_definition": "namespace"},
+    "javascript": {"class_declaration": "class", "function_declaration": "function", "method_definition": "method"},
+    "typescript": {"class_declaration": "class", "interface_declaration": "interface", "function_declaration": "function", "method_definition": "method"},
+    "go": {"function_declaration": "function", "method_declaration": "method", "type_declaration": "class"},
+    "rust": {"function_item": "function", "struct_item": "struct", "trait_item": "trait", "enum_item": "enum", "impl_item": "class"},
+    "java": {"class_declaration": "class", "interface_declaration": "interface", "method_declaration": "method"},
+}
+
 
 @dataclass
 class Symbol:
@@ -37,20 +57,33 @@ class CodeIndex:
     """Index of code symbols and content."""
 
     symbols: list[Symbol] = field(default_factory=list)
+    symbols_by_file: dict[str, list[Symbol]] = field(default_factory=dict)
+    symbols_by_name: dict[str, list[Symbol]] = field(default_factory=dict)
     file_index: dict[str, dict[str, Any]] = field(default_factory=dict)
     last_updated: float = field(default_factory=time.time)
 
     def find_symbol(self, name: str, symbol_type: str | None = None) -> list[Symbol]:
         """Find symbols by name."""
+        # Fast path: exact match via bucket
+        if self.symbols_by_name and name in self.symbols_by_name:
+            results = []
+            for symbol in self.symbols_by_name[name]:
+                if symbol_type is None or symbol.symbol_type == symbol_type:
+                    results.append(symbol)
+            return results
+
+        # Fallback: partial match linear scan
         results = []
         for symbol in self.symbols:
-            if symbol.name == name:
+            if name in symbol.name:
                 if symbol_type is None or symbol.symbol_type == symbol_type:
                     results.append(symbol)
         return results
 
     def find_in_file(self, file_path: str) -> list[Symbol]:
         """Find all symbols in a file."""
+        if self.symbols_by_file:
+            return self.symbols_by_file.get(file_path, [])
         return [s for s in self.symbols if s.file_path == file_path]
 
     def get_file_info(self, file_path: str) -> dict[str, Any] | None:
@@ -144,6 +177,89 @@ class CodeIndexer:
         }
 
         return language_map.get(ext)
+
+    @staticmethod
+    def _get_tsp_parser(language: str) -> Parser | None:
+        """Get or create a cached Tree-sitter parser for a language."""
+        if language in _tsp_parsers:
+            return _tsp_parsers[language]
+
+        module_map = {
+            "python": "tree_sitter_python",
+            "javascript": "tree_sitter_javascript",
+            "typescript": "tree_sitter_javascript",
+            "c": "tree_sitter_c",
+            "cpp": "tree_sitter_cpp",
+            "go": "tree_sitter_go",
+            "rust": "tree_sitter_rust",
+            "java": "tree_sitter_java",
+        }
+
+        module_name = module_map.get(language)
+        if not module_name:
+            return None
+
+        try:
+            mod = __import__(module_name)
+            parser = Parser(Language(mod.language()))
+            _tsp_parsers[language] = parser
+            return parser
+        except Exception:
+            return None
+
+    def _extract_with_treesitter(self, content: str, file_path: str, language: str) -> list[Symbol]:
+        """Extract symbols using Tree-sitter AST parsing."""
+        parser = self._get_tsp_parser(language)
+        if parser is None:
+            return []
+
+        try:
+            tree = parser.parse(content.encode("utf-8"))
+        except Exception:
+            return []
+
+        symbols: list[Symbol] = []
+        node_map = _tsp_node_maps.get(language, {})
+
+        def _find_name(node):
+            """Recursively find the first identifier-like child node."""
+            if node.type in ("identifier", "type_identifier", "field_identifier", "property_identifier"):
+                text = node.text
+                if text:
+                    return text.decode("utf-8", errors="ignore")
+            for child in node.children:
+                name = _find_name(child)
+                if name:
+                    return name
+            return None
+
+        def _walk(node):
+            symbol_type = node_map.get(node.type)
+            if symbol_type:
+                name = _find_name(node)
+                if name:
+                    first_line = ""
+                    if node.text:
+                        first_line = node.text.decode("utf-8", errors="ignore").splitlines()[0]
+                    symbols.append(
+                        Symbol(
+                            name=name,
+                            symbol_type=symbol_type,
+                            file_path=file_path,
+                            line_number=node.start_point[0] + 1,
+                            column=node.start_point[1],
+                            signature=first_line,
+                        )
+                    )
+            for child in node.children:
+                _walk(child)
+
+        try:
+            _walk(tree.root_node)
+        except Exception:
+            return []
+
+        return symbols
 
     def _extract_python_symbols(self, content: str, file_path: str) -> list[Symbol]:
         """Extract Python symbols from content."""
@@ -279,21 +395,42 @@ class CodeIndexer:
 
         # Extract symbols based on language
         if language == "python":
+            # Python: regex is 10x faster and accurate enough
             symbols = self._extract_python_symbols(content, file_path)
-        elif language in ("javascript", "typescript"):
-            symbols = self._extract_js_ts_symbols(content, file_path, language)
-        elif language in ("c", "cpp"):
-            symbols = self._extract_c_cpp_symbols(content, file_path, language)
+        elif HAS_TREE_SITTER and language in _tsp_node_maps:
+            # Try tree-sitter first for non-Python languages
+            symbols = self._extract_with_treesitter(content, file_path, language)
+            if not symbols:
+                # Fall back to regex if tree-sitter returns nothing
+                if language in ("javascript", "typescript"):
+                    symbols = self._extract_js_ts_symbols(content, file_path, language)
+                elif language in ("c", "cpp"):
+                    symbols = self._extract_c_cpp_symbols(content, file_path, language)
         else:
-            symbols = []
+            # No tree-sitter support: use regex fallbacks
+            if language in ("javascript", "typescript"):
+                symbols = self._extract_js_ts_symbols(content, file_path, language)
+            elif language in ("c", "cpp"):
+                symbols = self._extract_c_cpp_symbols(content, file_path, language)
+            else:
+                symbols = []
 
         # Update index
         async with self._lock:
-            # Remove old symbols for this file
+            # Remove old symbols for this file from buckets
+            old_symbols = self._index.symbols_by_file.pop(file_path, [])
             self._index.symbols = [s for s in self._index.symbols if s.file_path != file_path]
+            for symbol in old_symbols:
+                if symbol.name in self._index.symbols_by_name:
+                    self._index.symbols_by_name[symbol.name].remove(symbol)
+                    if not self._index.symbols_by_name[symbol.name]:
+                        del self._index.symbols_by_name[symbol.name]
 
-            # Add new symbols
+            # Add new symbols to flat list and buckets
             self._index.symbols.extend(symbols)
+            self._index.symbols_by_file[file_path] = symbols
+            for symbol in symbols:
+                self._index.symbols_by_name.setdefault(symbol.name, []).append(symbol)
 
             # Update file info
             self._index.file_index[file_path] = {
@@ -342,7 +479,15 @@ class CodeIndexer:
     async def remove_file(self, file_path: str) -> None:
         """Remove a file from the index."""
         async with self._lock:
+            # Remove from buckets
+            old_symbols = self._index.symbols_by_file.pop(file_path, [])
             self._index.symbols = [s for s in self._index.symbols if s.file_path != file_path]
+            for symbol in old_symbols:
+                if symbol.name in self._index.symbols_by_name:
+                    self._index.symbols_by_name[symbol.name].remove(symbol)
+                    if not self._index.symbols_by_name[symbol.name]:
+                        del self._index.symbols_by_name[symbol.name]
+
             self._index.file_index.pop(file_path, None)
             self._indexed_files.discard(file_path)
 
@@ -360,8 +505,33 @@ class CodeIndexer:
             Matching symbols
         """
         results = []
-        query_lower = query.lower()
 
+        # Fast path: exact symbol name match via bucket
+        if self._index.symbols_by_name and query in self._index.symbols_by_name:
+            for symbol in self._index.symbols_by_name[query]:
+                if symbol_type and symbol.symbol_type != symbol_type:
+                    continue
+                if file_pattern and not fnmatch.fnmatch(symbol.file_path, file_pattern):
+                    continue
+                results.append(symbol)
+            return results
+
+        # Fast path: query looks like a file path via bucket
+        if (
+            self._index.symbols_by_file
+            and ("/" in query or "\\" in query or "." in query)
+            and query in self._index.symbols_by_file
+        ):
+            for symbol in self._index.symbols_by_file[query]:
+                if symbol_type and symbol.symbol_type != symbol_type:
+                    continue
+                if file_pattern and not fnmatch.fnmatch(symbol.file_path, file_pattern):
+                    continue
+                results.append(symbol)
+            return results
+
+        # Fallback: substring scan over flat list
+        query_lower = query.lower()
         for symbol in self._index.symbols:
             # Check name match
             if query_lower not in symbol.name.lower():
@@ -438,6 +608,13 @@ class CodeIndexer:
 
         self._index.file_index = data.get("files", {})
         self._indexed_files = set(self._index.file_index.keys())
+
+        # Rebuild bucket indexes from flat list
+        self._index.symbols_by_file = {}
+        self._index.symbols_by_name = {}
+        for symbol in self._index.symbols:
+            self._index.symbols_by_file.setdefault(symbol.file_path, []).append(symbol)
+            self._index.symbols_by_name.setdefault(symbol.name, []).append(symbol)
 
 
 # Global indexer instance

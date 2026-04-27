@@ -88,11 +88,12 @@ async def code_search_call(
     indexer = get_codebase_indexer()
 
     # Auto-index if empty so the user doesn't need to call CodeIndex first.
-    # Cap at 500 files to avoid overwhelming context on large repositories.
+    # With hierarchical indexing, large repos are no longer a context problem,
+    # so we index all files rather than capping at an arbitrary limit.
     stats = indexer.get_stats()
     if stats.total_files == 0:
         try:
-            await indexer.index_codebase(incremental=True, max_files=500)
+            await indexer.index_codebase(incremental=True)
         except Exception:
             pass  # Continue even if auto-index fails
 
