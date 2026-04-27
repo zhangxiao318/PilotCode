@@ -780,7 +780,11 @@ function renderMarkdown(text) {
     
     // Line breaks (outside code blocks)
     text = text.replace(/\n/g, '<br>');
-    
+
+    // Remove <br> between adjacent list items to prevent double spacing
+    text = text.replace(/<\/li><br><li>/g, '</li><li>');
+    text = text.replace(/<\/li><br>/g, '</li>');
+
     // Restore code blocks
     codeBlocks.forEach((block, id) => {
         // Escape HTML in code, but preserve newlines as actual newlines for <pre>
@@ -1045,16 +1049,13 @@ function showContextMenu(event, sessionId) {
 
     const renameItem = menu.querySelector('[data-action="rename"]');
     const archiveItem = menu.querySelector('[data-action="archive"]');
-    const sep = menu.querySelector('.context-sep');
 
     if (renameItem) renameItem.style.display = isArchived ? 'none' : 'flex';
     if (archiveItem) {
-        archiveItem.style.display = isArchived ? 'none' : 'flex';
-        if (!isArchived) {
-            archiveItem.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Archive`;
-        }
+        archiveItem.innerHTML = isArchived
+            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Unarchive`
+            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Archive`;
     }
-    if (sep) sep.style.display = isArchived ? 'none' : 'block';
 }
 
 function hideContextMenu() {
