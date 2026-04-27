@@ -1,6 +1,7 @@
 """TUI Controller - bridges TUI with PilotCode core."""
 
 import asyncio
+import os
 from typing import AsyncIterator, Optional, Callable
 from dataclasses import dataclass
 from enum import Enum, auto
