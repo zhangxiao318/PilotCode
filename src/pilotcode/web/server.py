@@ -250,9 +250,10 @@ class WebSocketManager:
 
     def _update_recent_directories(self, cwd: str) -> None:
         """Add a directory to recent list, deduplicate and limit to 10."""
-        if not cwd or cwd in self.recent_directories:
+        cwd_str = str(cwd) if cwd else None
+        if not cwd_str or cwd_str in self.recent_directories:
             return
-        self.recent_directories.insert(0, cwd)
+        self.recent_directories.insert(0, cwd_str)
         self.recent_directories = self.recent_directories[:10]
 
     async def _create_session_context(self, session_id: str, cwd: str | None = None) -> dict:
@@ -264,7 +265,7 @@ class WebSocketManager:
         from pilotcode.state.store import Store
         from pilotcode.utils.config import get_global_config
 
-        session_cwd = cwd or self.cwd
+        session_cwd = str(cwd or self.cwd)
         store = Store(get_default_app_state())
         store.set_state(lambda s: replace(s, cwd=session_cwd))
         tools = get_all_tools()
@@ -356,7 +357,9 @@ class WebSocketManager:
                         "created_at": ctx["created_at"],
                         "last_activity": ctx["last_activity"],
                         "source": "memory",
-                        "project_path": getattr(ctx["query_engine"].config, "cwd", self.cwd),
+                        "project_path": str(
+                            getattr(ctx["query_engine"].config, "cwd", self.cwd) or self.cwd
+                        ),
                     }
                 )
 
@@ -541,8 +544,9 @@ class WebSocketManager:
                     ctx = await self._create_session_context(sid)
                     ctx["query_engine"].messages = messages
                     ctx["name"] = metadata.get("name", sid)
-                    restored_cwd = metadata.get("project_path", self.cwd)
+                    restored_cwd = metadata.get("project_path")
                     if restored_cwd:
+                        restored_cwd = str(restored_cwd)
                         from dataclasses import replace
 
                         ctx["store"].set_state(lambda s: replace(s, cwd=restored_cwd))
