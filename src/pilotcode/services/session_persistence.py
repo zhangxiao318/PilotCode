@@ -69,8 +69,6 @@ class SessionPersistence:
         timestamp = getattr(message, "timestamp", None)
         if isinstance(timestamp, datetime):
             timestamp = timestamp.isoformat()
-        elif timestamp is None:
-            timestamp = datetime.now().isoformat()
 
         if isinstance(message, UserMessage):
             return {"type": "user", "content": message.content, "timestamp": timestamp}
@@ -78,46 +76,71 @@ class SessionPersistence:
             return {
                 "type": "assistant",
                 "content": message.content,
-                "tool_calls": getattr(message, "tool_calls", None),
+                "reasoning_content": message.reasoning_content,
                 "timestamp": timestamp,
             }
+        elif isinstance(message, SystemMessage):
+            return {"type": "system", "content": message.content, "timestamp": timestamp}
         elif isinstance(message, ToolUseMessage):
             return {
                 "type": "tool_use",
-                "tool_name": message.name,
-                "tool_input": message.input,
-                "id": getattr(message, "id", None),
+                "tool_use_id": message.tool_use_id,
+                "name": message.name,
+                "input": message.input,
+                "timestamp": timestamp,
             }
         elif isinstance(message, ToolResultMessage):
             return {
                 "type": "tool_result",
-                "tool_name": message.name,
-                "tool_result": message.result,
-                "tool_error": message.error,
-                "id": getattr(message, "id", None),
+                "tool_use_id": message.tool_use_id,
+                "content": message.content,
+                "is_error": message.is_error,
+                "timestamp": timestamp,
             }
         else:
             return {"type": "unknown", "content": str(message)}
 
     def _dict_to_message(self, data: dict) -> Message | None:
-        """Convert dictionary to message."""
+        """Convert dictionary to message.
+
+        Supports both current and legacy (pre-fix) field names for backward
+        compatibility with old session files.
+        """
         msg_type = data.get("type")
 
         try:
             if msg_type == "user":
-                return UserMessage(content=data["content"])
+                return UserMessage(content=data.get("content", ""))
             elif msg_type == "assistant":
-                return AssistantMessage(content=data["content"], tool_calls=data.get("tool_calls"))
+                return AssistantMessage(
+                    content=data.get("content", ""),
+                    reasoning_content=data.get("reasoning_content"),
+                )
+            elif msg_type == "system":
+                return SystemMessage(content=data.get("content", ""))
             elif msg_type == "tool_use":
+                # Prefer new field names; fallback to legacy names
+                tool_use_id = data.get("tool_use_id") or data.get("id", "")
+                name = data.get("name") or data.get("tool_name", "")
                 return ToolUseMessage(
-                    name=data["tool_name"], input=data["tool_input"], id=data.get("id")
+                    tool_use_id=tool_use_id,
+                    name=name,
+                    input=data.get("input") or data.get("tool_input", {}),
                 )
             elif msg_type == "tool_result":
+                # Prefer new field names; fallback to legacy names
+                tool_use_id = data.get("tool_use_id") or data.get("id", "")
+                # Legacy files stored truncated previews in 'tool_result'; use it as content
+                content = data.get("content")
+                if content is None:
+                    content = data.get("tool_result", "")
+                is_error = data.get("is_error", False)
+                if is_error is False and data.get("tool_error"):
+                    is_error = True
                 return ToolResultMessage(
-                    name=data["tool_name"],
-                    result=data["tool_result"],
-                    error=data.get("tool_error"),
-                    id=data.get("id"),
+                    tool_use_id=tool_use_id,
+                    content=content,
+                    is_error=is_error,
                 )
         except Exception:
             pass
