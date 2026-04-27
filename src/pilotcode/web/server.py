@@ -6,6 +6,7 @@ import asyncio
 import traceback
 import logging
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Set, Dict, Any
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -288,8 +289,8 @@ class WebSocketManager:
             "name": session_id,
             "query_engine": query_engine,
             "store": store,
-            "created_at": asyncio.get_event_loop().time(),
-            "last_activity": asyncio.get_event_loop().time(),
+            "created_at": datetime.now().isoformat(),
+            "last_activity": datetime.now().isoformat(),
             "message_count": 0,
             # P0: Shared FileEdit compensation tracker (per-session)
             "_fileedit_tracker": FileEditCompensationTracker(
@@ -379,7 +380,7 @@ class WebSocketManager:
         """Update last activity timestamp for a session."""
         ctx = self._session_contexts.get(session_id)
         if ctx:
-            ctx["last_activity"] = asyncio.get_event_loop().time()
+            ctx["last_activity"] = datetime.now().isoformat()
             ctx["message_count"] = len(ctx["query_engine"].messages)
 
     # ------------------------------------------------------------------
