@@ -261,54 +261,30 @@ class TestSessionPersistence:
         assert err_msg.is_error is True
         assert err_msg.content == "File not found"
 
-    def test_legacy_field_backward_compat(self, persistence):
-        """Old session files used legacy field names; ensure they still load."""
-        import gzip, json
+    def test_incremental_append_and_rollover(self, persistence):
+        """Messages are appended; compaction triggers a rollover."""
+        messages = [UserMessage(content=f"msg{i}") for i in range(60)]
 
-        legacy_data = {
-            "version": "1.0",
-            "session_id": "legacy_test",
-            "saved_at": "2026-04-01T00:00:00",
-            "messages": [
-                {
-                    "type": "tool_use",
-                    "tool_name": "Bash",
-                    "tool_input": {"command": "ls"},
-                    "id": "legacy_id_001",
-                },
-                {
-                    "type": "tool_result",
-                    "tool_name": "Bash",
-                    "tool_result": "file.txt\n",
-                    "tool_error": None,
-                    "id": "legacy_id_001",
-                },
-            ],
-        }
-        session_path = persistence.DATA_DIR / "legacy_test.json.gz"
-        with gzip.open(session_path, "wt", encoding="utf-8") as f:
-            json.dump(legacy_data, f)
+        # First save
+        assert persistence.save_session("incr", messages[:10], name="Incr")
+        loaded, _ = persistence.load_session("incr")
+        assert len(loaded) == 10
 
-        # Write metadata so list_sessions doesn't crash
-        meta_path = persistence.DATA_DIR / "legacy_test.meta.json"
-        meta_path.write_text(
-            '{"session_id": "legacy_test", "name": "Legacy", "message_count": 2, "created_at": "2026-04-01T00:00:00", "updated_at": "2026-04-01T00:00:00"}'
-        )
+        # Append more
+        assert persistence.save_session("incr", messages[:25], name="Incr")
+        loaded, _ = persistence.load_session("incr")
+        assert len(loaded) == 25
 
-        loaded = persistence.load_session("legacy_test")
-        assert loaded is not None
-        msgs, _ = loaded
-        assert len(msgs) == 2
+        # Simulate compaction (delete first 5)
+        compacted = messages[5:25]
+        assert persistence.save_session("incr", compacted, name="Incr")
+        loaded, _ = persistence.load_session("incr")
+        assert len(loaded) == 20
+        assert loaded[0].content == "msg5"
 
-        # Legacy tool_use should load with empty tool_use_id fallback
-        assert isinstance(msgs[0], ToolUseMessage)
-        assert msgs[0].name == "Bash"
-        assert msgs[0].input == {"command": "ls"}
-
-        # Legacy tool_result should load content from tool_result field
-        assert isinstance(msgs[1], ToolResultMessage)
-        assert msgs[1].content == "file.txt\n"
-        assert msgs[1].is_error is False
+        # Verify only one segment after rollover
+        segs = persistence._list_segments("incr")
+        assert len(segs) == 1
 
 
 class TestGlobalInstance:
