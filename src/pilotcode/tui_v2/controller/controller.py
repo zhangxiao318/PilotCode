@@ -327,7 +327,7 @@ class TUIController:
                 session_id=self._session_id,
                 messages=self.query_engine.messages,
                 name=self._session_name,
-                project_path=str(Path.cwd()),
+                project_path=self.session_options.get("cwd", str(Path.cwd())),
             )
         except Exception:
             pass  # Fail silently to not disrupt the user experience

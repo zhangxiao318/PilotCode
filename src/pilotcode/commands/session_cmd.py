@@ -34,7 +34,9 @@ async def session_command(args: list[str], context: CommandContext) -> str:
 
     if not args or args[0] == "list":
         # List sessions
-        project_path = context.cwd if context else None
+        # Default: list ALL sessions regardless of project path.
+        # Only filter by cwd when explicitly requested via "list here".
+        project_path = context.cwd if context and len(args) > 1 and args[1] == "here" else None
         sessions = persist_list_sessions(project_path)
 
         if not sessions:
@@ -62,10 +64,10 @@ async def session_command(args: list[str], context: CommandContext) -> str:
         # Generate session ID
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Get messages from context if available
+        # Get messages from the query_engine in context
         messages = []
-        if context and hasattr(context, "messages"):
-            messages = context.messages
+        if context and context.query_engine and hasattr(context.query_engine, "messages"):
+            messages = context.query_engine.messages
 
         # Save session
         success = persist_save_session(
