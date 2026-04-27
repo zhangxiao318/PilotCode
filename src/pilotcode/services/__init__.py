@@ -264,6 +264,11 @@ from .hierarchical_memory import (
     get_hierarchical_memory,
     reset_hierarchical_memory,
 )
+from .memory_kb import (
+    MemoryEntry,
+    ProjectMemoryKB,
+    get_memory_kb,
+)
 from .adaptive_context_manager import (
     AdaptiveContextManager,
     AdaptiveContextConfig,
@@ -528,4 +533,8 @@ __all__ = [
     "get_adaptive_context_manager",
     "reset_adaptive_context_manager",
     "create_adaptive_context_manager",
+    # Memory KB
+    "MemoryEntry",
+    "ProjectMemoryKB",
+    "get_memory_kb",
 ]

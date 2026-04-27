@@ -87,7 +87,9 @@ async def code_search_call(
     # Get codebase indexer
     indexer = get_codebase_indexer()
 
-    # Auto-index if empty so the user doesn't need to call CodeIndex first
+    # Auto-index if empty so the user doesn't need to call CodeIndex first.
+    # With hierarchical indexing, large repos are no longer a context problem,
+    # so we index all files rather than capping at an arbitrary limit.
     stats = indexer.get_stats()
     if stats.total_files == 0:
         try:

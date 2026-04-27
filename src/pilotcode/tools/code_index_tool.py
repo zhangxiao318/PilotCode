@@ -76,6 +76,15 @@ async def code_index_call(
 
         start_time = time.time()
 
+        # Wire up progress callback so large repos show progress
+        def _progress_cb(file_path: str, current: int, total: int) -> None:
+            pct = (current / total * 100) if total else 0
+            msg = f"Indexing... {current}/{total} files ({pct:.0f}%)"
+            if on_progress:
+                on_progress(msg)
+
+        indexer.set_progress_callback(_progress_cb)
+
         try:
             stats = await indexer.index_codebase(
                 incremental=input_data.incremental,

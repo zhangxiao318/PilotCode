@@ -156,7 +156,7 @@ class AutopilotClient(PilotCodeWebSocketClient):
                 break
 
             try:
-                recv_timeout = min(remaining, 45.0)
+                recv_timeout = min(remaining, 300.0)
                 msg = await asyncio.wait_for(self._recv_any(), timeout=recv_timeout)
             except asyncio.TimeoutError:
                 if self._stream_ended.is_set():

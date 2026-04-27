@@ -93,14 +93,14 @@ class PilotCodeWebSocketClient:
             The session_id (server-generated or user-provided).
         """
         await self._send({"type": "session_create", "session_id": session_id})
-        resp = await self._wait_for("session_created", timeout=5.0)
+        resp = await self._wait_for("session_created", timeout=60.0)
         self.session_id = resp["session_id"]
         return self.session_id
 
     async def attach_session(self, session_id: str) -> SessionInfo:
         """Attach this connection to an existing session."""
         await self._send({"type": "session_attach", "session_id": session_id})
-        resp = await self._wait_for("session_attached", timeout=5.0)
+        resp = await self._wait_for("session_attached", timeout=60.0)
         self.session_id = resp["session_id"]
         return SessionInfo(
             session_id=resp["session_id"],

@@ -422,6 +422,12 @@ class WebSocketManager:
         # Cancel all pending permissions and questions for this client
         self.permission_manager.cancel_all()
         self.question_manager.cancel_all()
+        # Cancel any ongoing query task for this client to prevent
+        # dangling AskUser requests and infinite iteration loops.
+        task = self.current_tasks.pop(websocket, None)
+        if task and not task.done():
+            print(f"[WebSocket] Cancelling ongoing query task for {client_info}")
+            task.cancel()
 
     async def send_to_client(self, websocket, message: dict):
         """Send message to specific client."""

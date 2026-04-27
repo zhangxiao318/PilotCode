@@ -38,6 +38,8 @@ from .code_index import Symbol, get_code_indexer
 from .advanced_code_analyzer import get_analyzer
 from .embedding_service import EmbeddingService, get_embedding_service
 from .file_metadata_cache import get_file_metadata_cache
+from .hierarchical_index import HierarchicalIndexBuilder
+from .memory_kb import get_memory_kb, MemoryEntry
 
 
 @dataclass
@@ -170,6 +172,42 @@ class CodebaseIndexer:
         "out",
         "bin",
         "obj",
+        "extracted",
+        "temp",
+        "tmp",
+        "_temp",
+        "_tmp",
+        # C/C++ build artifacts (Linux kernel, embedded, etc.)
+        "*.d",          # dependency files
+        "*.cmd",        # kernel build cmd files
+        "*.o",          # object files
+        "*.ko",         # kernel modules
+        "*.mod",        # module files
+        "*.mod.c",      # generated module C files
+        "*.order",      # module order files
+        "*.symvers",    # symbol versions
+        "*.a",          # static libraries
+        "*.so",         # shared libraries
+        "*.dll",        # Windows DLLs
+        "*.exe",        # executables
+        "*.elf",        # ELF binaries
+        "*.hex",        # hex firmware
+        "*.bin",        # binary firmware
+        "*.map",        # linker map files
+        "*.lst",        # listing files
+        "*.srec",       # S-record files
+        "*.ihex",       # Intel hex
+        # Java/Gradle/Maven build
+        "*.class",
+        "*.jar",
+        "*.war",
+        "*.ear",
+        "gradle",
+        ".gradle",
+        # Rust build
+        "Cargo.lock",
+        # Go build
+        "go.sum",
     }
 
     def __init__(
@@ -192,12 +230,22 @@ class CodebaseIndexer:
         self._file_hashes: dict[str, str] = {}  # path -> content hash
         self._stats = CodebaseStats()
 
+        # Hierarchical index
+        self._hierarchical_builder: HierarchicalIndexBuilder | None = None
+        self._hierarchical_cache_path: Path | None = None
+
+        # Project memory / knowledge base
+        self._memory_kb = get_memory_kb(self.root_path)
+
         # Context management
         self._recently_accessed: list[str] = []  # LRU cache of file paths
         self._max_recent_files = 50
 
         # Event callbacks
         self._on_index_progress: Optional[Callable[[str, int, int], None]] = None
+
+        # Console progress (auto-enabled for long operations)
+        self._console_progress_enabled = False
 
         # Persistent cache path (outside git workspace to avoid polluting diffs)
         import hashlib
@@ -206,6 +254,7 @@ class CodebaseIndexer:
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_key = hashlib.md5(str(self.root_path.resolve()).encode()).hexdigest()[:16]
         self._cache_path = cache_dir / f"{cache_key}.json"
+        self._hierarchical_cache_path = cache_dir / f"{cache_key}_hierarchical.json"
 
         # Try to load cached index
         try:
@@ -214,9 +263,21 @@ class CodebaseIndexer:
         except Exception:
             pass  # Ignore cache load errors
 
-    def set_progress_callback(self, callback: Callable[[str, int, int], None]) -> None:
+        # Try to load cached hierarchical index
+        try:
+            if self._hierarchical_cache_path.exists():
+                self._hierarchical_builder = HierarchicalIndexBuilder(self.root_path)
+                self._hierarchical_builder.load(self._hierarchical_cache_path)
+        except Exception:
+            pass  # Ignore hierarchical cache load errors
+
+    def set_progress_callback(self, callback: Callable[[str, int, int], None] | None) -> None:
         """Set callback for indexing progress: (file_path, current, total)."""
         self._on_index_progress = callback
+        # If an external callback is provided, disable console progress
+        # to avoid duplicate output.
+        if callback is not None:
+            self._console_progress_enabled = False
 
     async def index_codebase(
         self,
@@ -226,42 +287,101 @@ class CodebaseIndexer:
         """Index the entire codebase.
 
         Args:
-            incremental: Only index changed files if True
-            max_files: Maximum number of files to index (None for all)
+            incremental: Only index changed files if True. When True, max_files
+                is ignored and all files on disk are scanned (then filtered by
+                content hash). This ensures modifications in any part of the
+                repo are discovered.
+            max_files: Maximum number of files to index. Only applies when
+                incremental=False (full reindex).
 
         Returns:
             Statistics about the indexed codebase
         """
         self._is_indexing = True
-        time.time()
+        start_time = time.time()
 
         try:
-            # Find all source files
-            files_to_index = self._find_source_files(max_files)
+            # Bugfix: incremental mode must scan ALL files on disk to discover
+            # changes anywhere in the repo. max_files only limits full reindex.
+            scan_max = None if incremental else max_files
+            all_source_files = self._find_source_files(scan_max)
 
             if incremental:
-                files_to_index = self._filter_unchanged_files(files_to_index)
+                # Filter to only changed files
+                files_to_index = self._filter_unchanged_files(all_source_files)
+
+                # Bugfix: detect files that were deleted since last index
+                current_files = {str(f) for f in all_source_files}
+                deleted_files = self._indexed_files - current_files
+                if deleted_files:
+                    for df in deleted_files:
+                        await self.remove_file(df)
+                        # Also clear old embeddings for this file
+                        try:
+                            self.embedding_service.delete_by_file_path(df)
+                        except Exception:
+                            pass
+            else:
+                files_to_index = all_source_files
 
             total = len(files_to_index)
             indexed = 0
 
+            # Time estimation & auto-enable console progress for large batches
+            estimated_seconds = self._estimate_indexing_time(files_to_index)
+            if estimated_seconds > 30 and not self._on_index_progress:
+                self._console_progress_enabled = True
+                print(
+                    f"[CodeIndex] Estimated indexing time: {estimated_seconds:.0f}s "
+                    f"for {total} files. Progress will be shown."
+                )
+
             # Index files in batches for better performance
             batch_size = 10
+            checkpoint_interval = 50  # Save progress every 500 files
+            batches_since_checkpoint = 0
+            console_report_interval = max(1, total // 20)  # Report ~20 times
+
             for i in range(0, total, batch_size):
                 batch = files_to_index[i : i + batch_size]
                 await asyncio.gather(*[self._index_single_file(f) for f in batch])
                 indexed += len(batch)
+                batches_since_checkpoint += 1
 
                 if self._on_index_progress:
                     for f in batch:
                         self._on_index_progress(str(f), indexed, total)
+
+                if self._console_progress_enabled and indexed % console_report_interval == 0:
+                    pct = indexed / total * 100
+                    elapsed = time.time() - start_time
+                    remaining = (elapsed / indexed) * (total - indexed) if indexed else 0
+                    print(
+                        f"[CodeIndex] {indexed}/{total} ({pct:.0f}%) "
+                        f"~{remaining:.0f}s remaining"
+                    )
+
+                # Checkpoint: periodically save intermediate state so that
+                # a crash or cancellation doesn't lose all progress.
+                if batches_since_checkpoint >= checkpoint_interval:
+                    batches_since_checkpoint = 0
+                    try:
+                        self._save_checkpoint()
+                    except Exception:
+                        pass  # Non-critical, continue indexing
 
             # Update stats
             self._stats.total_files = len(self._indexed_files)
             self._stats.total_symbols = len(self._symbol_indexer._index.symbols)
             self._stats.last_indexed = time.time()
 
-            # Persist index to disk for reuse across subprocesses
+            # Build hierarchical index for large codebases (incremental)
+            try:
+                self._build_hierarchical_index()
+            except Exception:
+                pass  # Non-critical, continue if it fails
+
+            # Final persist
             try:
                 self.export_index(str(self._cache_path))
             except Exception:
@@ -271,11 +391,30 @@ class CodebaseIndexer:
 
         finally:
             self._is_indexing = False
+            self._console_progress_enabled = False
 
     def _find_source_files(self, max_files: Optional[int] = None) -> list[Path]:
-        """Find all source files in the codebase."""
-        files = []
+        """Find all source files in the codebase.
 
+        Uses ``git ls-files`` when inside a git repository (10-100x faster
+        than ``rglob`` for large projects like Linux kernel). Falls back to
+        ``rglob`` for non-git directories.
+        """
+        files: list[Path] = []
+
+        # Fast path: use git ls-files for tracked source files
+        if (self.root_path / ".git").exists():
+            try:
+                git_files = self._find_source_files_via_git()
+                if git_files:
+                    files = git_files
+                    if max_files and len(files) > max_files:
+                        files = files[:max_files]
+                    return sorted(files)
+            except Exception:
+                pass  # Fall back to rglob
+
+        # Fallback: recursive filesystem walk
         try:
             for path in self.root_path.rglob("*"):
                 try:
@@ -305,6 +444,64 @@ class CodebaseIndexer:
             print(f"Error finding source files: {e}")
 
         return sorted(files)
+
+    def _find_source_files_via_git(self) -> list[Path]:
+        """Use git ls-files for fast file discovery inside a git repo."""
+        import subprocess
+
+        # Build extension patterns for git ls-files
+        extensions = self.SUPPORTED_EXTENSIONS
+        patterns = [f"*{ext}" for ext in extensions]
+
+        # Run git ls-files for tracked files + untracked but not ignored files
+        all_paths: set[str] = set()
+
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(self.root_path), "ls-files", "-z"] + patterns,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                for p in result.stdout.split("\0"):
+                    if p:
+                        all_paths.add(p)
+        except Exception:
+            pass
+
+        # Also include untracked source files (but respect .gitignore)
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.root_path),
+                    "ls-files",
+                    "-z",
+                    "--others",
+                    "--exclude-standard",
+                ]
+                + patterns,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                for p in result.stdout.split("\0"):
+                    if p:
+                        all_paths.add(p)
+        except Exception:
+            pass
+
+        # Convert to Path objects and apply ignore filter
+        files: list[Path] = []
+        for rel_str in all_paths:
+            path = self.root_path / rel_str
+            if path.is_file() and not self._should_ignore(path):
+                files.append(path)
+
+        return files
 
     def _should_ignore(self, path: Path) -> bool:
         """Check if path should be ignored."""
@@ -338,19 +535,178 @@ class CodebaseIndexer:
 
         return False
 
-    def _filter_unchanged_files(self, files: list[Path]) -> list[Path]:
-        """Filter out files that haven't changed since last index."""
-        changed = []
+    def _estimate_indexing_time(self, files: list[Path]) -> float:
+        """Estimate total indexing time in seconds.
 
-        for file_path in files:
+        Uses per-language heuristics based on measured performance:
+        - Python (regex): ~3ms per file
+        - Tree-sitter languages: ~12ms per file
+        - Overhead (embed + file I/O): ~2ms per file
+        """
+        python_count = 0
+        ts_count = 0
+        for f in files:
+            if f.suffix.lower() == ".py":
+                python_count += 1
+            else:
+                ts_count += 1
+        # Conservative estimate: include a small fixed overhead for parser init
+        init_overhead = 0.1 if ts_count > 0 else 0.0
+        return init_overhead + python_count * 0.003 + ts_count * 0.014
+
+    def _save_checkpoint(self) -> None:
+        """Save a lightweight checkpoint during long indexing runs.
+
+        Only saves file hashes and the indexed-files set (cheap).
+        Symbols and embeddings are already persisted by their
+        respective sub-services.
+        """
+        try:
+            self.export_index(str(self._cache_path))
+        except Exception:
+            pass
+
+    def _build_hierarchical_index(self) -> None:
+        """Build or rebuild the hierarchical index from current state.
+
+        Uses a lightweight incremental check: if the set of indexed files
+        hasn't changed since the last build, skip reconstruction.
+        """
+        if len(self._indexed_files) < 10:
+            # Not enough files to benefit from hierarchical indexing
+            return
+
+        # Incremental check: skip if indexed files haven't changed
+        if (
+            self._hierarchical_builder is not None
+            and self._hierarchical_builder.get_master_index() is not None
+        ):
+            last_indexed = set(
+                self._hierarchical_builder.get_master_index().total_files
+                and [] or []
+            )
+            # We don't have the exact file set stored in the old master index,
+            # so we use a hash of the sorted file list as a cheap fingerprint.
+            current_fingerprint = hashlib.sha256(
+                "\n".join(sorted(self._indexed_files)).encode()
+            ).hexdigest()[:16]
+            stored_fingerprint = getattr(self._hierarchical_builder, "_file_fingerprint", None)
+            if stored_fingerprint == current_fingerprint:
+                return  # No changes, skip rebuild
+            # Store fingerprint for next time
+            self._hierarchical_builder._file_fingerprint = current_fingerprint
+
+        # Prepare AST cache and symbol index (use relative paths as keys)
+        def _dataclass_to_dict(obj: Any) -> Any:
+            """Recursively convert dataclass instances to plain dicts."""
+            if hasattr(obj, "__dataclass_fields__"):
+                return {k: _dataclass_to_dict(v) for k, v in obj.__dict__.items()}
+            if isinstance(obj, list):
+                return [_dataclass_to_dict(v) for v in obj]
+            if isinstance(obj, dict):
+                return {k: _dataclass_to_dict(v) for k, v in obj.items()}
+            return obj
+
+        ast_cache: dict[str, Any] = {}
+        for path_str, module in self._ast_analyzer._cache.items():
+            ast_cache[path_str] = _dataclass_to_dict(module)
+
+        symbol_index: dict[str, list[dict]] = {}
+        for symbol in self._symbol_indexer._index.symbols:
+            fp = symbol.file_path
+            # Normalize to relative path for matching
+            rel_fp = fp
             try:
+                rel_fp = str(Path(fp).relative_to(self.root_path)).replace("\\", "/")
+            except ValueError:
+                pass
+            if rel_fp not in symbol_index:
+                symbol_index[rel_fp] = []
+            symbol_index[rel_fp].append(
+                {
+                    "name": symbol.name,
+                    "type": symbol.symbol_type,
+                    "line": symbol.line_number,
+                    "signature": symbol.signature or "",
+                    "parent": symbol.parent or "",
+                }
+            )
+
+        self._hierarchical_builder = HierarchicalIndexBuilder(self.root_path)
+        self._hierarchical_builder.build(
+            files=list(self._indexed_files),
+            ast_cache=ast_cache,
+            symbol_index=symbol_index,
+        )
+
+        # Persist
+        if self._hierarchical_cache_path:
+            try:
+                self._hierarchical_builder.save(self._hierarchical_cache_path)
+            except Exception:
+                pass
+
+    def get_master_index_text(self, max_subgraphs: int | None = None) -> str:
+        """Get the formatted master index text (Tier 1)."""
+        if self._hierarchical_builder is None:
+            return ""
+        return self._hierarchical_builder.format_master_index(max_subgraphs=max_subgraphs)
+
+    def get_subgraph_text(self, subgraph_id: str, max_symbols: int = 100) -> str:
+        """Get formatted detail for a specific subgraph (Tier 2)."""
+        if self._hierarchical_builder is None:
+            return f"# Subgraph not found: {subgraph_id}\n(Hierarchical index not built yet)"
+        return self._hierarchical_builder.format_subgraph_detail(
+            subgraph_id, max_symbols=max_symbols
+        )
+
+    def list_subgraphs(self) -> list[dict[str, Any]]:
+        """List available subgraphs with basic info."""
+        if (
+            self._hierarchical_builder is None
+            or self._hierarchical_builder.get_master_index() is None
+        ):
+            return []
+        master = self._hierarchical_builder.get_master_index()
+        return [
+            {
+                "id": sg.id,
+                "name": sg.name,
+                "path": sg.path,
+                "file_count": sg.file_count,
+                "symbol_count": sg.symbol_count,
+            }
+            for sg in master.subgraphs
+        ]
+
+    def _filter_unchanged_files(self, files: list[Path]) -> list[Path]:
+        """Filter out files that haven't changed since last index.
+
+        Uses a two-layer check for speed:
+        1. mtime comparison (fast, no I/O for unchanged files)
+        2. SHA256 content hash (slow but accurate, catches content edits
+           that preserve mtime)
+        """
+        changed = []
+        # Layer 1: fast mtime check
+        for file_path in files:
+            path_str = str(file_path)
+            try:
+                stat = file_path.stat()
+                mtime = stat.st_mtime
+                mtime_key = f"{path_str}:mtime"
+                stored_mtime = self._file_hashes.get(mtime_key)
+                # If mtime unchanged and we have a stored hash, skip reading
+                if stored_mtime == str(mtime) and path_str in self._file_hashes:
+                    continue  # File unchanged
+                # mtime changed or no prior record -> need hash check
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
                 current_hash = hashlib.sha256(content.encode()).hexdigest()
-
-                path_str = str(file_path)
-                if path_str not in self._file_hashes or self._file_hashes[path_str] != current_hash:
+                if self._file_hashes.get(path_str) != current_hash:
                     changed.append(file_path)
                     self._file_hashes[path_str] = current_hash
+                # Update mtime regardless (so next check is fast)
+                self._file_hashes[mtime_key] = str(mtime)
             except Exception:
                 # If we can't read, include it anyway
                 changed.append(file_path)
@@ -366,6 +722,17 @@ class CodebaseIndexer:
         try:
             # Read content
             content = file_path.read_text(encoding="utf-8", errors="ignore")
+
+            # Store hash immediately so incremental filtering can use it
+            current_hash = hashlib.sha256(content.encode()).hexdigest()
+            self._file_hashes[path_str] = current_hash
+
+            # 0. Clear old embeddings for this file before re-indexing
+            # (prevents ghost vectors from outdated code)
+            try:
+                self.embedding_service.delete_by_file_path(path_str)
+            except Exception:
+                pass
 
             # 1. Index symbols
             await self._symbol_indexer.index_file(path_str)
@@ -392,6 +759,13 @@ class CodebaseIndexer:
                 pass
 
             self._indexed_files.add(path_str)
+
+            # Store mtime for fast incremental filtering
+            try:
+                mtime = file_path.stat().st_mtime
+                self._file_hashes[f"{path_str}:mtime"] = str(mtime)
+            except Exception:
+                pass
 
             # Update language stats
             lang = self._detect_language(file_path)
@@ -692,20 +1066,115 @@ class CodebaseIndexer:
         query: str,
         max_tokens: int = 4000,
         include_related: bool = True,
+        subgraph_filter: Optional[str] = None,
+        use_hierarchy: bool = True,
     ) -> ContextWindow:
         """Build a context window for LLM from query.
 
         This is the main method for RAG (Retrieval Augmented Generation).
         It retrieves the most relevant code snippets and formats them for LLM consumption.
 
+        For large codebases, supports hierarchical indexing:
+        - Tier 1: Master index with subgraph overviews
+        - Tier 2: Detailed subgraph symbols
+        - Tier 3: Full code via semantic search
+
         Args:
             query: The user's query
             max_tokens: Maximum tokens for context
             include_related: Whether to include related symbols
+            subgraph_filter: If set, return detailed info for this subgraph
+            use_hierarchy: Whether to use hierarchical index for large codebases
 
         Returns:
             ContextWindow with snippets and metadata
         """
+        # --- Tier 2: Subgraph detail mode ---
+        if subgraph_filter and self._hierarchical_builder is not None:
+            detail_text = self.get_subgraph_text(subgraph_filter, max_symbols=100)
+            snippet = CodeSnippet(
+                id=f"subgraph:{subgraph_filter}",
+                content=detail_text,
+                file_path=f"subgraph:{subgraph_filter}",
+                start_line=1,
+                end_line=detail_text.count("\n"),
+                language="markdown",
+                symbol_name=subgraph_filter,
+                symbol_type="subgraph",
+                relevance_score=1.0,
+            )
+            return ContextWindow(
+                snippets=[snippet],
+                total_tokens=len(detail_text) // 4,
+                total_chars=len(detail_text),
+                source_files=[],
+            )
+
+        # --- Tier 1: Master index for large codebases ---
+        # Threshold: use hierarchical mode when > 100 files or > 500 symbols
+        is_large_codebase = self._stats.total_files > 100 or self._stats.total_symbols > 500
+
+        if use_hierarchy and is_large_codebase and self._hierarchical_builder is not None:
+            master_text = self.get_master_index_text(max_subgraphs=30)
+
+            # Also do a lightweight semantic search to find relevant subgraphs
+            semantic_results = await self.search(
+                SearchQuery(
+                    text=query,
+                    query_type="semantic",
+                    max_results=3,
+                )
+            )
+
+            # Try to match query to a subgraph name for extra relevance
+            matched_subgraph = self._match_query_to_subgraph(query)
+            extra_snippets: list[CodeSnippet] = []
+
+            if matched_subgraph:
+                subgraph_preview = self.get_subgraph_text(matched_subgraph, max_symbols=30)
+                extra_snippets.append(
+                    CodeSnippet(
+                        id=f"subgraph_preview:{matched_subgraph}",
+                        content=f"\n## Likely Relevant Subgraph: {matched_subgraph}\n\n{subgraph_preview[:2000]}",
+                        file_path=f"subgraph:{matched_subgraph}",
+                        start_line=1,
+                        end_line=1,
+                        language="markdown",
+                        symbol_name=matched_subgraph,
+                        symbol_type="subgraph_preview",
+                        relevance_score=0.9,
+                    )
+                )
+
+            # Combine master index + preview + top semantic results
+            context_text = f"""# Hierarchical Codebase Index
+
+The codebase is large ({self._stats.total_files} files, {self._stats.total_symbols} symbols).
+Use the subgraph names below to drill down with `subgraph="<name>"` if you need details.
+
+{master_text}
+"""
+
+            snippets: list[CodeSnippet] = [
+                CodeSnippet(
+                    id="master_index",
+                    content=context_text,
+                    file_path="master_index",
+                    start_line=1,
+                    end_line=context_text.count("\n"),
+                    language="markdown",
+                    symbol_name="master_index",
+                    symbol_type="index",
+                    relevance_score=1.0,
+                )
+            ]
+
+            snippets.extend(extra_snippets)
+            snippets.extend(semantic_results)
+
+            return self._truncate_snippets_to_budget(snippets, max_tokens, query)
+
+        # --- Fallback: traditional flat RAG ---
         snippets = []
 
         # 1. Semantic search
@@ -747,14 +1216,71 @@ class CodebaseIndexer:
 
         unique_snippets.sort(key=lambda x: x.relevance_score, reverse=True)
 
-        # Build context within token budget
-        selected = []
+        return self._truncate_snippets_to_budget(unique_snippets, max_tokens, query)
+
+    def _truncate_snippets_to_budget(
+        self,
+        snippets: list[CodeSnippet],
+        max_tokens: int,
+        query: str = "",
+    ) -> ContextWindow:
+        """Truncate snippets to fit within token budget.
+
+        Also injects relevant project memory entries at the front of the
+        context window so accumulated knowledge (bugs, decisions, QA) is
+        visible to the LLM before code snippets.
+        """
+        # --- Inject project memory ---
+        memory_snippets: list[CodeSnippet] = []
+        if query:
+            try:
+                memory_entries = self._memory_kb.search(query, top_k=3)
+                for entry in memory_entries:
+                    memory_snippets.append(
+                        CodeSnippet(
+                            id=f"memory:{entry.id}",
+                            content=self._format_memory_entry(entry),
+                            file_path=f"memory:{entry.category}",
+                            start_line=1,
+                            end_line=1,
+                            language="markdown",
+                            symbol_name=entry.category,
+                            symbol_type="memory",
+                            relevance_score=0.95,
+                        )
+                    )
+            except Exception:
+                pass  # Memory is best-effort
+
+        all_snippets = memory_snippets + snippets
+
+        # --- Truncate to token budget ---
+        selected: list[CodeSnippet] = []
         total_chars = 0
         max_chars = max_tokens * 4  # Rough estimate: 4 chars per token
 
-        for snippet in unique_snippets:
+        for snippet in all_snippets:
             snippet_chars = len(snippet.content)
-            if total_chars + snippet_chars > max_chars:
+            remaining = max_chars - total_chars
+            if remaining <= 0:
+                break
+            if snippet_chars > remaining:
+                # Truncate this snippet rather than skipping it entirely
+                truncated_content = snippet.content[:remaining]
+                selected.append(
+                    CodeSnippet(
+                        id=snippet.id,
+                        content=truncated_content,
+                        file_path=snippet.file_path,
+                        start_line=snippet.start_line,
+                        end_line=snippet.end_line,
+                        language=snippet.language,
+                        symbol_name=snippet.symbol_name,
+                        symbol_type=snippet.symbol_type,
+                        relevance_score=snippet.relevance_score,
+                    )
+                )
+                total_chars += len(truncated_content)
                 break
             selected.append(snippet)
             total_chars += snippet_chars
@@ -765,6 +1291,45 @@ class CodebaseIndexer:
             total_chars=total_chars,
             source_files=list(set(s.file_path for s in selected)),
         )
+
+    def _format_memory_entry(self, entry: MemoryEntry) -> str:
+        """Format a memory entry as markdown text for LLM consumption."""
+        lines: list[str] = []
+        lines.append(f"## Project Memory: {entry.category.upper()}")
+        lines.append("")
+        lines.append(entry.content)
+        if entry.tags:
+            lines.append("")
+            lines.append(f"*Tags: {', '.join(entry.tags)}*")
+        if entry.metadata:
+            for key, value in entry.metadata.items():
+                if value:
+                    lines.append(f"- **{key}**: {value}")
+        lines.append("")
+        return "\n".join(lines)
+
+    def _match_query_to_subgraph(self, query: str) -> Optional[str]:
+        """Try to match a query string to a subgraph name/id."""
+        if self._hierarchical_builder is None:
+            return None
+        master = self._hierarchical_builder.get_master_index()
+        if master is None:
+            return None
+
+        query_lower = query.lower()
+        # Exact match
+        for sg in master.subgraphs:
+            if sg.name.lower() == query_lower or sg.id.lower() == query_lower:
+                return sg.id
+        # Substring match
+        for sg in master.subgraphs:
+            if sg.name.lower() in query_lower or query_lower in sg.name.lower():
+                return sg.id
+        # Path match
+        for sg in master.subgraphs:
+            if query_lower in sg.path.lower():
+                return sg.id
+        return None
 
     def _looks_like_symbol(self, text: str) -> bool:
         """Check if text looks like a symbol name (CamelCase or snake_case)."""
@@ -819,6 +1384,11 @@ class CodebaseIndexer:
         await self._symbol_indexer.remove_file(file_path)
         self._indexed_files.discard(file_path)
         self._file_hashes.pop(file_path, None)
+        # Also remove embeddings for this file
+        try:
+            self.embedding_service.delete_by_file_path(file_path)
+        except Exception:
+            pass
 
     def clear_index(self) -> None:
         """Clear all indexed data."""

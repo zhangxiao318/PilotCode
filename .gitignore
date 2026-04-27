@@ -55,6 +55,25 @@ uv.lock
 # Code analysis artifacts
 PROJECT_INDEX.md
 
+# PilotCode memory / knowledge base
+.pilotcode/memory/
+
+# Temporary analysis scripts
+analyze_files.py
+check_ast.py
+complexity_analysis.py
+line_count_report.py
+line_count_report_summary.txt
+scheduler_analysis.py
+scheduler_analysis_summary.txt
+simple_complexity_analysis.py
+
+# Test artifacts
+test_*.py
+!tests/
+test.obj
+task*_*.txt
+
 # SWE-bench evaluation artifacts
 logs/
 predictions_*.jsonl
