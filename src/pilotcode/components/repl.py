@@ -636,6 +636,10 @@ def _extract_target_path(prompt: str) -> str | None:
     Looks for absolute paths (Windows e.g. C:\\dir and Unix e.g. /home/dir)
     and relative paths. Returns the first plausible directory path found,
     or None if no path is detected.
+
+    NOTE: We do NOT require the path to exist on the current machine.
+    The user may be referring to a directory on their local workstation
+    that is not accessible from the server running PilotCode.
     """
     import re
 
@@ -644,14 +648,18 @@ def _extract_target_path(prompt: str) -> str | None:
     win_paths = re.findall(r"[A-Za-z]:[\\/][\w.\\/-]+", prompt)
     for path in win_paths:
         path = path.replace("/", "\\")
-        if os.path.isdir(path):
+        # Prefer existing directories, but accept any plausible path
+        if os.path.isdir(path) or os.path.isabs(path):
             return path
 
     # Unix absolute paths: e.g. /home/user/project, /tmp/foo
     unix_paths = re.findall(r"/[\w./-]+", prompt)
     for path in unix_paths:
-        if os.path.isdir(path):
-            return path
+        # Strip trailing slash for cleaner path, but preserve if it's just "/"
+        cleaned = path.rstrip("/") or "/"
+        # Accept any absolute path the user explicitly mentioned
+        if os.path.isdir(path) or os.path.isabs(cleaned):
+            return cleaned
 
     # Relative paths with common directory indicators
     rel_paths = re.findall(

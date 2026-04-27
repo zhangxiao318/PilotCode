@@ -1151,7 +1151,8 @@ class MissionAdapter:
             Execution summary dict with keys: mission_id, snapshot, success, error, mission, metrics.
         """
         # Allow per-run override of the working directory
-        if cwd:
+        if cwd and cwd != str(Path.cwd()):
+            # Caller explicitly provided a non-default cwd — use it
             self._cwd = cwd
         else:
             # Auto-detect target directory from user request when not explicitly provided
