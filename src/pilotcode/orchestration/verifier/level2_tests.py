@@ -158,11 +158,13 @@ class PytestRunnerVerifier(BaseVerifier):
         metrics: dict[str, Any] = {}
         score = 100.0
 
-        # Detect languages from task outputs
-        langs = self._detect_languages(task)
+        # Detect languages from changed files (or planned outputs)
+        langs = self._detect_languages(task, execution_result)
+        # Filter out non-code files (md, txt, log, etc.)
+        langs = {k: v for k, v in langs.items() if k != "generic"}
         metrics["languages"] = list(langs.keys())
 
-        # If no outputs to verify, skip
+        # If no code files to verify, skip
         if not langs:
             return self._make_result(
                 task, passed=True, score=80.0, issues=[],
@@ -355,13 +357,20 @@ class PytestRunnerVerifier(BaseVerifier):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _detect_languages(self, task: TaskSpec) -> dict[str, list[str]]:
-        """Group task outputs by detected language."""
+    def _detect_languages(self, task: TaskSpec, execution_result: ExecutionResult | None = None) -> dict[str, list[str]]:
+        """Group task outputs or changed files by detected language."""
+        # Prefer actual changed files from execution result
+        files: list[str] = []
+        if execution_result:
+            files = execution_result.artifacts.get("changed_files", []) or []
+        # Fallback to planned outputs in task spec
+        if not files:
+            files = getattr(task, "outputs", []) or []
         langs: dict[str, list[str]] = {}
-        for output in getattr(task, "outputs", []) or []:
-            _, ext = os.path.splitext(output)
+        for f in files:
+            _, ext = os.path.splitext(f)
             lang = _LANGUAGE_BY_EXT.get(ext, "generic")
-            langs.setdefault(lang, []).append(output)
+            langs.setdefault(lang, []).append(f)
         return langs
 
     def _pytest_available(self) -> bool:

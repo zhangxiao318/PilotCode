@@ -36,6 +36,7 @@ from .verifiers.adapter_verifiers import (
     l2_test_verifier,
     l3_code_review_verifier,
 )
+from .verifier.level2_tests import PytestRunnerVerifier
 from .explorers.code_explorer import explore_codebase
 from .context_strategy import (
     ContextStrategySelector,
@@ -159,11 +160,9 @@ class MissionAdapter:
         """Register L1/L2/L3 verifiers based on adaptive configuration."""
         self._orchestrator.register_verifier(1, l1_simple_verifier)
 
-        # L2: test verifier — optionally enforce tests for weak code-review models
-        if self.adaptive_config.enforce_test_before_mark_complete:
-            self._orchestrator.register_verifier(2, self._enforced_l2_verifier)
-        else:
-            self._orchestrator.register_verifier(2, l2_test_verifier)
+        # L2: language-aware verifier (pytest + compiler checks)
+        l2_handler = self._make_l2_verifier()
+        self._orchestrator.register_verifier(2, l2_handler)
 
         if self.adaptive_config.verifier_strategy == VerifierStrategy.FULL_L3:
             self._orchestrator.register_verifier(3, l3_code_review_verifier)
@@ -176,20 +175,28 @@ class MissionAdapter:
 
             self._orchestrator.register_verifier(3, static_analysis_l3_verifier)
 
-    async def _enforced_l2_verifier(
-        self, task: TaskSpec, exec_result: ExecutionResult
-    ) -> VerificationResult:
-        """L2 verifier wrapper that forces test runs for weak review models."""
+    def _make_l2_verifier(self) -> Callable:
+        """Build the L2 verifier: PytestRunnerVerifier with optional enforcement."""
+        verifier = PytestRunnerVerifier()
 
-        # Inject a synthetic test criterion if none exists
-        if not any(ac.verification_method in ("test", "pytest") for ac in task.acceptance_criteria):
-            task.acceptance_criteria.append(
-                AcceptanceCriterion(
-                    description="Run project tests to verify no regressions",
-                    verification_method="test",
-                )
-            )
-        return await l2_test_verifier(task, exec_result)
+        async def handler(task: TaskSpec, exec_result: ExecutionResult) -> VerificationResult:
+            # Optionally inject test criterion for weak models (only if code was produced)
+            if self.adaptive_config.enforce_test_before_mark_complete:
+                changed_files = exec_result.artifacts.get("changed_files", []) or []
+                code_files = [f for f in changed_files if f.endswith(
+                    (".py", ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".rs", ".go", ".js", ".ts", ".java"))]
+                if code_files and not any(
+                    ac.verification_method in ("test", "pytest") for ac in task.acceptance_criteria
+                ):
+                    task.acceptance_criteria.append(
+                        AcceptanceCriterion(
+                            description="Run project tests to verify no regressions",
+                            verification_method="test",
+                        )
+                    )
+            return await verifier.verify(task, exec_result)
+
+        return handler
 
     def _setup_permission_callback(self) -> None:
         """Set a non-interactive permission callback for tool execution."""
