@@ -64,6 +64,17 @@ async def l2_test_verifier(task: TaskSpec, exec_result: ExecutionResult) -> Veri
             verdict=Verdict.APPROVE,
         )
 
+    # Guard: if no files were changed by this task, skip pytest.
+    # Prevents running the full project test suite for analysis/planning tasks.
+    if not changed_files:
+        return VerificationResult(
+            task_id=task.id,
+            level=2,
+            passed=True,
+            score=100.0,
+            verdict=Verdict.APPROVE,
+        )
+
     cwd = os.getcwd()
 
     # Build targeted pytest args: only run tests related to changed files.

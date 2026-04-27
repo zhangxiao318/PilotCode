@@ -793,18 +793,18 @@ class Orchestrator:
         # Replace node in DAG
         dag.nodes[task_id] = adjusted_node
 
-        # Reset state machine: the adjusted node is fresh PENDING.
-        # Since _execute_task now accepts IN_PROGRESS (set by RESUME below),
-        # we transition to IN_PROGRESS to signal retry is underway.
+        # Reset state machine to PENDING so the main loop's _enqueue_ready
+        # will re-schedule this task on the next iteration.
+        # Do NOT synchronously await _execute_task here — that bypasses the
+        # main event loop and causes a deadlock when the task fails again
+        # (NEEDS_REWORK is not PENDING, so _enqueue_ready skips it, leaving
+        # active_workers empty with no one to wake the event).
         sm = self.tracker.get_state_machine(mission_id, task_id)
         if sm:
-            try:
-                sm.transition(Transition.RESUME, actor="orchestrator")
-            except InvalidTransitionError:
-                pass
+            sm.state = TaskState.PENDING
 
-        # Re-execute (state is now IN_PROGRESS, which _execute_task accepts)
-        await self._execute_task(mission_id, adjusted_node)
+        # Wake the main loop so it re-evaluates ready tasks immediately.
+        self._task_completed_event.set()
 
     async def retry_task(self, mission_id: str, task_id: str) -> None:
         """Public API: retry a task that is in NEEDS_REWORK state."""
