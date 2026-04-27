@@ -8,7 +8,13 @@ from pilotcode.services.session_persistence import (
     SessionPersistence,
     get_session_persistence,
 )
-from pilotcode.types.message import UserMessage, AssistantMessage
+from pilotcode.types.message import (
+    UserMessage,
+    AssistantMessage,
+    SystemMessage,
+    ToolUseMessage,
+    ToolResultMessage,
+)
 
 
 class TestSessionPersistence:
@@ -159,6 +165,150 @@ class TestSessionPersistence:
         """Test summary generation for empty session."""
         summary = persistence._generate_summary([])
         assert summary == "Empty session"
+
+    def test_save_and_load_all_message_types(self, persistence):
+        """Smoke test: every message type round-trips without data loss.
+
+        This guards against field-name mismatches between _message_to_dict
+        and _dict_to_message (e.g. using message.name on ToolResultMessage
+        which has no such attribute).
+        """
+        messages = [
+            SystemMessage(content="You are a helpful assistant."),
+            UserMessage(content="Read file /home/lyr/GDSystem/main.c"),
+            AssistantMessage(
+                content="I'll read the file for you.",
+                reasoning_content="<thinking>User wants to read a file</thinking>",
+            ),
+            ToolUseMessage(
+                tool_use_id="toolu_01AbCdEf",
+                name="FileRead",
+                input={"file_path": "/home/lyr/GDSystem/main.c"},
+            ),
+            ToolResultMessage(
+                tool_use_id="toolu_01AbCdEf",
+                content="int main() { return 0; }\n",
+                is_error=False,
+            ),
+            AssistantMessage(content="Here is the content of the file."),
+            UserMessage(content="Now edit it"),
+            ToolUseMessage(
+                tool_use_id="toolu_02XyZaBc",
+                name="FileEdit",
+                input={
+                    "file_path": "/home/lyr/GDSystem/main.c",
+                    "old_string": "return 0;",
+                    "new_string": "return 42;",
+                },
+            ),
+            ToolResultMessage(
+                tool_use_id="toolu_02XyZaBc",
+                content="[CLEARED] (was 15 chars)",
+                is_error=False,
+            ),
+            ToolResultMessage(
+                tool_use_id="toolu_03ErrOne",
+                content="File not found",
+                is_error=True,
+            ),
+        ]
+
+        success = persistence.save_session(
+            session_id="smoke_test_all_types",
+            messages=messages,
+            name="Smoke Test",
+            project_path="/home/lyr/GDSystem",
+        )
+        assert success is True
+
+        result = persistence.load_session("smoke_test_all_types")
+        assert result is not None
+
+        loaded_messages, metadata = result
+        assert len(loaded_messages) == len(messages)
+        assert metadata["project_path"] == "/home/lyr/GDSystem"
+
+        # Verify each message type and critical fields
+        assert isinstance(loaded_messages[0], SystemMessage)
+        assert loaded_messages[0].content == "You are a helpful assistant."
+
+        assert isinstance(loaded_messages[1], UserMessage)
+        assert loaded_messages[1].content == "Read file /home/lyr/GDSystem/main.c"
+
+        assert isinstance(loaded_messages[2], AssistantMessage)
+        assert loaded_messages[2].content == "I'll read the file for you."
+        assert (
+            loaded_messages[2].reasoning_content == "<thinking>User wants to read a file</thinking>"
+        )
+
+        assert isinstance(loaded_messages[3], ToolUseMessage)
+        assert loaded_messages[3].tool_use_id == "toolu_01AbCdEf"
+        assert loaded_messages[3].name == "FileRead"
+        assert loaded_messages[3].input["file_path"] == "/home/lyr/GDSystem/main.c"
+
+        assert isinstance(loaded_messages[4], ToolResultMessage)
+        assert loaded_messages[4].tool_use_id == "toolu_01AbCdEf"
+        assert "int main()" in loaded_messages[4].content
+        assert loaded_messages[4].is_error is False
+
+        # Verify tool_use / tool_result pairing integrity
+        tu_msg = loaded_messages[7]
+        tr_msg = loaded_messages[8]
+        assert tu_msg.tool_use_id == tr_msg.tool_use_id == "toolu_02XyZaBc"
+
+        # Verify error flag survives round-trip
+        err_msg = loaded_messages[9]
+        assert err_msg.is_error is True
+        assert err_msg.content == "File not found"
+
+    def test_legacy_field_backward_compat(self, persistence):
+        """Old session files used legacy field names; ensure they still load."""
+        import gzip, json
+
+        legacy_data = {
+            "version": "1.0",
+            "session_id": "legacy_test",
+            "saved_at": "2026-04-01T00:00:00",
+            "messages": [
+                {
+                    "type": "tool_use",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "ls"},
+                    "id": "legacy_id_001",
+                },
+                {
+                    "type": "tool_result",
+                    "tool_name": "Bash",
+                    "tool_result": "file.txt\n",
+                    "tool_error": None,
+                    "id": "legacy_id_001",
+                },
+            ],
+        }
+        session_path = persistence.DATA_DIR / "legacy_test.json.gz"
+        with gzip.open(session_path, "wt", encoding="utf-8") as f:
+            json.dump(legacy_data, f)
+
+        # Write metadata so list_sessions doesn't crash
+        meta_path = persistence.DATA_DIR / "legacy_test.meta.json"
+        meta_path.write_text(
+            '{"session_id": "legacy_test", "name": "Legacy", "message_count": 2, "created_at": "2026-04-01T00:00:00", "updated_at": "2026-04-01T00:00:00"}'
+        )
+
+        loaded = persistence.load_session("legacy_test")
+        assert loaded is not None
+        msgs, _ = loaded
+        assert len(msgs) == 2
+
+        # Legacy tool_use should load with empty tool_use_id fallback
+        assert isinstance(msgs[0], ToolUseMessage)
+        assert msgs[0].name == "Bash"
+        assert msgs[0].input == {"command": "ls"}
+
+        # Legacy tool_result should load content from tool_result field
+        assert isinstance(msgs[1], ToolResultMessage)
+        assert msgs[1].content == "file.txt\n"
+        assert msgs[1].is_error is False
 
 
 class TestGlobalInstance:

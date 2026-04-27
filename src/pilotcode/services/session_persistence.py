@@ -19,6 +19,7 @@ from ..types.message import (
     Message,
     UserMessage,
     AssistantMessage,
+    SystemMessage,
     ToolResultMessage,
     ToolUseMessage,
 )
