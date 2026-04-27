@@ -32,6 +32,7 @@ from . import plan_cmd  # noqa: F401
 from . import env_cmd  # noqa: F401
 from . import compact_cmd  # noqa: F401
 from . import version_cmd  # noqa: F401
+from . import timestamp_cmd  # noqa: F401
 from . import find_cmd  # noqa: F401
 from . import review_cmd  # noqa: F401
 from . import doctor_cmd  # noqa: F401

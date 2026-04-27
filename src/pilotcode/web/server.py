@@ -13,6 +13,7 @@ import threading
 import websockets
 
 from pilotcode.types.message import SystemMessage
+from pilotcode.services.fileedit_compensation import FileEditCompensationTracker
 
 # Suppress websockets verbose logging - only show errors, not warnings
 logging.getLogger("websockets").setLevel(logging.ERROR)
@@ -249,6 +250,15 @@ class WebSocketManager:
             )
         )
 
+        # P0: Use server-level shared stats so lifetime counters accumulate
+        # across sessions (persistent weak-model detection).
+        from pilotcode.state.store import get_store
+        global_store = get_store()
+        shared_stats: dict = getattr(global_store.get_state(), "fileedit_stats", {}) or {}
+        if not shared_stats:
+            shared_stats = {}
+            global_store.set_state(lambda s: replace(s, fileedit_stats=shared_stats))
+
         ctx = {
             "session_id": session_id,
             "query_engine": query_engine,
@@ -256,6 +266,10 @@ class WebSocketManager:
             "created_at": asyncio.get_event_loop().time(),
             "last_activity": asyncio.get_event_loop().time(),
             "message_count": 0,
+            # P0: Shared FileEdit compensation tracker (per-session)
+            "_fileedit_tracker": FileEditCompensationTracker(
+                store.get_state(), shared_stats=shared_stats
+            ),
         }
         async with self._session_lock:
             self._session_contexts[session_id] = ctx
@@ -663,6 +677,9 @@ class WebSocketManager:
 
         query_engine = session_ctx["query_engine"]
         store = session_ctx["store"]
+
+        # New user input = fresh context: reset FileEdit failure tracking
+        session_ctx["_fileedit_tracker"].reset()
 
         try:
             from pilotcode.tools.base import ToolUseContext, ToolResult
@@ -1183,6 +1200,20 @@ class WebSocketManager:
                     query_engine.add_tool_result(
                         tool_msg.tool_use_id, result_content, is_error=not exec_result.success
                     )
+
+                    # --- P0: Real-time FileEdit failure detection & compensation ---
+                    tracker: FileEditCompensationTracker = session_ctx["_fileedit_tracker"]
+                    compensation_hint = tracker.record_result(
+                        tool_msg.name, exec_result.success, result_content
+                    )
+                    if compensation_hint:
+                        query_engine.messages.append(
+                            SystemMessage(content=compensation_hint)
+                        )
+                        print(
+                            f"[FileEditCompensation] Activated after "
+                            f"{tracker.failure_streak} consecutive failures"
+                        )
 
                     await self.send_to_client(
                         websocket,

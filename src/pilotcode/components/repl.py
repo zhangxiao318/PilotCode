@@ -130,6 +130,11 @@ class REPL:
         self.running = True
         self.loop_guard = LoopGuard()
 
+        # P0: Shared FileEdit compensation tracker
+        from pilotcode.services.fileedit_compensation import FileEditCompensationTracker
+
+        self._fileedit_tracker = FileEditCompensationTracker(self.store.get_state())
+
     def _notify_user(self, event_type: str, payload: dict) -> None:
         """Display a system notification to the user.
 
@@ -254,6 +259,9 @@ class REPL:
 
     async def process_response(self, prompt: str) -> None:
         """Process a prompt through the LLM with tool support."""
+        # New user input = fresh context: reset FileEdit failure tracking
+        self._fileedit_tracker.reset()
+
         full_content = ""
         iteration = 0
 
@@ -410,6 +418,20 @@ class REPL:
                 self.query_engine.add_tool_result(
                     tool_msg.tool_use_id, result_content, is_error=not exec_result.success
                 )
+
+                # --- P0: Real-time FileEdit failure detection & compensation ---
+                compensation_hint = self._fileedit_tracker.record_result(
+                    tool_msg.name, exec_result.success, result_content
+                )
+                if compensation_hint:
+                    self.query_engine.messages.append(
+                        AssistantMessage(content=compensation_hint)
+                    )
+                    self.console.print(
+                        f"[yellow]⚠️  FileEdit compensation activated after "
+                        f"{self._fileedit_tracker.failure_streak} consecutive failures[/yellow]"
+                    )
+
                 sys.stdout.flush()
 
             if permission_denied:

@@ -11,7 +11,9 @@ from pilotcode.types.message import (
     UserMessage,
     AssistantMessage,
     ToolUseMessage,
+    SystemMessage,
 )
+from pilotcode.services.fileedit_compensation import FileEditCompensationTracker
 from pilotcode.tools.registry import get_all_tools
 from pilotcode.tools.base import ToolUseContext
 
@@ -97,6 +99,11 @@ class TUIController:
 
         # Pending notifications from QueryEngine (e.g., auto-compact)
         self._pending_notifications: list[tuple[str, dict]] = []
+
+        # P0: Shared FileEdit compensation tracker
+        self._fileedit_tracker = FileEditCompensationTracker(
+            self.get_app_state() if self.get_app_state else None
+        )
 
         # Session persistence
         self._session_id: str = ""
@@ -585,6 +592,9 @@ class TUIController:
                     yield msg
                 return
 
+        # New user input = fresh context: reset FileEdit failure tracking
+        self._fileedit_tracker.reset()
+
         iteration = 0
         current_prompt = text
         accumulated_content = ""
@@ -825,6 +835,20 @@ class TUIController:
             self.query_engine.add_tool_result(
                 tool_msg.tool_use_id, output, is_error=not result.success
             )
+
+            # --- P0: Real-time FileEdit failure detection & compensation ---
+            compensation_hint = self._fileedit_tracker.record_result(
+                tool_name, result.success, output
+            )
+            if compensation_hint:
+                self.query_engine.messages.append(
+                    SystemMessage(content=compensation_hint)
+                )
+                yield UIMessage(
+                    type=UIMessageType.SYSTEM,
+                    content="⚠️ FileEdit compensation activated",
+                    is_complete=True,
+                )
 
             # Yield result message
             yield UIMessage(

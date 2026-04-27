@@ -76,6 +76,9 @@ class AppState:
     total_cost_usd: float = 0.0
     total_tokens: int = 0
 
+    # FileEdit compensation lifetime stats (cross-query persistence)
+    fileedit_stats: dict[str, Any] = field(default_factory=dict)
+
     # Version
     version: str = "0.1.0"
 

@@ -23,6 +23,7 @@ from pilotcode.types.message import (  # noqa: E402
     ToolUseMessage,
     SystemMessage,
 )
+from pilotcode.services.fileedit_compensation import FileEditCompensationTracker  # noqa: E402
 from pilotcode.utils.config import get_global_config  # noqa: E402
 from pilotcode.commands.base import process_user_input  # noqa: E402
 from pilotcode.tools.base import ToolUseContext as CommandContext  # noqa: E402
@@ -110,6 +111,9 @@ class SimpleCLI:
 
             # Set up tool executor
             self.tool_executor = get_tool_executor()
+
+            # P0: Shared FileEdit compensation tracker
+            self._fileedit_tracker = FileEditCompensationTracker(self.store.get_state())
 
             # Set up auto-allow if requested
             if auto_allow:
@@ -231,6 +235,15 @@ class SimpleCLI:
             print(f"  Output: {output_display[:200]}...")
         else:
             print(f"  Output: {output_display}")
+
+    def _apply_compensation_if_needed(
+        self, tool_name: str, success: bool, result_text: str
+    ) -> None:
+        """Apply FileEdit compensation hint if threshold is reached."""
+        hint = self._fileedit_tracker.record_result(tool_name, success, result_text)
+        if hint:
+            self.query_engine.messages.append(SystemMessage(content=hint))
+            print("\n[yellow]⚠️  FileEdit compensation activated[/yellow]")
 
     def _render_system(self, event_type: str, **payload) -> None:
         """System Layer: ephemeral notices, warnings, errors."""
@@ -525,6 +538,9 @@ class SimpleCLI:
 
     async def process_query(self, text: str):
         """Process a user query through the LLM with tool support."""
+        # New user input = fresh context: reset FileEdit failure tracking
+        self._fileedit_tracker.reset()
+
         if not self.query_engine:
             print("❌ Query engine not initialized")
             return
@@ -625,11 +641,14 @@ class SimpleCLI:
                     # Ask for permission
                     if not self.ask_permission(tool_name, params):
                         self._render_interactive_permission_denied()
+                        denied_msg = "Tool execution denied by user. Proceed with your alternative read-only approach immediately without explaining your plan first."
                         self.query_engine.add_tool_result(
                             tool_msg.tool_use_id,
-                            "Tool execution denied by user. Proceed with your alternative read-only approach immediately without explaining your plan first.",
+                            denied_msg,
                             is_error=True,
                         )
+                        # P0: FileEdit compensation tracking (permission denial = failure)
+                        self._apply_compensation_if_needed(tool_msg.name, False, denied_msg)
                         break
 
                     try:
@@ -670,11 +689,16 @@ class SimpleCLI:
                         self.query_engine.add_tool_result(
                             tool_msg.tool_use_id, output, is_error=False
                         )
+                        # P0: FileEdit compensation tracking
+                        self._apply_compensation_if_needed(tool_name, True, output)
                     except Exception as e:
+                        err_text = str(e)
                         self.query_engine.add_tool_result(
-                            tool_msg.tool_use_id, str(e), is_error=True
+                            tool_msg.tool_use_id, err_text, is_error=True
                         )
-                        self._render_system("error", content=str(e))
+                        self._render_system("error", content=err_text)
+                        # P0: FileEdit compensation tracking
+                        self._apply_compensation_if_needed(tool_name, False, err_text)
 
                 # Continue loop to get LLM response with tool results
                 # Use empty string to continue without adding new user message

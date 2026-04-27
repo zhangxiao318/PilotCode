@@ -211,7 +211,34 @@ class QueryEngine:
         if context:
             content = context + "\n\n" + content
 
+        # Lightweight persistence: if this session has observed persistent
+        # FileEdit weakness, inject a常驻 reminder into the system prompt.
+        persistent_hint = self._get_persistent_fileedit_hint()
+        if persistent_hint:
+            content = content + "\n\n" + persistent_hint
+
         return SystemMessage(content=content)
+
+    def _get_persistent_fileedit_hint(self) -> str | None:
+        """Return a常驻 FileEdit hint if the model is known to be weak."""
+        if self.config.get_app_state is None:
+            return None
+        try:
+            app_state = self.config.get_app_state()
+            stats = getattr(app_state, "fileedit_stats", None)
+            if stats and stats.get("persistent_weak"):
+                return (
+                    "[PERSISTENT FRAMEWORK REMINDER] This session has observed repeated "
+                    "FileEdit difficulties. For EVERY edit you make:\n"
+                    "1. Re-read the file with FileRead BEFORE editing to get the EXACT text.\n"
+                    "2. Copy the old_string EXACTLY — every space, tab, and newline matters.\n"
+                    "3. Make exactly ONE atomic change per FileEdit call.\n"
+                    "4. If FileEdit fails once, switch to SmartEditPlanner or use FileWrite for small files.\n"
+                    "5. After any .py edit, run `python -m py_compile <filepath>` to check syntax."
+                )
+        except Exception:
+            pass
+        return None
 
     def _get_runtime_context(self) -> str:
         """Get runtime context (OS, cwd, etc.) for system prompt."""
