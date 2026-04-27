@@ -59,8 +59,49 @@ def is_windows() -> bool:
 def _wrap_powershell(cmd: str) -> str:
     """Wrap a command to run via PowerShell on Windows."""
     ps = _detect_platform().get("shell", "powershell")
+
+    # Build a minimal Unix-compat layer for common commands used in pipes.
+    # Only inject functions that are actually referenced in the command.
+    compat = []
+    lowered = cmd.lower()
+    if "grep" in lowered:
+        compat.append(
+            'function global:grep { '
+            'param([string]$p, [string]$f); '
+            'if ($f) { Select-String -Pattern $p -Path $f | Select-Object -ExpandProperty Line } '
+            'else { $input | Select-String -Pattern $p | Select-Object -ExpandProperty Line } '
+            '}'
+        )
+    if "head" in lowered:
+        compat.append(
+            "function global:head { "
+            "param([string]$n); "
+            "if ($n -match '^\\d+$') { $input | Select-Object -First ([int]$n) } "
+            "else { $input | Select-Object -First 10 } "
+            "}"
+        )
+    if "tail" in lowered:
+        compat.append(
+            "function global:tail { "
+            "param([string]$n); "
+            "if ($n -match '^\\d+$') { $input | Select-Object -Last ([int]$n) } "
+            "else { $input | Select-Object -Last 10 } "
+            "}"
+        )
+    if "wc" in lowered:
+        compat.append(
+            'function global:wc { '
+            'param([switch]$l); '
+            'if ($l) { ($input | Measure-Object -Line).Lines } '
+            'else { $input | Measure-Object -Line -Word -Character } '
+            '}'
+        )
+
     # Escape double quotes for PowerShell -Command
     escaped = cmd.replace('"', '\\"')
+    if compat:
+        prefix = "; ".join(compat) + "; "
+        return f'{ps} -NoProfile -Command "{prefix}{escaped}"'
     return f'{ps} -NoProfile -Command "{escaped}"'
 
 
@@ -222,6 +263,12 @@ def translate_command_for_windows(command: str) -> str:
 
     # rm -rf DIR / rm -r DIR
     m = re.match(r"^rm\s+-rf?\s+(.+)$", cmd_stripped)
+    if m:
+        target = m.group(1).strip().strip('"').strip("'")
+        return _wrap_powershell(f"Remove-Item -Path '{target}' -Recurse -Force")
+
+    # rmdir DIR / rmdir -p DIR / rmdir -r DIR
+    m = re.match(r"^rmdir\s+(?:/s\s+|/q\s+)?(?:-r\s+|-p\s+)?(.+)$", cmd_stripped)
     if m:
         target = m.group(1).strip().strip('"').strip("'")
         return _wrap_powershell(f"Remove-Item -Path '{target}' -Recurse -Force")
