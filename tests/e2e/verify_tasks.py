@@ -23,6 +23,11 @@ from typing import Any
 
 import yaml
 
+# Force UTF-8 output on Windows to avoid encoding errors when printing
+# check results that contain Unicode characters (e.g. warning symbols).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 
 @dataclass
 class CheckResult:
@@ -226,7 +231,7 @@ def main() -> int:
             if r.description:
                 print(f"      {r.description}")
             for c in r.checks:
-                icon = "  ✓" if c.passed else "  ✗"
+                icon = "  [OK]" if c.passed else "  [FAIL]"
                 print(f"{icon} {c.name}: {c.message}")
             if not r.passed:
                 all_passed = False
