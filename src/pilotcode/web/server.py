@@ -361,6 +361,7 @@ class WebSocketManager:
                         "project_path": str(
                             getattr(ctx["query_engine"].config, "cwd", self.cwd) or self.cwd
                         ),
+                        "archived": ctx.get("archived", False),
                     }
                 )
 
@@ -471,6 +472,12 @@ class WebSocketManager:
                         "cwd": new_cwd or self.cwd,
                     },
                 )
+                # Push updated session list so sidebar refreshes immediately
+                sessions = await self._list_sessions()
+                await self.send_to_client(
+                    websocket,
+                    {"type": "session_list", "sessions": sessions},
+                )
                 print(f"[Session] Client attached to new session {sid} cwd={new_cwd or self.cwd}")
 
             elif msg_type == "cwd_options":
@@ -540,44 +547,67 @@ class WebSocketManager:
 
             elif msg_type == "session_load":
                 sid = data.get("session_id", "")
-                from pilotcode.services.session_persistence import get_session_persistence
-
-                persist = get_session_persistence()
-                result = persist.load_session(sid)
-                if result is None:
-                    await self.send_to_client(
-                        websocket,
-                        {"type": "session_error", "error": f"Session not found: {sid}"},
-                    )
-                else:
-                    messages, metadata = result
-                    # Create/replace in-memory session context
-                    ctx = await self._create_session_context(sid)
-                    ctx["query_engine"].messages = messages
-                    ctx["name"] = metadata.get("name", sid)
-                    restored_cwd = metadata.get("project_path")
-                    if restored_cwd:
-                        restored_cwd = str(restored_cwd)
-                        from dataclasses import replace
-
-                        ctx["store"].set_state(lambda s: replace(s, cwd=restored_cwd))
-                        ctx["query_engine"].config = replace(
-                            ctx["query_engine"].config, cwd=restored_cwd
-                        )
-                        self._update_recent_directories(restored_cwd)
+                # Check if session is already in memory
+                async with self._session_lock:
+                    ctx = self._session_contexts.get(sid)
+                if ctx is not None:
+                    # Attach to existing in-memory session
                     self.client_sessions[websocket] = sid
+                    messages = ctx["query_engine"].messages
+                    restored_cwd = str(
+                        getattr(ctx["query_engine"].config, "cwd", self.cwd) or self.cwd
+                    )
                     await self.send_to_client(
                         websocket,
                         {
                             "type": "session_loaded",
                             "session_id": sid,
-                            "name": metadata.get("name", sid),
+                            "name": ctx.get("name", sid),
                             "message_count": len(messages),
                             "project_path": restored_cwd,
                             "messages": _serialize_messages_for_web(messages),
                         },
                     )
-                    print(f"[Session] Loaded {sid} ({len(messages)} messages) from disk")
+                    print(f"[Session] Attached to in-memory session {sid} ({len(messages)} messages)")
+                else:
+                    from pilotcode.services.session_persistence import get_session_persistence
+
+                    persist = get_session_persistence()
+                    result = persist.load_session(sid)
+                    if result is None:
+                        await self.send_to_client(
+                            websocket,
+                            {"type": "session_error", "error": f"Session not found: {sid}"},
+                        )
+                    else:
+                        messages, metadata = result
+                        # Create/replace in-memory session context
+                        ctx = await self._create_session_context(sid)
+                        ctx["query_engine"].messages = messages
+                        ctx["name"] = metadata.get("name", sid)
+                        restored_cwd = metadata.get("project_path")
+                        if restored_cwd:
+                            restored_cwd = str(restored_cwd)
+                            from dataclasses import replace
+
+                            ctx["store"].set_state(lambda s: replace(s, cwd=restored_cwd))
+                            ctx["query_engine"].config = replace(
+                                ctx["query_engine"].config, cwd=restored_cwd
+                            )
+                            self._update_recent_directories(restored_cwd)
+                        self.client_sessions[websocket] = sid
+                        await self.send_to_client(
+                            websocket,
+                            {
+                                "type": "session_loaded",
+                                "session_id": sid,
+                                "name": metadata.get("name", sid),
+                                "message_count": len(messages),
+                                "project_path": restored_cwd,
+                                "messages": _serialize_messages_for_web(messages),
+                            },
+                        )
+                        print(f"[Session] Loaded {sid} ({len(messages)} messages) from disk")
 
             elif msg_type == "session_rename":
                 sid = data.get("session_id", "")

@@ -165,6 +165,9 @@ function handleMessage(data) {
             break;
         case 'session_created':
             currentSessionId = data.session_id;
+            if (data.cwd) {
+                expandedGroups.add(data.cwd);
+            }
             renderSessionList();
             showToast(`New session created (${data.cwd || ''})`, 'success');
             break;
@@ -668,7 +671,8 @@ function setupEventListeners() {
     if (cwdModalCancel) cwdModalCancel.addEventListener('click', hideCwdModal);
     if (cwdModalConfirm) {
         cwdModalConfirm.addEventListener('click', () => {
-            const cwd = selectedCwd || cwdOptionsData.current;
+            const searchValue = cwdSearch ? cwdSearch.value.trim() : '';
+            const cwd = searchValue || selectedCwd || cwdOptionsData.current;
             sendMessage({type: 'session_create', cwd: cwd});
             hideCwdModal();
             clearChatUI();
@@ -682,6 +686,7 @@ function setupEventListeners() {
     if (cwdCurrentItem) {
         cwdCurrentItem.addEventListener('click', () => {
             selectedCwd = cwdOptionsData.current;
+            if (cwdSearch) cwdSearch.value = cwdOptionsData.current;
             updateCwdSelectionUI();
         });
     }
@@ -1112,6 +1117,7 @@ function renderCwdModal() {
         `;
         item.addEventListener('click', () => {
             selectedCwd = path;
+            if (cwdSearch) cwdSearch.value = path;
             updateCwdSelectionUI();
         });
         cwdRecentList.appendChild(item);
