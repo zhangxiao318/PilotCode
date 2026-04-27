@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import platform
 import shutil
 import sys
 from typing import Any
@@ -46,6 +47,88 @@ _COMPILER_CHECKS: dict[str, tuple[str, ...]] = {
     "typescript": ("tsc", "--noEmit"),
     "java": ("javac", "-d", "/tmp"),
 }
+
+# Install hints per language and platform family
+_INSTALL_HINTS: dict[str, dict[str, str]] = {
+    "c": {
+        "debian": "sudo apt install gcc build-essential",
+        "rhel": "sudo yum install gcc gcc-c++ make",
+        "arch": "sudo pacman -S base-devel",
+        "darwin": "brew install gcc",
+        "windows": "Install MinGW-w64 or WSL + build-essential",
+    },
+    "cpp": {
+        "debian": "sudo apt install g++ build-essential",
+        "rhel": "sudo yum install gcc-c++ make",
+        "arch": "sudo pacman -S base-devel",
+        "darwin": "brew install gcc",
+        "windows": "Install MinGW-w64 or WSL + build-essential",
+    },
+    "rust": {
+        "debian": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh",
+        "rhel": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh",
+        "arch": "sudo pacman -S rust",
+        "darwin": "brew install rustup && rustup-init",
+        "windows": "https://rustup.rs/",
+    },
+    "go": {
+        "debian": "sudo apt install golang-go",
+        "rhel": "sudo yum install golang",
+        "arch": "sudo pacman -S go",
+        "darwin": "brew install go",
+        "windows": "https://go.dev/dl/",
+    },
+    "javascript": {
+        "debian": "sudo apt install nodejs",
+        "rhel": "sudo yum install nodejs",
+        "arch": "sudo pacman -S nodejs",
+        "darwin": "brew install node",
+        "windows": "https://nodejs.org/",
+    },
+    "typescript": {
+        "debian": "npm install -g typescript  (requires node)",
+        "rhel": "npm install -g typescript  (requires node)",
+        "arch": "npm install -g typescript  (requires node)",
+        "darwin": "npm install -g typescript  (requires node)",
+        "windows": "npm install -g typescript  (requires node)",
+    },
+    "java": {
+        "debian": "sudo apt install default-jdk",
+        "rhel": "sudo yum install java-latest-openjdk-devel",
+        "arch": "sudo pacman -S jdk-openjdk",
+        "darwin": "brew install openjdk",
+        "windows": "https://adoptium.net/",
+    },
+}
+
+
+def _detect_platform_family() -> str:
+    """Map sys.platform to a package-manager family."""
+    plat = sys.platform
+    if plat.startswith("linux"):
+        # Try to detect Debian vs RHEL vs Arch
+        if os.path.exists("/etc/debian_version"):
+            return "debian"
+        if os.path.exists("/etc/arch-release"):
+            return "arch"
+        if os.path.exists("/etc/redhat-release") or os.path.exists("/etc/fedora-release"):
+            return "rhel"
+        return "debian"  # fallback
+    if plat == "darwin":
+        return "darwin"
+    if plat == "win32":
+        return "windows"
+    return "debian"
+
+
+def _install_hint(lang: str) -> str:
+    """Return a human-readable install hint for the missing compiler."""
+    hints = _INSTALL_HINTS.get(lang, {})
+    family = _detect_platform_family()
+    cmd = hints.get(family, hints.get("debian", ""))
+    if cmd:
+        return f"To install: {cmd}"
+    return "Please install the required compiler for this language."
 
 
 class PytestRunnerVerifier(BaseVerifier):
@@ -202,17 +285,18 @@ class PytestRunnerVerifier(BaseVerifier):
         # Check compiler exists
         binary = compiler[0]
         if not shutil.which(binary):
+            hint = _install_hint(lang)
             return {
                 "lang": lang,
                 "ok": True,
                 "issues": [{
                     "severity": "warning",
                     "category": "compiler_missing",
-                    "message": f"{binary} not found; skipping {lang} compile check",
+                    "message": f"{binary} not found; skipping {lang} compile check. {hint}",
                     "blocking": False,
                 }],
                 "score_penalty": 0.0,
-                "feedback": f"{binary} not installed; skipped",
+                "feedback": f"{binary} not installed; skipped ({hint})",
             }
 
         issues: list[dict[str, Any]] = []
