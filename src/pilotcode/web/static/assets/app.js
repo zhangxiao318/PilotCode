@@ -616,6 +616,7 @@ function setupEventListeners() {
         contextMenu.querySelectorAll('.context-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 e.stopPropagation();
+                console.log('[ContextMenu] clicked action:', item.dataset.action, 'sessionId:', contextMenuSessionId);
                 const action = item.dataset.action;
                 if (action === 'rename' && contextMenuSessionId) {
                     renameSession(contextMenuSessionId);
@@ -975,9 +976,10 @@ function renderHistoryMessages(messages) {
 }
 
 function showContextMenu(event, sessionId) {
+    console.log('[ContextMenu] show for session:', sessionId);
     contextMenuSessionId = sessionId;
     const menu = document.getElementById('contextMenu');
-    if (!menu) return;
+    if (!menu) { console.error('[ContextMenu] menu element not found'); return; }
     menu.classList.remove('hidden');
     menu.style.left = event.clientX + 'px';
     menu.style.top = event.clientY + 'px';
@@ -992,6 +994,7 @@ function showContextMenu(event, sessionId) {
 }
 
 function hideContextMenu() {
+    console.log('[ContextMenu] hide');
     const menu = document.getElementById('contextMenu');
     if (menu) menu.classList.add('hidden');
     contextMenuSessionId = null;

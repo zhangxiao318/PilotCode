@@ -572,17 +572,18 @@ class WebSocketManager:
 
             elif msg_type == "session_delete":
                 sid = data.get("session_id", "")
-                # Also delete from disk
                 from pilotcode.services.session_persistence import get_session_persistence
 
                 persist = get_session_persistence()
-                persist.delete_session(sid)
-                success = await self._delete_session(sid)
+                disk_ok = persist.delete_session(sid)
+                mem_ok = await self._delete_session(sid)
+                success = disk_ok or mem_ok
                 await self.send_to_client(
                     websocket,
                     {
                         "type": "session_deleted" if success else "session_error",
                         "session_id": sid,
+                        "error": None if success else f"Session not found: {sid}",
                     },
                 )
 
