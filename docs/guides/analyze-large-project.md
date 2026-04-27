@@ -6,19 +6,20 @@
 
 ## 概述
 
-对于大型项目（数万到数十万行代码），直接让 AI 读取所有文件效率低下。PilotCode 提供代码索引系统，支持：
+对于大型项目（数百到数万文件），直接让 AI 读取所有文件效率低下且容易超出上下文窗口。PilotCode 提供：
 
-- **语义搜索** - 理解代码含义，不仅匹配文本
-- **符号搜索** - 快速查找类、函数、变量定义
-- **代码统计** - 了解项目结构和复杂度
-- **智能上下文** - 自动提取相关代码片段
+- **分层索引** — 将代码库组织为子图，LLM 先读概览再 drill-down
+- **语义搜索** — 理解代码含义，不仅匹配文本
+- **符号搜索** — 基于桶索引的毫秒级精确查找
+- **项目记忆** — 自动注入已知 Bug、架构决策、Q&A
+- **智能上下文** — 自动提取相关代码片段，支持子图聚焦
 
 ---
 
 ## 工作流程
 
 ```
-1. 构建索引 → 2. 搜索代码 → 3. 分析理解 → 4. 生成报告
+1. 构建索引 → 2. 概览理解 → 3. 子图聚焦 → 4. 深入分析 → 5. 生成报告
 ```
 
 ---
@@ -34,7 +35,7 @@ cd /path/to/your/project
 ./pilotcode
 
 # 在交互界面中执行
-/index
+/index full
 ```
 
 输出示例：
@@ -42,6 +43,7 @@ cd /path/to/your/project
 🗂️  Indexing codebase in: /home/user/myproject
 📁 Found 1,247 source files to index
 ⏳ Starting index...
+
 ✅ Indexing complete!
 
 📊 Statistics:
@@ -53,16 +55,23 @@ cd /path/to/your/project
   python: 542 files
   typescript: 312 files
   javascript: 198 files
-  json: 103 files
-  markdown: 92 files
+  go: 95 files
+
+🏗️ Hierarchical Index: 12 subgraphs built
+  Core: src/core (45 files)
+  API: src/api (32 files)
+  Utils: src/utils (28 files)
+  ...
 ```
+
+> **分层索引自动构建**：超过 10 个文件时，系统自动按目录聚类生成子图（最小 2 文件/子图，最大 50 文件/子图）。
 
 ### 增量更新
 
 代码变更后更新索引：
 
 ```
-/index              # 增量更新，只处理变更文件
+/index              # 增量更新，双层过滤（mtime + SHA256）只处理变更文件
 /index full         # 完全重建，适用于重大重构
 ```
 
@@ -79,17 +88,74 @@ cd /path/to/your/project
 Files: 1,247
 Symbols: 8,932
 Snippets: 3,456
-Last Indexed: 2024-01-15 14:32:10
+Last Indexed: 2026-04-27 14:32:10
 
 Languages:
   python: 542 files
   typescript: 312 files
   javascript: 198 files
+
+Hierarchical Index: 12 subgraphs
+  Core: src/core (45 files, 312 symbols)
+  API: src/api (32 files, 198 symbols)
+  ...
 ```
 
 ---
 
-## 第二步：搜索代码
+## 第二步：概览理解（Tier 1）
+
+对于大型项目，首次查询时 AI 会自动获取 **Master Index**（项目概览），包括：
+
+- 总文件数、符号数、行数
+- 语言分布
+- 子图列表（按目录聚类）
+- 核心子图（被最多模块依赖的）
+- 共享模块（高复用率）
+- 入口点（主程序、CLI）
+
+示例对话：
+
+```
+User: 请介绍一下这个项目
+
+AI: [自动获取 Master Index]
+这是一个电商后端项目，共 1,247 个文件：
+- 核心模块：src/core（订单、支付、库存）
+- API 层：src/api（REST 接口）
+- 基础设施：src/infra（数据库、缓存、消息队列）
+...
+```
+
+---
+
+## 第三步：聚焦子图（Tier 2）
+
+了解概览后，使用 `subgraph` 参数深入特定模块：
+
+```python
+# 深入支付模块
+CodeContext(query="退款流程", subgraph="src/payment")
+
+# 深入路由层
+CodeContext(query="权限校验中间件", subgraph="src/middleware")
+
+# 深入数据库层
+CodeContext(query="连接池配置", subgraph="src/db")
+```
+
+也可以直接询问 AI：
+
+```
+User: 请详细分析 src/payment 模块的设计
+
+AI: [自动聚焦 payment 子图]
+该模块包含 32 个文件，198 个符号...
+```
+
+---
+
+## 第四步：搜索代码
 
 ### 语义搜索（默认）
 
@@ -101,32 +167,9 @@ Languages:
 /search error handling pattern
 ```
 
-输出示例：
-```
-Found 5 results for 'authentication logic':
-
-1. src/auth/middleware.py:45 (function authenticate_user)
-   Relevance: 0.94
-   ```python
-   def authenticate_user(token: str) -> User:
-       """Validate JWT token and return user."""
-       payload = jwt.decode(token, SECRET_KEY)
-       return User.get_by_id(payload['user_id'])
-   ```
-
-2. src/api/routes/login.py:23
-   Relevance: 0.89
-   ```python
-   @router.post('/login')
-   async def login(credentials: LoginRequest):
-       user = await authenticate(credentials.email, credentials.password)
-       return {'token': create_jwt(user)}
-   ```
-```
-
 ### 符号搜索
 
-查找特定类或函数：
+查找特定类或函数（桶索引实现毫秒级响应）：
 
 ```
 /search -s UserModel          # 查找 UserModel 类
@@ -174,7 +217,7 @@ Found 5 results for 'authentication logic':
 
 ---
 
-## 第三步：代码分析技巧
+## 第五步：代码分析技巧
 
 ### 1. 理解项目结构
 
@@ -218,7 +261,7 @@ API 路由是如何组织的？
 
 ---
 
-## 第四步：高级分析
+## 第六步：高级分析
 
 ### 生成代码地图
 
@@ -254,6 +297,28 @@ API 路由是如何组织的？
 
 ---
 
+## 项目记忆知识库
+
+PilotCode 会在 `.pilotcode/memory/` 中自动维护项目知识，并在分析时注入上下文。
+
+### 查看现有记忆
+
+```
+请列出这个项目的已知问题和架构决策
+```
+
+### 添加新记忆
+
+```python
+from pilotcode.services.memory_kb import get_memory_kb
+
+kb = get_memory_kb("/path/to/project")
+kb.add_fact("订单服务使用 Saga 模式处理分布式事务", tags=["architecture", "order"])
+kb.add_bug(symptom="高并发下库存扣减不一致", root_cause="竞态条件", fix="添加乐观锁", files_involved=["inventory.py"])
+```
+
+---
+
 ## 实用命令速查
 
 ### 索引管理
@@ -278,6 +343,14 @@ API 路由是如何组织的？
 /search -n <number>          # 限制结果数
 ```
 
+### 上下文工具
+
+```python
+CodeContext(query="...", max_tokens=4000)                    # 基本用法
+CodeContext(query="...", subgraph="src/payment")             # 聚焦子图
+CodeContext(query="...", include_related=True)               # 包含相关符号
+```
+
 ### 导航命令
 
 ```
@@ -293,17 +366,23 @@ API 路由是如何组织的？
 
 ### 1. 分步索引
 
-对于超大项目，先索引核心模块：
+对于超大项目，PilotCode 会自动处理，但你可以通过子目录分别理解：
 
 ```bash
-# 在项目子目录中分别索引
-cd project/src/core && /index
-cd project/src/api && /index
+# 先索引整个项目
+/index full
+
+# 然后逐个子图深入分析
+CodeContext(query="核心业务逻辑", subgraph="src/core")
+CodeContext(query="API 设计", subgraph="src/api")
 ```
 
 ### 2. 定期维护
 
 ```bash
+# 日常增量更新
+/index
+
 # 添加到 git hooks，提交前自动更新索引
 echo './pilotcode -c "/index"' >> .git/hooks/post-commit
 chmod +x .git/hooks/post-commit
@@ -317,6 +396,9 @@ chmod +x .git/hooks/post-commit
 
 # 团队成员导入
 /index import team_index.json
+
+# 共享项目记忆
+# .pilotcode/memory/ 目录可加入版本控制
 ```
 
 ### 4. 结合 Git 分析
@@ -336,6 +418,7 @@ chmod +x .git/hooks/post-commit
 ```
 # 1. 了解项目概况
 请分析这个项目，告诉我它是做什么的，主要技术栈是什么？
+# AI 自动获取 Master Index
 
 # 2. 查看索引状态
 /index stats
@@ -356,7 +439,10 @@ chmod +x .git/hooks/post-commit
 /search -f "*test*"
 /search test coverage
 
-# 7. 生成分析报告
+# 7. 深入关键模块
+CodeContext(query="订单状态机", subgraph="src/order")
+
+# 8. 生成分析报告
 请生成一份代码分析报告，包括：
 - 项目架构概述
 - 核心模块说明
@@ -378,7 +464,10 @@ User.login 的调用者有哪些？
 # 3. 查看最近修改
 /git log --oneline -10 -- src/auth/
 
-# 4. 分析根本原因
+# 4. 聚焦相关模块
+CodeContext(query="认证异常处理", subgraph="src/auth")
+
+# 5. 分析根本原因
 根据错误堆栈，分析可能的原因
 ```
 
@@ -410,6 +499,9 @@ df -h
 
 # 结合正则
 /search -r "def.*auth.*user"
+
+# 聚焦子图减少噪音
+CodeContext(query="auth", subgraph="src/auth")
 ```
 
 ### 内存不足
@@ -417,17 +509,29 @@ df -h
 对于超大项目：
 
 ```bash
-# 分批索引
-# 编辑 .pilotcode.json 排除不需要的目录
+# PilotCode 会自动启用分层索引，避免单次加载过多内容
+# 也可编辑 .pilotcode.json 排除不需要的目录
 {
   "exclude_patterns": ["node_modules", "dist", ".git"]
 }
+```
+
+### 上下文窗口溢出
+
+```
+# 使用 subgraph 参数聚焦小范围
+CodeContext(query="...", subgraph="src/small_module", max_tokens=2000)
+
+# 避免请求整个项目概览时附加过多代码
+请只分析 src/core 模块
 ```
 
 ---
 
 ## 相关文档
 
+- [代码索引与搜索功能](../features/code-indexing.md)
 - [代码索引工具文档](../tools/code_index_tool.md)
 - [代码搜索工具文档](../tools/code_search_tool.md)
+- [代码上下文工具文档](../tools/code_context_tool.md)
 - [开发工作流指南](./development-workflow.md)

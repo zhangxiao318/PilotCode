@@ -5,9 +5,11 @@
 ## 作用
 
 - 语义搜索（自然语言）
-- 符号搜索（类、函数名）
+- 符号搜索（类、函数名）— 基于桶索引的 O(1) 精确匹配
 - 正则搜索
 - 文件搜索
+
+自动索引触发：如果索引为空，CodeSearch 会自动触发增量索引（不再限制 `max_files=500`），确保所有文件都可被发现。
 
 ## 参数
 
@@ -79,7 +81,7 @@ CodeSearch(
 ### 场景2：精确定位
 
 ```python
-# 知道类名时快速定位
+# 知道类名时快速定位（桶索引 O(1)）
 CodeSearch(
     query="AuthManager",
     search_type="symbol"
@@ -111,7 +113,7 @@ Found 5 results for 'authentication':
 
 ## 前提条件
 
-必须先使用 `CodeIndex` 或 `/index` 建立索引。
+必须先使用 `CodeIndex` 或 `/index` 建立索引。如果索引为空，CodeSearch 会自动触发增量索引。
 
 ## 相关工具
 

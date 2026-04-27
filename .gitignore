@@ -69,7 +69,7 @@ scheduler_analysis_summary.txt
 simple_complexity_analysis.py
 
 # Test artifacts
-test_*.py
+/test_*.py
 !tests/
 test.obj
 task*_*.txt
