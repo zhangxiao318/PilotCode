@@ -324,10 +324,16 @@ class SessionScreen(Screen):
         """Handle slash commands using the command registry."""
         # Create command context
 
+        # Echo the user's command into the message list so it's visible
+        if self.message_list:
+            user_msg = UIMessage(type=UIMessageType.USER, content=text, is_complete=True)
+            self.message_list.add_message(user_msg)
+
         get_store()
         ctx = CommandContext(
             cwd=str(Path.cwd()),
             query_engine=self.controller.query_engine if self.controller else None,
+            session_id=self.controller._session_id if self.controller else None,
         )
 
         try:

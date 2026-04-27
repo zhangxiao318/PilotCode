@@ -61,8 +61,12 @@ async def session_command(args: list[str], context: CommandContext) -> str:
     if action == "save":
         name = args[1] if len(args) > 1 else f"Session {datetime.now().isoformat()[:19]}"
 
-        # Generate session ID
-        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Use the current session ID if available; otherwise generate one
+        session_id = (
+            context.session_id
+            if context and context.session_id
+            else datetime.now().strftime("%Y%m%d_%H%M%S")
+        )
 
         # Get messages from the query_engine in context
         messages = []

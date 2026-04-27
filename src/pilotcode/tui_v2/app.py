@@ -22,7 +22,7 @@ class EnhancedApp(App):
 
     CSS = """
     Screen {
-        background: #1e1e1e;
+        background: #000000;
         color: #ffffff;
     }
     """

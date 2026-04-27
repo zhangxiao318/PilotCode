@@ -13,6 +13,7 @@ class CommandContext(BaseModel):
     cwd: str
     verbose: bool = False
     query_engine: Any | None = None
+    session_id: str | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

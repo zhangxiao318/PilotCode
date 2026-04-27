@@ -11,8 +11,8 @@ class Theme:
     """A color theme definition."""
 
     # Basic colors
-    background: str = "#1e1e1e"
-    surface: str = "#2d2d2d"
+    background: str = "#000000"
+    surface: str = "#1e1e1e"
     text: str = "#ffffff"
     text_muted: str = "#a0a0a0"
     border: str = "#3e3e3e"
