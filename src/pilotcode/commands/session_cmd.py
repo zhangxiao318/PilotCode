@@ -10,6 +10,24 @@ from ..services.session_persistence import (
 )
 
 
+def _display_width(text: str) -> int:
+    """Calculate display width considering CJK characters (2 cols each)."""
+    try:
+        import wcwidth
+
+        return wcwidth.wcswidth(text) or len(text)
+    except Exception:
+        return len(text)
+
+
+def _pad(text: str, width: int) -> str:
+    """Pad text to exact display width, accounting for CJK chars."""
+    w = _display_width(text)
+    if w >= width:
+        return text
+    return text + " " * (width - w)
+
+
 async def session_command(args: list[str], context: CommandContext) -> str:
     """Handle /session command."""
     persistence = get_session_persistence()
@@ -22,10 +40,18 @@ async def session_command(args: list[str], context: CommandContext) -> str:
         if not sessions:
             return "No saved sessions"
 
-        lines = ["Saved sessions:", ""]
+        # Build a fixed-width text table for clean TUI display
+        lines: list[str] = []
+        lines.append(
+            _pad("Session ID", 23) + _pad("Messages", 9) + _pad("Project Path", 31) + "Summary"
+        )
+        lines.append("━" * 84)
         for s in sessions:
-            project_info = f" (project: {s.project_path})" if s.project_path else ""
-            lines.append(f"  {s.session_id}: {s.name} ({s.message_count} messages){project_info}")
+            sid = _pad(s.session_id[:22], 23)
+            msg = _pad(str(s.message_count), 9)
+            path = _pad((s.project_path or "—")[:29], 31)
+            summary = (s.summary or "—")[:34]
+            lines.append(f"{sid}{msg}{path}{summary}")
         return "\n".join(lines)
 
     action = args[0]
