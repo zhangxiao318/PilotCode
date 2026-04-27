@@ -588,8 +588,9 @@ class MissionAdapter:
             for f in allowed_files:
                 parts.append(f"  - {f}")
             parts.append(
-                "CRITICAL: Only read files listed above. "
-                "Do NOT browse, search, or glob for other files unless the task explicitly asks you to."
+                "CRITICAL: Only read files listed above for project-internal code. "
+                "You MAY also read any external reference files the user explicitly mentioned (e.g. templates, examples, file lists). "
+                "Do NOT browse, search, or glob for unrelated files unless the task explicitly asks you to."
             )
 
         # Language directive
