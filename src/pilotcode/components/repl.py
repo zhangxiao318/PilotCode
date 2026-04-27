@@ -640,25 +640,24 @@ def _extract_target_path(prompt: str) -> str | None:
     import re
 
     # Windows absolute paths: e.g. E:\\test2, D:\\Source\\...
-    win_path = re.search(r"[A-Za-z]:[\\/][^\s\"'\n]*", prompt)
-    if win_path:
-        path = win_path.group(0).replace("/", "\\")
+    # Use findall + strict character class to avoid swallowing CJK punctuation
+    win_paths = re.findall(r"[A-Za-z]:[\\/][\w.\\/-]+", prompt)
+    for path in win_paths:
+        path = path.replace("/", "\\")
         if os.path.isdir(path):
             return path
 
     # Unix absolute paths: e.g. /home/user/project, /tmp/foo
-    unix_path = re.search(r"/[\w./-]+[^\s\"'\n]*", prompt)
-    if unix_path:
-        path = unix_path.group(0)
+    unix_paths = re.findall(r"/[\w./-]+", prompt)
+    for path in unix_paths:
         if os.path.isdir(path):
             return path
 
     # Relative paths with common directory indicators
-    rel_path = re.search(
-        r"(?:目录|文件夹|folder|directory|path|dir)\s*[:：]?\s*([^\s\"'\n]+)", prompt, re.IGNORECASE
+    rel_paths = re.findall(
+        r"(?:目录|文件夹|folder|directory|path|dir)\s*[:：]?\s*([\w./\\-]+)", prompt, re.IGNORECASE
     )
-    if rel_path:
-        path = rel_path.group(1)
+    for path in rel_paths:
         if os.path.isdir(path):
             return path
 

@@ -1138,19 +1138,28 @@ class MissionAdapter:
         explore_first: bool = True,
         cwd: str | None = None,
     ) -> dict[str, Any]:
-        # Allow per-run override of the working directory
-        if cwd:
-            self._cwd = cwd
         """Plan and execute a mission from a natural language request.
 
         Args:
             user_request: The user's natural language request.
             progress_callback: Optional callback(event_type, data) for progress updates.
             explore_first: Whether to explore codebase before planning (default True).
+            cwd: Working directory override. If omitted, auto-detect from user_request.
 
         Returns:
             Execution summary dict with keys: mission_id, snapshot, success, error, mission, metrics.
         """
+        # Allow per-run override of the working directory
+        if cwd:
+            self._cwd = cwd
+        else:
+            # Auto-detect target directory from user request when not explicitly provided
+            from ..components.repl import _extract_target_path
+
+            detected = _extract_target_path(user_request)
+            if detected:
+                self._cwd = detected
+
         # Detect and preserve user's language preference for all tasks
         self._user_language = self._detect_language(user_request)
 
