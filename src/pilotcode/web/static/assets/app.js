@@ -25,6 +25,18 @@ const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const inputStatus = document.getElementById('inputStatus');
 
+// Modal elements
+const cwdModal = document.getElementById('cwdModal');
+const cwdSearch = document.getElementById('cwdSearch');
+const cwdCurrentPath = document.getElementById('cwdCurrentPath');
+const cwdCurrentItem = document.getElementById('cwdCurrentItem');
+const cwdRecentList = document.getElementById('cwdRecentList');
+const cwdModalConfirm = document.getElementById('cwdModalConfirm');
+const cwdModalCancel = document.getElementById('cwdModalCancel');
+const cwdModalClose = document.getElementById('cwdModalClose');
+let selectedCwd = null;
+let cwdOptionsData = {current: '/', recent: []};
+
 // Initialize
 function init() {
     connectWebSocket();
@@ -138,10 +150,17 @@ function handleMessage(data) {
         case 'user_question_request':
             handleUserQuestionRequest(data);
             break;
+        case 'cwd_options':
+            cwdOptionsData = {
+                current: data.current || '/',
+                recent: data.recent || [],
+            };
+            renderCwdModal();
+            break;
         case 'session_created':
             currentSessionId = data.session_id;
             renderSessionList();
-            showToast('New session created', 'success');
+            showToast(`New session created (${data.cwd || ''})`, 'success');
             break;
         case 'session_attached':
             currentSessionId = data.session_id;
@@ -566,14 +585,13 @@ function setupEventListeners() {
         if (currentSessionId) {
             sendMessage({type: 'session_save', name: currentSessionId});
         }
-        // Request new session
-        sendMessage({type: 'session_create'});
-        clearChatUI();
+        // Request cwd options then show picker
+        sendMessage({type: 'cwd_options'});
     });
     
     // Sidebar toggle
     sidebarToggle.addEventListener('click', () => {
-        sidebar.classList.toggle('hidden');
+        sidebar.classList.toggle('collapsed');
     });
     
     // Attach button (placeholder - file upload not implemented yet)
@@ -634,6 +652,34 @@ function setupEventListeners() {
 
     // Hide context menu on click elsewhere
     document.addEventListener('click', () => hideContextMenu());
+
+    // CWD Modal events
+    if (cwdModalClose) cwdModalClose.addEventListener('click', hideCwdModal);
+    if (cwdModalCancel) cwdModalCancel.addEventListener('click', hideCwdModal);
+    if (cwdModalConfirm) {
+        cwdModalConfirm.addEventListener('click', () => {
+            const cwd = selectedCwd || cwdOptionsData.current;
+            sendMessage({type: 'session_create', cwd: cwd});
+            hideCwdModal();
+            clearChatUI();
+        });
+    }
+    if (cwdSearch) {
+        cwdSearch.addEventListener('input', () => {
+            renderCwdModal();
+        });
+    }
+    if (cwdCurrentItem) {
+        cwdCurrentItem.addEventListener('click', () => {
+            selectedCwd = cwdOptionsData.current;
+            updateCwdSelectionUI();
+        });
+    }
+    if (cwdModal) {
+        cwdModal.addEventListener('click', (e) => {
+            if (e.target === cwdModal) hideCwdModal();
+        });
+    }
 }
 
 // Send user message
@@ -1006,6 +1052,66 @@ function renameSession(sessionId) {
     const newName = prompt('Rename session:', session.name || session.session_id);
     if (newName && newName.trim()) {
         sendMessage({type: 'session_rename', session_id: sessionId, name: newName.trim()});
+    }
+}
+
+function showCwdModal() {
+    if (!cwdModal) return;
+    selectedCwd = null;
+    cwdModal.classList.remove('hidden');
+    if (cwdSearch) cwdSearch.value = '';
+    updateCwdSelectionUI();
+}
+
+function hideCwdModal() {
+    if (!cwdModal) return;
+    cwdModal.classList.add('hidden');
+}
+
+function renderCwdModal() {
+    if (!cwdCurrentPath || !cwdRecentList) return;
+    cwdCurrentPath.textContent = cwdOptionsData.current;
+    const query = cwdSearch ? cwdSearch.value.trim().toLowerCase() : '';
+
+    let recent = cwdOptionsData.recent;
+    if (query) {
+        recent = recent.filter(p => p.toLowerCase().includes(query));
+    }
+
+    cwdRecentList.innerHTML = '';
+    if (recent.length === 0) {
+        cwdRecentList.innerHTML = '<div style="padding: 8px; color: #999; font-size: 13px;">No recent directories</div>';
+        return;
+    }
+
+    recent.forEach(path => {
+        const item = document.createElement('div');
+        item.className = 'cwd-item' + (selectedCwd === path ? ' selected' : '');
+        item.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>${escapeHtml(path)}</span>
+        `;
+        item.addEventListener('click', () => {
+            selectedCwd = path;
+            updateCwdSelectionUI();
+        });
+        cwdRecentList.appendChild(item);
+    });
+
+    updateCwdSelectionUI();
+}
+
+function updateCwdSelectionUI() {
+    if (cwdCurrentItem) {
+        cwdCurrentItem.classList.toggle('selected', selectedCwd === cwdOptionsData.current || selectedCwd === null);
+    }
+    if (cwdRecentList) {
+        cwdRecentList.querySelectorAll('.cwd-item').forEach(item => {
+            const pathSpan = item.querySelector('span');
+            if (pathSpan) {
+                item.classList.toggle('selected', selectedCwd === pathSpan.textContent);
+            }
+        });
     }
 }
 

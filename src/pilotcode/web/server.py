@@ -233,6 +233,9 @@ class WebSocketManager:
         self._session_contexts: Dict[str, dict] = {}
         self._session_lock = asyncio.Lock()
 
+        # Recent directories for New Session picker
+        self.recent_directories: list[str] = []
+
         # LoopGuard: detect repetitive tool-call patterns
         from pilotcode.components.repl import LoopGuard
 
@@ -245,7 +248,14 @@ class WebSocketManager:
     def _generate_session_id(self) -> str:
         return f"sess_{uuid.uuid4().hex[:12]}"
 
-    async def _create_session_context(self, session_id: str) -> dict:
+    def _update_recent_directories(self, cwd: str) -> None:
+        """Add a directory to recent list, deduplicate and limit to 10."""
+        if not cwd or cwd in self.recent_directories:
+            return
+        self.recent_directories.insert(0, cwd)
+        self.recent_directories = self.recent_directories[:10]
+
+    async def _create_session_context(self, session_id: str, cwd: str | None = None) -> dict:
         """Create a new Session context with its own QueryEngine and Store."""
         from dataclasses import replace
         from pilotcode.query_engine import QueryEngine, QueryEngineConfig
@@ -254,8 +264,9 @@ class WebSocketManager:
         from pilotcode.state.store import Store
         from pilotcode.utils.config import get_global_config
 
+        session_cwd = cwd or self.cwd
         store = Store(get_default_app_state())
-        store.set_state(lambda s: replace(s, cwd=self.cwd))
+        store.set_state(lambda s: replace(s, cwd=session_cwd))
         tools = get_all_tools()
         global_cfg = get_global_config()
 
@@ -264,7 +275,7 @@ class WebSocketManager:
 
         query_engine = QueryEngine(
             QueryEngineConfig(
-                cwd=self.cwd,
+                cwd=session_cwd,
                 tools=tools,
                 get_app_state=store.get_state,
                 set_app_state=lambda f: store.set_state(f),
@@ -302,12 +313,12 @@ class WebSocketManager:
         print(f"[Session] Created session {session_id}")
         return ctx
 
-    async def _get_or_create_session(self, session_id: str) -> dict:
+    async def _get_or_create_session(self, session_id: str, cwd: str | None = None) -> dict:
         """Get existing session or create new one."""
         async with self._session_lock:
             ctx = self._session_contexts.get(session_id)
         if ctx is None:
-            ctx = await self._create_session_context(session_id)
+            ctx = await self._create_session_context(session_id, cwd=cwd)
         return ctx
 
     async def _get_session(self, session_id: str) -> dict | None:
@@ -432,13 +443,31 @@ class WebSocketManager:
             # ------------------------------------------------------------------
             if msg_type == "session_create":
                 sid = data.get("session_id") or self._generate_session_id()
-                await self._get_or_create_session(sid)
+                new_cwd = data.get("cwd")
+                if new_cwd:
+                    self._update_recent_directories(new_cwd)
+                await self._get_or_create_session(sid, cwd=new_cwd)
                 self.client_sessions[websocket] = sid
                 await self.send_to_client(
                     websocket,
-                    {"type": "session_created", "session_id": sid, "status": "active"},
+                    {
+                        "type": "session_created",
+                        "session_id": sid,
+                        "status": "active",
+                        "cwd": new_cwd or self.cwd,
+                    },
                 )
-                print(f"[Session] Client attached to new session {sid}")
+                print(f"[Session] Client attached to new session {sid} cwd={new_cwd or self.cwd}")
+
+            elif msg_type == "cwd_options":
+                await self.send_to_client(
+                    websocket,
+                    {
+                        "type": "cwd_options",
+                        "current": self.cwd,
+                        "recent": self.recent_directories,
+                    },
+                )
 
             elif msg_type == "session_attach":
                 sid = data.get("session_id", "")
@@ -520,6 +549,7 @@ class WebSocketManager:
                         ctx["query_engine"].config = ctx["query_engine"].config.replace(
                             cwd=restored_cwd
                         )
+                        self._update_recent_directories(restored_cwd)
                     self.client_sessions[websocket] = sid
                     await self.send_to_client(
                         websocket,
