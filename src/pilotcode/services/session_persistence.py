@@ -38,6 +38,7 @@ class SessionMetadata:
     project_path: str | None = None
     summary: str = ""
     tags: list[str] = None
+    archived: bool = False
 
     def __post_init__(self):
         if self.tags is None:
@@ -411,6 +412,23 @@ class SessionPersistence:
             return True
         except Exception as e:
             print(f"Error renaming session: {e}")
+            return False
+
+    def archive_session(self, session_id: str, archived: bool = True) -> bool:
+        """Archive or unarchive a session."""
+        try:
+            meta = self._meta_path(session_id)
+            if not meta.exists():
+                return False
+            with open(meta, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data["archived"] = archived
+            data["updated_at"] = datetime.now().isoformat()
+            with open(meta, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error archiving session: {e}")
             return False
 
     def _generate_summary(self, messages: list[Message], max_length: int = 200) -> str:

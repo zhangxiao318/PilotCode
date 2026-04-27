@@ -6,6 +6,9 @@ let currentStreamId = null;
 let isConnected = false;
 let currentSessionId = null;
 let sessions = [];
+let expandedGroups = new Set();
+let archivedExpanded = false;
+let contextMenuSessionId = null;
 
 // DOM elements
 const chatArea = document.getElementById('chatArea');
@@ -168,6 +171,16 @@ function handleMessage(data) {
                 currentSessionId = null;
                 clearChatUI();
             }
+            break;
+        case 'session_renamed':
+            sessions = sessions.map(s => s.session_id === data.session_id ? {...s, name: data.name} : s);
+            renderSessionList();
+            showToast('Session renamed', 'success');
+            break;
+        case 'session_archived':
+            sessions = sessions.map(s => s.session_id === data.session_id ? {...s, archived: data.archived} : s);
+            renderSessionList();
+            showToast(data.archived ? 'Session archived' : 'Session unarchived', 'success');
             break;
         case 'session_error':
             showToast(data.error || 'Session error', 'error');
@@ -567,6 +580,59 @@ function setupEventListeners() {
     attachBtn.addEventListener('click', () => {
         showToast('File upload coming soon', 'info');
     });
+
+    // Session search
+    const sessionSearch = document.getElementById('sessionSearch');
+    if (sessionSearch) {
+        sessionSearch.addEventListener('input', () => {
+            renderSessionList();
+        });
+    }
+
+    // Refresh sessions
+    const refreshBtn = document.getElementById('refreshSessionsBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            sendMessage({type: 'session_list'});
+            showToast('Refreshing sessions...', 'info');
+        });
+    }
+
+    // Archived section toggle
+    const archivedHeader = document.getElementById('archivedHeader');
+    if (archivedHeader) {
+        archivedHeader.addEventListener('click', () => {
+            archivedExpanded = !archivedExpanded;
+            const arrow = document.getElementById('archivedArrow');
+            const items = document.getElementById('archivedItems');
+            if (arrow) arrow.textContent = archivedExpanded ? '▼' : '▶';
+            if (items) items.classList.toggle('hidden', !archivedExpanded);
+        });
+    }
+
+    // Context menu actions
+    const contextMenu = document.getElementById('contextMenu');
+    if (contextMenu) {
+        contextMenu.querySelectorAll('.context-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const action = item.dataset.action;
+                if (action === 'rename' && contextMenuSessionId) {
+                    renameSession(contextMenuSessionId);
+                } else if (action === 'archive' && contextMenuSessionId) {
+                    const session = sessions.find(s => s.session_id === contextMenuSessionId);
+                    const newArchived = !(session && session.archived);
+                    sendMessage({type: 'session_archive', session_id: contextMenuSessionId, archived: newArchived});
+                } else if (action === 'delete' && contextMenuSessionId) {
+                    deleteSession(contextMenuSessionId);
+                }
+                hideContextMenu();
+            });
+        });
+    }
+
+    // Hide context menu on click elsewhere
+    document.addEventListener('click', () => hideContextMenu());
 }
 
 // Send user message
@@ -724,37 +790,124 @@ function clearChatUI() {
     currentStreamId = null;
 }
 
-function renderSessionList() {
-    const list = document.getElementById('sessionsList');
-    list.innerHTML = '';
+function timeAgo(timestamp) {
+    if (!timestamp) return '';
+    const now = new Date();
+    const then = new Date(timestamp);
+    const seconds = Math.floor((now - then) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo ago`;
+    return `${Math.floor(months / 12)}y ago`;
+}
 
-    if (sessions.length === 0) {
-        list.innerHTML = '<div style="padding: 12px; color: #999; font-size: 13px;">No sessions</div>';
+function groupSessionsByPath(sessions) {
+    const groups = {};
+    sessions.forEach(s => {
+        const path = s.project_path || 'Unknown';
+        if (!groups[path]) groups[path] = [];
+        groups[path].push(s);
+    });
+    return groups;
+}
+
+function renderSessionList() {
+    const tree = document.getElementById('sessionsTree');
+    const archivedItems = document.getElementById('archivedItems');
+    const archivedCount = document.getElementById('archivedCount');
+    const search = document.getElementById('sessionSearch');
+    const query = search ? search.value.trim().toLowerCase() : '';
+
+    tree.innerHTML = '';
+    archivedItems.innerHTML = '';
+
+    let filtered = sessions;
+    if (query) {
+        filtered = sessions.filter(s =>
+            (s.name || '').toLowerCase().includes(query) ||
+            (s.project_path || '').toLowerCase().includes(query) ||
+            (s.summary || '').toLowerCase().includes(query)
+        );
+    }
+
+    const activeSessions = filtered.filter(s => !s.archived);
+    const archivedSessions = filtered.filter(s => s.archived);
+    archivedCount.textContent = archivedSessions.length;
+
+    if (activeSessions.length === 0 && archivedSessions.length === 0) {
+        tree.innerHTML = '<div style="padding: 12px; color: #999; font-size: 13px;">No sessions</div>';
         return;
     }
 
-    sessions.forEach(session => {
-        const item = document.createElement('div');
-        const isActive = session.session_id === currentSessionId;
-        item.className = 'session-item' + (isActive ? ' active' : '');
-        item.dataset.sessionId = session.session_id;
+    const groups = groupSessionsByPath(activeSessions);
+    Object.entries(groups).forEach(([path, items]) => {
+        const groupEl = document.createElement('div');
+        groupEl.className = 'group';
+        const isExpanded = expandedGroups.has(path);
 
-        const msgCount = session.message_count || 0;
-        const countBadge = msgCount > 0 ? `<span class="session-count">${msgCount}</span>` : '';
-        const deleteBtn = `<button class="session-delete" onclick="event.stopPropagation(); deleteSession('${session.session_id}')" title="Delete">×</button>`;
-
-        item.innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; flex-shrink: 0;">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-            <span>${escapeHtml(session.name || session.session_id)}</span>
-            ${countBadge}
-            ${deleteBtn}
+        const header = document.createElement('div');
+        header.className = 'group-header';
+        header.innerHTML = `
+            <span class="group-arrow ${isExpanded ? 'expanded' : ''}">▶</span>
+            <span class="group-name">${escapeHtml(path)}</span>
+            <span class="group-count">(${items.length})</span>
         `;
+        header.addEventListener('click', () => {
+            if (expandedGroups.has(path)) expandedGroups.delete(path);
+            else expandedGroups.add(path);
+            renderSessionList();
+        });
+        groupEl.appendChild(header);
 
-        item.addEventListener('click', () => switchSession(session.session_id));
-        list.appendChild(item);
+        if (isExpanded) {
+            const itemsContainer = document.createElement('div');
+            itemsContainer.className = 'group-items';
+            items.forEach(session => {
+                const row = createSessionRow(session);
+                itemsContainer.appendChild(row);
+            });
+            groupEl.appendChild(itemsContainer);
+        }
+
+        tree.appendChild(groupEl);
     });
+
+    // Render archived sessions
+    archivedSessions.forEach(session => {
+        archivedItems.appendChild(createSessionRow(session, true));
+    });
+}
+
+function createSessionRow(session, isArchived) {
+    const row = document.createElement('div');
+    const isActive = session.session_id === currentSessionId;
+    row.className = 'session-row' + (isActive ? ' active' : '');
+    row.dataset.sessionId = session.session_id;
+
+    const summary = escapeHtml(session.summary || session.name || session.session_id);
+    const ago = timeAgo(session.last_activity || session.updated_at);
+    const msgCount = session.message_count || 0;
+
+    row.innerHTML = `
+        <div class="session-summary">${summary}</div>
+        <div class="session-meta">
+            <span>${ago}</span>
+            <span>${msgCount} msg${msgCount !== 1 ? 's' : ''}</span>
+        </div>
+    `;
+
+    row.addEventListener('click', () => switchSession(session.session_id));
+    row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showContextMenu(e, session.session_id);
+    });
+    return row;
 }
 
 function switchSession(sessionId) {
@@ -819,6 +972,38 @@ function renderHistoryMessages(messages) {
         }
     });
     scrollToBottom();
+}
+
+function showContextMenu(event, sessionId) {
+    contextMenuSessionId = sessionId;
+    const menu = document.getElementById('contextMenu');
+    if (!menu) return;
+    menu.classList.remove('hidden');
+    menu.style.left = event.clientX + 'px';
+    menu.style.top = event.clientY + 'px';
+    // Update archive menu text based on current state
+    const session = sessions.find(s => s.session_id === sessionId);
+    const archiveItem = menu.querySelector('[data-action="archive"]');
+    if (archiveItem) {
+        archiveItem.innerHTML = session && session.archived
+            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Unarchive`
+            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Archive`;
+    }
+}
+
+function hideContextMenu() {
+    const menu = document.getElementById('contextMenu');
+    if (menu) menu.classList.add('hidden');
+    contextMenuSessionId = null;
+}
+
+function renameSession(sessionId) {
+    const session = sessions.find(s => s.session_id === sessionId);
+    if (!session) return;
+    const newName = prompt('Rename session:', session.name || session.session_id);
+    if (newName && newName.trim()) {
+        sendMessage({type: 'session_rename', session_id: sessionId, name: newName.trim()});
+    }
 }
 
 // Initialize on load

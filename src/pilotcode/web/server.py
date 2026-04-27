@@ -364,6 +364,8 @@ class WebSocketManager:
                             "last_activity": meta.updated_at,
                             "source": "disk",
                             "project_path": meta.project_path,
+                            "summary": meta.summary or "",
+                            "archived": meta.archived,
                         }
                     )
         except Exception as e:
@@ -530,6 +532,43 @@ class WebSocketManager:
                         },
                     )
                     print(f"[Session] Loaded {sid} ({len(messages)} messages) from disk")
+
+            elif msg_type == "session_rename":
+                sid = data.get("session_id", "")
+                new_name = data.get("name", "")
+                from pilotcode.services.session_persistence import get_session_persistence
+
+                persist = get_session_persistence()
+                success = persist.rename_session(sid, new_name)
+                # Also update in-memory name if present
+                async with self._session_lock:
+                    ctx = self._session_contexts.get(sid)
+                    if ctx:
+                        ctx["name"] = new_name
+                await self.send_to_client(
+                    websocket,
+                    {
+                        "type": "session_renamed" if success else "session_error",
+                        "session_id": sid,
+                        "name": new_name,
+                    },
+                )
+
+            elif msg_type == "session_archive":
+                sid = data.get("session_id", "")
+                archived = data.get("archived", True)
+                from pilotcode.services.session_persistence import get_session_persistence
+
+                persist = get_session_persistence()
+                success = persist.archive_session(sid, archived)
+                await self.send_to_client(
+                    websocket,
+                    {
+                        "type": "session_archived" if success else "session_error",
+                        "session_id": sid,
+                        "archived": archived,
+                    },
+                )
 
             elif msg_type == "session_delete":
                 sid = data.get("session_id", "")

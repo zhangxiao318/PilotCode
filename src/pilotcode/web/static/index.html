@@ -34,6 +34,46 @@
         .session-delete { margin-left: 6px; width: 20px; height: 20px; border: none; background: transparent; color: #999; border-radius: 4px; cursor: pointer; font-size: 16px; line-height: 1; display: none; align-items: center; justify-content: center; }
         .session-item:hover .session-delete { display: flex; }
         .session-delete:hover { background: #fee2e2; color: #991b1b; }
+
+        /* Sessions Tree - Reference Design */
+        .sidebar-title-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 4px; }
+        .sidebar-title { font-size: 12px; font-weight: 600; color: #666; letter-spacing: 0.5px; text-transform: uppercase; }
+        .sidebar-actions { display: flex; gap: 4px; }
+        .sidebar-actions button { width: 28px; height: 28px; border: none; background: transparent; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666; font-size: 18px; line-height: 1; }
+        .sidebar-actions button:hover { background: #f5f5f5; color: #111; }
+        .search-box { display: flex; align-items: center; gap: 4px; padding: 8px 12px; }
+        .search-input { flex: 1; padding: 6px 10px; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 13px; outline: none; }
+        .search-input:focus { border-color: #999; }
+        .view-toggle { display: flex; gap: 2px; }
+        .view-toggle button { width: 28px; height: 28px; border: none; background: transparent; border-radius: 4px; cursor: pointer; color: #666; display: flex; align-items: center; justify-content: center; }
+        .view-toggle button:hover { background: #f5f5f5; }
+        .sessions-tree { flex: 1; overflow-y: auto; padding: 0 4px; }
+        .group { margin-bottom: 2px; }
+        .group-header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; color: #555; user-select: none; }
+        .group-header:hover { background: #f5f5f5; }
+        .group-arrow { width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #999; transition: transform 0.15s; }
+        .group-arrow.expanded { transform: rotate(90deg); }
+        .group-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+        .group-count { font-size: 11px; color: #999; }
+        .group-items { padding-left: 20px; }
+        .session-row { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border-radius: 6px; cursor: pointer; margin-bottom: 2px; font-size: 13px; color: #555; position: relative; }
+        .session-row:hover { background: #f5f5f5; }
+        .session-row.active { background: #f0f0f0; color: #111; }
+        .session-summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+        .session-meta { font-size: 11px; color: #999; display: flex; justify-content: space-between; }
+        .archived-section { border-top: 1px solid #e5e5e5; }
+        .archived-header { display: flex; align-items: center; gap: 6px; padding: 10px 12px; cursor: pointer; font-size: 13px; color: #666; user-select: none; }
+        .archived-header:hover { background: #f5f5f5; }
+        .archived-count { margin-left: auto; font-size: 11px; color: #999; background: #f5f5f5; padding: 1px 6px; border-radius: 10px; }
+        .archived-items { padding: 0 4px 8px; }
+        /* Context Menu */
+        .context-menu { position: fixed; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 1001; min-width: 160px; padding: 4px; font-size: 13px; }
+        .context-item { padding: 8px 12px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px; color: #333; }
+        .context-item:hover { background: #f5f5f5; }
+        .context-item.danger { color: #991b1b; }
+        .context-item.danger:hover { background: #fee2e2; }
+        .context-sep { height: 1px; background: #e5e5e5; margin: 4px 0; }
+
         .sidebar-footer { padding: 12px; border-top: 1px solid #e5e5e5; font-size: 12px; color: #666; }
         .connection-status { display: flex; align-items: center; gap: 6px; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
@@ -182,21 +222,30 @@
                 </button>
             </div>
             
-            <button class="new-session-btn" id="newSessionBtn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M5 12h14"></path>
-                    <path d="M12 5v14"></path>
-                </svg>
-                <span>New Session</span>
-            </button>
-            
-            <div class="sessions-list" id="sessionsList">
-                <div class="session-item active" data-session-id="default">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; flex-shrink: 0;">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                    </svg>
-                    <span>Current Session</span>
+            <div class="sidebar-title-row">
+                <div class="sidebar-title">Sessions</div>
+                <div class="sidebar-actions">
+                    <button id="refreshSessionsBtn" title="Refresh">↻</button>
+                    <button id="newSessionBtn" title="New session">+</button>
                 </div>
+            </div>
+
+            <div class="search-box">
+                <input type="text" class="search-input" id="sessionSearch" placeholder="Search sessions...">
+                <div class="view-toggle">
+                    <button title="List view">☰</button>
+                </div>
+            </div>
+
+            <div class="sessions-tree" id="sessionsTree"></div>
+
+            <div class="archived-section">
+                <div class="archived-header" id="archivedHeader">
+                    <span id="archivedArrow">▶</span>
+                    <span>Archived</span>
+                    <span class="archived-count" id="archivedCount">0</span>
+                </div>
+                <div class="archived-items hidden" id="archivedItems"></div>
             </div>
             
             <div class="sidebar-footer">
@@ -276,9 +325,26 @@
         </div>
     </div>
     
+    <!-- Context Menu -->
+    <div class="context-menu hidden" id="contextMenu">
+        <div class="context-item" data-action="rename">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+            Rename
+        </div>
+        <div class="context-item" data-action="archive">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg>
+            Archive
+        </div>
+        <div class="context-sep"></div>
+        <div class="context-item danger" data-action="delete">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Delete session
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast-container" id="toastContainer"></div>
-    
+
     <script src="assets/app.js"></script>
 </body>
 </html>
