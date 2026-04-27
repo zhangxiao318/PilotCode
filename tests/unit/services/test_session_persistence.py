@@ -8,7 +8,13 @@ from pilotcode.services.session_persistence import (
     SessionPersistence,
     get_session_persistence,
 )
-from pilotcode.types.message import UserMessage, AssistantMessage
+from pilotcode.types.message import (
+    UserMessage,
+    AssistantMessage,
+    SystemMessage,
+    ToolUseMessage,
+    ToolResultMessage,
+)
 
 
 class TestSessionPersistence:
@@ -159,6 +165,126 @@ class TestSessionPersistence:
         """Test summary generation for empty session."""
         summary = persistence._generate_summary([])
         assert summary == "Empty session"
+
+    def test_save_and_load_all_message_types(self, persistence):
+        """Smoke test: every message type round-trips without data loss.
+
+        This guards against field-name mismatches between _message_to_dict
+        and _dict_to_message (e.g. using message.name on ToolResultMessage
+        which has no such attribute).
+        """
+        messages = [
+            SystemMessage(content="You are a helpful assistant."),
+            UserMessage(content="Read file /home/lyr/GDSystem/main.c"),
+            AssistantMessage(
+                content="I'll read the file for you.",
+                reasoning_content="<thinking>User wants to read a file</thinking>",
+            ),
+            ToolUseMessage(
+                tool_use_id="toolu_01AbCdEf",
+                name="FileRead",
+                input={"file_path": "/home/lyr/GDSystem/main.c"},
+            ),
+            ToolResultMessage(
+                tool_use_id="toolu_01AbCdEf",
+                content="int main() { return 0; }\n",
+                is_error=False,
+            ),
+            AssistantMessage(content="Here is the content of the file."),
+            UserMessage(content="Now edit it"),
+            ToolUseMessage(
+                tool_use_id="toolu_02XyZaBc",
+                name="FileEdit",
+                input={
+                    "file_path": "/home/lyr/GDSystem/main.c",
+                    "old_string": "return 0;",
+                    "new_string": "return 42;",
+                },
+            ),
+            ToolResultMessage(
+                tool_use_id="toolu_02XyZaBc",
+                content="[CLEARED] (was 15 chars)",
+                is_error=False,
+            ),
+            ToolResultMessage(
+                tool_use_id="toolu_03ErrOne",
+                content="File not found",
+                is_error=True,
+            ),
+        ]
+
+        success = persistence.save_session(
+            session_id="smoke_test_all_types",
+            messages=messages,
+            name="Smoke Test",
+            project_path="/home/lyr/GDSystem",
+        )
+        assert success is True
+
+        result = persistence.load_session("smoke_test_all_types")
+        assert result is not None
+
+        loaded_messages, metadata = result
+        assert len(loaded_messages) == len(messages)
+        assert metadata["project_path"] == "/home/lyr/GDSystem"
+
+        # Verify each message type and critical fields
+        assert isinstance(loaded_messages[0], SystemMessage)
+        assert loaded_messages[0].content == "You are a helpful assistant."
+
+        assert isinstance(loaded_messages[1], UserMessage)
+        assert loaded_messages[1].content == "Read file /home/lyr/GDSystem/main.c"
+
+        assert isinstance(loaded_messages[2], AssistantMessage)
+        assert loaded_messages[2].content == "I'll read the file for you."
+        assert (
+            loaded_messages[2].reasoning_content == "<thinking>User wants to read a file</thinking>"
+        )
+
+        assert isinstance(loaded_messages[3], ToolUseMessage)
+        assert loaded_messages[3].tool_use_id == "toolu_01AbCdEf"
+        assert loaded_messages[3].name == "FileRead"
+        assert loaded_messages[3].input["file_path"] == "/home/lyr/GDSystem/main.c"
+
+        assert isinstance(loaded_messages[4], ToolResultMessage)
+        assert loaded_messages[4].tool_use_id == "toolu_01AbCdEf"
+        assert "int main()" in loaded_messages[4].content
+        assert loaded_messages[4].is_error is False
+
+        # Verify tool_use / tool_result pairing integrity
+        tu_msg = loaded_messages[7]
+        tr_msg = loaded_messages[8]
+        assert tu_msg.tool_use_id == tr_msg.tool_use_id == "toolu_02XyZaBc"
+
+        # Verify error flag survives round-trip
+        err_msg = loaded_messages[9]
+        assert err_msg.is_error is True
+        assert err_msg.content == "File not found"
+
+    def test_incremental_append_and_rollover(self, persistence):
+        """Messages are appended; compaction triggers a rollover."""
+        messages = [UserMessage(content=f"msg{i}") for i in range(60)]
+
+        # First save
+        assert persistence.save_session("incr", messages[:10], name="Incr")
+        loaded, _ = persistence.load_session("incr")
+        assert len(loaded) == 10
+
+        # Append more
+        assert persistence.save_session("incr", messages[:25], name="Incr")
+        loaded, _ = persistence.load_session("incr")
+        assert len(loaded) == 25
+
+        # Simulate compaction (delete first 5)
+        compacted = messages[5:25]
+        assert persistence.save_session("incr", compacted, name="Incr")
+        loaded, _ = persistence.load_session("incr")
+        assert len(loaded) == 20
+        assert loaded[0].content == "msg5"
+
+        # Verify only one segment after rollover
+        segs = persistence._list_segments("incr")
+        assert len(segs) == 1
 
 
 class TestGlobalInstance:

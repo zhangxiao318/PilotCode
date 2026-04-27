@@ -6,6 +6,7 @@ import asyncio
 import traceback
 import logging
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Set, Dict, Any
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -22,6 +23,29 @@ logging.getLogger("websockets.protocol").setLevel(logging.ERROR)
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+
+# ------------------------------------------------------------------
+# Helper: serialize messages for web frontend history rendering
+# ------------------------------------------------------------------
+
+
+def _serialize_messages_for_web(messages: list) -> list[dict]:
+    """Convert message objects to a web-friendly format for UI rendering."""
+    result = []
+    for msg in messages:
+        msg_type = msg.__class__.__name__
+        if msg_type == "UserMessage":
+            result.append({"role": "user", "content": msg.content})
+        elif msg_type == "AssistantMessage":
+            result.append({"role": "assistant", "content": msg.content or ""})
+        elif msg_type == "ToolUseMessage":
+            result.append({"role": "tool_use", "name": msg.name, "input": msg.input})
+        elif msg_type == "ToolResultMessage":
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            result.append({"role": "tool_result", "content": content})
+        # SystemMessage is intentionally skipped for history view
+    return result
 
 
 # ------------------------------------------------------------------
@@ -209,6 +233,9 @@ class WebSocketManager:
         self._session_contexts: Dict[str, dict] = {}
         self._session_lock = asyncio.Lock()
 
+        # Recent directories for New Session picker
+        self.recent_directories: list[str] = []
+
         # LoopGuard: detect repetitive tool-call patterns
         from pilotcode.components.repl import LoopGuard
 
@@ -221,7 +248,15 @@ class WebSocketManager:
     def _generate_session_id(self) -> str:
         return f"sess_{uuid.uuid4().hex[:12]}"
 
-    async def _create_session_context(self, session_id: str) -> dict:
+    def _update_recent_directories(self, cwd: str) -> None:
+        """Add a directory to recent list, deduplicate and limit to 10."""
+        cwd_str = str(cwd) if cwd else None
+        if not cwd_str or cwd_str in self.recent_directories:
+            return
+        self.recent_directories.insert(0, cwd_str)
+        self.recent_directories = self.recent_directories[:10]
+
+    async def _create_session_context(self, session_id: str, cwd: str | None = None) -> dict:
         """Create a new Session context with its own QueryEngine and Store."""
         from dataclasses import replace
         from pilotcode.query_engine import QueryEngine, QueryEngineConfig
@@ -230,8 +265,9 @@ class WebSocketManager:
         from pilotcode.state.store import Store
         from pilotcode.utils.config import get_global_config
 
+        session_cwd = str(cwd or self.cwd)
         store = Store(get_default_app_state())
-        store.set_state(lambda s: replace(s, cwd=self.cwd))
+        store.set_state(lambda s: replace(s, cwd=session_cwd))
         tools = get_all_tools()
         global_cfg = get_global_config()
 
@@ -240,7 +276,7 @@ class WebSocketManager:
 
         query_engine = QueryEngine(
             QueryEngineConfig(
-                cwd=self.cwd,
+                cwd=session_cwd,
                 tools=tools,
                 get_app_state=store.get_state,
                 set_app_state=lambda f: store.set_state(f),
@@ -262,10 +298,11 @@ class WebSocketManager:
 
         ctx = {
             "session_id": session_id,
+            "name": session_id,
             "query_engine": query_engine,
             "store": store,
-            "created_at": asyncio.get_event_loop().time(),
-            "last_activity": asyncio.get_event_loop().time(),
+            "created_at": datetime.now().isoformat(),
+            "last_activity": datetime.now().isoformat(),
             "message_count": 0,
             # P0: Shared FileEdit compensation tracker (per-session)
             "_fileedit_tracker": FileEditCompensationTracker(
@@ -277,12 +314,12 @@ class WebSocketManager:
         print(f"[Session] Created session {session_id}")
         return ctx
 
-    async def _get_or_create_session(self, session_id: str) -> dict:
+    async def _get_or_create_session(self, session_id: str, cwd: str | None = None) -> dict:
         """Get existing session or create new one."""
         async with self._session_lock:
             ctx = self._session_contexts.get(session_id)
         if ctx is None:
-            ctx = await self._create_session_context(session_id)
+            ctx = await self._create_session_context(session_id, cwd=cwd)
         return ctx
 
     async def _get_session(self, session_id: str) -> dict | None:
@@ -306,25 +343,58 @@ class WebSocketManager:
         return False
 
     async def _list_sessions(self) -> list[dict]:
-        """List all active sessions."""
+        """List all sessions (memory + disk)."""
         result = []
+        memory_ids = set()
         async with self._session_lock:
             for sid, ctx in self._session_contexts.items():
+                memory_ids.add(sid)
                 result.append(
                     {
                         "session_id": sid,
+                        "name": ctx.get("name", sid),
                         "message_count": len(ctx["query_engine"].messages),
                         "created_at": ctx["created_at"],
                         "last_activity": ctx["last_activity"],
+                        "source": "memory",
+                        "project_path": str(
+                            getattr(ctx["query_engine"].config, "cwd", self.cwd) or self.cwd
+                        ),
                     }
                 )
+
+        # Also include disk sessions not currently in memory
+        from pilotcode.services.session_persistence import get_session_persistence
+
+        persist = get_session_persistence()
+        try:
+            for meta in persist.list_sessions():
+                if meta.session_id not in memory_ids:
+                    result.append(
+                        {
+                            "session_id": meta.session_id,
+                            "name": meta.name or meta.session_id,
+                            "message_count": meta.message_count,
+                            "created_at": meta.created_at,
+                            "last_activity": meta.updated_at,
+                            "source": "disk",
+                            "project_path": meta.project_path,
+                            "summary": meta.summary or "",
+                            "archived": meta.archived,
+                        }
+                    )
+        except Exception as e:
+            print(f"[Session] Error listing disk sessions: {e}")
+
+        # Sort by last_activity desc
+        result.sort(key=lambda s: s.get("last_activity", ""), reverse=True)
         return result
 
     def _touch_session(self, session_id: str):
         """Update last activity timestamp for a session."""
         ctx = self._session_contexts.get(session_id)
         if ctx:
-            ctx["last_activity"] = asyncio.get_event_loop().time()
+            ctx["last_activity"] = datetime.now().isoformat()
             ctx["message_count"] = len(ctx["query_engine"].messages)
 
     # ------------------------------------------------------------------
@@ -382,13 +452,31 @@ class WebSocketManager:
             # ------------------------------------------------------------------
             if msg_type == "session_create":
                 sid = data.get("session_id") or self._generate_session_id()
-                await self._get_or_create_session(sid)
+                new_cwd = data.get("cwd")
+                if new_cwd:
+                    self._update_recent_directories(new_cwd)
+                await self._get_or_create_session(sid, cwd=new_cwd)
                 self.client_sessions[websocket] = sid
                 await self.send_to_client(
                     websocket,
-                    {"type": "session_created", "session_id": sid, "status": "active"},
+                    {
+                        "type": "session_created",
+                        "session_id": sid,
+                        "status": "active",
+                        "cwd": new_cwd or self.cwd,
+                    },
                 )
-                print(f"[Session] Client attached to new session {sid}")
+                print(f"[Session] Client attached to new session {sid} cwd={new_cwd or self.cwd}")
+
+            elif msg_type == "cwd_options":
+                await self.send_to_client(
+                    websocket,
+                    {
+                        "type": "cwd_options",
+                        "current": self.cwd,
+                        "recent": self.recent_directories,
+                    },
+                )
 
             elif msg_type == "session_attach":
                 sid = data.get("session_id", "")
@@ -445,14 +533,98 @@ class WebSocketManager:
                         {"type": "session_error", "error": "No active session"},
                     )
 
+            elif msg_type == "session_load":
+                sid = data.get("session_id", "")
+                from pilotcode.services.session_persistence import get_session_persistence
+
+                persist = get_session_persistence()
+                result = persist.load_session(sid)
+                if result is None:
+                    await self.send_to_client(
+                        websocket,
+                        {"type": "session_error", "error": f"Session not found: {sid}"},
+                    )
+                else:
+                    messages, metadata = result
+                    # Create/replace in-memory session context
+                    ctx = await self._create_session_context(sid)
+                    ctx["query_engine"].messages = messages
+                    ctx["name"] = metadata.get("name", sid)
+                    restored_cwd = metadata.get("project_path")
+                    if restored_cwd:
+                        restored_cwd = str(restored_cwd)
+                        from dataclasses import replace
+
+                        ctx["store"].set_state(lambda s: replace(s, cwd=restored_cwd))
+                        ctx["query_engine"].config = ctx["query_engine"].config.replace(
+                            cwd=restored_cwd
+                        )
+                        self._update_recent_directories(restored_cwd)
+                    self.client_sessions[websocket] = sid
+                    await self.send_to_client(
+                        websocket,
+                        {
+                            "type": "session_loaded",
+                            "session_id": sid,
+                            "name": metadata.get("name", sid),
+                            "message_count": len(messages),
+                            "project_path": restored_cwd,
+                            "messages": _serialize_messages_for_web(messages),
+                        },
+                    )
+                    print(f"[Session] Loaded {sid} ({len(messages)} messages) from disk")
+
+            elif msg_type == "session_rename":
+                sid = data.get("session_id", "")
+                new_name = data.get("name", "")
+                from pilotcode.services.session_persistence import get_session_persistence
+
+                persist = get_session_persistence()
+                success = persist.rename_session(sid, new_name)
+                # Also update in-memory name if present
+                async with self._session_lock:
+                    ctx = self._session_contexts.get(sid)
+                    if ctx:
+                        ctx["name"] = new_name
+                await self.send_to_client(
+                    websocket,
+                    {
+                        "type": "session_renamed" if success else "session_error",
+                        "session_id": sid,
+                        "name": new_name,
+                    },
+                )
+
+            elif msg_type == "session_archive":
+                sid = data.get("session_id", "")
+                archived = data.get("archived", True)
+                from pilotcode.services.session_persistence import get_session_persistence
+
+                persist = get_session_persistence()
+                success = persist.archive_session(sid, archived)
+                await self.send_to_client(
+                    websocket,
+                    {
+                        "type": "session_archived" if success else "session_error",
+                        "session_id": sid,
+                        "archived": archived,
+                    },
+                )
+
             elif msg_type == "session_delete":
                 sid = data.get("session_id", "")
-                success = await self._delete_session(sid)
+                from pilotcode.services.session_persistence import get_session_persistence
+
+                persist = get_session_persistence()
+                disk_ok = persist.delete_session(sid)
+                mem_ok = await self._delete_session(sid)
+                success = disk_ok or mem_ok
                 await self.send_to_client(
                     websocket,
                     {
                         "type": "session_deleted" if success else "session_error",
                         "session_id": sid,
+                        "error": None if success else f"Session not found: {sid}",
                     },
                 )
 
@@ -1271,6 +1443,20 @@ class WebSocketManager:
                 del self.current_tasks[websocket]
             # Update session activity
             self._touch_session(session_id)
+            # Auto-save session after query
+            try:
+                if session_ctx:
+                    from pilotcode.services.session_persistence import get_session_persistence
+
+                    persist = get_session_persistence()
+                    persist.save_session(
+                        session_id=session_id,
+                        messages=session_ctx["query_engine"].messages,
+                        name=session_ctx.get("name", session_id),
+                        project_path=getattr(session_ctx["query_engine"].config, "cwd", self.cwd),
+                    )
+            except Exception as e:
+                print(f"[Session] Auto-save error: {e}")
 
 
 ws_manager = WebSocketManager()

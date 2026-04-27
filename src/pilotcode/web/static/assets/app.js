@@ -4,6 +4,11 @@ let messageId = 0;
 let pendingMessages = new Map();
 let currentStreamId = null;
 let isConnected = false;
+let currentSessionId = null;
+let sessions = [];
+let expandedGroups = new Set();
+let archivedExpanded = false;
+let contextMenuSessionId = null;
 
 // DOM elements
 const chatArea = document.getElementById('chatArea');
@@ -19,6 +24,18 @@ const attachBtn = document.getElementById('attachBtn');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const inputStatus = document.getElementById('inputStatus');
+
+// Modal elements
+const cwdModal = document.getElementById('cwdModal');
+const cwdSearch = document.getElementById('cwdSearch');
+const cwdCurrentPath = document.getElementById('cwdCurrentPath');
+const cwdCurrentItem = document.getElementById('cwdCurrentItem');
+const cwdRecentList = document.getElementById('cwdRecentList');
+const cwdModalConfirm = document.getElementById('cwdModalConfirm');
+const cwdModalCancel = document.getElementById('cwdModalCancel');
+const cwdModalClose = document.getElementById('cwdModalClose');
+let selectedCwd = null;
+let cwdOptionsData = {current: '/', recent: []};
 
 // Initialize
 function init() {
@@ -42,6 +59,8 @@ function connectWebSocket() {
         isConnected = true;
         updateConnectionStatus(true);
         showToast('Connected to PilotCode', 'success');
+        // Request session list on connect
+        sendMessage({type: 'session_list'});
     };
     
     ws.onclose = () => {
@@ -130,6 +149,60 @@ function handleMessage(data) {
             break;
         case 'user_question_request':
             handleUserQuestionRequest(data);
+            break;
+        case 'cwd_options':
+            cwdOptionsData = {
+                current: data.current || '/',
+                recent: data.recent || [],
+            };
+            renderCwdModal();
+            break;
+        case 'session_created':
+            currentSessionId = data.session_id;
+            renderSessionList();
+            showToast(`New session created (${data.cwd || ''})`, 'success');
+            break;
+        case 'session_attached':
+            currentSessionId = data.session_id;
+            renderSessionList();
+            showToast(`Attached to session ${data.session_id.slice(0, 8)}`, 'success');
+            break;
+        case 'session_loaded':
+            currentSessionId = data.session_id;
+            clearChatUI();
+            if (data.messages && data.messages.length > 0) {
+                renderHistoryMessages(data.messages);
+            }
+            renderSessionList();
+            showToast(`Loaded: ${data.name || data.session_id}`, 'success');
+            break;
+        case 'session_list':
+            sessions = data.sessions || [];
+            renderSessionList();
+            break;
+        case 'session_saved':
+            showToast('Session saved', 'success');
+            break;
+        case 'session_deleted':
+            sessions = sessions.filter(s => s.session_id !== data.session_id);
+            renderSessionList();
+            if (currentSessionId === data.session_id) {
+                currentSessionId = null;
+                clearChatUI();
+            }
+            break;
+        case 'session_renamed':
+            sessions = sessions.map(s => s.session_id === data.session_id ? {...s, name: data.name} : s);
+            renderSessionList();
+            showToast('Session renamed', 'success');
+            break;
+        case 'session_archived':
+            sessions = sessions.map(s => s.session_id === data.session_id ? {...s, archived: data.archived} : s);
+            renderSessionList();
+            showToast(data.archived ? 'Session archived' : 'Session unarchived', 'success');
+            break;
+        case 'session_error':
+            showToast(data.error || 'Session error', 'error');
             break;
     }
 }
@@ -508,26 +581,105 @@ function setupEventListeners() {
     
     // New session
     newSessionBtn.addEventListener('click', () => {
-        messagesContainer.innerHTML = '';
-        messagesContainer.classList.add('hidden');
-        welcomeMessage.classList.remove('hidden');
-        messageInput.value = '';
-        messageInput.style.height = 'auto';
-        sendBtn.disabled = true;
-        messageId = 0;
-        pendingMessages.clear();
-        currentStreamId = null;
+        // Save current session first
+        if (currentSessionId) {
+            sendMessage({type: 'session_save', name: currentSessionId});
+        }
+        // Request cwd options then show picker
+        sendMessage({type: 'cwd_options'});
     });
     
     // Sidebar toggle
     sidebarToggle.addEventListener('click', () => {
-        sidebar.classList.toggle('hidden');
+        sidebar.classList.toggle('collapsed');
     });
     
     // Attach button (placeholder - file upload not implemented yet)
     attachBtn.addEventListener('click', () => {
         showToast('File upload coming soon', 'info');
     });
+
+    // Session search
+    const sessionSearch = document.getElementById('sessionSearch');
+    if (sessionSearch) {
+        sessionSearch.addEventListener('input', () => {
+            renderSessionList();
+        });
+    }
+
+    // Refresh sessions
+    const refreshBtn = document.getElementById('refreshSessionsBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            sendMessage({type: 'session_list'});
+            showToast('Refreshing sessions...', 'info');
+        });
+    }
+
+    // Archived section toggle
+    const archivedHeader = document.getElementById('archivedHeader');
+    if (archivedHeader) {
+        archivedHeader.addEventListener('click', () => {
+            archivedExpanded = !archivedExpanded;
+            const arrow = document.getElementById('archivedArrow');
+            const items = document.getElementById('archivedItems');
+            if (arrow) arrow.textContent = archivedExpanded ? '▼' : '▶';
+            if (items) items.classList.toggle('hidden', !archivedExpanded);
+        });
+    }
+
+    // Context menu actions
+    const contextMenu = document.getElementById('contextMenu');
+    if (contextMenu) {
+        contextMenu.querySelectorAll('.context-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                console.log('[ContextMenu] clicked action:', item.dataset.action, 'sessionId:', contextMenuSessionId);
+                const action = item.dataset.action;
+                if (action === 'rename' && contextMenuSessionId) {
+                    renameSession(contextMenuSessionId);
+                } else if (action === 'archive' && contextMenuSessionId) {
+                    const session = sessions.find(s => s.session_id === contextMenuSessionId);
+                    const newArchived = !(session && session.archived);
+                    sendMessage({type: 'session_archive', session_id: contextMenuSessionId, archived: newArchived});
+                } else if (action === 'delete' && contextMenuSessionId) {
+                    deleteSession(contextMenuSessionId);
+                }
+                hideContextMenu();
+            });
+        });
+    }
+
+    // Hide context menu on click elsewhere
+    document.addEventListener('click', () => hideContextMenu());
+
+    // CWD Modal events
+    if (cwdModalClose) cwdModalClose.addEventListener('click', hideCwdModal);
+    if (cwdModalCancel) cwdModalCancel.addEventListener('click', hideCwdModal);
+    if (cwdModalConfirm) {
+        cwdModalConfirm.addEventListener('click', () => {
+            const cwd = selectedCwd || cwdOptionsData.current;
+            sendMessage({type: 'session_create', cwd: cwd});
+            hideCwdModal();
+            clearChatUI();
+        });
+    }
+    if (cwdSearch) {
+        cwdSearch.addEventListener('input', () => {
+            renderCwdModal();
+        });
+    }
+    if (cwdCurrentItem) {
+        cwdCurrentItem.addEventListener('click', () => {
+            selectedCwd = cwdOptionsData.current;
+            updateCwdSelectionUI();
+        });
+    }
+    if (cwdModal) {
+        cwdModal.addEventListener('click', (e) => {
+            if (e.target === cwdModal) hideCwdModal();
+        });
+    }
 }
 
 // Send user message
@@ -542,7 +694,8 @@ function sendUserMessage() {
     sendMessage({
         type: 'query',
         message: content,
-        message_id: msgId
+        message_id: msgId,
+        session_id: currentSessionId
     });
     
     messageInput.value = '';
@@ -669,6 +822,297 @@ function showToast(message, type = 'info') {
     setTimeout(() => {
         toast.remove();
     }, 3000);
+}
+
+// Session management helpers
+function clearChatUI() {
+    messagesContainer.innerHTML = '';
+    messagesContainer.classList.add('hidden');
+    welcomeMessage.classList.remove('hidden');
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+    sendBtn.disabled = true;
+    messageId = 0;
+    pendingMessages.clear();
+    currentStreamId = null;
+}
+
+function timeAgo(timestamp) {
+    if (!timestamp) return '';
+    const now = new Date();
+    const then = new Date(timestamp);
+    const seconds = Math.floor((now - then) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo ago`;
+    return `${Math.floor(months / 12)}y ago`;
+}
+
+function groupSessionsByPath(sessions) {
+    const groups = {};
+    sessions.forEach(s => {
+        const path = s.project_path || 'Unknown';
+        if (!groups[path]) groups[path] = [];
+        groups[path].push(s);
+    });
+    return groups;
+}
+
+function renderSessionList() {
+    const tree = document.getElementById('sessionsTree');
+    const archivedItems = document.getElementById('archivedItems');
+    const archivedCount = document.getElementById('archivedCount');
+    const search = document.getElementById('sessionSearch');
+    const query = search ? search.value.trim().toLowerCase() : '';
+
+    tree.innerHTML = '';
+    archivedItems.innerHTML = '';
+
+    let filtered = sessions;
+    if (query) {
+        filtered = sessions.filter(s =>
+            (s.name || '').toLowerCase().includes(query) ||
+            (s.project_path || '').toLowerCase().includes(query) ||
+            (s.summary || '').toLowerCase().includes(query)
+        );
+    }
+
+    const activeSessions = filtered.filter(s => !s.archived);
+    const archivedSessions = filtered.filter(s => s.archived);
+    archivedCount.textContent = archivedSessions.length;
+
+    if (activeSessions.length === 0 && archivedSessions.length === 0) {
+        tree.innerHTML = '<div style="padding: 12px; color: #999; font-size: 13px;">No sessions</div>';
+        return;
+    }
+
+    const groups = groupSessionsByPath(activeSessions);
+    Object.entries(groups).forEach(([path, items]) => {
+        const groupEl = document.createElement('div');
+        groupEl.className = 'group';
+        const isExpanded = expandedGroups.has(path);
+
+        const header = document.createElement('div');
+        header.className = 'group-header';
+        header.innerHTML = `
+            <span class="group-arrow ${isExpanded ? 'expanded' : ''}">▶</span>
+            <span class="group-name">${escapeHtml(path)}</span>
+            <span class="group-count">(${items.length})</span>
+        `;
+        header.addEventListener('click', () => {
+            if (expandedGroups.has(path)) expandedGroups.delete(path);
+            else expandedGroups.add(path);
+            renderSessionList();
+        });
+        groupEl.appendChild(header);
+
+        if (isExpanded) {
+            const itemsContainer = document.createElement('div');
+            itemsContainer.className = 'group-items';
+            items.forEach(session => {
+                const row = createSessionRow(session);
+                itemsContainer.appendChild(row);
+            });
+            groupEl.appendChild(itemsContainer);
+        }
+
+        tree.appendChild(groupEl);
+    });
+
+    // Render archived sessions
+    archivedSessions.forEach(session => {
+        archivedItems.appendChild(createSessionRow(session, true));
+    });
+}
+
+function createSessionRow(session, isArchived) {
+    const row = document.createElement('div');
+    const isActive = session.session_id === currentSessionId;
+    row.className = 'session-row' + (isActive ? ' active' : '');
+    row.dataset.sessionId = session.session_id;
+
+    const summary = escapeHtml(session.summary || session.name || session.session_id);
+    const ago = timeAgo(session.last_activity || session.updated_at);
+    const msgCount = session.message_count || 0;
+
+    row.innerHTML = `
+        <div class="session-summary">${summary}</div>
+        <div class="session-meta">
+            <span>${ago}</span>
+            <span>${msgCount} msg${msgCount !== 1 ? 's' : ''}</span>
+        </div>
+    `;
+
+    row.addEventListener('click', () => switchSession(session.session_id));
+    row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showContextMenu(e, session.session_id);
+    });
+    return row;
+}
+
+function switchSession(sessionId) {
+    if (sessionId === currentSessionId) return;
+    // Save current before switching
+    if (currentSessionId) {
+        sendMessage({type: 'session_save', name: currentSessionId});
+    }
+    sendMessage({type: 'session_load', session_id: sessionId});
+}
+
+function deleteSession(sessionId) {
+    if (!confirm(`Delete session ${sessionId.slice(0, 16)}?`)) return;
+    sendMessage({type: 'session_delete', session_id: sessionId});
+}
+
+function renderHistoryMessages(messages) {
+    hideWelcome();
+    messages.forEach(msg => {
+        if (msg.role === 'user') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `<div class="user-query">${escapeHtml(msg.content)}</div><div class="stream-content"></div>`;
+            messagesContainer.appendChild(div);
+        } else if (msg.role === 'assistant') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'stream-content';
+            const finalDiv = document.createElement('div');
+            finalDiv.className = 'final-response';
+            finalDiv.innerHTML = renderMarkdown(msg.content);
+            contentDiv.appendChild(finalDiv);
+            div.appendChild(contentDiv);
+            messagesContainer.appendChild(div);
+        } else if (msg.role === 'tool_use') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            const inputStr = formatToolInput(msg.input);
+            div.innerHTML = `
+                <div class="tool-call">
+                    <div class="tool-header" onclick="toggleTool(this)">
+                        <span class="icon">[T]</span>
+                        <span>${escapeHtml(msg.name)} ${inputStr}</span>
+                        <span style="margin-left: auto; color: #999;">▼</span>
+                    </div>
+                    <div class="tool-content hidden">
+                        <pre><code>${escapeHtml(JSON.stringify(msg.input, null, 2))}</code></pre>
+                    </div>
+                </div>
+            `;
+            messagesContainer.appendChild(div);
+        } else if (msg.role === 'tool_result') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            let content = msg.content || '';
+            if (content.length > 120) {
+                content = content.substring(0, 50) + ' ... ' + content.substring(content.length - 30);
+            }
+            div.innerHTML = `<div class="stream-block result"><pre><code>${escapeHtml(content)}</code></pre></div>`;
+            messagesContainer.appendChild(div);
+        }
+    });
+    scrollToBottom();
+}
+
+function showContextMenu(event, sessionId) {
+    console.log('[ContextMenu] show for session:', sessionId);
+    contextMenuSessionId = sessionId;
+    const menu = document.getElementById('contextMenu');
+    if (!menu) { console.error('[ContextMenu] menu element not found'); return; }
+    menu.classList.remove('hidden');
+    menu.style.left = event.clientX + 'px';
+    menu.style.top = event.clientY + 'px';
+    // Update archive menu text based on current state
+    const session = sessions.find(s => s.session_id === sessionId);
+    const archiveItem = menu.querySelector('[data-action="archive"]');
+    if (archiveItem) {
+        archiveItem.innerHTML = session && session.archived
+            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Unarchive`
+            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/></svg> Archive`;
+    }
+}
+
+function hideContextMenu() {
+    console.log('[ContextMenu] hide');
+    const menu = document.getElementById('contextMenu');
+    if (menu) menu.classList.add('hidden');
+    contextMenuSessionId = null;
+}
+
+function renameSession(sessionId) {
+    const session = sessions.find(s => s.session_id === sessionId);
+    if (!session) return;
+    const newName = prompt('Rename session:', session.name || session.session_id);
+    if (newName && newName.trim()) {
+        sendMessage({type: 'session_rename', session_id: sessionId, name: newName.trim()});
+    }
+}
+
+function showCwdModal() {
+    if (!cwdModal) return;
+    selectedCwd = null;
+    cwdModal.classList.remove('hidden');
+    if (cwdSearch) cwdSearch.value = '';
+    updateCwdSelectionUI();
+}
+
+function hideCwdModal() {
+    if (!cwdModal) return;
+    cwdModal.classList.add('hidden');
+}
+
+function renderCwdModal() {
+    if (!cwdCurrentPath || !cwdRecentList) return;
+    cwdCurrentPath.textContent = cwdOptionsData.current;
+    const query = cwdSearch ? cwdSearch.value.trim().toLowerCase() : '';
+
+    let recent = cwdOptionsData.recent;
+    if (query) {
+        recent = recent.filter(p => p.toLowerCase().includes(query));
+    }
+
+    cwdRecentList.innerHTML = '';
+    if (recent.length === 0) {
+        cwdRecentList.innerHTML = '<div style="padding: 8px; color: #999; font-size: 13px;">No recent directories</div>';
+        return;
+    }
+
+    recent.forEach(path => {
+        const item = document.createElement('div');
+        item.className = 'cwd-item' + (selectedCwd === path ? ' selected' : '');
+        item.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>${escapeHtml(path)}</span>
+        `;
+        item.addEventListener('click', () => {
+            selectedCwd = path;
+            updateCwdSelectionUI();
+        });
+        cwdRecentList.appendChild(item);
+    });
+
+    updateCwdSelectionUI();
+}
+
+function updateCwdSelectionUI() {
+    if (cwdCurrentItem) {
+        cwdCurrentItem.classList.toggle('selected', selectedCwd === cwdOptionsData.current || selectedCwd === null);
+    }
+    if (cwdRecentList) {
+        cwdRecentList.querySelectorAll('.cwd-item').forEach(item => {
+            const pathSpan = item.querySelector('span');
+            if (pathSpan) {
+                item.classList.toggle('selected', selectedCwd === pathSpan.textContent);
+            }
+        });
+    }
 }
 
 // Initialize on load
