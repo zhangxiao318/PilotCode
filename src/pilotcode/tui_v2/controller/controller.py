@@ -209,6 +209,24 @@ class TUIController:
 
     # ------------------------------------------------------------------
 
+    def _update_session_cwd(self, new_cwd: str) -> None:
+        """Update the session's working directory across all layers.
+
+        This synchronizes the new cwd into:
+        - session_options (for future MissionAdapter runs)
+        - query_engine.config.cwd (for DIRECT mode tool calls)
+        - app_state (for tool resolve_cwd)
+        """
+        new_cwd = str(Path(new_cwd).resolve())
+        old_cwd = self.session_options.get("cwd", str(Path.cwd()))
+        if new_cwd == old_cwd:
+            return
+        self.session_options["cwd"] = new_cwd
+        if self.query_engine and self.query_engine.config:
+            self.query_engine.config = self.query_engine.config.replace(cwd=new_cwd)
+        if self.set_app_state:
+            self.set_app_state(lambda s: s.replace(cwd=new_cwd))
+
     def _init_engine(self) -> None:
         """Initialize QueryEngine and session."""
 
@@ -563,6 +581,14 @@ class TUIController:
 
                 self.query_engine.messages.append(UserMessage(content=text))
                 self.query_engine.messages.append(AssistantMessage(content=full_report))
+            # Sync any cwd detected by MissionAdapter back into the session
+            # so follow-up messages target the correct project.
+            if adapter._cwd != cwd:
+                self._update_session_cwd(adapter._cwd)
+                yield UIMessage(
+                    type=UIMessageType.SYSTEM,
+                    content=f"📁 Working directory updated to: {adapter._cwd}",
+                )
 
     async def submit_message(self, text: str, force_plan: bool = False) -> AsyncIterator[UIMessage]:
         """Submit a message and yield UI messages.
@@ -597,6 +623,18 @@ class TUIController:
                 async for msg in self._run_pevr_mode(text):
                     yield msg
                 return
+
+        # DIRECT mode: detect if the user mentions a new workspace path
+        # and update session cwd so subsequent tool calls target it.
+        from pilotcode.components.repl import _extract_target_path
+
+        detected_cwd = _extract_target_path(text)
+        if detected_cwd and detected_cwd != self.session_options.get("cwd", str(Path.cwd())):
+            self._update_session_cwd(detected_cwd)
+            yield UIMessage(
+                type=UIMessageType.SYSTEM,
+                content=f"📁 Working directory updated to: {detected_cwd}",
+            )
 
         # New user input = fresh context: reset FileEdit failure tracking
         self._fileedit_tracker.reset()
