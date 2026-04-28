@@ -5,13 +5,21 @@ from .base import CommandHandler, register_command, CommandContext
 
 
 async def lint_command(args: list[str], context: CommandContext) -> str:
-    """Handle /lint command."""
-    target = args[0] if args else "."
+    """Handle /lint command.
+
+    Usage:
+        /lint                      Lint current directory
+        /lint src/foo.py           Lint specific file
+        /lint --fix                Auto-fix issues (ruff)
+        /lint src/ --fix           Fix issues in directory
+    """
+    if not args:
+        args = ["."]
 
     try:
-        # Try ruff first
+        # Try ruff first (passes through all args, e.g. --fix)
         result = subprocess.run(
-            ["ruff", "check", target],
+            ["ruff", "check", *args],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -32,6 +40,7 @@ async def lint_command(args: list[str], context: CommandContext) -> str:
             return f"Ruff results:\n{output}"
 
         # Try flake8
+        target = args[0] if args[0] != "--fix" else "."
         result2 = subprocess.run(
             ["flake8", target],
             capture_output=True,
@@ -60,5 +69,9 @@ async def lint_command(args: list[str], context: CommandContext) -> str:
 
 
 register_command(
-    CommandHandler(name="lint", description="Lint code with ruff/flake8", handler=lint_command)
+    CommandHandler(
+        name="lint",
+        description="Lint code with ruff/flake8 (use --fix to auto-fix)",
+        handler=lint_command,
+    )
 )
