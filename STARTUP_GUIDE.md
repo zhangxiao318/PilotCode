@@ -145,8 +145,8 @@ python3 -m pilotcode tools --list
 
 ### 开发工具
 - `/test` - 运行测试
-- `/lint` - 代码检查
-- `/format` - 代码格式化
+- `/lint` - 代码检查（仅支持 Python）
+- `/format` - 代码格式化（仅支持 Python）
 - `/coverage` - 代码覆盖率
 - `/symbols <file>` - 显示符号
 - `/references <symbol>` - 查找引用

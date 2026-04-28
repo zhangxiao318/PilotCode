@@ -39,7 +39,7 @@ manager = PolicyManager(policy_path=Path("/path/to/policy.json"))
 1. 指定的 `policy_path`
 2. `.pilotcode/policy.json`
 3. `.claude/policy.json`
-4. `.config/pilotcode/policy.json`
+4. `.pilotcode/config/policy.json`
 
 ### 检查策略
 

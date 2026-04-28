@@ -83,11 +83,11 @@ export ZHIPU_API_KEY="..."         # GLM
 
 ### Method 4: Manual Configuration File
 
-Create `~/.config/pilotcode/settings.json`:
+Create `~/.pilotcode/config/settings.json`:
 
 ```bash
-mkdir -p ~/.config/pilotcode
-cat > ~/.config/pilotcode/settings.json << 'EOF'
+mkdir -p ~/.pilotcode/config
+cat > ~/.pilotcode/config/settings.json << 'EOF'
 {
   "theme": "default",
   "verbose": false,
@@ -224,7 +224,7 @@ curl $PILOTCODE_BASE_URL/models \
 
 ### Reset Configuration
 ```bash
-rm ~/.config/pilotcode/settings.json
+rm ~/.pilotcode/config/settings.json
 python3 -m pilotcode configure  # Reconfigure
 ```
 

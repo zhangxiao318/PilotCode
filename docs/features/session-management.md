@@ -71,7 +71,7 @@ self.set_app_state(lambda s: s.replace(cwd=restored_cwd))
 ### 文件结构
 
 ```
-~/.local/share/pilotcode/sessions/
+~/.pilotcode/data/sessions/
 ├── sess_20260426_235000.index.json      # 段索引
 ├── sess_20260426_235000.meta.json       # 用户可见元数据
 ├── sess_20260426_235000.data.0.jsonl    # 数据段 0

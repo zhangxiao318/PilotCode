@@ -381,7 +381,7 @@ CodeContext(query="路由分发逻辑", subgraph="src/router")
    └── 使用 Embedding Service（旧向量自动清理）
 
 5. 存储索引
-   └── 内存 + JSON 缓存（~/.cache/pilotcode/index_cache/）
+   └── 内存 + JSON 缓存（~/.pilotcode/cache/index/）
 
 6. 构建分层索引（>10 文件时）
    └── 目录聚类 → 子图摘要 → 导入/导出关系

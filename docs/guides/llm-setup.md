@@ -57,14 +57,14 @@ PilotCode 支持三种配置方式（按优先级排序）：
 
 ### 全局配置文件
 
-位置：`~/.config/pilotcode/settings.json`
+位置：`~/.pilotcode/config/settings.json`
 
 ```bash
 # 创建配置目录
-mkdir -p ~/.config/pilotcode
+mkdir -p ~/.pilotcode/config
 
 # 创建配置文件
-cat > ~/.config/pilotcode/settings.json << 'EOF'
+cat > ~/.pilotcode/config/settings.json << 'EOF'
 {
   "theme": "default",
   "verbose": false,

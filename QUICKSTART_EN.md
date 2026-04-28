@@ -201,8 +201,8 @@ In the PilotCode interactive interface, you can use the following commands:
 | `/config` | View/modify configuration |
 | `/theme` | Switch theme |
 | `/session` | Session management |
-| `/format` | Format code (black) |
-| `/lint` | Lint code (ruff) |
+| `/format` | Format code (black, Python only) |
+| `/lint` | Lint code (ruff, Python only) |
 | `/cost` | View usage statistics |
 | `/quit` | Exit |
 

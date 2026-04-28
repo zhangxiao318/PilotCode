@@ -73,7 +73,8 @@ src/pilotcode/
 ├── utils/                  # 工具函数
 │   ├── config.py           # 配置管理
 │   ├── model_client.py     # 模型客户端
-│   └── models_config.py    # 模型配置
+│   ├── models_config.py    # 模型配置
+│   └── paths.py            # 统一目录路径管理
 ├── cli.py                  # CLI 入口
 ├── main.py                 # 主模块
 ├── query_engine.py         # 查询引擎
@@ -156,6 +157,8 @@ class CommandHandler:
 - `/config` - 配置管理
 - `/model` - 模型切换
 - `/git` - Git 操作
+- `/format` - 代码格式化（Python）
+- `/lint` - 代码检查（Python）
 
 ### 5. TUI v2（终端界面）
 

@@ -55,7 +55,7 @@ PilotCode supports both international and domestic (China) language models. You 
 
 1. **Interactive Configuration Wizard** (Recommended)
 2. **Environment Variables**
-3. **Configuration File** (`~/.config/pilotcode/settings.json`)
+3. **Configuration File** (`~/.pilotcode/config/settings.json`)
 
 ### Interactive Configuration (Recommended)
 
@@ -141,7 +141,7 @@ export ARK_API_KEY="..."
 
 ### Configuration File
 
-The configuration is stored in `~/.config/pilotcode/settings.json`:
+The configuration is stored in `~/.pilotcode/config/settings.json`:
 
 ```json
 {

@@ -379,7 +379,7 @@ class CodebaseIndexer:
         self._indexed_files: set[str] = set()
         self._file_hashes: dict[str, str] = {}
         self._symbol_indexer = CodeIndexer()
-        # 缓存路径：~/.cache/pilotcode/index_cache/<hash>.json
+        # 缓存路径：~/.pilotcode/cache/index/<hash>.json
         self._cache_path = cache_dir / f"{hash(root_path)}.json"
     
     async def index_codebase(self, incremental=True):
@@ -390,7 +390,7 @@ class CodebaseIndexer:
         # 保存索引到外部缓存（避免污染 git diff）
 ```
 
-**关键优化**：索引缓存放在 `~/.cache/pilotcode/` 而不是项目根目录，防止被 `git diff` 捕获。
+**关键优化**：索引缓存放在 `~/.pilotcode/cache/` 而不是项目根目录，防止被 `git diff` 捕获。
 
 ---
 

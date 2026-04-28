@@ -203,8 +203,8 @@ python3 -m pilotcode --verbose
 | `/config` | 查看/修改配置 |
 | `/theme` | 切换主题 |
 | `/session` | 会话管理 |
-| `/format` | 格式化代码（black） |
-| `/lint` | 代码检查（ruff） |
+| `/format` | 格式化代码（black，仅支持 Python） |
+| `/lint` | 代码检查（ruff，仅支持 Python） |
 | `/cost` | 查看用量统计 |
 | `/quit` | 退出 |
 

@@ -278,7 +278,7 @@ manager.register_source(S3Source())
 ### 缓存路径
 
 ```
-~/.config/pilotcode/plugins/
+~/.pilotcode/config/plugins/
 ├── cache/
 │   ├── github/
 │   │   └── owner-repo-ref/

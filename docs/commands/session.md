@@ -85,7 +85,7 @@ TUI 模式下每次消息交换后会在 `finally` 块中自动触发 `_auto_sav
 会话文件存储在：
 
 ```
-~/.local/share/pilotcode/sessions/
+~/.pilotcode/data/sessions/
 ```
 
 ### 文件结构（v2.0 增量格式）

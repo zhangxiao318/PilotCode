@@ -53,6 +53,12 @@
 | [error-recovery.md](./error-recovery.md) | 错误恢复与重试 | 网络不稳定、API 限流 |
 | [session-management.md](./session-management.md) | 会话管理 | 多项目管理、历史恢复 |
 
+### 基础设施
+
+| 文档 | 说明 | 适用场景 |
+|------|------|----------|
+| [unified-directory-structure.md](./unified-directory-structure.md) | 统一目录结构 | 数据备份、迁移、路径管理 |
+
 ---
 
 ## 快速导航

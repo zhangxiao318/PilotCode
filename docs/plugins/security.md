@@ -138,7 +138,7 @@ public_key = trust_store.get_public_key("my-publisher")
 ### 信任存储文件
 
 ```
-~/.config/pilotcode/trust_store.json
+~/.pilotcode/config/trust_store.json
 ```
 
 内容示例：
@@ -246,7 +246,7 @@ signature = sig_manager.load_signature(Path("my-plugin.sig"))
 # 生成密钥对
 private_key, public_key = sig_manager.generate_key_pair("my-key")
 
-# 保存到: ~/.config/pilotcode/keys/my-key.json
+# 保存到: ~/.pilotcode/config/keys/my-key.json
 
 # 加载密钥
 private_key, public_key = sig_manager.load_key("my-key")

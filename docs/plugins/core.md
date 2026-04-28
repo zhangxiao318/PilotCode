@@ -192,7 +192,7 @@ outdated = await manager.check_outdated_plugins()
 ```python
 from pilotcode.plugins.core.types import PluginScope
 
-PluginScope.USER      # 用户级 (~/.config/pilotcode/plugins/)
+PluginScope.USER      # 用户级 (~/.pilotcode/config/plugins/)
 PluginScope.PROJECT   # 项目级 (./.pilotcode/plugins/)
 PluginScope.LOCAL     # 本地级 (./plugins/)
 ```
@@ -307,7 +307,7 @@ server = MCPServerConfig(
 ### 配置文件位置
 
 ```
-~/.config/pilotcode/
+~/.pilotcode/config/
 ├── plugins/                 # 插件安装目录
 │   ├── docker@claude-plugins-official/
 │   └── github@claude-plugins-official/
@@ -337,7 +337,7 @@ server = MCPServerConfig(
   {
     "plugin_id": "docker@claude-plugins-official",
     "scope": "user",
-    "install_path": "/home/user/.config/pilotcode/plugins/docker@claude-plugins-official",
+    "install_path": "/home/user/.pilotcode/config/plugins/docker@claude-plugins-official",
     "version": "1.0.0",
     "installed_at": "2024-01-15T10:30:00"
   }
