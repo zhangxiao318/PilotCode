@@ -165,6 +165,11 @@ echo    3. Run TUI:          .\pilotcode.cmd
 echo    4. Run Web UI:       .\pilotcode.cmd --web
 echo    5. Or directly:      python -m pilotcode
 echo.
+echo  Optional - global access without activating venv:
+echo    Add .venv\Scripts to your system PATH, then use:
+echo      pilotcode
+echo      pilotcode --web
+echo.
 echo  To install dev deps later:
 echo    .\install.cmd --dev
 echo ============================================

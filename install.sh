@@ -1,13 +1,17 @@
 #!/bin/bash
 # Installation script for PilotCode
-# Usage: ./install.sh [--dev]
+# Usage: ./install.sh [--dev] [--index]
 
 set -e
 
 DEV_MODE=false
-if [ "$1" = "--dev" ]; then
-    DEV_MODE=true
-fi
+INDEX_MODE=false
+for arg in "$@"; do
+    case "$arg" in
+        --dev) DEV_MODE=true ;;
+        --index) INDEX_MODE=true ;;
+    esac
+done
 
 echo "Installing PilotCode..."
 
@@ -49,6 +53,35 @@ else
     pip install -e .
 fi
 
+# Try to install tree-sitter C/C++ parsers
+echo "Installing tree-sitter parsers for C/C++ code indexing..."
+if pip install tree-sitter-c tree-sitter-cpp >/dev/null 2>&1; then
+    echo "Tree-sitter C/C++ parsers installed."
+else
+    echo ""
+    echo "========================================"
+    echo "[WARNING] Tree-sitter C/C++ parsers failed to install."
+    echo "========================================"
+    echo ""
+    echo "This usually means a C compiler is not available."
+    echo ""
+    echo "To enable C/C++ code indexing, install a C compiler:"
+    echo "  - Debian/Ubuntu: sudo apt install build-essential"
+    echo "  - Fedora/RHEL:   sudo dnf install gcc gcc-c++"
+    echo "  - macOS:         xcode-select --install"
+    echo ""
+    echo "PilotCode will still work fine --- C/C++ files will be"
+    echo "indexed using regex fallback (slightly less accurate)."
+    echo "========================================"
+    echo ""
+fi
+
+# Optional extra language parsers
+if [ "$INDEX_MODE" = true ]; then
+    echo "Installing extra language parsers (JS/Go/Rust/Java)..."
+    pip install tree-sitter-javascript tree-sitter-go tree-sitter-rust tree-sitter-java || true
+fi
+
 echo ""
 echo "Installation complete!"
 echo ""
@@ -58,12 +91,18 @@ if [ "$DEV_MODE" = true ]; then
 fi
 echo "To use PilotCode:"
 echo "  source .venv/bin/activate"
-echo "  pilotcode"
+echo "  pilotcode              # TUI mode"
+echo "  pilotcode --web        # Web UI mode"
 echo ""
 echo "Or directly:"
 echo "  ./pilotcode"
-if [ "$DEV_MODE" = false ]; then
-    echo ""
-    echo "To install dev dependencies (for running tests):"
-    echo "  ./install.sh --dev"
+echo "  ./pilotcode --web"
+echo ""
+echo "Optional - global access without activating venv:"
+echo "  Add $(pwd)/.venv/bin to your PATH, then use 'pilotcode' anywhere."
+echo ""
+if [ "$DEV_MODE" = false ] && [ "$INDEX_MODE" = false ]; then
+    echo "To install extra dependencies:"
+    echo "  ./install.sh --dev      # dev tools (pytest, black, ruff)"
+    echo "  ./install.sh --index    # extra language parsers (JS/Go/Rust/Java)"
 fi
