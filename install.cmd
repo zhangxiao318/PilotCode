@@ -3,6 +3,24 @@ REM PilotCode Windows Installation Script
 
 setlocal EnableDelayedExpansion
 
+REM Parse command-line flags first
+set "INSTALL_DEV=false"
+set "INSTALL_INDEX=false"
+set "INTERACTIVE=true"
+:parse_args
+if "%~1"=="--dev" (
+    set "INSTALL_DEV=true"
+    set "INTERACTIVE=false"
+    shift
+    goto parse_args
+)
+if "%~1"=="--index" (
+    set "INSTALL_INDEX=true"
+    set "INTERACTIVE=false"
+    shift
+    goto parse_args
+)
+
 echo ============================================
 echo  PilotCode Windows Installer
 echo ============================================
@@ -36,7 +54,7 @@ if %PYMAJOR%==3 if %PYMINOR% LSS 11 (
 )
 
 echo [OK] Python %PYVER% found.
-echo.
+echo(
 
 REM --- Create virtual environment ---
 set "VENV_DIR=%CD%\.venv"
@@ -61,7 +79,7 @@ if errorlevel 1 (
 )
 
 echo [OK] Virtual environment activated.
-echo.
+echo(
 
 REM --- Upgrade pip ---
 echo [INFO] Upgrading pip...
@@ -69,7 +87,7 @@ python -m pip install --upgrade pip
 if errorlevel 1 (
     echo [WARN] pip upgrade failed, continuing with existing version...
 )
-echo.
+echo(
 
 REM --- Install core dependencies ---
 echo [INFO] Installing PilotCode...
@@ -80,7 +98,7 @@ if errorlevel 1 (
     exit /b 1
 )
 echo [OK] Core dependencies installed.
-echo.
+echo(
 
 REM --- Copy knowhow templates ---
 set "KNOWHOW_DIR=%USERPROFILE%\.pilotcode\data\knowhow"
@@ -94,41 +112,44 @@ if not exist "%KNOWHOW_DIR%\*.json" (
 ) else (
     echo [OK] Knowhow templates already exist.
 )
-echo.
+echo(
 
 REM --- Try to install tree-sitter C/C++ parsers ---
 echo [INFO] Installing tree-sitter parsers for C/C++ code indexing...
 pip install tree-sitter-c tree-sitter-cpp >nul 2>&1
 if errorlevel 1 (
-    echo.
+    echo(
     echo ============================================
     echo  [WARNING] Tree-sitter C/C++ parsers failed to install.
     echo ============================================
-    echo.
+    echo(
     echo  This usually means a C compiler is not available.
-    echo.
+    echo(
     echo  To enable C/C++ code indexing, install ONE of:
-    echo    - Visual Studio Build Tools (with C++ workload)
+    echo    - Visual Studio Build Tools with C++ workload
     echo      https://visualstudio.microsoft.com/visual-cpp-build-tools/
     echo    - MinGW-w64 + MSYS2
     echo      https://www.msys2.org/
     echo    - LLVM/Clang
-    echo.
+    echo(
     echo  PilotCode will still work fine --- C/C++ files will be
-    echo  indexed using regex fallback (slightly less accurate).
-    echo.
+    echo  indexed using regex fallback ^(slightly less accurate^).
+    echo(
     echo  You can re-run this installer later after installing a compiler.
     echo ============================================
-    echo.
+    echo(
     pause
 ) else (
     echo [OK] Tree-sitter C/C++ parsers installed.
 )
-echo.
+echo(
 
 REM --- Optional: install dev dependencies ---
-set /p INSTALL_DEV="Install dev dependencies (pytest, black, ruff)? [y/N]: "
-if /i "%INSTALL_DEV%"=="y" (
+if "%INTERACTIVE%"=="true" (
+    set /p INSTALL_DEV_REPLY="Install dev dependencies: pytest, black, ruff? [y/N]: "
+    if /i "%INSTALL_DEV_REPLY%"=="y" set "INSTALL_DEV=true"
+)
+if "%INSTALL_DEV%"=="true" (
     echo [INFO] Installing dev dependencies...
     pip install -e ".[dev]"
     if errorlevel 1 (
@@ -137,40 +158,45 @@ if /i "%INSTALL_DEV%"=="y" (
         echo [OK] Dev dependencies installed.
     )
 )
-echo.
+echo(
 
 REM --- Optional: install extra language parsers ---
-set /p INSTALL_INDEX="Install extra language parsers (JS/Go/Rust/Java)? [y/N]: "
-if /i "%INSTALL_INDEX%"=="y" (
+if "%INTERACTIVE%"=="true" (
+    set /p INSTALL_INDEX_REPLY="Install extra language parsers: JS, Go, Rust, Java? [y/N]: "
+    if /i "%INSTALL_INDEX_REPLY%"=="y" set "INSTALL_INDEX=true"
+)
+if "%INSTALL_INDEX%"=="true" (
     echo [INFO] Installing extra language parsers...
     pip install tree-sitter-javascript tree-sitter-go tree-sitter-rust tree-sitter-java
     if errorlevel 1 (
         echo [WARN] Some language parsers failed to install.
-        echo         A C compiler may be required (see warning above).
+        echo         A C compiler may be required ^(see warning above^).
     ) else (
         echo [OK] Extra language parsers installed.
     )
 )
-echo.
+echo(
 
 REM --- Done ---
 echo ============================================
 echo  Installation Complete!
 echo ============================================
-echo.
+echo(
 echo  To use PilotCode:
 echo    1. Activate venv:    .venv\Scripts\activate
 echo    2. Configure LLM:    python -m pilotcode configure
 echo    3. Run TUI:          .\pilotcode.cmd
 echo    4. Run Web UI:       .\pilotcode.cmd --web
 echo    5. Or directly:      python -m pilotcode
-echo.
+echo(
 echo  Optional - global access without activating venv:
 echo    Add .venv\Scripts to your system PATH, then use:
 echo      pilotcode
 echo      pilotcode --web
-echo.
-echo  To install dev deps later:
-echo    .\install.cmd --dev
+echo(
+echo  Non-interactive install examples:
+echo    install.cmd --dev
+echo    install.cmd --index
+echo    install.cmd --dev --index
 echo ============================================
 pause
