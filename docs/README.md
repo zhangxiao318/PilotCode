@@ -28,20 +28,20 @@
 | [mempo-context-management.md](features/mempo-context-management.md) | MemPO 上下文管理 |
 | [error-recovery.md](features/error-recovery.md) | 错误恢复与重试 |
 | [session-management.md](features/session-management.md) | 会话管理 |
+| [unified-directory-structure.md](features/unified-directory-structure.md) | 统一目录结构 |
 
 ### 📚 [guides/](guides/) - 指南文档
-包含配置指南和使用教程。
+包含配置指南、使用教程和测试说明。
 
 | 文档 | 说明 |
 |------|------|
 | [README.md](guides/README.md) | **指南索引** |
-| [QUICKSTART.md](guides/QUICKSTART.md) | **快速开始指南** - 5分钟上手 |
-| [QUICKSTART_EN.md](guides/QUICKSTART_EN.md) | **Quick Start Guide** (English) |
 | [WINDOWS_GUIDE.md](guides/WINDOWS_GUIDE.md) | Windows 安装指南 |
 | [llm-setup.md](guides/llm-setup.md) | LLM 接口设置指南 |
 | [analyze-large-project.md](guides/analyze-large-project.md) | 大型项目代码分析指南 |
 | [development-workflow.md](guides/development-workflow.md) | 开发工作流指南 |
 | [tui-automation-testing.md](guides/tui-automation-testing.md) | TUI 自动化测试指南 |
+| [e2e-testing.md](guides/e2e-testing.md) | E2E 测试与三层诊断框架 |
 
 ### 🔧 [commands/](commands/) - 命令文档
 包含所有可用命令的详细说明。
@@ -64,12 +64,13 @@
 |------|------|
 | [README.md](plugins/README.md) | **插件系统索引** |
 
-### 🧪 [test/](test/) - 测试文档
-包含 E2E 测试说明和三层诊断框架文档。
+### 📜 [changelogs/](changelogs/) - 变更日志
+包含按日期记录的开发和版本变更。
 
 | 文档 | 说明 |
 |------|------|
-| [README.md](test/README.md) | **E2E 测试说明与三层诊断框架** |
+| [CHANGELOG.md](changelogs/CHANGELOG.md) | 开发日志总览 |
+| [daily/](changelogs/daily/) | 按日记录的详细变更 |
 
 ### 📦 [archive/](archive/) - 归档文档
 包含开发过程中的过程性文档。
@@ -89,9 +90,9 @@
 
 根目录保留了最常用的核心文档：
 
-- [**README.md**](../README.md) - 项目简介、快速开始
+- [**README.md**](../README.md) - 项目简介
 - [**README_EN.md**](../README_EN.md) - English Version
-- [**QUICKSTART.md**](../QUICKSTART.md) - 快速开始指南
+- [**QUICKSTART.md**](../QUICKSTART.md) - 快速开始指南（中文版）
 - [**QUICKSTART_EN.md**](../QUICKSTART_EN.md) - Quick Start Guide (English)
 - [**STARTUP_GUIDE.md**](../STARTUP_GUIDE.md) - 启动指南
 - [**STATUS.md**](../STATUS.md) - 项目状态
@@ -100,7 +101,7 @@
 
 ## 🔍 快速导航
 
-**新用户？** 从 [QUICKSTART.md](../QUICKSTART.md) 或 [guides/QUICKSTART.md](guides/QUICKSTART.md) 开始。
+**新用户？** 从 [QUICKSTART.md](../QUICKSTART.md) 开始。
 
 **配置 LLM？** 查看 [guides/llm-setup.md](guides/llm-setup.md) 了解如何连接各种 LLM API。
 
@@ -108,10 +109,12 @@
 
 **开发工作流？** 查看 [guides/development-workflow.md](guides/development-workflow.md) 了解 AI 辅助开发流程。
 
+**运行 E2E 测试？** 查看 [guides/e2e-testing.md](guides/e2e-testing.md) 了解三层诊断框架。
+
 **想了解功能？** 查看 [features/](features/) 目录。
 
 **查看命令？** 查看 [commands/](commands/) 目录。
 
 **查看工具？** 查看 [tools/](tools/) 目录。
 
-**运行 E2E 测试？** 查看 [test/README.md](test/README.md) 了解三层诊断框架。
+**查看变更历史？** 查看 [changelogs/CHANGELOG.md](changelogs/CHANGELOG.md)。

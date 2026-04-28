@@ -8,8 +8,8 @@
 
 | 文档 | 说明 | 推荐阅读顺序 |
 |------|------|-------------|
-| [QUICKSTART.md](./QUICKSTART.md) | 快速开始指南 - 5分钟上手 | ⭐ 第1步 |
-| [QUICKSTART_EN.md](./QUICKSTART_EN.md) | Quick Start Guide (English) | ⭐ 第1步 |
+| [QUICKSTART.md](../../QUICKSTART.md) | 快速开始指南 - 5分钟上手 | ⭐ 第1步 |
+| [QUICKSTART_EN.md](../../QUICKSTART_EN.md) | Quick Start Guide (English) | ⭐ 第1步 |
 | [WINDOWS_GUIDE.md](./WINDOWS_GUIDE.md) | Windows 系统安装指南 | ⭐ 第2步 |
 
 ---
@@ -29,6 +29,7 @@
 | [analyze-large-project.md](./analyze-large-project.md) | 大型项目代码分析指南 | 分析大型代码库、代码搜索 |
 | [development-workflow.md](./development-workflow.md) | 开发工作流指南 | AI 辅助开发、Git 集成、测试 |
 | [tui-automation-testing.md](./tui-automation-testing.md) | TUI 自动化测试指南 | TUI 界面自动化测试 |
+| [e2e-testing.md](./e2e-testing.md) | E2E 测试与三层诊断框架 | LLM 能力诊断、端到端测试 |
 
 ---
 
@@ -36,18 +37,18 @@
 
 ### 路径1：快速体验（5分钟）
 
-1. [QUICKSTART.md](./QUICKSTART.md) - 完成安装和首次运行
+1. [QUICKSTART.md](../../QUICKSTART.md) - 完成安装和首次运行
 2. 尝试与 AI 对话，体验基础功能
 
 ### 路径2：完整配置（15分钟）
 
-1. [QUICKSTART.md](./QUICKSTART.md) - 安装
+1. [QUICKSTART.md](../../QUICKSTART.md) - 安装
 2. [llm-setup.md](./llm-setup.md) - 配置 LLM 接口
 3. 开始实际项目开发
 
 ### 路径3：高效开发（30分钟）
 
-1. [QUICKSTART.md](./QUICKSTART.md) - 安装
+1. [QUICKSTART.md](../../QUICKSTART.md) - 安装
 2. [llm-setup.md](./llm-setup.md) - 配置 LLM
 3. [analyze-large-project.md](./analyze-large-project.md) - 学习代码分析
 4. [development-workflow.md](./development-workflow.md) - 掌握开发工作流
@@ -68,11 +69,16 @@ A: 查看 [development-workflow.md](./development-workflow.md) 中的 Git 集成
 **Q: Windows 上如何安装？**  
 A: 查看 [WINDOWS_GUIDE.md](./WINDOWS_GUIDE.md)。
 
+**Q: 如何运行 E2E 测试诊断 LLM 能力？**  
+A: 查看 [e2e-testing.md](./e2e-testing.md) 了解三层诊断框架。
+
 ---
 
 ## 其他资源
 
 - [架构文档](../architecture/) - 系统设计文档
+- [功能特性](../features/) - 功能详细说明
 - [命令文档](../commands/) - 所有可用命令
 - [工具文档](../tools/) - 工具详细说明
 - [插件文档](../plugins/) - 插件系统
+- [变更日志](../changelogs/) - 开发历史记录
