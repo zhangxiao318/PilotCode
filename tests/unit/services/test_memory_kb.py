@@ -132,7 +132,9 @@ class TestProjectMemoryKB:
     def test_search_basic(self, kb):
         kb.add_fact("Python is great", tags=["python"])
         kb.add_fact("JavaScript is versatile", tags=["js"])
-        kb.add_bug(symptom="Python segfault", root_cause="C extension", fix="update", tags=["python"])
+        kb.add_bug(
+            symptom="Python segfault", root_cause="C extension", fix="update", tags=["python"]
+        )
 
         results = kb.search("python")
         assert len(results) == 2
@@ -217,9 +219,13 @@ class TestProjectMemoryKB:
         kb._ensure_dir()
         path = kb._file_map["fact"]
         with path.open("w", encoding="utf-8") as f:
-            f.write('{"id": "good", "category": "fact", "timestamp": 0, "tags": [], "content": "ok"}\n')
-            f.write('bad json line\n')
-            f.write('{"id": "good2", "category": "fact", "timestamp": 0, "tags": [], "content": "ok2"}\n')
+            f.write(
+                '{"id": "good", "category": "fact", "timestamp": 0, "tags": [], "content": "ok"}\n'
+            )
+            f.write("bad json line\n")
+            f.write(
+                '{"id": "good2", "category": "fact", "timestamp": 0, "tags": [], "content": "ok2"}\n'
+            )
 
         entries = kb._load_entries("fact")
         assert len(entries) == 2

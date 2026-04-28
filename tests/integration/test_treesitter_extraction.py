@@ -11,7 +11,6 @@ from pilotcode.services.code_index import (
     _tsp_node_maps,
 )
 
-
 # Sample code snippets for various languages
 GO_CODE = """
 package main
@@ -164,7 +163,9 @@ class TestTreeSitterExtraction:
             assert "Point" in names
             assert "Drawable" in names
             # impl_item names the trait (first type_identifier), not the target type
-            impl_drawable = [s for s in symbols if s.name == "Drawable" and s.symbol_type == "class"]
+            impl_drawable = [
+                s for s in symbols if s.name == "Drawable" and s.symbol_type == "class"
+            ]
             assert len(impl_drawable) >= 1
         finally:
             Path(temp_path).unlink()
@@ -276,6 +277,7 @@ class TestTreeSitterExtraction:
     def test_get_tsp_parser_none_when_import_fails(self, indexer, monkeypatch):
         """If tree-sitter module import fails, return None."""
         from pilotcode.services import code_index as ci_mod
+
         # Clear cache so _get_tsp_parser tries to import again
         ci_mod._tsp_parsers.clear()
         # Patch __import__ in the module's builtins namespace
@@ -315,6 +317,7 @@ def standalone():
             assert "standalone" in names
             # Python uses regex, so no parser needed
             from pilotcode.services.code_index import _tsp_parsers
+
             # go parser may have been cached by other tests; just ensure no python parser
             assert "python" not in _tsp_parsers
         finally:
@@ -361,6 +364,7 @@ class TestSymbolBuckets:
     def test_search_symbols_exact_match(self):
         """Exact name search uses bucket for O(1) lookup."""
         from pilotcode.services.code_index import Symbol
+
         indexer = CodeIndexer()
         indexer._index.symbols_by_name = {
             "Target": [
@@ -381,6 +385,7 @@ class TestSymbolBuckets:
     def test_search_symbols_file_path_match(self):
         """File path queries use symbols_by_file bucket."""
         from pilotcode.services.code_index import Symbol
+
         indexer = CodeIndexer()
         sym = Symbol("foo", "function", "src/core.py", 1, 0)
         indexer._index.symbols_by_file = {"src/core.py": [sym]}

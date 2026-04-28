@@ -79,7 +79,8 @@ class TestIncrementalIndexingFixes:
         await indexer.index_codebase(incremental=False)
         # Embedding service should have vectors for module.py
         vectors_before = [
-            v for v in indexer.embedding_service.vector_store.vectors.values()
+            v
+            for v in indexer.embedding_service.vector_store.vectors.values()
             if v.metadata.get("file_path") == str(file_path)
         ]
         assert len(vectors_before) > 0
@@ -90,7 +91,8 @@ class TestIncrementalIndexingFixes:
 
         # Old vectors should be gone, new ones present
         vectors_after = [
-            v for v in indexer.embedding_service.vector_store.vectors.values()
+            v
+            for v in indexer.embedding_service.vector_store.vectors.values()
             if v.metadata.get("file_path") == str(file_path)
         ]
         assert len(vectors_after) > 0
@@ -173,7 +175,10 @@ class TestIncrementalIndexingFixes:
         # Init git repo
         subprocess.run(["git", "init"], cwd=temp_dir, capture_output=True, check=True)
         subprocess.run(
-            ["git", "config", "user.email", "t@t.com"], cwd=temp_dir, capture_output=True, check=True
+            ["git", "config", "user.email", "t@t.com"],
+            cwd=temp_dir,
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "T"], cwd=temp_dir, capture_output=True, check=True
@@ -187,7 +192,9 @@ class TestIncrementalIndexingFixes:
         )
 
         indexer = CodebaseIndexer(temp_dir)
-        indexer.IGNORE_DIRS = {d for d in indexer.IGNORE_DIRS if d not in ("tmp", "temp", "_tmp", "_temp")}
+        indexer.IGNORE_DIRS = {
+            d for d in indexer.IGNORE_DIRS if d not in ("tmp", "temp", "_tmp", "_temp")
+        }
         files = indexer._find_source_files()
         names = {f.name for f in files}
         assert "tracked.py" in names
@@ -200,7 +207,9 @@ class TestIncrementalIndexingFixes:
         (temp_dir / "b.js").write_text("//\n")
 
         indexer = CodebaseIndexer(temp_dir)
-        indexer.IGNORE_DIRS = {d for d in indexer.IGNORE_DIRS if d not in ("tmp", "temp", "_tmp", "_temp")}
+        indexer.IGNORE_DIRS = {
+            d for d in indexer.IGNORE_DIRS if d not in ("tmp", "temp", "_tmp", "_temp")
+        }
         files = indexer._find_source_files()
         names = {f.name for f in files}
         assert "a.py" in names
@@ -213,7 +222,9 @@ class TestIncrementalIndexingFixes:
     def test_should_ignore_build_artifacts(self, temp_dir):
         indexer = CodebaseIndexer(temp_dir)
         # test files live under tests/tmp which is in IGNORE_DIRS; remove it for this test
-        indexer.IGNORE_DIRS = {d for d in indexer.IGNORE_DIRS if d not in ("tmp", "temp", "_tmp", "_temp")}
+        indexer.IGNORE_DIRS = {
+            d for d in indexer.IGNORE_DIRS if d not in ("tmp", "temp", "_tmp", "_temp")
+        }
         assert indexer._should_ignore(temp_dir / "node_modules" / "x.js") is True
         assert indexer._should_ignore(temp_dir / "build" / "out.o") is True
         # Create the file so it exists (otherwise _should_ignore returns True on OSError)
@@ -264,8 +275,7 @@ class TestIncrementalIndexingFixes:
         context = await indexer.build_context("asyncio patterns")
         # Memory snippet should be present with high relevance
         assert any(
-            "asyncio" in s.content.lower() and s.relevance_score >= 0.9
-            for s in context.snippets
+            "asyncio" in s.content.lower() and s.relevance_score >= 0.9 for s in context.snippets
         )
 
     def test_list_subgraphs(self, indexer, temp_dir):

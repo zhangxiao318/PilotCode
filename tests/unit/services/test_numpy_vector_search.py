@@ -17,9 +17,15 @@ class TestDeleteByFilePath:
 
     def test_delete_by_file_path_removes_matching(self):
         store = VectorStore(persist=False)
-        store.add(EmbeddingVector(id="v1", text="a", vector=[1.0, 0.0], metadata={"file_path": "/a.py"}))
-        store.add(EmbeddingVector(id="v2", text="b", vector=[0.0, 1.0], metadata={"file_path": "/b.py"}))
-        store.add(EmbeddingVector(id="v3", text="c", vector=[1.0, 1.0], metadata={"file_path": "/a.py"}))
+        store.add(
+            EmbeddingVector(id="v1", text="a", vector=[1.0, 0.0], metadata={"file_path": "/a.py"})
+        )
+        store.add(
+            EmbeddingVector(id="v2", text="b", vector=[0.0, 1.0], metadata={"file_path": "/b.py"})
+        )
+        store.add(
+            EmbeddingVector(id="v3", text="c", vector=[1.0, 1.0], metadata={"file_path": "/a.py"})
+        )
 
         deleted = store.delete_by_file_path("/a.py")
         assert deleted == 2
