@@ -22,13 +22,13 @@
 |------|------|
 | [README.md](features/README.md) | **功能特性索引** |
 | [agent-system.md](features/agent-system.md) | Agent 编排系统 |
-| [code-indexing.md](features/code-indexing.md) | 代码索引与搜索 |
+| [codebase-intelligence.md](features/codebase-intelligence.md) | 代码智能：索引、搜索与记忆 |
 | [hook-system.md](features/hook-system.md) | Hook 扩展系统 |
-| [context-compaction.md](features/context-compaction.md) | 智能上下文压缩 |
-| [mempo-context-management.md](features/mempo-context-management.md) | MemPO 上下文管理 |
+| [context-management.md](features/context-management.md) | 上下文管理 |
+
 | [error-recovery.md](features/error-recovery.md) | 错误恢复与重试 |
 | [session-management.md](features/session-management.md) | 会话管理 |
-| [unified-directory-structure.md](features/unified-directory-structure.md) | 统一目录结构 |
+| [unified-directory-structure.md](../guides/unified-directory-structure.md) | 统一目录结构 |
 
 ### 📚 [guides/](guides/) - 指南文档
 包含配置指南、使用教程和测试说明。

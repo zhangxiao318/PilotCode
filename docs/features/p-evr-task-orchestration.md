@@ -637,7 +637,7 @@ print(report.summary())
 
 ## 十四、参考
 
-- **模型能力自适应文档**: `docs/features/model_capability_adaptation.md`
+- **模型能力自适应文档**: `docs/features/weak-model-compensation.md`
 - **P-EVR 架构设计文档**: `~/tmp/P-EVR-Architecture.md`
 - **E2E 测试框架**: `tests/e2e/model_capability/` — LLM 能力评估与框架修复验证
 - **Context Strategy 实验**: `tests/orchestration/experiment_results.json`

@@ -243,4 +243,4 @@ pilotcode
 ## 相关文档
 
 - [会话命令](../commands/session.md) — 用户可见的命令参考
-- [智能上下文压缩](./context-compaction.md) — auto_compact 机制
+- [上下文管理](./context-management.md) — auto_compact 机制

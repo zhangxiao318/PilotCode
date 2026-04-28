@@ -9,55 +9,46 @@
 | 特性 | 说明 | 完成度 |
 |------|------|--------|
 | **Agent 系统** | 多代理协作编排 | ✅ 完整 |
-| **代码索引与搜索** | 语义/符号/正则搜索 | ✅ 完整 |
+| **代码智能** | 代码索引、语义/符号搜索、项目记忆 | ✅ 完整 |
 | **Hook 系统** | 生命周期事件扩展 | ✅ 核心 |
-| **智能上下文压缩** | Token 管理与压缩 | ✅ 完整 |
-| **自动审查与测试** | 编码后自动 Review + 测试 + 修复 | ✅ 完整 |
-| **错误恢复与重试** | 容错与降级 | ✅ 完整 |
-| **会话管理** | 对话持久化与恢复 | ✅ 完整 |
+| **上下文管理** | Token 监控、智能压缩、MemPO 记忆 | ✅ 完整 |
 | **P-EVR 任务编排** | Plan-Execute-Verify-Reflect 闭环 | ✅ 核心骨架 |
-| **弱模型代偿模式** | 框架级多维补偿引擎（Qwen3-Coder-30B 实测有效） | ✅ 完整 |
+| **弱模型代偿** | 框架级多维补偿引擎（Qwen3-Coder-30B 实测有效） | ✅ 完整 |
+| **错误恢复** | 容错与降级 | ✅ 完整 |
+| **会话管理** | 对话持久化与恢复 | ✅ 完整 |
 
 ---
 
 ## 特性文档
 
-### AI 协作
+### AI 协作与编排
 
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
 | [agent-system.md](./agent-system.md) | Agent 编排系统 | 复杂任务分解、多代理协作 |
-| [p-evr-task-orchestration.md](./p-evr-task-orchestration.md) | P-EVR 任务编排 | 结构化任务分解、DAG执行、三级验证 |
+| [p-evr-task-orchestration.md](./p-evr-task-orchestration.md) | P-EVR 任务编排 | 结构化任务分解、DAG 执行、三级验证 |
 | [hook-system.md](./hook-system.md) | 生命周期 Hook | 扩展系统行为、自定义验证 |
 
 ### 代码智能
 
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
-| [code-indexing.md](./code-indexing.md) | 代码索引与搜索 | 大型项目分析、代码查找 |
+| [codebase-intelligence.md](./codebase-intelligence.md) | 代码智能：索引、搜索与记忆 | 大型项目分析、代码查找、项目知识沉淀 |
 
-### 模型与配置
-
-| 文档 | 说明 | 适用场景 |
-|------|------|----------|
-| [model-configuration.md](./model-configuration.md) | 模型配置与能力验证 | 自定义模型、本地模型部署、参数调优 |
-| [model_capability_adaptation.md](./model_capability_adaptation.md) | 模型能力自适应 + 弱模型多维代偿 | 本地弱模型（7B-30B）、自托管模型、能力评估 |
-
-### 系统稳定性
+### 上下文与稳定性
 
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
-| [context-management.md](./context-management.md) | 上下文窗口管理 | Token 监控、自动/手动压缩、状态查看 |
-| [context-compaction.md](./context-compaction.md) | 智能上下文压缩 | 压缩算法与策略 |
-| [mempo-context-management.md](./mempo-context-management.md) | MemPO 上下文管理 | 基于 MemPO 论文的智能记忆管理 |
+| [context-management.md](./context-management.md) | 上下文管理 | Token 监控、自动/手动压缩、MemPO 记忆 |
 | [error-recovery.md](./error-recovery.md) | 错误恢复与重试 | 网络不稳定、API 限流 |
 | [session-management.md](./session-management.md) | 会话管理 | 多项目管理、历史恢复 |
 
-### 基础设施
+### 模型系统
 
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
-| [unified-directory-structure.md](./unified-directory-structure.md) | 统一目录结构 | 数据备份、迁移、路径管理 |
+| [model-system.md](./model-system.md) | 模型系统：配置与探测 | 自定义模型、本地模型部署、参数调优 |
+| [weak-model-compensation.md](./weak-model-compensation.md) | 弱模型多维代偿 | 本地弱模型（7B-30B）、自托管模型、能力评估 |
 
 ---
 
@@ -65,12 +56,12 @@
 
 **开发者？**
 - 了解 [Agent 系统](./agent-system.md) 如何组织多代理协作
-- 学习 [代码索引](./code-indexing.md) 如何加速代码理解
+- 学习 [代码智能](./codebase-intelligence.md) 如何加速代码理解
 
 **运维关注？**
 - 查看 [错误恢复](./error-recovery.md) 的容错机制
-- 了解 [上下文压缩](./context-compaction.md) 的成本控制
-- 配置 [模型参数](./model-configuration.md) 与本地模型探测
+- 了解 [上下文管理](./context-management.md) 的成本控制
+- 配置 [模型系统](./model-system.md) 与本地模型探测
 
 **日常使用？**
 - 掌握 [会话管理](./session-management.md) 提高工作效率
@@ -88,16 +79,7 @@
 | **上下文压缩** | 3级智能 | 基础 | 基础 | ❌ |
 | **错误恢复** | 完整 | 基础 | 基础 | ❌ |
 | **会话管理** | 项目级 | 基础 | 基础 | ❌ |
-
----
-
-## 开发归档
-
-以下文档是开发过程中的过程性记录，已归档：
-
-- [FEATURE_LIST.md](../archive/FEATURE_LIST.md) - 详细功能清单
-- [FEATURE_AUDIT.md](../archive/FEATURE_AUDIT.md) - 功能审计报告
-- [MISSING_FEATURES.md](../archive/MISSING_FEATURES.md) - 缺失功能分析
+| **弱模型代偿** | 多维补偿 | ❌ | ❌ | ❌ |
 
 ---
 
@@ -106,3 +88,4 @@
 - [架构设计](../architecture/ARCHITECTURE.md) - 系统架构
 - [使用指南](../guides/README.md) - 用户指南
 - [命令参考](../commands/README.md) - 命令文档
+- [变更日志](../changelogs/CHANGELOG.md) - 开发历史

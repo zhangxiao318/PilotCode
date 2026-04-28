@@ -124,5 +124,5 @@ rm -rf ~/.pilotcode/cache/*
 ## 相关文档
 
 - [会话管理](./session-management.md) — 会话数据的存储格式和自动保存机制
-- [代码索引](./code-indexing.md) — 索引缓存的存储位置和增量更新策略
-- [模型配置](./model-configuration.md) — 配置文件的层级和加载优先级
+- [代码智能](../features/codebase-intelligence.md) — 索引缓存的存储位置和增量更新策略
+- [模型系统](../features/model-system.md) — 配置文件的层级和加载优先级

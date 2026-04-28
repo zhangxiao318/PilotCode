@@ -30,6 +30,8 @@
 | [development-workflow.md](./development-workflow.md) | 开发工作流指南 | AI 辅助开发、Git 集成、测试 |
 | [tui-automation-testing.md](./tui-automation-testing.md) | TUI 自动化测试指南 | TUI 界面自动化测试 |
 | [e2e-testing.md](./e2e-testing.md) | E2E 测试与三层诊断框架 | LLM 能力诊断、端到端测试 |
+| [unified-directory-structure.md](./unified-directory-structure.md) | 统一目录结构 | 数据备份、迁移、路径管理 |
+| [adding-knowhow-rules.md](./adding-knowhow-rules.md) | 为模型添加 KnowHow 规则 | 弱模型缺陷模式跟踪 |
 
 ---
 

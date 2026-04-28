@@ -22,13 +22,13 @@ Feature introductions and usage guides.
 |----------|-------------|
 | [README.md](features/README.md) | **Feature index** |
 | [agent-system.md](features/agent-system.md) | Agent orchestration system |
-| [code-indexing.md](features/code-indexing.md) | Code indexing and search |
+| [codebase-intelligence.md](features/codebase-intelligence.md) | Code intelligence: indexing, search & memory |
 | [hook-system.md](features/hook-system.md) | Hook extension system |
-| [context-compaction.md](features/context-compaction.md) | Intelligent context compaction |
-| [mempo-context-management.md](features/mempo-context-management.md) | MemPO context management |
+| [context-management.md](features/context-management.md) | Context management |
+
 | [error-recovery.md](features/error-recovery.md) | Error recovery and retry |
 | [session-management.md](features/session-management.md) | Session management |
-| [unified-directory-structure.md](features/unified-directory-structure.md) | Unified directory layout |
+| [unified-directory-structure.md](../guides/unified-directory-structure.md) | Unified directory layout |
 
 ### 📚 [guides/](guides/) - Guides
 Configuration guides, tutorials, and testing docs.

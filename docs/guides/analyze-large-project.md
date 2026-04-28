@@ -530,7 +530,7 @@ CodeContext(query="...", subgraph="src/small_module", max_tokens=2000)
 
 ## 相关文档
 
-- [代码索引与搜索功能](../features/code-indexing.md)
+- [代码索引与搜索功能](../features/codebase-intelligence.md)
 - [代码索引工具文档](../tools/code_index_tool.md)
 - [代码搜索工具文档](../tools/code_search_tool.md)
 - [代码上下文工具文档](../tools/code_context_tool.md)

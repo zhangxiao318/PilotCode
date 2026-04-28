@@ -1,4 +1,4 @@
-# 面向不同能力模型的自适应设计（Model Capability Adaptation）
+# 弱模型多维代偿
 
 ## 概述
 

@@ -21,7 +21,7 @@ PilotCode 不仅是代码助手，更是完整的开发环境，支持：
 1. 需求理解 → 2. 设计讨论 → 3. 编码实现 → 4. 自动审查与测试 → 5. 代码提交
 ```
 
-> **自动审查**：启用 `auto_review=true` 后，编码完成后系统会自动 Review 变更、运行相关测试，并在测试失败时自动生成修复指令。详见 [模型配置](../features/model-configuration.md)。
+> **自动审查**：启用 `auto_review=true` 后，编码完成后系统会自动 Review 变更、运行相关测试，并在测试失败时自动生成修复指令。详见 [模型配置](../features/model-system.md)。
 
 ---
 
