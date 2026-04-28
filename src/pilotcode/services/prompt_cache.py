@@ -20,10 +20,9 @@ import json
 import gzip
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Optional
 from collections import OrderedDict
-from platformdirs import user_data_dir
+from ..utils.paths import get_prompt_cache_dir
 
 
 @dataclass
@@ -137,7 +136,7 @@ class PromptCache:
 
         # Disk storage
         if persist:
-            self._cache_dir = Path(user_data_dir("pilotcode", "pilotcode")) / "prompt_cache"
+            self._cache_dir = get_prompt_cache_dir()
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             self._load_from_disk()
 

@@ -714,7 +714,9 @@ def config(
 
             cap = asyncio.run(evaluate_model(model_name))
 
-            save_path = Path.home() / ".pilotcode" / "model_capability.json"
+            from pilotcode.utils.paths import get_model_capability_path
+
+            save_path = get_model_capability_path()
             save_capability(cap, str(save_path))
             # Also try cwd
             try:

@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 from collections import OrderedDict
-from platformdirs import user_data_dir
+from ..utils.paths import get_embeddings_dir
 import math
 
 # Try to import httpx for API calls
@@ -207,7 +207,7 @@ class VectorStore:
         self._ids: list[str] = []
 
         if persist:
-            self._store_dir = Path(user_data_dir("pilotcode", "pilotcode")) / "embeddings"
+            self._store_dir = get_embeddings_dir()
             self._store_dir.mkdir(parents=True, exist_ok=True)
             self._load_from_disk()
             if HAS_NUMPY:

@@ -14,8 +14,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from platformdirs import user_data_dir
-
+from ..utils.paths import get_sessions_dir
 from ..types.message import (
     Message,
     UserMessage,
@@ -48,7 +47,7 @@ class SessionMetadata:
 class SessionPersistence:
     """Manages session persistence with incremental JSON Lines storage."""
 
-    DATA_DIR = Path(user_data_dir("pilotcode", "pilotcode")) / "sessions"
+    DATA_DIR = get_sessions_dir()
 
     # Segment thresholds
     SEGMENT_MAX_MESSAGES = 50

@@ -14,7 +14,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from platformdirs import user_config_dir
+from ..utils.paths import get_config_dir
 
 from .mcp_client import MCPConfig
 
@@ -52,7 +52,7 @@ class MCPConfigManager:
     PROJECT_CONFIG_FILENAME = ".pilotcode.json"
 
     def __init__(self):
-        self._config_dir = Path(user_config_dir("pilotcode", "pilotcode"))
+        self._config_dir = get_config_dir()
         self._global_config_file = self._config_dir / "settings.json"
 
     def _get_cwd(self) -> Path:

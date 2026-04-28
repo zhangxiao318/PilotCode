@@ -342,10 +342,9 @@ class AgentManager:
         if storage_dir:
             self.storage_dir = Path(storage_dir)
         else:
-            from platformdirs import user_data_dir
+            from pilotcode.utils.paths import get_agents_dir
 
-            app_dir = Path(user_data_dir("pilotcode"))
-            self.storage_dir = app_dir / "agents"
+            self.storage_dir = get_agents_dir()
 
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 

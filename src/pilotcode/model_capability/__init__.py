@@ -118,9 +118,11 @@ def load_capability(path: str | None = None) -> ModelCapability:
     path = path or DEFAULT_CAPABILITY_PATH
 
     # Try multiple locations
+    from pilotcode.utils.paths import get_config_dir
+
     candidates = [
         Path(path),
-        Path.home() / ".pilotcode" / path,
+        get_config_dir() / path,
         Path.cwd() / ".pilotcode" / path,
     ]
 

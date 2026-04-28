@@ -33,7 +33,7 @@ echo "Installing dependencies..."
 pip install -r requirements.txt
 
 # Copy default knowhow templates to user config directory
-KNOWHOW_DIR="$HOME/.pilotcode/knowhow"
+KNOWHOW_DIR="$HOME/.pilotcode/data/knowhow"
 if [ ! -d "$KNOWHOW_DIR" ]; then
     echo "Copying default knowhow templates..."
     mkdir -p "$KNOWHOW_DIR"

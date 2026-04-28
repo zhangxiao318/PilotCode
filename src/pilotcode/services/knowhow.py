@@ -259,8 +259,10 @@ _BUILTIN_KNOWHOW: list[KnowhowEntry] = [
 
 
 def _get_knowhow_dir() -> Path:
-    """Return the knowhow directory (~/.pilotcode/knowhow)."""
-    return Path.home() / ".pilotcode" / "knowhow"
+    """Return the knowhow directory."""
+    from ..utils.paths import get_knowhow_dir
+
+    return get_knowhow_dir()
 
 
 def _get_builtin_knowhow_dir() -> Path | None:

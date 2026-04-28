@@ -92,7 +92,9 @@ class UpdateChecker:
 
         # Cache for check results
         if cache_dir is None:
-            cache_dir = Path.home() / ".cache" / "pilotcode"
+            from ..utils.paths import get_cache_dir
+
+            cache_dir = get_cache_dir()
         self._cache_dir = cache_dir
         self._cache_file = self._cache_dir / "update_check.json"
 

@@ -266,10 +266,16 @@ async def edit_file_content(
             file_path=str(path), replacements_made=0, error=f"File not found: {file_path}"
         )
 
-    # Create backup before editing
+    # Create backup before editing (in project .pilotcode/backups/ or fallback to sibling)
     backup_path = None
     try:
-        backup_path = path.with_suffix(path.suffix + ".pilotcode.bak")
+        from pilotcode.utils.paths import get_project_backups_dir
+
+        if cwd:
+            backup_dir = get_project_backups_dir(cwd)
+            backup_path = backup_dir / path.name
+        else:
+            backup_path = path.with_suffix(path.suffix + ".pilotcode.bak")
         shutil.copy2(path, backup_path)
     except Exception as e:
         return FileEditOutput(

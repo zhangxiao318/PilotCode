@@ -60,7 +60,9 @@ class FrecencyHistory:
         max_entries: int = 1000,
         max_suggestions: int = 10,
     ):
-        self.storage_file = storage_file or Path.home() / ".pilotcode" / "input_history.json"
+        from pilotcode.utils.paths import get_input_history_path
+
+        self.storage_file = storage_file or get_input_history_path()
         self.storage_file.parent.mkdir(parents=True, exist_ok=True)
         self.max_entries = max_entries
         self.max_suggestions = max_suggestions
@@ -239,7 +241,9 @@ class FrecencyInputHistory:
     """
 
     def __init__(self, storage_dir: Optional[Path] = None):
-        self.storage_dir = storage_dir or Path.home() / ".pilotcode"
+        from pilotcode.utils.paths import get_data_dir
+
+        self.storage_dir = storage_dir or get_data_dir()
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         self.general = FrecencyHistory(self.storage_dir / "history_general.json")

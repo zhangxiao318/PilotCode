@@ -206,7 +206,9 @@ class ThemeManager:
     """
 
     def __init__(self, storage_dir: Optional[Path] = None):
-        self.storage_dir = storage_dir or Path.home() / ".pilotcode"
+        from pilotcode.utils.paths import get_themes_dir
+
+        self.storage_dir = storage_dir or get_themes_dir()
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.themes_file = self.storage_dir / "custom_themes.json"
         self.config_file = self.storage_dir / "theme_config.json"

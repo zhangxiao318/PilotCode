@@ -2049,7 +2049,9 @@ def _extract_discoveries_from_messages(messages: list[dict[str, Any]]) -> str:
 
 def _get_plan_cache_path(cwd: str) -> str:
     """Return external cache path for persisting plans outside the git workspace."""
-    cache_dir = Path.home() / ".cache" / "pilotcode" / "plans"
+    from pilotcode.utils.paths import get_plans_cache_dir
+
+    cache_dir = get_plans_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_key = hashlib.md5(cwd.encode()).hexdigest()[:16]
     return str(cache_dir / f"{cache_key}.json")

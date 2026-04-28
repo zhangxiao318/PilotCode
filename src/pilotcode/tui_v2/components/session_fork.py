@@ -32,7 +32,9 @@ class SessionForkManager:
     """
 
     def __init__(self, storage_dir: Optional[Path] = None):
-        self.storage_dir = storage_dir or Path.home() / ".pilotcode" / "sessions"
+        from pilotcode.utils.paths import get_data_dir
+
+        self.storage_dir = storage_dir or get_data_dir() / "sessions"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self._forks: Dict[str, List[Dict[str, Any]]] = {}  # parent_id -> list of forks
         self._load_forks()
