@@ -4,12 +4,31 @@
 
 set -e
 
+show_help() {
+    cat << 'EOF'
+Usage: ./install.sh [options]
+
+Options:
+  --dev       Install development dependencies (pytest, black, ruff)
+  --index     Install extra language parsers (JS, Go, Rust, Java)
+  --help      Show this help message
+
+Examples:
+  ./install.sh                    Interactive install
+  ./install.sh --dev              Install with dev tools
+  ./install.sh --index            Install with extra language parsers
+  ./install.sh --dev --index      Install everything
+EOF
+}
+
 DEV_MODE=false
 INDEX_MODE=false
 for arg in "$@"; do
     case "$arg" in
         --dev) DEV_MODE=true ;;
         --index) INDEX_MODE=true ;;
+        --help|-h) show_help; exit 0 ;;
+        --*) echo "[ERROR] Unknown option: $arg"; show_help; exit 1 ;;
     esac
 done
 

@@ -3,11 +3,19 @@ REM PilotCode Windows Installation Script
 
 setlocal EnableDelayedExpansion
 
+REM --- Show help ---
+if "%~1"=="--help" goto show_help
+if "%~1"=="/help" goto show_help
+if "%~1"=="/h" goto show_help
+if "%~1"=="-h" goto show_help
+if "%~1"=="/?" goto show_help
+
 REM Parse command-line flags first
 set "INSTALL_DEV=false"
 set "INSTALL_INDEX=false"
 set "INTERACTIVE=true"
 :parse_args
+if "%~1"=="" goto args_done
 if "%~1"=="--dev" (
     set "INSTALL_DEV=true"
     set "INTERACTIVE=false"
@@ -20,11 +28,31 @@ if "%~1"=="--index" (
     shift
     goto parse_args
 )
+echo [ERROR] Unknown option: %~1
+echo(
+goto show_help
 
+:show_help
+echo Usage: install.cmd [options]
+echo(
+echo Options:
+echo   --dev       Install development dependencies ^(pytest, black, ruff^)
+echo   --index     Install extra language parsers ^(JS, Go, Rust, Java^)
+echo   --help      Show this help message
+echo(
+echo Examples:
+echo   install.cmd                    Interactive install
+echo   install.cmd --dev              Install with dev tools
+echo   install.cmd --index            Install with extra language parsers
+echo   install.cmd --dev --index      Install everything
+echo(
+exit /b 0
+
+:args_done
 echo ============================================
 echo  PilotCode Windows Installer
 echo ============================================
-echo.
+echo(
 
 REM --- Check Python version ---
 python --version >nul 2>&1
