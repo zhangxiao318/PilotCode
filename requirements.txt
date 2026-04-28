@@ -57,9 +57,12 @@ tree-sitter>=0.20.0
 tree-sitter-c>=0.20.0
 tree-sitter-cpp>=0.20.0
 
-# pytest for L2 code verification (used at runtime, not just dev)
+# Runtime code quality tools (used by /format, /lint, L2/L3 verifiers)
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
+black>=24.0.0
+ruff>=0.4.0
+mypy>=1.10.0
 
 # Optional tree-sitter languages (install separately if needed):
 # tree-sitter-javascript>=0.20.0

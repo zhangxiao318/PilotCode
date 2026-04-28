@@ -36,7 +36,7 @@ goto show_help
 echo Usage: install.cmd [options]
 echo(
 echo Options:
-echo   --dev       Install development tools ^(black, ruff, mypy^)
+echo   --dev       Install dev-only tools ^(pytest-cov, respx, pre-commit^)
 echo   --index     Install extra language parsers ^(JS, Go, Rust, Java^)
 echo   --help      Show this help message
 echo(

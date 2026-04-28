@@ -30,9 +30,12 @@ dependencies = [
     "tree-sitter>=0.20.0",
     "tree-sitter-c>=0.20.0",
     "tree-sitter-cpp>=0.20.0",
-    # pytest for L2 code verification (not just dev)
+    # Runtime code quality tools (used by /format, /lint, and L3 verifier)
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
 ]
 
 [project.optional-dependencies]
@@ -53,9 +56,6 @@ index = [
 dev = [
     "pytest-cov>=5.0.0",
     "respx>=0.21.0",
-    "black>=24.0.0",
-    "ruff>=0.4.0",
-    "mypy>=1.10.0",
     "pre-commit>=3.7.0",
 ]
 
