@@ -1,0 +1,21 @@
+task_name: "Redpanda Task 2: Simple Python Edit"
+description: "Add --version argument to dev_cluster.py"
+checks:
+  - name: syntax
+    type: syntax
+    file: tools/dev_cluster.py
+
+  - name: version_argument
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: '--version'
+
+  - name: version_action
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: 'action="version"'
+
+  - name: version_string
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: 'version="dev_cluster.py version 1.0"'

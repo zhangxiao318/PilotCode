@@ -1,0 +1,10 @@
+【任务1：C++代码分析】
+
+请分析 src/v/cloud_io/cache_probe.cc 文件：
+
+1. 说明 `cache_probe` 类的主要功能和用途
+2. 列出它注册了哪些 metrics（指标），分别是什么类型（counter/gauge）
+3. 解释私有 metrics（_metrics）和公共 metrics（_public_metrics）的区别
+4. 指出哪些 metrics 只在 shard 0 上维护，为什么
+
+请给出清晰的分析结果，不需要修改任何代码。
