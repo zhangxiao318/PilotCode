@@ -8,9 +8,7 @@
 
 | 特性 | 说明 | 完成度 |
 |------|------|--------|
-| **Agent 系统** | 多代理协作编排 | ✅ 完整 |
 | **代码智能** | 代码索引、语义/符号搜索、项目记忆 | ✅ 完整 |
-| **Hook 系统** | 生命周期事件扩展 | ✅ 核心 |
 | **上下文管理** | Token 监控、智能压缩、MemPO 记忆 | ✅ 完整 |
 | **P-EVR 任务编排** | Plan-Execute-Verify-Reflect 闭环 | ✅ 核心骨架 |
 | **弱模型代偿** | 框架级多维补偿引擎（Qwen3-Coder-30B 实测有效） | ✅ 完整 |
@@ -20,14 +18,6 @@
 ---
 
 ## 特性文档
-
-### AI 协作与编排
-
-| 文档 | 说明 | 适用场景 |
-|------|------|----------|
-| [agent-system.md](./agent-system.md) | Agent 编排系统 | 复杂任务分解、多代理协作 |
-| [p-evr-task-orchestration.md](./p-evr-task-orchestration.md) | P-EVR 任务编排 | 结构化任务分解、DAG 执行、三级验证 |
-| [hook-system.md](./hook-system.md) | 生命周期 Hook | 扩展系统行为、自定义验证 |
 
 ### 代码智能
 
@@ -50,13 +40,19 @@
 | [model-system.md](./model-system.md) | 模型系统：配置与探测 | 自定义模型、本地模型部署、参数调优 |
 | [weak-model-compensation.md](./weak-model-compensation.md) | 弱模型多维代偿 | 本地弱模型（7B-30B）、自托管模型、能力评估 |
 
+### 任务编排
+
+| 文档 | 说明 | 适用场景 |
+|------|------|----------|
+| [p-evr-task-orchestration.md](./p-evr-task-orchestration.md) | P-EVR 任务编排 | 结构化任务分解、DAG 执行、三级验证 |
+
 ---
 
 ## 快速导航
 
 **开发者？**
-- 了解 [Agent 系统](./agent-system.md) 如何组织多代理协作
 - 学习 [代码智能](./codebase-intelligence.md) 如何加速代码理解
+- 了解 [P-EVR 任务编排](./p-evr-task-orchestration.md) 的闭环工作流
 
 **运维关注？**
 - 查看 [错误恢复](./error-recovery.md) 的容错机制
@@ -65,7 +61,6 @@
 
 **日常使用？**
 - 掌握 [会话管理](./session-management.md) 提高工作效率
-- 使用 [Hook 系统](./hook-system.md) 定制工作流
 
 ---
 
@@ -73,9 +68,7 @@
 
 | 特性类别 | PilotCode | Claude Code | Cursor | Copilot |
 |---------|-----------|-------------|--------|---------|
-| **Agent 编排** | 4种模式 | 基础 | 有限 | ❌ |
 | **代码索引** | 本地 + 语义 | 本地 | 云端 | 云端 |
-| **Hook 扩展** | ✅ | ✅ | ❌ | ❌ |
 | **上下文压缩** | 3级智能 | 基础 | 基础 | ❌ |
 | **错误恢复** | 完整 | 基础 | 基础 | ❌ |
 | **会话管理** | 项目级 | 基础 | 基础 | ❌ |
@@ -85,7 +78,7 @@
 
 ## 相关文档
 
-- [架构设计](../architecture/ARCHITECTURE.md) - 系统架构
+- [架构设计](../architecture/ARCHITECTURE.md) - 系统架构（含 Agent 系统、Hook 系统）
 - [使用指南](../guides/README.md) - 用户指南
 - [命令参考](../commands/README.md) - 命令文档
 - [变更日志](../changelogs/CHANGELOG.md) - 开发历史

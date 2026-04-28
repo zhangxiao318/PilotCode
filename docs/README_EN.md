@@ -12,6 +12,8 @@ System architecture design, analysis, and evolution documents.
 | Document | Description |
 |----------|-------------|
 | [ARCHITECTURE.md](architecture/ARCHITECTURE.md) | System architecture overview |
+| [agent-system.md](architecture/agent-system.md) | Agent orchestration system |
+| [hook-system.md](architecture/hook-system.md) | Hook extension system |
 | [tools-commands-plugins.md](architecture/tools-commands-plugins.md) | Tools/Commands/Plugins comparison |
 
 ### ✨ [features/](features/) - Features
@@ -21,9 +23,7 @@ Feature introductions and usage guides.
 | Document | Description |
 |----------|-------------|
 | [README.md](features/README.md) | **Feature index** |
-| [agent-system.md](features/agent-system.md) | Agent orchestration system |
 | [codebase-intelligence.md](features/codebase-intelligence.md) | Code intelligence: indexing, search & memory |
-| [hook-system.md](features/hook-system.md) | Hook extension system |
 | [context-management.md](features/context-management.md) | Context management |
 
 | [error-recovery.md](features/error-recovery.md) | Error recovery and retry |

@@ -388,4 +388,4 @@ LONG_OPS_TIMEOUT = 120.0      # 长时间操作（如代码生成）
 ## 相关文档
 
 - [诊断命令](../commands/doctor.md)
-- [Hook 系统](./hook-system.md)
+- [Hook 系统](../architecture/hook-system.md)

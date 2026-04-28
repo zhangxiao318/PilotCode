@@ -12,6 +12,8 @@
 | 文档 | 说明 |
 |------|------|
 | [ARCHITECTURE.md](architecture/ARCHITECTURE.md) | 系统架构总览 |
+| [agent-system.md](architecture/agent-system.md) | Agent 编排系统 |
+| [hook-system.md](architecture/hook-system.md) | Hook 扩展系统 |
 | [tools-commands-plugins.md](architecture/tools-commands-plugins.md) | Tools/Commands/Plugins 对比分析 |
 
 ### ✨ [features/](features/) - 功能文档
@@ -21,9 +23,7 @@
 | 文档 | 说明 |
 |------|------|
 | [README.md](features/README.md) | **功能特性索引** |
-| [agent-system.md](features/agent-system.md) | Agent 编排系统 |
 | [codebase-intelligence.md](features/codebase-intelligence.md) | 代码智能：索引、搜索与记忆 |
-| [hook-system.md](features/hook-system.md) | Hook 扩展系统 |
 | [context-management.md](features/context-management.md) | 上下文管理 |
 
 | [error-recovery.md](features/error-recovery.md) | 错误恢复与重试 |
