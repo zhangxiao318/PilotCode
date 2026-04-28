@@ -34,7 +34,6 @@ from .results import ExecutionResult
 from .verifier.base import VerificationResult
 from .verifiers.adapter_verifiers import (
     l1_simple_verifier,
-    l2_test_verifier,
     l3_code_review_verifier,
 )
 from .verifier.level2_tests import PytestRunnerVerifier

@@ -30,7 +30,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 from collections import defaultdict
 import fnmatch
 
@@ -581,9 +581,6 @@ class CodebaseIndexer:
             self._hierarchical_builder is not None
             and self._hierarchical_builder.get_master_index() is not None
         ):
-            last_indexed = set(
-                self._hierarchical_builder.get_master_index().total_files and [] or []
-            )
             # We don't have the exact file set stored in the old master index,
             # so we use a hash of the sorted file list as a cheap fingerprint.
             current_fingerprint = hashlib.sha256(
