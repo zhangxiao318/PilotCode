@@ -1,6 +1,5 @@
 @echo off
 REM PilotCode Windows Installation Script
-REM Supports Windows 7+ (uses cmd.exe for maximum compatibility)
 
 setlocal EnableDelayedExpansion
 
@@ -162,8 +161,9 @@ echo.
 echo  To use PilotCode:
 echo    1. Activate venv:    .venv\Scripts\activate
 echo    2. Configure LLM:    python -m pilotcode configure
-echo    3. Run:              .\pilotcode.cmd
-echo    4. Or directly:      python -m pilotcode
+echo    3. Run TUI:          .\pilotcode.cmd
+echo    4. Run Web UI:       .\pilotcode.cmd --web
+echo    5. Or directly:      python -m pilotcode
 echo.
 echo  To install dev deps later:
 echo    .\install.cmd --dev
