@@ -9,7 +9,7 @@ show_help() {
 Usage: ./install.sh [options]
 
 Options:
-  --dev       Install development dependencies (pytest, black, ruff)
+  --dev       Install development tools (black, ruff, mypy, pre-commit)
   --index     Install extra language parsers (JS, Go, Rust, Java)
   --help      Show this help message
 
@@ -105,7 +105,7 @@ echo ""
 echo "Installation complete!"
 echo ""
 if [ "$DEV_MODE" = true ]; then
-    echo "Dev mode enabled: pytest, pytest-asyncio, respx, and other dev tools are installed."
+    echo "Dev mode enabled: black, ruff, mypy, respx, and other dev tools are installed."
     echo ""
 fi
 echo "To use PilotCode:"
@@ -122,6 +122,6 @@ echo "  Add $(pwd)/.venv/bin to your PATH, then use 'pilotcode' anywhere."
 echo ""
 if [ "$DEV_MODE" = false ] && [ "$INDEX_MODE" = false ]; then
     echo "To install extra dependencies:"
-    echo "  ./install.sh --dev      # dev tools (pytest, black, ruff)"
+    echo "  ./install.sh --dev      # dev tools (black, ruff, mypy)"
     echo "  ./install.sh --index    # extra language parsers (JS/Go/Rust/Java)"
 fi

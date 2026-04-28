@@ -36,7 +36,7 @@ goto show_help
 echo Usage: install.cmd [options]
 echo(
 echo Options:
-echo   --dev       Install development dependencies ^(pytest, black, ruff^)
+echo   --dev       Install development tools ^(black, ruff, mypy^)
 echo   --index     Install extra language parsers ^(JS, Go, Rust, Java^)
 echo   --help      Show this help message
 echo(
@@ -174,7 +174,7 @@ echo(
 
 REM --- Optional: install dev dependencies ---
 if "%INTERACTIVE%"=="true" (
-    set /p INSTALL_DEV_REPLY="Install dev dependencies: pytest, black, ruff? [y/N]: "
+    set /p INSTALL_DEV_REPLY="Install dev tools: black, ruff, mypy? [y/N]: "
     if /i "%INSTALL_DEV_REPLY%"=="y" set "INSTALL_DEV=true"
 )
 if "%INSTALL_DEV%"=="true" (
