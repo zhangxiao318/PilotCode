@@ -359,7 +359,9 @@ class WebSocketManager:
                         "last_activity": ctx["last_activity"],
                         "source": "memory",
                         "project_path": str(
-                            getattr(ctx["query_engine"].config, "cwd", self.cwd) or self.cwd
+                            getattr(ctx["store"].get_state(), "cwd", None)
+                            or getattr(ctx["query_engine"].config, "cwd", self.cwd)
+                            or self.cwd
                         ),
                         "archived": ctx.get("archived", False),
                     }
@@ -524,11 +526,16 @@ class WebSocketManager:
                     ctx = await self._get_session(sid)
                     if ctx:
                         persist = get_session_persistence()
+                        session_cwd = str(
+                            getattr(ctx["store"].get_state(), "cwd", None)
+                            or getattr(ctx["query_engine"].config, "cwd", self.cwd)
+                            or self.cwd
+                        )
                         persist.save_session(
                             session_id=sid,
                             messages=ctx["query_engine"].messages,
                             name=data.get("name", sid),
-                            project_path=self.cwd,
+                            project_path=session_cwd,
                         )
                         await self.send_to_client(
                             websocket,
@@ -554,8 +561,19 @@ class WebSocketManager:
                     # Attach to existing in-memory session
                     self.client_sessions[websocket] = sid
                     messages = ctx["query_engine"].messages
+                    # Prefer store cwd (updated by bash cd) over config.cwd
+                    store_state = ctx["store"].get_state()
                     restored_cwd = str(
-                        getattr(ctx["query_engine"].config, "cwd", self.cwd) or self.cwd
+                        getattr(store_state, "cwd", None)
+                        or getattr(ctx["query_engine"].config, "cwd", self.cwd)
+                        or self.cwd
+                    )
+                    # Ensure store and config are in sync
+                    from dataclasses import replace
+
+                    ctx["store"].set_state(lambda s: replace(s, cwd=restored_cwd))
+                    ctx["query_engine"].config = replace(
+                        ctx["query_engine"].config, cwd=restored_cwd
                     )
                     await self.send_to_client(
                         websocket,
@@ -934,7 +952,15 @@ class WebSocketManager:
                 )
 
                 cancel_event = asyncio.Event()
-                adapter = MissionAdapter(cancel_event=cancel_event, cwd=self.cwd)
+                # Use session's cwd, not the server global cwd
+                # Prefer store cwd (updated by bash cd) over config.cwd
+                store_state = store.get_state()
+                session_cwd = (
+                    getattr(store_state, "cwd", None)
+                    or getattr(query_engine.config, "cwd", self.cwd)
+                    or self.cwd
+                )
+                adapter = MissionAdapter(cancel_event=cancel_event, cwd=session_cwd)
 
                 async def _ws_progress(event_type: str, data: dict):
                     if event_type == "mission:planned":
@@ -989,7 +1015,7 @@ class WebSocketManager:
                             },
                         )
 
-                result = await adapter.run(query, progress_callback=_ws_progress, cwd=self.cwd)
+                result = await adapter.run(query, progress_callback=_ws_progress, cwd=session_cwd)
 
                 if result.get("success"):
                     summary = format_completion(result)
@@ -1490,7 +1516,11 @@ class WebSocketManager:
                         session_id=session_id,
                         messages=session_ctx["query_engine"].messages,
                         name=session_ctx.get("name", session_id),
-                        project_path=getattr(session_ctx["query_engine"].config, "cwd", self.cwd),
+                        project_path=(
+                            getattr(session_ctx["store"].get_state(), "cwd", None)
+                            or getattr(session_ctx["query_engine"].config, "cwd", self.cwd)
+                            or self.cwd
+                        ),
                     )
             except Exception as e:
                 print(f"[Session] Auto-save error: {e}")
