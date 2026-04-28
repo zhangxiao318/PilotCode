@@ -1,0 +1,13 @@
+【任务2：简单代码修改】
+
+请修改 tools/dev_cluster.py 文件：
+
+在 argparse 参数解析部分，添加一个 `--version` 参数。当用户运行 `dev_cluster.py --version` 时，打印 "dev_cluster.py version 1.0" 并退出程序。
+
+具体要求：
+1. 在 `parser = argparse.ArgumentParser()` 之后，添加一行：
+   `parser.add_argument("--version", action="version", version="dev_cluster.py version 1.0")`
+2. 不要影响现有的任何参数解析逻辑
+3. 不要修改文件中的其他内容
+
+请只修改这一处，确保代码风格与现有代码一致。

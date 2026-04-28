@@ -1,0 +1,18 @@
+【任务3：复杂代码修改】
+
+请修改 tools/dev_cluster.py 文件：
+
+在 `stream_until_eof` 函数中，给输出的每一行日志前面添加一个时间戳前缀，格式为 `[YYYY-MM-DD HH:MM:SS] `。
+
+具体要求：
+1. 在文件顶部导入 `datetime` 模块（添加到现有的 import 区域）
+2. 修改 `stream_until_eof` 函数，在打印到 stdout 和写入日志文件的每一行前面都添加时间戳
+3. 时间戳格式为：`datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")`
+4. 格式示例：`[2024-01-15 09:30:25] node-0: Starting redpanda...`
+5. 不要修改其他函数的逻辑
+6. 确保代码风格和现有代码一致
+
+注意：
+- 只需要修改 `stream_until_eof` 函数和 import 部分
+- 不要改变函数的异步特性
+- 保持日志文件和 stdout 的输出格式一致

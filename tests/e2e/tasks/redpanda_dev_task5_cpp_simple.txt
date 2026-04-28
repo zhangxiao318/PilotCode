@@ -1,0 +1,24 @@
+【任务2：简单C++代码修改】
+
+请修改 src/v/cloud_io/io_result.cc 文件：
+
+添加两个辅助函数 `to_string`，将 `download_result` 和 `upload_result` 枚举转换为字符串。然后修改现有的两个 `operator<<` 函数，让它们调用 `to_string`。
+
+具体要求：
+1. 在 namespace cloud_io 内，添加：
+   ```cpp
+   const char* to_string(download_result r) {
+       switch (r) {
+       case download_result::success: return "success";
+       case download_result::notfound: return "notfound";
+       case download_result::timedout: return "timedout";
+       case download_result::failed: return "failed";
+       }
+       return "unknown";
+   }
+   ```
+2. 类似地添加 `const char* to_string(upload_result r)` 函数
+3. 修改两个 `operator<<` 函数，将 switch-case 逻辑替换为 `o << to_string(r)`
+4. 确保代码风格与现有代码一致（缩进、命名等）
+
+请完整修改文件，不要遗漏任何函数。

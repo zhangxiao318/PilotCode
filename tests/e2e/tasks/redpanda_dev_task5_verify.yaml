@@ -1,0 +1,17 @@
+task_name: "Redpanda Task 5: Simple C++ Edit"
+description: "Extract to_string helpers from io_result.cc operator<<"
+checks:
+  - name: to_string_download_exists
+    type: contains
+    file: src/v/cloud_io/io_result.cc
+    pattern: "const char* to_string(download_result"
+
+  - name: to_string_upload_exists
+    type: contains
+    file: src/v/cloud_io/io_result.cc
+    pattern: "const char* to_string(upload_result"
+
+  - name: operator_calls_to_string
+    type: contains
+    file: src/v/cloud_io/io_result.cc
+    pattern: "o << to_string(r)"

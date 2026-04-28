@@ -1,0 +1,25 @@
+【任务3：复杂C++代码修改】
+
+请修改 src/v/cloud_io/cache_probe.cc 文件：
+
+在公共 metrics（_public_metrics）的 "cloud_storage_cache_op" 组中，添加一个新的 gauge 指标 `cache_hit_ratio`，显示缓存命中率（百分比）。
+
+具体要求：
+1. 在 `_public_metrics.add_group("cloud_storage_cache_op", ...)` 的 metrics 列表中，添加一个新的 gauge：
+   ```cpp
+   sm::make_gauge(
+     "cache_hit_ratio",
+     [this] {
+         auto total = _num_cached_gets + _num_miss_gets;
+         if (total == 0) return 0.0;
+         return (_num_cached_gets * 100.0) / total;
+     },
+     sm::description("Cache hit ratio as a percentage."))
+     .aggregate(aggregate_labels),
+   ```
+2. 这个 gauge 应该放在 "cloud_storage_cache_op" 组中，和 "put"/"hit"/"miss"/"in_progress_files" 一起
+3. 确保处理 `_num_cached_gets + _num_miss_gets == 0` 的除零情况，返回 0.0
+4. 不要修改其他任何 metrics 组或现有指标
+5. 确保缩进和代码风格与周围代码一致
+
+请只修改这一处，不要改动文件其他部分。

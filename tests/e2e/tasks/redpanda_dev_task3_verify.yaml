@@ -1,0 +1,23 @@
+task_name: "Redpanda Task 3: Complex Python Edit"
+description: "Add timestamp prefix to stream_until_eof in dev_cluster.py"
+checks:
+  - name: syntax
+    type: syntax
+    file: tools/dev_cluster.py
+
+  - name: import_datetime
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: "import datetime"
+
+  - name: timestamp_in_stream
+    type: function_contains
+    file: tools/dev_cluster.py
+    function: stream_until_eof
+    pattern: "datetime.datetime.now().strftime"
+
+  - name: timestamp_variable
+    type: function_contains
+    file: tools/dev_cluster.py
+    function: stream_until_eof
+    pattern: "timestamp"

@@ -1,0 +1,50 @@
+task_name: "Redpanda Task 7: Multi-File Enhancement"
+description: "Add cluster config validation and summary printing"
+checks:
+  - name: dev_cluster_syntax
+    type: syntax
+    file: tools/dev_cluster.py
+
+  - name: import_cluster_utils
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: "import cluster_utils"
+
+  - name: validate_config_arg
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: '"--validate-config"'
+
+  - name: print_summary_arg
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: '"--print-summary"'
+
+  - name: summary_format_arg
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: '"--summary-format"'
+
+  - name: validate_call
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: "cluster_utils.validate_cluster_config"
+
+  - name: summary_call
+    type: contains
+    file: tools/dev_cluster.py
+    pattern: "cluster_utils.print_cluster_summary"
+
+  - name: cluster_utils_exists
+    type: file_exists
+    file: tools/cluster_utils.py
+
+  - name: validate_func_exists
+    type: contains
+    file: tools/cluster_utils.py
+    pattern: "def validate_cluster_config"
+
+  - name: summary_func_exists
+    type: contains
+    file: tools/cluster_utils.py
+    pattern: "def print_cluster_summary"

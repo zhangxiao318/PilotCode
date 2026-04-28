@@ -1,0 +1,22 @@
+task_name: "Redpanda Task 6: Complex C++ Edit"
+description: "Add cache_hit_ratio gauge to cache_probe.cc"
+checks:
+  - name: cache_hit_ratio_gauge
+    type: contains
+    file: src/v/cloud_io/cache_probe.cc
+    pattern: '"cache_hit_ratio"'
+
+  - name: hit_plus_miss
+    type: contains
+    file: src/v/cloud_io/cache_probe.cc
+    pattern: "_num_cached_gets + _num_miss_gets"
+
+  - name: division_guard
+    type: contains
+    file: src/v/cloud_io/cache_probe.cc
+    pattern: "if (total == 0) return 0.0"
+
+  - name: percentage_calculation
+    type: contains
+    file: src/v/cloud_io/cache_probe.cc
+    pattern: "(_num_cached_gets * 100.0) / total"

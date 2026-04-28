@@ -1,0 +1,50 @@
+【功能增强：多文件编码任务】
+
+请在 redpanda-dev 项目中添加一个集群配置验证和摘要打印功能。需要修改 1 个现有文件并新建 1 个文件。
+
+### 文件1：修改 tools/dev_cluster.py
+
+在 `main()` 函数的 argparse 参数解析部分，添加以下 3 个参数：
+1. `--validate-config`：`action="store_true"`, `default=False`
+2. `--print-summary`：`action="store_true"`, `default=False`
+3. `--summary-format`：`choices=["text", "json", "yaml"]`, `default="text"`
+
+在 `main()` 函数中，在生成 `node_metas` 列表之后、启动 minio 之前，添加逻辑：
+- 如果 `args.validate_config` 为 True：
+  - 调用 `cluster_utils.validate_cluster_config(args, node_metas)`
+  - 如果返回 `(True, _)`，打印 "Config validation passed." 并 `return`
+  - 如果返回 `(False, error)`，打印 `f"Config validation failed:\n{error}"` 并 `sys.exit(1)`
+- 如果 `args.print_summary` 为 True：
+  - 调用 `cluster_utils.print_cluster_summary(node_metas, args.summary_format)`
+  - 然后 `return`
+
+在文件顶部的 import 区域添加 `import cluster_utils`。
+
+### 文件2：新建 tools/cluster_utils.py
+
+创建文件 `tools/cluster_utils.py`，实现以下两个函数：
+
+```python
+def validate_cluster_config(args, node_metas):
+    """Validate cluster configuration. Returns (is_valid, error_message)."""
+    # 检查：
+    # 1. args.nodes >= 1 且 <= 10
+    # 2. 每个节点的端口不冲突（比较 args.base_rpc_port+i, args.base_kafka_port+i 等）
+    # 3. args.directory 如果存在则可写
+    # 4. args.executable 如果指定则存在
+    # 返回 (True, "") 或 (False, "错误信息")
+
+def print_cluster_summary(node_metas, fmt="text"):
+    """Print cluster configuration summary."""
+    # fmt="json"：用 json.dumps 输出
+    # fmt="yaml"：用 yaml.safe_dump 输出
+    # fmt="text"：用格式化文本输出，包含每个节点的 index, config_path, rpc_port, kafka_port, admin_port
+```
+
+注意：
+- `node_metas` 是 `NodeMetadata` 对象列表
+- 每个 `NodeMetadata` 有 `index`, `config_path`, `cluster_size`, `config_dict` 属性
+- `config_dict["redpanda"]["rpc_server"]["port"]` 等可以获取端口
+- `args` 是 argparse.Namespace 对象，包含 `nodes`, `directory`, `executable`, `base_rpc_port` 等属性
+- 确保代码风格与 dev_cluster.py 一致
+- 不要修改 dev_cluster.py 的其他逻辑
