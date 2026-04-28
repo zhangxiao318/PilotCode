@@ -19,12 +19,14 @@
 git clone <repository-url>
 cd PilotCode
 
-# 创建虚拟环境（推荐）
-python3 -m venv venv
-source venv/bin/activate  # Linux/macOS
-# 或: venv\Scripts\activate  # Windows
+# 使用安装脚本（推荐）
+./install.sh           # Linux/macOS
+install.cmd            # Windows
 
-# 安装依赖
+# 或手动安装
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# 或: .venv\Scripts\activate  # Windows
 pip3 install -e .
 ```
 
@@ -85,11 +87,11 @@ export ZHIPU_API_KEY="..."         # GLM
 
 ### 方式四：手动配置文件
 
-创建 `~/.config/pilotcode/settings.json`：
+创建 `~/.pilotcode/config/settings.json`：
 
 ```bash
-mkdir -p ~/.config/pilotcode
-cat > ~/.config/pilotcode/settings.json << 'EOF'
+mkdir -p ~/.pilotcode/config
+cat > ~/.pilotcode/config/settings.json << 'EOF'
 {
   "theme": "default",
   "verbose": false,
@@ -131,17 +133,20 @@ python3 -m pilotcode configure --show
 ### 启动交互式 TUI
 
 ```bash
-# 默认启动（推荐）
+# 默认启动 TUI（推荐）
 python3 -m pilotcode
 
-# 或使用启动脚本（Linux/macOS）
-./pilotcode.sh
+# 或使用启动脚本
+./pilotcode.sh          # Linux/macOS
+.\pilotcode.cmd         # Windows
 
-# Windows 使用
-.\pilotcode.cmd
+# 启动 Web UI
+python3 -m pilotcode --web
+.\pilotcode.cmd --web   # Windows
 
 # 或使用别名（安装后）
 pilotcode
+pilotcode --web
 pc
 ```
 
@@ -198,6 +203,8 @@ python3 -m pilotcode --verbose
 | `/config` | 查看/修改配置 |
 | `/theme` | 切换主题 |
 | `/session` | 会话管理 |
+| `/format` | 格式化代码（black） |
+| `/lint` | 代码检查（ruff） |
 | `/cost` | 查看用量统计 |
 | `/quit` | 退出 |
 
@@ -433,7 +440,7 @@ curl $PILOTCODE_BASE_URL/models \
 
 ### 重置配置
 ```bash
-rm ~/.config/pilotcode/settings.json
+rm ~/.pilotcode/config/settings.json
 python3 -m pilotcode configure  # 重新配置
 ```
 

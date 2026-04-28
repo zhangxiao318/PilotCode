@@ -33,7 +33,7 @@ pip3 install -e .
 # 2. 配置 LLM（交互式向导）
 python3 -m pilotcode configure
 
-# 3. 运行（Linux/macOS）
+# 3. 运行 TUI（Linux/macOS）
 ./pilotcode.sh
 
 # 或 Windows
@@ -41,6 +41,10 @@ python3 -m pilotcode configure
 
 # 或使用 Python 模块方式
 python3 -m pilotcode
+
+# 启动 Web UI
+python3 -m pilotcode --web
+.\pilotcode.cmd --web  # Windows
 ```
 
 更多启动方式：
@@ -63,7 +67,7 @@ You can configure the model through:
 
 1. **Interactive Configuration Wizard** (Recommended)
 2. **Environment Variables**
-3. **Configuration File** (`~/.config/pilotcode/settings.json`)
+3. **Configuration File** (`~/.pilotcode/config/settings.json`)
 
 ### Interactive Configuration (Recommended)
 
@@ -152,7 +156,7 @@ export ARK_API_KEY="..."
 
 ### Configuration File
 
-The configuration is stored in `~/.config/pilotcode/settings.json`:
+The configuration is stored in `~/.pilotcode/config/settings.json`:
 
 ```json
 {

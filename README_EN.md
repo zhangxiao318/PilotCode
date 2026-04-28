@@ -33,7 +33,7 @@ pip3 install -e .
 # 2. Configure LLM (interactive wizard)
 python3 -m pilotcode configure
 
-# 3. Run (Linux/macOS)
+# 3. Run TUI (Linux/macOS)
 ./pilotcode.sh
 
 # Or Windows
@@ -41,6 +41,10 @@ python3 -m pilotcode configure
 
 # Or using Python module
 python3 -m pilotcode
+
+# Start Web UI
+python3 -m pilotcode --web
+.\pilotcode.cmd --web  # Windows
 ```
 
 More ways to start:
@@ -63,7 +67,7 @@ You can configure the model through:
 
 1. **Interactive Configuration Wizard** (Recommended)
 2. **Environment Variables**
-3. **Configuration File** (`~/.config/pilotcode/settings.json`)
+3. **Configuration File** (`~/.pilotcode/config/settings.json`)
 
 ### Interactive Configuration (Recommended)
 
@@ -152,7 +156,7 @@ export ARK_API_KEY="..."
 
 ### Configuration File
 
-The configuration is stored in `~/.config/pilotcode/settings.json`:
+The configuration is stored in `~/.pilotcode/config/settings.json`:
 
 ```json
 {

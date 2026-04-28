@@ -19,12 +19,14 @@ Get started with PilotCode AI coding assistant in 5 minutes.
 git clone <repository-url>
 cd PilotCode
 
-# Create virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate  # Linux/macOS
-# Or: venv\Scripts\activate  # Windows
+# Use install script (recommended)
+./install.sh           # Linux/macOS
+install.cmd            # Windows
 
-# Install dependencies
+# Or install manually
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# Or: .venv\Scripts\activate  # Windows
 pip3 install -e .
 ```
 
@@ -131,17 +133,20 @@ python3 -m pilotcode configure --show
 ### Start Interactive TUI
 
 ```bash
-# Default start (recommended)
+# Default start TUI (recommended)
 python3 -m pilotcode
 
-# Or use startup scripts (Linux/macOS)
-./pilotcode.sh
+# Or use startup scripts
+./pilotcode.sh          # Linux/macOS
+.\pilotcode.cmd         # Windows
 
-# Windows
-.\pilotcode.cmd
+# Start Web UI
+python3 -m pilotcode --web
+.\pilotcode.cmd --web   # Windows
 
 # Or use aliases (after installation)
 pilotcode
+pilotcode --web
 pc
 ```
 
@@ -196,6 +201,8 @@ In the PilotCode interactive interface, you can use the following commands:
 | `/config` | View/modify configuration |
 | `/theme` | Switch theme |
 | `/session` | Session management |
+| `/format` | Format code (black) |
+| `/lint` | Lint code (ruff) |
 | `/cost` | View usage statistics |
 | `/quit` | Exit |
 
@@ -226,7 +233,7 @@ curl $PILOTCODE_BASE_URL/models \
 
 ### Reset Configuration
 ```bash
-rm ~/.config/pilotcode/settings.json
+rm ~/.pilotcode/config/settings.json
 python3 -m pilotcode configure  # Reconfigure
 ```
 

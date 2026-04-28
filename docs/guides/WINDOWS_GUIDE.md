@@ -34,11 +34,14 @@ cd PilotCode
 ### 4. 安装依赖
 
 ```powershell
-# 使用 uv（推荐）
-uv sync --extra dev
+# 使用安装脚本（推荐）
+.\install.cmd
+
+# 或使用 uv
+uv sync
 
 # 或使用 pip
-pip install -e ".[dev]"
+pip install -e .
 ```
 
 ## 配置 API 密钥
@@ -77,6 +80,9 @@ pilotcode
 
 # 启动 TUI 模式
 pilotcode --tui
+
+# 启动 Web UI 模式
+pilotcode --web
 
 # 运行配置向导
 pilotcode configure
