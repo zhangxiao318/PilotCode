@@ -223,6 +223,7 @@ class WebSocketManager:
     def __init__(self):
         self.clients: Set[Any] = set()
         self.cwd: str = "."
+        self.auto_allow: bool = False
         self.permission_manager = PermissionRequestManager()
         self.question_manager = UserQuestionManager()
         self.current_tasks: Dict[Any, asyncio.Task] = {}  # Track current query tasks per websocket
@@ -1071,6 +1072,9 @@ class WebSocketManager:
 
             async def web_permission_callback(permission_request):
                 """Callback to request permission via WebSocket."""
+                if self.auto_allow:
+                    print(f"[Permission] Auto-allowing {permission_request.tool_name}")
+                    return PermissionLevel.ALWAYS_ALLOW
                 print(f"[Permission] Requesting permission for {permission_request.tool_name}")
                 granted, for_session = await self.request_permission_via_websocket(
                     websocket,
@@ -1623,9 +1627,10 @@ def run_websocket_server_sync(host: str, port: int):
         print(f"[WebSocket] Fatal error: {e}")
 
 
-def run_server_standalone(host: str = "127.0.0.1", port: int = 8080, cwd: str = "."):
+def run_server_standalone(host: str = "127.0.0.1", port: int = 8080, cwd: str = ".", auto_allow: bool = False):
     """Run both HTTP and WebSocket servers."""
     ws_manager.cwd = str(Path(cwd).resolve())
+    ws_manager.auto_allow = auto_allow
 
     print("=" * 60)
     print("PilotCode Web UI Server")

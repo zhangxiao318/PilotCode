@@ -1,0 +1,22 @@
+task_id: c_simple_string_utils
+category: c_simple
+description: String utility library in C99
+prompt: |
+  请帮我实现C语言字符串工具库，要求：
+  1. 包含头文件 string_utils.h，实现文件 string_utils.c
+  2. 实现：字符串反转、安全字符串拷贝、忽略大小写字符串比较、子串查找
+  3. 不要使用标准库字符串函数（strlen除外）
+  4. main.c 中测试每个函数
+  5. Makefile 编译项目
+  请将所有文件写入当前目录。
+expected_files:
+  - string_utils.h
+  - string_utils.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./string_utils_test"]
+expected_output_contains:
+  - "字符串"
+  - "string"
+timeout_seconds: 600

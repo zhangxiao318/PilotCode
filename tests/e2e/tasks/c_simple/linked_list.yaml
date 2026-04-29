@@ -1,0 +1,22 @@
+task_id: c_simple_linked_list
+category: c_simple
+description: Singly linked list in C99
+prompt: |
+  请帮我实现一个C语言单链表（singly linked list），要求：
+  1. 包含头文件 linked_list.h，实现文件 linked_list.c
+  2. 支持：创建链表、销毁链表、在头部插入、在尾部插入、删除指定值的节点、查找节点、打印链表
+  3. 数据类型为 int
+  4. main.c 中写测试程序验证所有功能
+  5. Makefile 编译项目
+  请将所有文件写入当前目录。
+expected_files:
+  - linked_list.h
+  - linked_list.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./main"]
+expected_output_contains:
+  - "链表"
+  - "List"
+timeout_seconds: 600

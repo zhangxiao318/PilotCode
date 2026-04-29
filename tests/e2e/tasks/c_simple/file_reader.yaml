@@ -1,0 +1,21 @@
+task_id: c_simple_file_reader
+category: c_simple
+description: File reading utility in C99
+prompt: |
+  请帮我实现C语言文件读取工具，要求：
+  1. 包含头文件 file_reader.h，实现文件 file_reader.c
+  2. 实现：按行读取文件到字符串数组、统计文件行数、统计单词数、统计字符数
+  3. main.c 中创建测试文件并验证所有功能
+  4. Makefile 编译项目
+  请将所有文件写入当前目录。
+expected_files:
+  - file_reader.h
+  - file_reader.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./file_reader"]
+expected_output_contains:
+  - "文件"
+  - "test"
+timeout_seconds: 600

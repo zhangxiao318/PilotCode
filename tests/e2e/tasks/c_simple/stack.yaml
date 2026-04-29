@@ -1,0 +1,21 @@
+task_id: c_simple_stack
+category: c_simple
+description: Array-based stack in C99
+prompt: |
+  请帮我实现一个C语言栈（stack），要求：
+  1. 包含头文件 stack.h，实现文件 stack.c
+  2. 基于数组实现固定大小栈，支持 push, pop, peek, is_empty, is_full
+  3. 数据类型为 int
+  4. main.c 中写测试程序验证所有功能
+  5. Makefile 编译项目
+  请将所有文件写入当前目录。
+expected_files:
+  - stack.h
+  - stack.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./stack_test"]
+expected_output_contains:
+  - "栈"
+timeout_seconds: 600

@@ -551,7 +551,7 @@ def main(
 
         # Start server (blocks until Ctrl+C)
         try:
-            run_server_standalone(host, port, cwd)
+            run_server_standalone(host, port, cwd, auto_allow=auto_allow)
         except KeyboardInterrupt:
             console.print("\n[yellow]Server stopped.[/yellow]")
     elif simple:

@@ -1,0 +1,25 @@
+task_id: c_complex_hash_table
+category: c_complex
+description: Hash table with chaining and auto-resize in C99
+prompt: |
+  请帮我实现一个C语言哈希表，要求：
+  1. 包含头文件 hash_table.h，实现文件 hash_table.c
+  2. 使用链地址法处理冲突（拉链法）
+  3. key 类型为字符串，value 类型为 int
+  4. 支持：插入、查找、删除、遍历、获取大小
+  5. 实现自动扩容（load factor > 0.75 时翻倍容量）
+  6. main.c 中测试大量插入/删除/查找操作
+  7. Makefile 编译项目
+  请将所有文件写入当前目录。
+expected_files:
+  - hash_table.h
+  - hash_table.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./hash_test"]
+expected_output_contains:
+  - "哈希"
+  - "hash"
+  - "扩容"
+timeout_seconds: 900

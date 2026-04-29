@@ -39,6 +39,7 @@ class PreciseTokenizer:
         self._tiktoken_encoder: Any = None
         self._cache: dict[str, int] = {}
         self._cache_max_size = 200
+        self._detected_backend: str | None = None  # 'llamacpp', 'vllm', 'ollama'
 
     # ------------------------------------------------------------------
     # Public API
@@ -100,28 +101,55 @@ class PreciseTokenizer:
         if not messages and not tools:
             return 0
 
-        # vLLM supports messages + tools together
-        vllm_result = self._try_vllm_count_messages(messages, tools=tools)
-        if vllm_result is not None:
-            return vllm_result
+        # If we've already detected the backend, use it directly to avoid
+        # wasted HTTP calls (e.g. trying vLLM on a llama.cpp server).
+        if self._detected_backend == "vllm":
+            vllm_result = self._try_vllm_count_messages(messages, tools=tools)
+            if vllm_result is not None:
+                return vllm_result
+        elif self._detected_backend == "llamacpp":
+            llama_result = self._try_llamacpp_count_messages(messages)
+            if llama_result is not None:
+                if tools:
+                    tool_tokens = self._count_tools_json(tools)
+                    if tool_tokens is not None:
+                        llama_result += tool_tokens
+                return llama_result
+        elif self._detected_backend == "ollama":
+            ollama_result = self._try_ollama_count_messages(messages)
+            if ollama_result is not None:
+                if tools:
+                    tool_tokens = self._count_tools_json(tools)
+                    if tool_tokens is not None:
+                        ollama_result += tool_tokens
+                return ollama_result
+        else:
+            # Auto-detect: try backends in order and remember the first success.
+            # vLLM supports messages + tools together
+            vllm_result = self._try_vllm_count_messages(messages, tools=tools)
+            if vllm_result is not None:
+                self._detected_backend = "vllm"
+                return vllm_result
 
-        # llama.cpp: messages only, then add tools separately
-        llama_result = self._try_llamacpp_count_messages(messages)
-        if llama_result is not None:
-            if tools:
-                tool_tokens = self._count_tools_json(tools)
-                if tool_tokens is not None:
-                    llama_result += tool_tokens
-            return llama_result
+            # llama.cpp: messages only, then add tools separately
+            llama_result = self._try_llamacpp_count_messages(messages)
+            if llama_result is not None:
+                self._detected_backend = "llamacpp"
+                if tools:
+                    tool_tokens = self._count_tools_json(tools)
+                    if tool_tokens is not None:
+                        llama_result += tool_tokens
+                return llama_result
 
-        # Ollama: same as llama.cpp
-        ollama_result = self._try_ollama_count_messages(messages)
-        if ollama_result is not None:
-            if tools:
-                tool_tokens = self._count_tools_json(tools)
-                if tool_tokens is not None:
-                    ollama_result += tool_tokens
-            return ollama_result
+            # Ollama: same as llama.cpp
+            ollama_result = self._try_ollama_count_messages(messages)
+            if ollama_result is not None:
+                self._detected_backend = "ollama"
+                if tools:
+                    tool_tokens = self._count_tools_json(tools)
+                    if tool_tokens is not None:
+                        ollama_result += tool_tokens
+                return ollama_result
 
         # Fallback: concatenate with delimiters and count as text
         text_parts = []

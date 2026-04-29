@@ -1,0 +1,21 @@
+task_id: c_simple_sorting
+category: c_simple
+description: Sorting algorithms library (bubble, quick, merge) in C99
+prompt: |
+  请帮我实现C语言排序算法库，要求：
+  1. 包含头文件 sort.h，实现文件 sort.c
+  2. 实现冒泡排序、快速排序、归并排序三种算法
+  3. 函数签名统一：void xxx_sort(int *arr, size_t len)
+  4. main.c 中测试每种排序算法，打印排序前后数组
+  5. Makefile 编译项目
+  请将所有文件写入当前目录。
+expected_files:
+  - sort.h
+  - sort.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./sorting_test"]
+expected_output_contains:
+  - "排序"
+timeout_seconds: 600

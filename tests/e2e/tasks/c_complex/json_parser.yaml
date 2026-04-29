@@ -1,0 +1,25 @@
+task_id: c_complex_json_parser
+category: c_complex
+description: Recursive-descent JSON parser in C99
+prompt: |
+  请帮我实现一个C语言简单的JSON解析器，要求：
+  1. 包含头文件 json_parser.h，实现文件 json_parser.c
+  2. 使用递归下降法解析 JSON
+  3. 支持类型：对象（object）、数组（array）、字符串（string）、数字（number）、布尔值（true/false）、null
+  4. 将解析结果存储为树形结构（节点包含类型标记和值）
+  5. 提供 json_parse（解析）、json_free（释放内存）、json_get_string/json_get_number（取值）接口
+  6. main.c 中测试解析嵌套 JSON 对象和数组
+  7. Makefile 编译项目
+  请将所有文件写入当前目录。
+expected_files:
+  - json_parser.h
+  - json_parser.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./json_parser_test"]
+expected_output_contains:
+  - "JSON"
+  - "json"
+  - "测试"
+timeout_seconds: 900

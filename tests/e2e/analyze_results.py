@@ -1,325 +1,151 @@
 #!/usr/bin/env python3
-"""E2E Test Result Analyzer.
-
-Parses a pytest JUnit XML report and classifies failures by root cause.
+"""Analyze and compare PilotCode E2E test results.
 
 Usage:
-    # 1. Run tests with JUnit XML output
-    pytest tests/e2e/model_capability/ --run-llm-e2e -v \
-        --junitxml=/tmp/e2e_results.xml
-
-    # 2. Analyze
-    python tests/e2e/analyze_results.py /tmp/e2e_results.xml
-
-    # Or pipe directly
-    pytest tests/e2e/model_capability/ --run-llm-e2e -v \
-        --junitxml=/tmp/e2e_results.xml && \
-        python tests/e2e/analyze_results.py /tmp/e2e_results.xml
+    python analyze_results.py <summary.json>                  # Single run report
+    python analyze_results.py <cli_summary.json> <ws_summary.json>  # Compare modes
 """
-
-from __future__ import annotations
-
+import json
 import sys
-import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List
-
-# ---------------------------------------------------------------------------
-# Classification rules
-# ---------------------------------------------------------------------------
-
-CLASSIFIERS = [
-    (
-        "timeout",
-        [
-            "TimeoutError",
-            "CancelledError",
-            "asyncio.exceptions.TimeoutError",
-        ],
-    ),
-    (
-        "thinking_pollution",
-        [
-            "<think>",
-            "</think>",
-            "Here's a thinking process:",
-            "Thinking Process:",
-            "Analyze User Input:",
-        ],
-    ),
-    (
-        "context_retention",
-        [
-            "should NOT FileRead again",
-            "should NOT Glob again",
-        ],
-    ),
-    (
-        "file_edit_failed",
-        [
-            "File was not modified",
-            "Method not added",
-            "File was not created",
-            "Should edit the file",
-        ],
-    ),
-    (
-        "tool_param_mismatch",
-        [
-            "Param '",
-        ],
-    ),
-]
 
 
-def classify_failure(message: str) -> str:
-    """Classify a single failure message into a root-cause bucket."""
-    msg = message
-    # Check explicit classifiers in priority order
-    for category, markers in CLASSIFIERS:
-        for marker in markers:
-            if marker in msg:
-                return category
-    # Fallback: generic assertion
-    if "AssertionError" in msg:
-        return "assertion_mismatch"
-    return "other"
+def load_summary(path: Path) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-# ---------------------------------------------------------------------------
-# Data model
-# ---------------------------------------------------------------------------
+def print_single_report(data: dict):
+    """Print a detailed report for a single test run."""
+    results = data.get("results", [])
+    mode = data.get("mode", "unknown")
+    run_id = data.get("run_id", "unknown")
 
-
-@dataclass
-class Failure:
-    test_id: str
-    file: str
-    classname: str
-    message: str
-    category: str
-    raw_traceback: str = ""
-
-
-@dataclass
-class Report:
-    total: int = 0
-    passed: int = 0
-    failed: int = 0
-    skipped: int = 0
-    errors: int = 0
-    failures: List[Failure] = field(default_factory=list)
-    by_category: Dict[str, List[Failure]] = field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# Parser
-# ---------------------------------------------------------------------------
-
-
-def parse_junit(xml_path: str) -> Report:
-    """Parse a JUnit XML file and produce a classified report."""
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-
-    report = Report()
-
-    # Collect all <testsuite> elements regardless of nesting depth
-    suites: list[ET.Element] = list(root.iter("testsuite"))
-    if not suites and root.tag == "testsuite":
-        suites = [root]
-
-    for suite in suites:
-        report.total += int(suite.get("tests", 0))
-        report.passed += (
-            int(suite.get("tests", 0))
-            - int(suite.get("failures", 0))
-            - int(suite.get("errors", 0))
-            - int(suite.get("skipped", 0))
-        )
-        report.failed += int(suite.get("failures", 0))
-        report.errors += int(suite.get("errors", 0))
-        report.skipped += int(suite.get("skipped", 0))
-
-        for case in suite.findall("testcase"):
-            cls = case.get("classname", "")
-            name = case.get("name", "")
-            file_path = case.get("file", "")
-            test_id = f"{cls}::{name}" if cls else name
-
-            # Look for failure / error child
-            failure_elems = list(case.iter("failure"))
-            error_elems = list(case.iter("error"))
-            elem = failure_elems[0] if failure_elems else (error_elems[0] if error_elems else None)
-            if elem is None:
-                continue
-
-            msg = elem.get("message", "")
-            traceback = elem.text or ""
-            category = classify_failure(msg + "\n" + traceback)
-
-            failure = Failure(
-                test_id=test_id,
-                file=file_path,
-                classname=cls,
-                message=msg,
-                category=category,
-                raw_traceback=traceback,
-            )
-            report.failures.append(failure)
-            report.by_category.setdefault(category, []).append(failure)
-
-    return report
-
-
-# ---------------------------------------------------------------------------
-# Rendering
-# ---------------------------------------------------------------------------
-
-CATEGORY_NAMES = {
-    "timeout": "⏱  模型响应超时",
-    "thinking_pollution": "🧠 Thinking 过程污染输出",
-    "tool_param_mismatch": "🔧 工具参数不匹配",
-    "file_edit_failed": "📝 文件编辑未生效",
-    "context_retention": "🔄 上下文保持失败（重复调用工具）",
-    "assertion_mismatch": "❌ 普通断言失败",
-    "other": "❓ 其他",
-}
-
-CATEGORY_EMOJI = {
-    "timeout": "⏱",
-    "thinking_pollution": "🧠",
-    "tool_param_mismatch": "🔧",
-    "file_edit_failed": "📝",
-    "context_retention": "🔄",
-    "assertion_mismatch": "❌",
-    "other": "❓",
-}
-
-
-def print_report(report: Report) -> None:
-    """Print a human-readable report."""
-    print("=" * 70)
-    print("  E2E 测试结果分析报告")
-    print("=" * 70)
-    print()
-    print(f"  总用例数 : {report.total}")
-    print(f"  ✅ 通过  : {report.passed}")
-    print(f"  ❌ 失败  : {report.failed}")
-    print(f"  ⚠️  错误  : {report.errors}")
-    print(f"  ⏭️  跳过  : {report.skipped}")
+    print(f"# PilotCode E2E Test Report\n")
+    print(f"- **Run ID**: `{run_id}`")
+    print(f"- **Mode**: `{mode}`")
+    print(f"- **Total Tasks**: {len(results)}")
+    print(f"- **Compile OK**: {data.get('compile_ok', 0)}/{len(results)}")
+    print(f"- **Run OK**: {data.get('run_ok', 0)}/{len(results)}")
+    print(f"- **Output Check OK**: {data.get('output_check_ok', 0)}/{len(results)}")
+    print(f"- **Total Files**: {data.get('total_files', 0)}")
+    print(f"- **Total Lines**: {data.get('total_lines', 0)}")
     print()
 
-    if not report.failures:
-        print("  🎉 所有测试通过！")
-        return
-
-    print("-" * 70)
-    print("  失败根因分类")
-    print("-" * 70)
+    print("| Task | Compile | Run | Output | Elapsed | Lines | Files |")
+    print("|------|---------|-----|--------|---------|-------|-------|")
+    for r in results:
+        c = "✅" if r.get("compile_ok") else "❌"
+        ru = "✅" if r.get("run_ok") else "❌"
+        o = "✅" if r.get("output_check") else "❌"
+        tid = r.get("task_id", "?")
+        elapsed = r.get("elapsed", 0)
+        lines = r.get("total_lines", 0)
+        files = r.get("files_generated", 0)
+        print(f"| {tid} | {c} | {ru} | {o} | {elapsed:.1f}s | {lines} | {files} |")
     print()
 
-    # Sort categories by count descending
-    sorted_categories = sorted(
-        report.by_category.items(),
-        key=lambda x: len(x[1]),
-        reverse=True,
-    )
+    # Per-category stats
+    categories: dict[str, dict] = {}
+    for r in results:
+        cat = r.get("category", "unknown")
+        if cat not in categories:
+            categories[cat] = {"count": 0, "compile_ok": 0, "run_ok": 0, "total_lines": 0, "total_time": 0}
+        categories[cat]["count"] += 1
+        categories[cat]["compile_ok"] += 1 if r.get("compile_ok") else 0
+        categories[cat]["run_ok"] += 1 if r.get("run_ok") else 0
+        categories[cat]["total_lines"] += r.get("total_lines", 0)
+        categories[cat]["total_time"] += r.get("elapsed", 0)
 
-    for category, failures in sorted_categories:
-        emoji = CATEGORY_EMOJI.get(category, "❓")
-        name = CATEGORY_NAMES.get(category, category)
-        print(f"  {emoji} {name} — {len(failures)} 个")
-        for f in failures:
-            short_msg = f.message[:80].replace("\n", " ")
-            print(f"      • {f.test_id}")
-            print(f"        └─ {short_msg}{'...' if len(f.message) > 80 else ''}")
-        print()
-
-    print("-" * 70)
-    print("  归因建议")
-    print("-" * 70)
+    print("## Per-Category Statistics\n")
+    print("| Category | Tasks | Compile | Run | Avg Time | Avg Lines |")
+    print("|----------|-------|---------|-----|----------|-----------|")
+    for cat, stats in sorted(categories.items()):
+        avg_time = stats["total_time"] / stats["count"] if stats["count"] else 0
+        avg_lines = stats["total_lines"] // stats["count"] if stats["count"] else 0
+        print(f"| {cat} | {stats['count']} | {stats['compile_ok']}/{stats['count']} | {stats['run_ok']}/{stats['count']} | {avg_time:.1f}s | {avg_lines} |")
     print()
 
-    advice_map = {
-        "timeout": (
-            "模型响应超时。建议：\n"
-            "  • 增加 --e2e-timeout（当前默认值 120s）\n"
-            "  • 检查模型后端负载或网络连通性\n"
-            "  • 对慢模型标记为 @pytest.mark.flaky"
-        ),
-        "thinking_pollution": (
-            "模型输出了 reasoning/thinking 过程。建议：\n"
-            "  • 在测试 helper 中使用 strip_thinking() 过滤\n"
-            "  • 或关闭模型的 thinking 模式（如 vLLM enable_thinking=False）\n"
-            "  • 已在 test_bare_llm/helpers.py 提供过滤函数"
-        ),
-        "tool_param_mismatch": (
-            "LLM 生成的工具参数不符合预期。建议：\n"
-            "  • 优化 tool schema description，明确参数格式\n"
-            "  • 放宽测试断言（如允许 **/*.py 代替 *.py）\n"
-            "  • 这是 LLM 工具调用能力的真实反映"
-        ),
-        "file_edit_failed": (
-            "FileEdit/FileWrite 未成功修改文件。建议：\n"
-            "  • 检查 FileEdit 的 validation 逻辑（需先 FileRead）\n"
-            "  • 检查 FileWrite 的 conflict detection 是否过严\n"
-            "  • 查看工具返回的具体错误信息"
-        ),
-        "context_retention": (
-            "多轮对话中 LLM 未能记住上下文，重复调用工具。建议：\n"
-            "  • 检查 QueryEngine 的 message history 是否正确传递\n"
-            "  • 检查 context compaction 是否过早丢弃了关键信息\n"
-            "  • 增加 system prompt 中的上下文保持提示"
-        ),
-        "assertion_mismatch": (
-            "输出内容不符合断言预期。建议：\n"
-            "  • 检查 prompt 是否足够明确\n"
-            "  • 放宽断言条件（如大小写不敏感匹配）\n"
-            "  • 这是 LLM 指令遵循能力的直接反映"
-        ),
-        "other": (
-            "未分类的失败。建议：\n"
-            "  • 查看完整 traceback 确定根因\n"
-            "  • 可能是 PilotCode 系统 bug，需人工分析"
-        ),
-    }
-
-    for category, _ in sorted_categories:
-        advice = advice_map.get(category, advice_map["other"])
-        name = CATEGORY_NAMES.get(category, category)
-        print(f"  {CATEGORY_EMOJI.get(category, '❓')} {name}")
-        for line in advice.splitlines():
-            print(f"     {line}")
-        print()
-
-    print("=" * 70)
+    # Failed tasks detail
+    failed = [r for r in results if not r.get("compile_ok") or not r.get("run_ok")]
+    if failed:
+        print("## Failed Tasks Detail\n")
+        for r in failed:
+            print(f"### {r['task_id']}")
+            if not r.get("compile_ok"):
+                print(f"**Compile Error:**")
+                print(f"```\n{r.get('compile_output', 'N/A')[:500]}\n```")
+            if not r.get("run_ok"):
+                print(f"**Run Output:**")
+                print(f"```\n{r.get('run_output', 'N/A')[:500]}\n```")
+            print()
+    else:
+        print("**All tasks passed!** 🎉\n")
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+def print_comparison(data_cli: dict, data_ws: dict):
+    """Print a side-by-side comparison of CLI vs WebSocket results."""
+    cli_results = {r["task_id"]: r for r in data_cli.get("results", [])}
+    ws_results = {r["task_id"]: r for r in data_ws.get("results", [])}
+    all_tasks = sorted(set(cli_results) | set(ws_results))
+
+    print(f"# PilotCode E2E: CLI vs WebSocket Comparison\n")
+    print(f"| Task | CLI Compile | CLI Run | CLI Time | CLI Lines | WS Compile | WS Run | WS Time | WS Lines |")
+    print(f"|------|-------------|---------|----------|-----------|------------|--------|---------|----------|")
+
+    cli_total_time = 0
+    ws_total_time = 0
+    cli_total_lines = 0
+    ws_total_lines = 0
+    cli_ok = 0
+    ws_ok = 0
+
+    for tid in all_tasks:
+        cr = cli_results.get(tid, {})
+        wr = ws_results.get(tid, {})
+        cc = "✅" if cr.get("compile_ok") else "❌" if cr else "N/A"
+        rc = "✅" if cr.get("run_ok") else "❌" if cr else "N/A"
+        wc = "✅" if wr.get("compile_ok") else "❌" if wr else "N/A"
+        wru = "✅" if wr.get("run_ok") else "❌" if wr else "N/A"
+        ct = cr.get("elapsed", 0)
+        cl = cr.get("total_lines", 0)
+        wt = wr.get("elapsed", 0)
+        wl = wr.get("total_lines", 0)
+        print(f"| {tid} | {cc} | {rc} | {ct:.1f}s | {cl} | {wc} | {wru} | {wt:.1f}s | {wl} |")
+
+        cli_total_time += ct
+        ws_total_time += wt
+        cli_total_lines += cl
+        ws_total_lines += wl
+        if cr.get("compile_ok") and cr.get("run_ok"):
+            cli_ok += 1
+        if wr.get("compile_ok") and wr.get("run_ok"):
+            ws_ok += 1
+
+    print(f"| **Total** | | | **{cli_total_time:.1f}s** | **{cli_total_lines}** | | | **{ws_total_time:.1f}s** | **{ws_total_lines}** |")
+    print()
+    print(f"- CLI: {cli_ok}/{len(all_tasks)} tasks fully passed")
+    print(f"- WebSocket: {ws_ok}/{len(all_tasks)} tasks fully passed")
+    print(f"- Time ratio (WS/CLI): {ws_total_time/cli_total_time:.2f}x" if cli_total_time else "")
+    print(f"- Lines ratio (WS/CLI): {ws_total_lines/cli_total_lines:.2f}x" if cli_total_lines else "")
+    print()
 
 
-def main() -> int:
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <junit-xml-path>")
-        print()
-        print("Example:")
-        print("  pytest tests/e2e/ --run-llm-e2e --junitxml=/tmp/e2e.xml")
-        print(f"  {sys.argv[0]} /tmp/e2e.xml")
-        return 1
-
-    xml_path = sys.argv[1]
-    if not Path(xml_path).exists():
-        print(f"Error: file not found: {xml_path}")
-        return 1
-
-    report = parse_junit(xml_path)
-    print_report(report)
-    return 0
+def main():
+    args = sys.argv[1:]
+    if len(args) == 1:
+        data = load_summary(Path(args[0]))
+        print_single_report(data)
+    elif len(args) == 2:
+        data_cli = load_summary(Path(args[0]))
+        data_ws = load_summary(Path(args[1]))
+        print_comparison(data_cli, data_ws)
+    else:
+        print("Usage:")
+        print(f"  {sys.argv[0]} <summary.json>")
+        print(f"  {sys.argv[0]} <cli_summary.json> <ws_summary.json>")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

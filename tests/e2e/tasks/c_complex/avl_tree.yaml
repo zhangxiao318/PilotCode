@@ -1,0 +1,24 @@
+task_id: c_complex_avl_tree
+category: c_complex
+description: Self-balancing AVL binary search tree in C99
+prompt: |
+  请帮我实现一个C语言AVL树（自平衡二叉搜索树），要求：
+  1. 包含头文件 avl_tree.h，实现文件 avl_tree.c
+  2. 支持：插入、删除、查找、中序遍历、获取树高度
+  3. 数据类型为 int，节点包含平衡因子
+  4. 实现左旋、右旋、左右旋、右左旋四种旋转操作
+  5. main.c 中写测试程序验证插入删除后树保持平衡
+  6. Makefile 编译项目
+  请将所有文件写入当前目录。
+expected_files:
+  - avl_tree.h
+  - avl_tree.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./avl_test"]
+expected_output_contains:
+  - "AVL"
+  - "中序"
+  - "高度"
+timeout_seconds: 900

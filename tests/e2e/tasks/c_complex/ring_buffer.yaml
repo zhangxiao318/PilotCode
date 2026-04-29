@@ -1,0 +1,24 @@
+task_id: c_complex_ring_buffer
+category: c_complex
+description: Thread-safe ring buffer with pthread in C99
+prompt: |
+  请帮我实现一个C语言线程安全的环形缓冲区（ring buffer），要求：
+  1. 包含头文件 ring_buffer.h，实现文件 ring_buffer.c
+  2. 基于固定大小的数组，支持多生产者单消费者模型
+  3. 使用 POSIX pthread mutex + condition variable 保证线程安全
+  4. 提供 push（阻塞/非阻塞）、pop（阻塞/非阻塞）接口
+  5. main.c 中使用 pthread 创建 2 个生产者线程和 1 个消费者线程验证
+  6. Makefile 编译项目（需要链接 -lpthread）
+  请将所有文件写入当前目录。
+expected_files:
+  - ring_buffer.h
+  - ring_buffer.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./ring_buffer_test"]
+expected_output_contains:
+  - "生产者"
+  - "消费者"
+  - "completed"
+timeout_seconds: 900

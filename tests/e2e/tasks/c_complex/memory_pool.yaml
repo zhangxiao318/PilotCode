@@ -1,0 +1,23 @@
+task_id: c_complex_memory_pool
+category: c_complex
+description: Fixed-block memory pool with alignment in C99
+prompt: |
+  请帮我实现一个C语言固定块大小内存池（memory pool），要求：
+  1. 包含头文件 memory_pool.h，实现文件 memory_pool.c
+  2. 预分配一大块内存，管理固定大小（如 64 字节）的内存块
+  3. 使用空闲链表管理未分配的块
+  4. 提供 pool_alloc（分配）、pool_free（释放）、pool_create（创建）、pool_destroy（销毁）接口
+  5. 支持对齐分配（alignment）
+  6. main.c 中测试大量分配/释放操作，与标准库 malloc/free 对比性能
+  7. Makefile 编译项目
+  请将所有文件写入当前目录。
+expected_files:
+  - memory_pool.h
+  - memory_pool.c
+  - main.c
+  - Makefile
+compile_command: ["make"]
+run_command: ["./memory_pool_test"]
+expected_output_contains:
+  - "内存池"
+timeout_seconds: 900

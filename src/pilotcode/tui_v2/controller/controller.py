@@ -3,7 +3,7 @@
 import asyncio
 import os
 from typing import AsyncIterator, Optional, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, auto
 from pathlib import Path
 
@@ -224,9 +224,9 @@ class TUIController:
             return
         self.session_options["cwd"] = new_cwd
         if self.query_engine and self.query_engine.config:
-            self.query_engine.config = self.query_engine.config.replace(cwd=new_cwd)
+            self.query_engine.config = replace(self.query_engine.config, cwd=new_cwd)
         if self.set_app_state:
-            self.set_app_state(lambda s: s.replace(cwd=new_cwd))
+            self.set_app_state(lambda s: replace(s, cwd=new_cwd))
         # Also change the actual OS working directory so external tools
         # (e.g. git, file dialogs) operate in the correct path.
         try:
