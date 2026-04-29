@@ -68,6 +68,9 @@ python run_e2e_tests.py --category c_complex --mode cli
 
 # Run all categories
 python run_e2e_tests.py --category all --mode cli
+
+# Custom timeout (default: 360s)
+python run_e2e_tests.py --category c_complex --mode cli --timeout 600
 ```
 
 ### Run WebSocket Mode Tests
@@ -87,7 +90,8 @@ python run_e2e_tests.py --category c_complex --mode websocket
 # Custom WebSocket URL / timeout
 python run_e2e_tests.py --category c_complex --mode websocket \
     --ws-url ws://127.0.0.1:8083 \
-    --ws-recv-timeout 300
+    --ws-recv-timeout 300 \
+    --timeout 600
 ```
 
 ### Analyze Results

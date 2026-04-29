@@ -75,7 +75,7 @@ class TaskResult:
 # ---------------------------------------------------------------------------
 # CLI mode runner
 # ---------------------------------------------------------------------------
-def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path) -> TaskResult:
+def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 360) -> TaskResult:
     """Run a single task via CLI mode."""
     start_time_str = time.strftime("%H:%M:%S")
     task_dir.mkdir(parents=True, exist_ok=True)
@@ -102,7 +102,7 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path) -> TaskResult:
         text=True,
         env=env,
         cwd=str(task_dir),
-        timeout=task.timeout_seconds,
+        timeout=timeout,
     )
     elapsed = time.time() - start
 
@@ -214,7 +214,7 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path) -> TaskResult:
 # ---------------------------------------------------------------------------
 # WebSocket mode runner
 # ---------------------------------------------------------------------------
-async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path) -> TaskResult:
+async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 360) -> TaskResult:
     """Run a single task via WebSocket mode."""
     import websockets
 
@@ -242,7 +242,7 @@ async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path) -> T
         await ws.send(json.dumps({"type": "query", "message": task.prompt + "\n\n请使用中文输出所有测试结果和日志信息。"}))
 
         while True:
-            remaining = task.timeout_seconds - (time.time() - start)
+            remaining = timeout - (time.time() - start)
             if remaining <= 0:
                 break
             msg_raw = await asyncio.wait_for(ws.recv(), timeout=min(remaining, RECV_TIMEOUT))
@@ -384,7 +384,7 @@ def load_tasks(category: str) -> list[TaskDef]:
     return tasks
 
 
-def run_all(tasks: list[TaskDef], mode: str) -> list[TaskResult]:
+def run_all(tasks: list[TaskDef], mode: str, timeout: int = 360) -> list[TaskResult]:
     """Run all tasks and collect results."""
     results: list[TaskResult] = []
     run_id = time.strftime("%Y%m%d_%H%M%S")
@@ -411,9 +411,9 @@ def run_all(tasks: list[TaskDef], mode: str) -> list[TaskResult]:
 
         try:
             if mode == "cli":
-                result = run_task_cli(task, task_dir, log_file)
+                result = run_task_cli(task, task_dir, log_file, timeout=timeout)
             else:
-                result = asyncio.run(run_task_websocket(task, task_dir, log_file))
+                result = asyncio.run(run_task_websocket(task, task_dir, log_file, timeout=timeout))
         except Exception as e:
             print(f"  [CRASH] {e}")
             traceback.print_exc()
@@ -493,6 +493,7 @@ def main():
     parser.add_argument("--mode", default="cli", choices=["cli", "websocket"], help="Execution mode")
     parser.add_argument("--ws-url", default="ws://127.0.0.1:8083", help="WebSocket URL (for websocket mode)")
     parser.add_argument("--ws-recv-timeout", type=int, default=300, help="WebSocket recv timeout in seconds")
+    parser.add_argument("--timeout", type=int, default=360, help="Task timeout in seconds (default: 360)")
     args = parser.parse_args()
 
     os.environ["PILOTCODE_WS_URL"] = args.ws_url
@@ -503,7 +504,7 @@ def main():
         print("No tasks found.")
         sys.exit(1)
 
-    results = run_all(tasks, args.mode)
+    results = run_all(tasks, args.mode, timeout=args.timeout)
     print_summary(results)
 
     # Exit with non-zero if any task failed
