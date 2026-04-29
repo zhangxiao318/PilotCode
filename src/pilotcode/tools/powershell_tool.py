@@ -121,7 +121,7 @@ async def execute_powershell(
     except asyncio.TimeoutError:
         try:
             process.kill()
-            await process.wait()
+            await asyncio.wait_for(process.wait(), timeout=5.0)
         except Exception:
             pass
         return PowerShellOutput(
@@ -168,7 +168,14 @@ async def powershell_call(
         else:
             result.stderr += f"\n[NOTE: Working directory: {persistent_cwd}]"
 
-    return ToolResult(data=result)
+    # Merge stdout + stderr so the LLM sees the full picture
+    output_for_assistant = result.stdout
+    if result.stderr:
+        if output_for_assistant:
+            output_for_assistant += "\n"
+        output_for_assistant += result.stderr
+
+    return ToolResult(data=result, output_for_assistant=output_for_assistant)
 
 
 async def powershell_description(input_data: PowerShellInput, options: dict[str, Any]) -> str:

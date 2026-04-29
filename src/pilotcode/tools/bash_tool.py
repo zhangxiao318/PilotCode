@@ -60,6 +60,53 @@ def _wrap_powershell(cmd: str) -> str:
     """Wrap a command to run via PowerShell on Windows."""
     ps = _detect_platform().get("shell", "powershell")
 
+    # Guard: if the command contains Unix-only tools that have no PowerShell
+    # equivalent, emit a clear warning instead of letting PowerShell fail
+    # silently with an empty or confusing error.
+    lowered = cmd.lower()
+    unix_only = [
+        "sed",
+        "awk",
+        "xargs",
+        "chmod",
+        "chown",
+        "chgrp",
+        "lsof",
+        "strace",
+        "traceroute",
+        "top",
+        "htop",
+        "free",
+        "iostat",
+        "vmstat",
+        "pgrep",
+        "pkill",
+        "killall",
+        "nohup",
+        "screen",
+        "tmux",
+        "crontab",
+        "sudo",
+        "su",
+        "apt",
+        "yum",
+        "pacman",
+        "brew",
+        "dpkg",
+        "rpm",
+    ]
+    # Use word-boundary regex so "stop-process" doesn't match "top"
+    if any(re.search(rf"\b{re.escape(u)}\b", lowered) for u in unix_only):
+        safe_cmd = cmd.replace('"', '`"').replace("'", "''")
+        return (
+            f'{ps} -NoProfile -Command "'
+            f"$PSStyle.OutputRendering = 'PlainText'; "
+            f"echo '[Windows提示] 当前运行在 Windows PowerShell 环境，"
+            f"命令中包含不可用的 Unix 工具。原始命令: {safe_cmd}' ; "
+            f"echo '请改用 PowerShell 等效命令，"
+            f"或使用 FileWrite/FileEdit 等原生工具完成文件操作。'\""
+        )
+
     # Build a minimal Unix-compat layer for common commands used in pipes.
     # Only inject functions that are actually referenced in the command.
     compat = []
@@ -99,10 +146,11 @@ def _wrap_powershell(cmd: str) -> str:
 
     # Escape double quotes for PowerShell -Command
     escaped = cmd.replace('"', '\\"')
+    color_disable = "$PSStyle.OutputRendering = 'PlainText'; "
     if compat:
         prefix = "; ".join(compat) + "; "
-        return f'{ps} -NoProfile -Command "{prefix}{escaped}"'
-    return f'{ps} -NoProfile -Command "{escaped}"'
+        return f'{ps} -NoProfile -Command "{color_disable}{prefix}{escaped}"'
+    return f'{ps} -NoProfile -Command "{color_disable}{escaped}"'
 
 
 def translate_command_for_windows(command: str) -> str:
@@ -296,6 +344,231 @@ def translate_command_for_windows(command: str) -> str:
             new_char = match.group(6)
             return _wrap_powershell(
                 f"echo '{text}' | ForEach-Object {{ $_ -replace '{old_char}', '{new_char}' }}"
+            )
+
+    # ------------------------------------------------------------------
+    # 3. Extended PowerShell translations (common Unix utilities)
+    # ------------------------------------------------------------------
+
+    # sort FILE / sort -r FILE
+    m = re.match(r"^sort\s+(-r\s+)?(.+)$", cmd_stripped)
+    if m:
+        reverse = " -Descending" if m.group(1) else ""
+        filepath = m.group(2).strip().strip('"').strip("'")
+        return _wrap_powershell(f"Get-Content -Path '{filepath}' | Sort-Object{reverse}")
+
+    # uniq FILE
+    m = re.match(r"^uniq\s+(.+)$", cmd_stripped)
+    if m:
+        filepath = m.group(1).strip().strip('"').strip("'")
+        return _wrap_powershell(f"Get-Content -Path '{filepath}' | Get-Unique")
+
+    # diff FILE1 FILE2
+    m = re.match(r"^diff\s+(.+?)\s+(.+)$", cmd_stripped)
+    if m:
+        f1 = m.group(1).strip().strip('"').strip("'")
+        f2 = m.group(2).strip().strip('"').strip("'")
+        return _wrap_powershell(
+            f"Compare-Object (Get-Content '{f1}') (Get-Content '{f2}') | Format-List"
+        )
+
+    # cut -d DELIM -f FIELD FILE
+    m = re.match(r"^cut\s+-d\s+(['\"]?)(.+?)\1\s+-f\s+(\d+(?:,\d+)?)\s+(.+)$", cmd_stripped)
+    if m:
+        delim = m.group(2)
+        fields = m.group(3)
+        filepath = m.group(4).strip().strip('"').strip("'")
+        if "," not in fields:
+            idx = int(fields) - 1
+            return _wrap_powershell(
+                f"Get-Content -Path '{filepath}' | ForEach-Object {{ $_.Split('{delim}')[{idx}] }}"
+            )
+
+    # tee FILE
+    m = re.match(r"^tee\s+(.+)$", cmd_stripped)
+    if m:
+        filepath = m.group(1).strip().strip('"').strip("'")
+        return _wrap_powershell(f"Tee-Object -FilePath '{filepath}'")
+
+    # env
+    if cmd_stripped == "env":
+        return _wrap_powershell(
+            "Get-ChildItem Env: | ForEach-Object { '{0}={1}' -f $_.Name, $_.Value }"
+        )
+
+    # whoami
+    if cmd_stripped == "whoami":
+        return _wrap_powershell("echo $env:USERNAME")
+
+    # uname
+    if cmd_stripped == "uname":
+        return _wrap_powershell("echo $env:OS")
+
+    # id
+    if cmd_stripped == "id":
+        return _wrap_powershell("whoami; echo 'Groups:'; whoami /groups")
+
+    # ps aux / ps -ef
+    if re.match(r"^ps\s+(aux|-ef)\s*$", cmd_stripped):
+        return _wrap_powershell("Get-Process | Select-Object Id, ProcessName, CPU, WorkingSet")
+
+    # plain ps
+    if cmd_stripped == "ps":
+        return _wrap_powershell("Get-Process | Select-Object -First 20")
+
+    # kill PID
+    m = re.match(r"^kill\s+(\d+)$", cmd_stripped)
+    if m:
+        return _wrap_powershell(f"Stop-Process -Id {m.group(1)} -Force")
+
+    # killall NAME
+    m = re.match(r"^killall\s+(.+)$", cmd_stripped)
+    if m:
+        name = m.group(1).strip()
+        return _wrap_powershell(f"Stop-Process -Name '{name}' -Force")
+
+    # df -h / df
+    m = re.match(r"^df(\s+-h)?\s*$", cmd_stripped)
+    if m:
+        return _wrap_powershell(
+            "Get-Volume | Select-Object DriveLetter, FileSystemLabel, FileSystem, "
+            "@{N='SizeGB';E={[math]::Round($_.Size/1GB,2)}}, "
+            "@{N='FreeGB';E={[math]::Round($_.SizeRemaining/1GB,2)}}"
+        )
+
+    # du -sh PATH / du -s PATH
+    m = re.match(r"^du\s+-sh?\s+(.+)$", cmd_stripped)
+    if m:
+        path = m.group(1).strip().strip('"').strip("'")
+        return _wrap_powershell(
+            f"(Get-ChildItem -Path '{path}' -Recurse -ErrorAction SilentlyContinue "
+            f"| Measure-Object -Property Length -Sum).Sum / 1MB"
+        )
+
+    # ping -c N HOST
+    m = re.match(r"^ping\s+-c\s+(\d+)\s+(.+)$", cmd_stripped)
+    if m:
+        count, host = m.group(1), m.group(2).strip()
+        return _wrap_powershell(f"ping -n {count} {host}")
+
+    # curl -O URL
+    m = re.match(r"^curl\s+-O\s+(.+)$", cmd_stripped)
+    if m:
+        url = m.group(1).strip()
+        return _wrap_powershell(
+            f"Invoke-WebRequest -Uri '{url}' -OutFile (Split-Path -Leaf '{url}')"
+        )
+
+    # curl URL
+    m = re.match(r"^curl\s+(.+)$", cmd_stripped)
+    if m:
+        url = m.group(1).strip()
+        return _wrap_powershell(
+            f"Invoke-WebRequest -Uri '{url}' | Select-Object -ExpandProperty Content"
+        )
+
+    # wget URL
+    m = re.match(r"^wget\s+(.+)$", cmd_stripped)
+    if m:
+        url = m.group(1).strip()
+        return _wrap_powershell(
+            f"Invoke-WebRequest -Uri '{url}' -OutFile (Split-Path -Leaf '{url}')"
+        )
+
+    # tar ...  (Windows 10+ has built-in tar; run via cmd to ensure availability)
+    m = re.match(r"^tar\s+(.*)$", cmd_stripped)
+    if m:
+        args = m.group(1).strip()
+        return f"cmd /c tar {args}"
+
+    # unzip FILE -d DIR
+    m = re.match(r"^unzip\s+(.+?)(?:\s+-d\s+(.+))?$", cmd_stripped)
+    if m:
+        file = m.group(1).strip().strip('"').strip("'")
+        dest = m.group(2)
+        if dest:
+            dest = dest.strip().strip('"').strip("'")
+            return _wrap_powershell(
+                f"Expand-Archive -Path '{file}' -DestinationPath '{dest}' -Force"
+            )
+        return _wrap_powershell(f"Expand-Archive -Path '{file}' -Force")
+
+    # xargs -I{} CMD  (very basic)
+    m = re.match(r"^xargs\s+-I\s*(\{\}|\{\w+})\s+(.+)$", cmd_stripped)
+    if m:
+        placeholder, cmd_template = m.group(1), m.group(2)
+        ps_cmd = cmd_template.replace(placeholder, "$_")
+        return _wrap_powershell(f"$input | ForEach-Object {{ {ps_cmd} }}")
+
+    # sed 's/old/new/g' FILE  (basic substitution only)
+    m = re.match(r"^sed\s+(['\"])s/(.+?)/(.+?)/g\1\s+(.+)$", cmd_stripped)
+    if m:
+        old_str, new_str, filepath = (
+            m.group(2),
+            m.group(3),
+            m.group(4).strip().strip('"').strip("'"),
+        )
+        return _wrap_powershell(
+            f"(Get-Content -Path '{filepath}') -replace '{old_str}', '{new_str}'"
+        )
+
+    # ifconfig / ip addr
+    if cmd_stripped in ("ifconfig", "ip addr", "ip a"):
+        return _wrap_powershell(
+            "Get-NetIPAddress | Select-Object InterfaceAlias, IPAddress, PrefixLength"
+        )
+
+    # netstat
+    m = re.match(r"^netstat\s+.*$", cmd_stripped)
+    if m:
+        return _wrap_powershell(
+            "Get-NetTCPConnection | Select-Object LocalAddress, LocalPort, "
+            "RemoteAddress, RemotePort, State"
+        )
+
+    # ------------------------------------------------------------------
+    # 4. Final guard: catch any remaining Unix-only commands that would
+    #    otherwise fail silently on Windows.
+    # ------------------------------------------------------------------
+    UNIX_ONLY_COMMANDS = [
+        r"\bsed\b",
+        r"\bawk\b",
+        r"\bxargs\b",
+        r"\bchmod\b",
+        r"\bchown\b",
+        r"\bchgrp\b",
+        r"\blsof\b",
+        r"\bstrace\b",
+        r"\btraceroute\b",
+        r"\btop\b",
+        r"\bhtop\b",
+        r"\bfree\b",
+        r"\biostat\b",
+        r"\bvmstat\b",
+        r"\bpgrep\b",
+        r"\bpkill\b",
+        r"\bkillall\b",
+        r"\bnohup\b",
+        r"\bscreen\b",
+        r"\btmux\b",
+        r"\bcrontab\b",
+        r"\bsudo\b",
+        r"\bsu\b",
+        r"\bapt\b",
+        r"\byum\b",
+        r"\bpacman\b",
+        r"\bbrew\b",
+        r"\bdpkg\b",
+        r"\brpm\b",
+    ]
+    for pattern in UNIX_ONLY_COMMANDS:
+        if re.search(pattern, cmd_stripped, re.IGNORECASE):
+            safe_cmd = cmd_stripped.replace('"', '`"').replace("'", "''")
+            return _wrap_powershell(
+                f"echo '[Windows提示] 当前运行在 Windows PowerShell 环境，"
+                f"命令中包含不可用的 Unix 工具。原始命令: {safe_cmd}'; "
+                f"echo '请改用 PowerShell 等效命令，"
+                f"或使用 FileWrite/FileEdit 等原生工具完成文件操作。'"
             )
 
     return command
@@ -560,12 +833,13 @@ async def execute_bash(
                 await asyncio.wait_for(process.wait(), timeout=5.0)
             except asyncio.TimeoutError:
                 pass
+            # Drain pipes instead of hard-cancelling to avoid Windows
+            # ProactorEventLoop transport-cleanup warnings.
             for t in (stdout_task, stderr_task):
                 if not t.done():
-                    t.cancel()
                     try:
-                        await t
-                    except asyncio.CancelledError:
+                        await asyncio.wait_for(t, timeout=3.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
                         pass
             return BashOutput(
                 stdout="\n".join(stdout_lines),
@@ -582,10 +856,9 @@ async def execute_bash(
                 pass
             for t in (stdout_task, stderr_task):
                 if not t.done():
-                    t.cancel()
                     try:
-                        await t
-                    except asyncio.CancelledError:
+                        await asyncio.wait_for(t, timeout=3.0)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
                         pass
             raise  # Re-raise to propagate cancellation
 
@@ -753,17 +1026,26 @@ async def bash_call(
         else:
             result.stderr += f"\n[NOTE: Working directory: {persistent_cwd}]"
 
-    return ToolResult(data=result)
+    # Merge stdout + stderr so the LLM sees errors and cwd notes
+    output_for_assistant = result.stdout
+    if result.stderr:
+        if output_for_assistant:
+            output_for_assistant += "\n"
+        output_for_assistant += result.stderr
+
+    return ToolResult(data=result, output_for_assistant=output_for_assistant)
 
 
 async def bash_description(input_data: BashInput, options: dict[str, Any]) -> str:
     """Get description for bash tool use."""
-    return f"$ {input_data.command[:100]}"
+    prefix = "PowerShell>" if is_windows() else "$"
+    return f"{prefix} {input_data.command[:100]}"
 
 
 def bash_user_facing_name(input_data: BashInput) -> str:
     """Get user facing name for bash tool."""
-    return f"Bash({input_data.command[:50]})"
+    prefix = "PowerShell" if is_windows() else "Bash"
+    return f"{prefix}({input_data.command[:50]})"
 
 
 def is_read_only_command(command: str) -> bool:

@@ -206,7 +206,7 @@ def check_configuration() -> bool:
     # Deep check: verify LLM is actually accessible
     try:
         console.print("[dim]Verifying LLM configuration...[/dim]")
-        verification = asyncio.run(config_manager.verify_configuration(timeout=10.0))
+        verification = asyncio.run(config_manager.verify_configuration(timeout=5.0))
 
         if verification["success"]:
             model_info = verification.get("model_info")
@@ -280,7 +280,7 @@ def _probe_and_update_local_config(config, config_manager) -> None:
             await client.close()
 
     try:
-        api_caps = asyncio.run(_probe())
+        api_caps = asyncio.run(asyncio.wait_for(_probe(), timeout=5.0))
         if not api_caps:
             return
 
@@ -328,6 +328,8 @@ def _probe_and_update_local_config(config, config_manager) -> None:
                 setattr(config, key, val)
             config_manager.save_global_config(config)
             console.print("[green]✓ settings.json updated.[/green]")
+    except asyncio.TimeoutError:
+        console.print("[dim]Local model probe timed out (5s), using existing config[/dim]")
     except Exception as e:
         console.print(f"[dim]Could not probe local model: {e}[/dim]")
 
@@ -412,8 +414,8 @@ def main(
     web_host: str = typer.Option(
         "127.0.0.1", "--web-host", help="Host for Web UI server (default: 127.0.0.1)"
     ),
-    skip_config_check: bool = typer.Option(
-        False, "--skip-config-check", help="Skip configuration check (for testing)"
+    config_check: bool = typer.Option(
+        False, "--config-check", help="Run live LLM configuration check on startup"
     ),
     daemon: bool = typer.Option(
         False, "--daemon", help="Run in daemon mode (stdio) for VS Code integration"
@@ -446,9 +448,18 @@ def main(
         console.print(f"PilotCode {__version__}")
         raise typer.Exit()
 
-    # Check configuration unless skipped or running headless
-    if not skip_config_check and not prompt:
+    # Check configuration only when explicitly requested with --config-check
+    # Default is skipped for fast startup; static check still runs if not configured
+    if config_check and not prompt:
         if not check_configuration():
+            console.print("\n[yellow]Configuration required. Run:[/yellow]")
+            console.print("  [cyan]python -m pilotcode configure[/cyan]")
+            console.print("or")
+            console.print("  [cyan]python -m pilotcode.main --configure[/cyan]")
+            raise typer.Exit(code=1)
+    elif not prompt:
+        # Fast path: only check if configuration exists, skip live probing
+        if not is_configured():
             console.print("\n[yellow]Configuration required. Run:[/yellow]")
             console.print("  [cyan]python -m pilotcode configure[/cyan]")
             console.print("or")

@@ -1,5 +1,6 @@
 """Message display components for chat interface."""
 
+import sys
 from typing import Optional
 from textual.widgets import Static, Button, TextArea
 from textual.containers import Vertical, ScrollableContainer, Horizontal
@@ -31,8 +32,15 @@ def _strip_ansi_residuals(text: str) -> str:
     ESC character gets lost leaving only the parameter string.  This
     catches the most common residuals (e.g. '[35;60;54m') so they don't
     leak into the TUI as Rich-markup garbage.
+
+    Also handles PowerShell extended colour sequences like '[<59;2;28m'.
     """
-    return __import__("re").sub(r"\[(?:\d+;)*\d+[a-zA-Z]", "", text)
+    import re
+    # Standard residual: [35;60;54m
+    text = re.sub(r"\[(?:\d+;)*\d+[a-zA-Z]", "", text)
+    # PowerShell extended: [<59;2;28m
+    text = re.sub(r"\[<(?:\d+;)*\d+[a-zA-Z]", "", text)
+    return text
 
 
 def _copy_to_clipboard_impl(text: str) -> str | None:
@@ -350,6 +358,9 @@ class MessageDisplay(Static):
         # Tool messages - show tool name + key parameters
         if self.message.type == UIMessageType.TOOL_USE:
             tool_name = self.message.metadata.get("tool_name", "Tool")
+            # Windows display: show "PowerShell" instead of "Bash"
+            if sys.platform == "win32" and tool_name.lower() == "bash":
+                tool_name = "PowerShell"
             is_safe = self.message.metadata.get("is_safe", False)
             safe_marker = "✓" if is_safe else "⚠"
             tool_input = self.message.metadata.get("tool_input", {})
@@ -366,6 +377,9 @@ class MessageDisplay(Static):
         # Tool result - show output preview (first line, first 70 chars)
         if self.message.type == UIMessageType.TOOL_RESULT:
             tool_name = self.message.metadata.get("tool_name", "")
+            # Windows display: show "PowerShell" instead of "Bash"
+            if sys.platform == "win32" and tool_name.lower() == "bash":
+                tool_name = "PowerShell"
             lines = content.strip().split("\n")
             preview = lines[0][:70] if lines else ""
             if len(lines) > 1 or len(content) > 70:

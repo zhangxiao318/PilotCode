@@ -61,6 +61,10 @@ class FileWriteInput(BaseModel):
         default=False,
         description="Append to existing file. Use this to merge/combine files by appending content to an existing file.",
     )
+    encoding: str | None = Field(
+        default=None,
+        description="Text encoding for the file (e.g., utf-8, gbk, cp936). If not specified, auto-detects from existing file or uses utf-8.",
+    )
 
 
 class FileWriteOutput(BaseModel):
@@ -74,7 +78,7 @@ class FileWriteOutput(BaseModel):
 
 
 async def write_file_atomic(
-    file_path: str, content: str, append: bool = False, cwd: str | None = None
+    file_path: str, content: str, append: bool = False, cwd: str | None = None, encoding: str | None = None
 ) -> FileWriteOutput:
     """Write file atomically using temp file and rename."""
     # Security check: validate path is within workspace
@@ -116,15 +120,29 @@ async def write_file_atomic(
             pass
 
     try:
+        # Determine output encoding
+        output_encoding = "utf-8"
+        if encoding:
+            output_encoding = encoding
+        elif path.exists():
+            # Detect existing file encoding
+            for enc in ("utf-8", sys.getdefaultencoding(), "cp936", "gbk", "gb18030", "latin-1"):
+                try:
+                    path.read_text(encoding=enc)
+                    output_encoding = enc
+                    break
+                except UnicodeDecodeError:
+                    continue
+
         if append and path.exists():
             # Append mode: read existing content, append, then write
-            existing = path.read_text(encoding="utf-8", errors="replace")
+            existing = path.read_text(encoding=output_encoding, errors="replace")
             content = existing + content
 
         # Write to temp file then rename (atomic operation)
         temp_fd, temp_path = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
         try:
-            os.write(temp_fd, content.encode("utf-8"))
+            os.write(temp_fd, content.encode(output_encoding))
             os.close(temp_fd)
 
             # Atomic rename
@@ -140,7 +158,7 @@ async def write_file_atomic(
 
         return FileWriteOutput(
             file_path=str(path),
-            bytes_written=len(content.encode("utf-8")),
+            bytes_written=len(content.encode(output_encoding)),
             created=created,
             previous_size=previous_size,
             error=overwrite_warning if overwrite_warning else None,
@@ -215,8 +233,25 @@ async def file_write_call(
         file_path = os.path.join(cwd, file_path)
 
     # Write file with workspace restriction
+    # Determine encoding: explicit param > read_file_state hint > auto-detect > utf-8
+    write_encoding = input_data.encoding
+    if not write_encoding and context.read_file_state is not None:
+        # Try to inherit encoding from the most recently read file in the same directory
+        import os as _os
+        target_dir = _os.path.dirname(_os.path.abspath(file_path))
+        for key, info in sorted(
+            context.read_file_state.items(),
+            key=lambda x: x[1].get("timestamp", 0),
+            reverse=True,
+        ):
+            if _os.path.dirname(_os.path.abspath(key)) == target_dir:
+                enc = info.get("encoding")
+                if enc:
+                    write_encoding = enc
+                    break
+
     result = await write_file_atomic(
-        file_path, input_data.content, append=input_data.append, cwd=cwd
+        file_path, input_data.content, append=input_data.append, cwd=cwd, encoding=write_encoding
     )
 
     # Add file to read_file_state so it can be edited immediately
@@ -225,6 +260,7 @@ async def file_write_call(
         context.read_file_state[file_path] = {
             "timestamp": time.time(),
             "hash": hashlib.md5(input_data.content.encode()).hexdigest()[:8],
+            "encoding": write_encoding or "utf-8",
         }
 
     if result.error and not result.error.startswith("\n[WARNING]"):

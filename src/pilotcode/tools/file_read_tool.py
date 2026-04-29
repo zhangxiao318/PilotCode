@@ -28,6 +28,7 @@ class FileReadOutput(BaseModel):
     total_lines: int | None = None
     lines_read: int | None = None
     truncated: bool = False
+    encoding: str | None = None
 
 
 async def read_file_content(
@@ -45,8 +46,21 @@ async def read_file_content(
         )
 
     try:
-        # Read file content
-        content = await asyncio.to_thread(path.read_text, encoding="utf-8", errors="replace")
+        # Read file content with encoding fallback:
+        # 1. UTF-8 (default)
+        # 2. System default (cp936/gbk on Chinese Windows)
+        # 3. latin-1 as last resort (never fails, preserves all bytes)
+        def _read_with_fallback(p: Path) -> tuple[str, str]:
+            for enc in ("utf-8", sys.getdefaultencoding(), "cp936", "gbk", "gb18030", "latin-1"):
+                try:
+                    return p.read_text(encoding=enc), enc
+                except UnicodeDecodeError:
+                    continue
+            # Should never reach here because latin-1 always succeeds
+            return p.read_text(encoding="utf-8", errors="replace"), "utf-8"
+
+        import sys
+        content, detected_encoding = await asyncio.to_thread(_read_with_fallback, path)
 
         # Split into lines for offset/limit handling
         lines = content.split("\n")
@@ -78,6 +92,7 @@ async def read_file_content(
             total_lines=total_lines,
             lines_read=len(lines),
             truncated=truncated,
+            encoding=detected_encoding,
         )
     except Exception as e:
         return FileReadOutput(content="", file_path=str(path), error=str(e))
@@ -100,7 +115,7 @@ async def file_read_call(
     # Read file
     result = await read_file_content(file_path, offset=input_data.offset, limit=input_data.limit)
 
-    # Update read file state for conflict detection
+    # Update read file state for conflict detection and encoding tracking
     if context.read_file_state is not None:
         import time
 
@@ -109,6 +124,7 @@ async def file_read_call(
         context.read_file_state[normalized_key] = {
             "timestamp": time.time(),
             "mtime": os.path.getmtime(file_path) if os.path.exists(file_path) else None,
+            "encoding": result.encoding,
         }
 
     return ToolResult(data=result)
