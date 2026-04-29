@@ -1531,8 +1531,8 @@ Instructions:
 1. Use Glob/Grep to find relevant files quickly.
 2. Read the key source files to understand the bug.
 3. Identify: the exact file(s), function(s), and line(s) where the bug occurs.
-4. Find all call sites that use the affected code.
-5. Locate relevant test files.
+4. Find ALL call sites that use the affected code, including related methods (e.g., if a field has both `deconstruct` and `formfield`, examine both).
+5. Locate relevant test files and READ them to understand expected behavior, especially exact error messages and edge cases.
 6. Report your findings concisely but thoroughly.
 
 Be efficient — use parallel tool calls where possible.
@@ -1714,16 +1714,28 @@ Planned changes detail:
 {json.dumps(plan, indent=2)}
 
 CRITICAL WORKFLOW:
-1. Read each planned file ONCE, then edit it immediately. NO additional exploration.
-2. ONLY use FileEdit on files in the "Files to modify" list above.
-3. When using FileEdit, copy the EXACT old_string from the file. Do NOT double-escape backslashes (e.g., use `\\s` not `\\\\s`, use `\\n` not `\\\\n`).
-4. After editing a Python file, run `python3 -m py_compile <filepath>`.
-5. After all edits, run `git diff` to verify ONLY planned files were changed.
-6. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
-   - If tests fail due to MISSING C extensions, ImportError, or broken local environment, DO NOT keep retrying. 
+1. BEFORE editing, read the relevant test files to understand the exact expected behavior, assertions, and error messages.
+2. Read each planned file ONCE, then edit it immediately. NO additional exploration.
+3. ONLY use FileEdit on files in the "Files to modify" list above.
+4. When using FileEdit, copy the EXACT old_string from the file. Do NOT double-escape backslashes (e.g., use `\\s` not `\\\\s`, use `\\n` not `\\\\n`).
+5. **If FileEdit fails with "String not found" or similar, STOP and do this EXACT sequence:**
+   a. Use FileRead to re-read the target file and get the EXACT current text.
+   b. Copy the old_string EXACTLY as it appears — every space, tab, and newline matters.
+   c. Retry FileEdit with the corrected old_string.
+   d. If it fails AGAIN, switch to FileWrite (for files < 40 lines) or SmartEditPlanner.
+6. After editing a Python file, run `python3 -m py_compile <filepath>`.
+6. After all edits, run `git diff` to verify ONLY planned files were changed.
+7. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
+   - If tests fail due to MISSING C extensions, ImportError, or broken local environment, DO NOT keep retrying.
    - Just verify your changes with `git diff` and declare completion.
-7. If tests fail due to actual logic bugs in YOUR changes, STOP and revise.
-8. Only declare completion when the fix is verified.
+8. If tests fail due to actual logic bugs in YOUR changes, STOP and revise.
+9. Only declare completion when the fix is verified.
+
+COMPLETENESS CHECKLIST (do NOT skip):
+- [ ] Have you updated EVERY call site listed in "Affected call sites"?
+- [ ] Have you handled edge cases (None, callable, lazy objects, empty collections)?
+- [ ] If you changed an API or added validation, does the error message match test expectations exactly?
+- [ ] Did you verify you are NOT fixing the bug by deleting warnings, checks, or features?
 
 CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste turns reading files not in the plan.
 """
@@ -1919,9 +1931,12 @@ Task:
 1. Run `git diff` to see exactly what you changed.
 2. For every file you modified, check if there are OTHER methods or call sites that should also be updated.
    - If you added a helper method, did you update all places that use the old behavior?
-   - If you changed an API, did you update related methods (deconstruct, formfield, check, etc.)?
-3. Run `python3 -m py_compile` on all modified Python files.
-4. If anything is missing or broken, apply the fixes NOW.
+   - If you changed an API, did you update related methods (deconstruct, formfield, check, save, etc.)?
+   - If you changed a class, did you update all subclasses that override the same method?
+3. Verify you did NOT fix the bug by simply deleting warnings, validation logic, or features. The fix must address the root cause.
+4. If your patch adds error messages or exception text, read the test assertions to determine whether they use exact match, substring, regex, or formatted placeholders — then follow the SAME pattern. Do not invent your own wording.
+5. Run `python3 -m py_compile` on all modified Python files.
+6. If anything is missing or broken, apply the fixes NOW.
 
 Do NOT declare completion until you are confident the patch is complete and correct.
 """

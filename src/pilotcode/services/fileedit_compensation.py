@@ -39,8 +39,8 @@ class FileEditCompensationTracker:
     )
 
     # Thresholds for persistent weak-model detection (lightweight version)
-    _MIN_SAMPLES_FOR_PERSISTENT: int = 10
-    _PERSISTENT_FAILURE_RATE: float = 0.30
+    _MIN_SAMPLES_FOR_PERSISTENT: int = 5
+    _PERSISTENT_FAILURE_RATE: float = 0.50
 
     def __init__(self, app_state=None, shared_stats: dict | None = None) -> None:
         self._app_state = app_state
@@ -154,7 +154,7 @@ class FileEditCompensationTracker:
         # --- Per-query real-time compensation ---
         if is_outright_failure or used_degradation:
             self.failure_streak += 1
-            if self.failure_streak >= 2 and not self.compensation_active:
+            if self.failure_streak >= 1 and not self.compensation_active:
                 self.compensation_active = True
                 return self._build_realtime_hint()
         else:
@@ -172,17 +172,16 @@ class FileEditCompensationTracker:
 
     @staticmethod
     def _build_realtime_hint() -> str:
-        """Hint injected when the model fails twice within a single query."""
+        """Hint injected when the model has a FileEdit failure."""
         return (
-            "[FRAMEWORK HINT] You have had multiple FileEdit failures or near-misses in a row.\n"
-            "To improve success rate, follow this protocol:\n"
-            "1. STOP trying FileEdit immediately on the same file.\n"
-            "2. Use SmartEditPlanner to create a precise edit checklist for the pattern you want to change.\n"
-            "3. Re-read the target file with FileRead to get the EXACT current text.\n"
-            "4. Pay attention to indentation (spaces vs tabs) — copy the exact whitespace.\n"
-            "5. Make exactly ONE small change per FileEdit call.\n"
-            "6. If the file is small (< 30 lines), consider using FileWrite instead.\n"
-            "7. After editing, verify syntax with the appropriate tool (e.g. py_compile for .py, gcc -fsyntax-only for .c, etc.)."
+            "[FRAMEWORK HINT] Your FileEdit just failed (old_string not found or mismatch).\n"
+            "You MUST follow this protocol IMMEDIATELY — do not try another FileEdit on the same file without doing step 1 first:\n"
+            "1. Use FileRead to re-read the EXACT current content of the target file.\n"
+            "2. Copy the old_string EXACTLY as it appears in the file — every space, tab, and newline matters.\n"
+            "3. If the file is small (< 40 lines), consider using FileWrite to rewrite the entire file instead of FileEdit.\n"
+            "4. Make exactly ONE small change per FileEdit call.\n"
+            "5. If FileEdit fails again after re-reading, use SmartEditPlanner to plan the edit precisely.\n"
+            "6. After editing, verify syntax with the appropriate tool (e.g. py_compile for .py)."
         )
 
     @staticmethod

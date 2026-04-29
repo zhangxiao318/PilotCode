@@ -174,7 +174,7 @@ class QueryEngine:
         self._last_precise_count: int | None = None
         self._last_precise_count_at: float = 0.0
         self._last_precise_count_hash: str | None = None
-        self.MIN_PRECISE_INTERVAL: float = 5.0
+        self.MIN_PRECISE_INTERVAL: float = 15.0
 
         # Post-edit review tracking
         self._changed_files: list[str] = []
@@ -431,12 +431,17 @@ DON'T STOP after reading files. You MUST execute the code to test it!
 When editing code files, you MUST follow these rules to avoid syntax errors and incomplete fixes:
 
 1. **EXACT MATCH for FileEdit** - The `old_string` parameter must match the file content EXACTLY, including all spaces, tabs, and newlines. If unsure, read the file again.
-2. **Verify indentation** - Python is indentation-sensitive. Double-check that your replacement maintains or correctly changes the indentation level.
-3. **Validate Python syntax after editing** - After any `.py` file edit, immediately run `Bash(command="python -m py_compile <filepath>")` to verify the file is syntactically valid.
-4. **Use checklists for multi-file changes** - If a task requires changes in multiple files, explicitly list the files, edit them one by one, and check each off before declaring completion.
-5. **Review with git diff** - Before finishing, run `Bash(command="git diff")` to review all changes and ensure nothing was accidentally modified or left out.
-6. **Rollback on failure** - If a syntax check fails or an edit looks wrong, fix it immediately. Do not leave broken code in the workspace.
-7. **Test local changes with correct import path** - When running tests after editing source code (especially for libraries with a `src/` layout), ensure the local modified version is loaded instead of a system-installed package. Use `PYTHONPATH=src python -m pytest` or `python -m pip install -e .` before testing."""
+2. **FileEdit failure fallback** - If FileEdit fails with "String not found" or mismatch, do NOT keep guessing. Immediately: (a) Re-read the file with FileRead to get the EXACT current text, (b) Copy the old_string precisely, (c) Retry FileEdit. If it fails AGAIN, switch to FileWrite for small files (< 40 lines) or use SmartEditPlanner.
+3. **Verify indentation** - Python is indentation-sensitive. Double-check that your replacement maintains or correctly changes the indentation level.
+4. **Validate Python syntax after editing** - After any `.py` file edit, immediately run `Bash(command="python -m py_compile <filepath>")` to verify the file is syntactically valid.
+5. **Use checklists for multi-file changes** - If a task requires changes in multiple files, explicitly list the files, edit them one by one, and check each off before declaring completion.
+6. **Review with git diff** - Before finishing, run `Bash(command="git diff")` to review all changes and ensure nothing was accidentally modified or left out.
+7. **Rollback on failure** - If a syntax check fails or an edit looks wrong, fix it immediately. Do not leave broken code in the workspace.
+8. **Test local changes with correct import path** - When running tests after editing source code (especially for libraries with a `src/` layout), ensure the local modified version is loaded instead of a system-installed package. Use `PYTHONPATH=src python -m pytest` or `python -m pip install -e .` before testing.
+9. **Understand the full call chain before editing** - When you identify a bug in one function, use Grep or CodeSearch to find ALL call sites, related methods, and subclasses. A change in `deconstruct` may require a matching change in `formfield`, `check`, `save`, or other related methods.
+10. **NEVER delete features or warnings to "fix" a bug** - If a warning is a false positive, fix the underlying algorithm or logic that triggers it. Do NOT remove the warning itself. Do NOT remove validation checks to make tests pass.
+11. **Match error message patterns consistently** - If you add validation that raises exceptions or returns error objects, read the test assertions FIRST to see what matching pattern they use: exact string, substring check, regex, or formatted placeholders (e.g., %d, %s, {}). Then follow the SAME pattern. Do NOT invent your own wording.
+12. **Handle edge cases explicitly** - Always consider what happens with: None, empty strings/lists, callable objects, lazy wrappers, and nested structures. These are the most common sources of test failures."""
 
     def _parse_content_tool_calls(self, content: str) -> list[dict[str, Any]]:
         """Parse XML/pseudo-XML tool calls embedded in assistant content.
@@ -1206,9 +1211,19 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         # Priority 2: Try precise tokenizer, but rate-limit to avoid
         # hammering the backend with /tokenize requests.
         now = time.monotonic()
+
+        # 2a: Exact cache hit (same state) → return immediately.
         if (
             self._last_precise_count is not None
             and current_hash == self._last_precise_count_hash
+        ):
+            return self._last_precise_count
+
+        # 2b: Time-based rate limit. If we computed a precise count recently,
+        # reuse it even if the state changed slightly (e.g. streaming chunks).
+        # This is the key guard against flooding /tokenize on every UI update.
+        if (
+            self._last_precise_count is not None
             and (now - self._last_precise_count_at) < self.MIN_PRECISE_INTERVAL
         ):
             return self._last_precise_count
