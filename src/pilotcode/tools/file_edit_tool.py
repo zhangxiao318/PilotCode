@@ -11,6 +11,369 @@ from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 
 # ---------------------------------------------------------------------------
+# Smart pre-edit preview / validation
+# ---------------------------------------------------------------------------
+
+import ast
+import tokenize
+import io
+
+
+def _count_brackets(text: str) -> dict[str, int]:
+    """Count opening/closing brackets in text."""
+    counts = {}
+    for ch in "()[]{}\"\'":
+        counts[ch] = text.count(ch)
+    return counts
+
+
+def _check_bracket_balance_delta(
+    old_string: str, new_string: str
+) -> list[str]:
+    """Check that bracket balance is preserved or intentionally changed.
+
+    Returns list of warning messages. Empty list = OK.
+    """
+    warnings = []
+    pairs = {"(": ")", "[": "]", "{": "}"}
+
+    for open_ch, close_ch in pairs.items():
+        old_open = old_string.count(open_ch)
+        old_close = old_string.count(close_ch)
+        new_open = new_string.count(open_ch)
+        new_close = new_string.count(close_ch)
+
+        old_balance = old_open - old_close
+        new_balance = new_open - new_close
+
+        # If old_string was balanced, new_string should also be balanced
+        # (within the edit context).  Exception: edits that intentionally
+        # add/remove an outer wrapper — but those are rare.
+        if old_balance == 0 and new_balance != 0:
+            if new_balance > 0:
+                warnings.append(
+                    f"Bracket imbalance: '{open_ch}{close_ch}' — "
+                    f"old_string was balanced but new_string has {new_balance} "
+                    f"unclosed '{open_ch}'. Missing '{close_ch}'?"
+                )
+            else:
+                warnings.append(
+                    f"Bracket imbalance: '{open_ch}{close_ch}' — "
+                    f"old_string was balanced but new_string has {-new_balance} "
+                    f"extra '{close_ch}'."
+                )
+
+    return warnings
+
+
+def _check_indentation_consistency(
+    old_string: str, new_string: str
+) -> list[str]:
+    """Check that indentation patterns are reasonable."""
+    warnings = []
+
+    old_lines = [ln for ln in old_string.splitlines() if ln.strip()]
+    new_lines = [ln for ln in new_string.splitlines() if ln.strip()]
+
+    if not old_lines or not new_lines:
+        return warnings
+
+    # Get indentation of first non-empty line
+    old_first_indent = len(old_lines[0]) - len(old_lines[0].lstrip())
+    new_first_indent = len(new_lines[0]) - len(new_lines[0].lstrip())
+
+    # Heuristic: if the first line's indentation changed by >4 spaces,
+    # it's suspicious unless the old_string also had a big change.
+    indent_delta = abs(new_first_indent - old_first_indent)
+    if indent_delta > 4 and old_first_indent > 0:
+        warnings.append(
+            f"Indentation shift: first line indent changed from {old_first_indent} "
+            f"to {new_first_indent} spaces. Did you copy the old_string correctly?"
+        )
+
+    # Check for mixed tabs/spaces
+    has_tab = any("\t" in ln for ln in new_lines)
+    has_space = any(" " in ln and not ln.startswith("\t") for ln in new_lines)
+    if has_tab and has_space:
+        warnings.append(
+            "Mixed tabs and spaces in new_string. Use consistent indentation."
+        )
+
+    return warnings
+
+
+def _check_critical_structure_deletion(
+    old_string: str, new_string: str
+) -> list[str]:
+    """Detect accidental deletion of critical structural elements.
+
+    Checks for cases where a closing bracket/paren that appears at the
+    *very end* of old_string is completely missing from new_string.
+    This is safer than simple suffix matching because it verifies the
+    bracket is truly gone, not just moved elsewhere.
+    """
+    warnings = []
+
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    old_stripped = old_string.rstrip()
+    new_stripped = new_string.rstrip()
+
+    # Only flag if old_string ended with a closing bracket AND
+    # that same closing bracket is completely absent from new_string
+    for suffix in ["})", "])", "}", ")", "]"]:
+        if old_stripped.endswith(suffix):
+            # Count occurrences in both strings
+            old_count = old_stripped.count(suffix)
+            new_count = new_stripped.count(suffix)
+            if new_count < old_count:
+                warnings.append(
+                    f"Closing sequence '{suffix}' appears {old_count} time(s) in "
+                    f"old_string but only {new_count} in new_string. "
+                    f"Make sure you didn't accidentally drop a closing bracket."
+                )
+                break
+
+    return warnings
+
+
+# ---------------------------------------------------------------------------
+# Extension → tree-sitter language mapping
+# ---------------------------------------------------------------------------
+
+EXT_TO_TS_LANG = {
+    ".py": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".java": "java",
+    ".go": "go",
+    ".rs": "rust",
+    ".c": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".hpp": "cpp",
+    ".h": "c",
+    ".rb": "ruby",
+    ".php": "php",
+}
+
+# Per-session caches (refreshed on every new session):
+# - status: 0 = unchecked, 1 = installed, -1 = checked but not installed
+# - prompted: set of languages already hinted in this session
+_session_lang_status: dict[str, int] = {}
+_session_prompted_langs: set[str] = set()
+
+
+def _get_ts_parser(lang: str) -> Any:
+    """Safely get a tree-sitter parser. Returns None if unavailable."""
+    try:
+        from tree_sitter_languages import get_parser
+        return get_parser(lang)
+    except Exception:
+        return None
+
+
+def _check_tree_sitter_syntax(
+    new_string: str, file_path: str
+) -> tuple[list[str], list[str]]:
+    """Check syntax using tree-sitter if available.
+
+    Status caching:
+      - 0 (unchecked): first encounter → probe, save result, prompt once per session
+      - 1 (installed): use tree-sitter for syntax check
+      - -1 (not installed): skip deep check, don't prompt again
+
+    Returns (blockers, install_hints):
+    - blockers: syntax errors found (blocking)
+    - install_hints: messages about missing language support (non-blocking, once per session)
+    """
+    blockers = []
+    install_hints = []
+
+    ext = file_path[file_path.rfind("."):].lower() if "." in file_path else ""
+    lang = EXT_TO_TS_LANG.get(ext)
+
+    if not lang:
+        return blockers, install_hints
+
+    status = _session_lang_status.get(lang, 0)
+
+    if status == -1:
+        # Already known to be unavailable this session — skip silently
+        return blockers, install_hints
+
+    if status == 0:
+        # First encounter this session — probe availability
+        parser = _get_ts_parser(lang)
+        if parser is None:
+            _session_lang_status[lang] = -1
+            # Prompt only once per session
+            if lang not in _session_prompted_langs:
+                _session_prompted_langs.add(lang)
+                install_hints.append(
+                    f"[tree-sitter] Deep syntax checking for {ext} files is unavailable. "
+                    f"Install with: pip install tree-sitter-languages"
+                )
+            return blockers, install_hints
+        else:
+            _session_lang_status[lang] = 1
+            # Fall through to syntax check
+
+    # status == 1 (or just promoted from 0)
+    parser = _get_ts_parser(lang)
+    if parser is None:
+        # Should not happen if status == 1, but be safe
+        return blockers, install_hints
+
+    code_bytes = new_string.encode("utf-8")
+    tree = parser.parse(code_bytes)
+
+    if tree.root_node.has_error:
+        # Try to extract the approximate error location
+        error_nodes = []
+        def _collect_errors(node):
+            if node.type == "ERROR" or node.is_missing:
+                error_nodes.append(node)
+            for child in node.children:
+                _collect_errors(child)
+        _collect_errors(tree.root_node)
+
+        if error_nodes:
+            first = error_nodes[0]
+            line = first.start_point[0] + 1
+            col = first.start_point[1] + 1
+            snippet = new_string.splitlines()[first.start_point[0]]
+            blockers.append(
+                f"{lang.capitalize()} syntax error in new_string at line {line}, col {col}: "
+                f"'{snippet.strip()[:40]}'. Check brackets, quotes, and semicolons."
+            )
+        else:
+            blockers.append(
+                f"{lang.capitalize()} syntax error in new_string (tree-sitter detected "
+                f"parse errors). Check brackets, quotes, and semicolons."
+            )
+
+    return blockers, install_hints
+
+
+def _check_python_ast_fragment(
+    new_string: str, file_path: str
+) -> list[str]:
+    """Try to parse new_string as Python AST (best-effort for fragments).
+
+    Kept as fallback when tree-sitter is not available for Python.
+    """
+    warnings = []
+
+    if not file_path.endswith(".py"):
+        return warnings
+
+    # If tree-sitter is available, prefer it (already checked above)
+    if _get_ts_parser("python") is not None:
+        return warnings
+
+    # Fallback: stdlib ast module
+    wrapped = f"def _fake():\n" + "\n".join(
+        "    " + ln for ln in new_string.splitlines()
+    )
+    try:
+        ast.parse(wrapped)
+        return warnings
+    except SyntaxError as e:
+        try:
+            ast.parse(new_string)
+            return warnings
+        except SyntaxError:
+            wrapped_cls = f"class _Fake:\n" + "\n".join(
+                "    " + ln for ln in new_string.splitlines()
+            )
+            try:
+                ast.parse(wrapped_cls)
+                return warnings
+            except SyntaxError:
+                warnings.append(
+                    f"Python syntax error in new_string (AST parse failed): {e.msg} "
+                    f"at line {e.lineno}. Check brackets, indentation, and quotes."
+                )
+
+    return warnings
+
+
+def _smart_preview_check(
+    old_string: str, new_string: str, file_path: str
+) -> tuple[bool, list[str]]:
+    """Run all smart preview checks on a proposed edit.
+
+    Returns (ok, warnings) where ok=True means no blocking issues.
+
+    Blocking issues (hard failures):
+      - Python AST syntax error in new_string
+      - Bracket imbalance > 1 (likely missing multiple brackets)
+
+    Warning issues (reported but NOT blocking):
+      - Single bracket imbalance (could be intentional partial edit)
+      - Indentation shift
+      - Closing sequence count mismatch
+    """
+    blockers = []
+    warnings = []
+
+    # 1. Bracket balance — severity based on imbalance magnitude
+    bracket_issues = _check_bracket_balance_delta(old_string, new_string)
+    for issue in bracket_issues:
+        # Extract imbalance count from message
+        import re
+        m = re.search(r"imbalance of ([-+]?\d+)", issue)
+        if m and abs(int(m.group(1))) > 1:
+            blockers.append(issue)
+        else:
+            warnings.append(issue)
+
+    # 2. Indentation — always warning (never blocking)
+    warnings.extend(_check_indentation_consistency(old_string, new_string))
+
+    # 3. Critical structure — warning unless paired with bracket blocker
+    struct_issues = _check_critical_structure_deletion(old_string, new_string)
+    if blockers:
+        warnings.extend(struct_issues)
+    else:
+        warnings.extend(struct_issues)
+
+    # 4. Tree-sitter multi-language syntax check
+    ts_blockers, ts_hints = _check_tree_sitter_syntax(new_string, file_path)
+    blockers.extend(ts_blockers)
+    warnings.extend(ts_hints)  # install hints are non-blocking
+
+    # 5. Python AST fallback (only when tree-sitter unavailable)
+    if file_path.endswith(".py") and not ts_blockers and not ts_hints:
+        ast_issues = _check_python_ast_fragment(new_string, file_path)
+        blockers.extend(ast_issues)
+
+    # Build detailed message with code context
+    all_issues = blockers + warnings
+    if all_issues:
+        # Add line-number context for new_string
+        lines = new_string.splitlines()
+        context_lines = []
+        for i, line in enumerate(lines[:10], 1):
+            context_lines.append(f"    {i:3}: {line}")
+        if len(lines) > 10:
+            context_lines.append(f"    ... ({len(lines) - 10} more lines)")
+
+        detail = "\n".join(context_lines)
+        labeled = []
+        for issue in blockers:
+            labeled.append(f"[BLOCKING] {issue}")
+        for issue in warnings:
+            labeled.append(f"[WARNING] {issue}")
+        labeled.append(f"\nYour new_string starts with:\n{detail}")
+        return len(blockers) == 0, labeled
+
+    return True, []
+
+
+# ---------------------------------------------------------------------------
 # Auto-degradation helpers for weak models (P0)
 # ---------------------------------------------------------------------------
 
@@ -360,6 +723,23 @@ async def edit_file_content(
                 except Exception:
                     pass
 
+                # --- Smart preview check (P0) ---
+                preview_ok, preview_warnings = _smart_preview_check(
+                    matched_block, new_string_normalized, str(path)
+                )
+                if not preview_ok:
+                    path.write_text(original_content, encoding="utf-8")
+                    warning_text = "\n".join(f"  - {w}" for w in preview_warnings)
+                    return FileEditOutput(
+                        file_path=str(path),
+                        replacements_made=0,
+                        original_content=original_content,
+                        error=(
+                            f"{fuzzy_note} Smart preview blocked this fuzzy match:\n{warning_text}\n\n"
+                            f"TIP: Re-read the file with FileRead and ensure new_string is correct."
+                        ),
+                    )
+
                 # Validate Python syntax and rollback if invalid
                 if path.suffix == ".py":
                     import py_compile
@@ -426,6 +806,24 @@ async def edit_file_content(
                         )
                 except Exception:
                     pass
+
+                # --- Smart preview check (P0) ---
+                preview_ok, preview_warnings = _smart_preview_check(
+                    matched_block, new_string_normalized, str(path)
+                )
+                if not preview_ok:
+                    path.write_text(original_content, encoding="utf-8")
+                    warning_text = "\n".join(f"  - {w}" for w in preview_warnings)
+                    return FileEditOutput(
+                        file_path=str(path),
+                        replacements_made=0,
+                        original_content=original_content,
+                        error=(
+                            f"Auto-degradation ({', '.join(degradation_attempted)}) blocked by smart preview:\n"
+                            f"{warning_text}\n\n"
+                            f"TIP: Re-read the file with FileRead and ensure new_string is correct."
+                        ),
+                    )
 
                 # Validate Python syntax and rollback if invalid
                 if path.suffix == ".py":
@@ -497,6 +895,24 @@ async def edit_file_content(
         # Replace
         new_content = original_content.replace(old_string_normalized, new_string_normalized)
         replacements_made = occurrences
+
+        # --- Smart preview check (P0) ---
+        preview_ok, preview_warnings = _smart_preview_check(
+            old_string_normalized, new_string_normalized, str(path)
+        )
+        if not preview_ok:
+            # Block the edit and return detailed warnings
+            warning_text = "\n".join(f"  - {w}" for w in preview_warnings)
+            return FileEditOutput(
+                file_path=str(path),
+                replacements_made=0,
+                original_content=original_content,
+                error=(
+                    f"Smart preview blocked this edit due to potential issues:\n{warning_text}\n\n"
+                    f"TIP: Re-read the file with FileRead, copy the old_string EXACTLY, "
+                    f"and ensure new_string preserves bracket balance and indentation."
+                ),
+            )
 
         # Generate unified diff
         filename = path.name
