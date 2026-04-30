@@ -8,6 +8,54 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
+
+# ---------------------------------------------------------------------------
+# FileEdit scope guard: restrict edits to planned/allowed files
+# ---------------------------------------------------------------------------
+import threading
+
+_scoped_allowed_files: dict[str, set[str]] = {}
+_scope_lock = threading.Lock()
+
+
+def set_allowed_files(cwd: str, allowed_files: list[str] | None) -> None:
+    """Set the list of files that FileEdit is allowed to modify for a given cwd."""
+    with _scope_lock:
+        if allowed_files:
+            _scoped_allowed_files[cwd] = set(allowed_files)
+        else:
+            _scoped_allowed_files.pop(cwd, None)
+
+
+def clear_allowed_files(cwd: str) -> None:
+    """Clear the allowed files restriction for a given cwd."""
+    with _scope_lock:
+        _scoped_allowed_files.pop(cwd, None)
+
+
+def _is_file_allowed(file_path: str, cwd: str) -> tuple[bool, str | None]:
+    """Check if a file is within the allowed list for the given cwd.
+    
+    Returns (allowed, reason_if_blocked).
+    If no restriction is set for this cwd, all files are allowed.
+    """
+    with _scope_lock:
+        allowed = _scoped_allowed_files.get(cwd)
+    if allowed is None:
+        return True, None
+    rel = os.path.relpath(file_path, cwd)
+    for a in allowed:
+        if rel == a or rel.startswith(a + os.sep):
+            return True, None
+    basename = os.path.basename(rel)
+    if basename in {os.path.basename(a) for a in allowed}:
+        return True, None
+    return False, (
+        f"FileEdit scope guard: '{rel}' is not in the allowed files list. "
+        f"You may only edit: {', '.join(sorted(allowed))}. "
+        f"If this file truly needs to be modified, update the plan first."
+    )
+
 from .registry import register_tool
 
 # ---------------------------------------------------------------------------
@@ -1025,6 +1073,20 @@ async def file_edit_call(
     cwd = resolve_cwd(context)
     if not os.path.isabs(file_path):
         file_path = os.path.join(cwd, file_path)
+
+    # Scope guard: check if file is in allowed list
+    allowed, reason = _is_file_allowed(file_path, cwd)
+    if not allowed:
+        return ToolResult(
+            data=FileEditOutput(
+                file_path=file_path,
+                replacements_made=0,
+                diff="",
+                error=reason,
+            ),
+            error=reason,
+            output_for_assistant=reason,
+        )
 
     # Edit file with workspace restriction
     result = await edit_file_content(

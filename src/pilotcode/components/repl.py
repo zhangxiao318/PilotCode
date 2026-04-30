@@ -21,6 +21,7 @@ from prompt_toolkit.styles import Style
 
 from ..tools.registry import get_all_tools
 from ..tools.base import ToolUseContext
+from ..tools.file_edit_tool import set_allowed_files, clear_allowed_files
 from ..commands.base import process_user_input, CommandContext
 from ..query_engine import QueryEngine, QueryEngineConfig
 from ..state.app_state import get_default_app_state, AppState
@@ -885,6 +886,16 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
     if composite_score >= 2.5:
         return "PLAN"
 
+    # ---- Rule 3b: Bug-fixing tasks (e.g. SWE-bench) always need planning ----
+    prompt_lower = prompt.lower()
+    bug_signals = [
+        "bug report", "bug fix", "fix the bug", "fix a bug", "resolve the issue",
+        "github.com", "issue #", "pr #", "failing test", "test failure",
+        "regression", "broken", "does not work", "not working",
+    ]
+    if any(s in prompt_lower for s in bug_signals):
+        return "PLAN"
+
     # ---- Rule 2: Very short, no code signals → DIRECT ----
     prompt_stripped = prompt.strip()
     if len(prompt_stripped) < 20 and not any(
@@ -1537,11 +1548,15 @@ Instructions:
 
 Be efficient — use parallel tool calls where possible.
 """
+    # Dynamic exploration budget: complex tasks need more reading turns
+    explore_budget = 12
+    if use_planning:
+        explore_budget = 20
     explore_result = await run_headless(
         explore_prompt,
         auto_allow=auto_allow,
         json_mode=False,
-        max_iterations=12,
+        max_iterations=explore_budget,
         cwd=effective_cwd,
         progress_callback=progress_callback,
         read_only=True,
@@ -1630,6 +1645,7 @@ Based on the discoveries above, proceed DIRECTLY to implement the fix. Do NOT re
         fallback_result["env_diagnosis_count"] = fallback_result.get(
             "env_diagnosis_count", env_diagnosis_count
         )
+        clear_allowed_files(effective_cwd)
         return fallback_result
 
     # Validate plan: ensure referenced files exist in the repo
@@ -1660,6 +1676,7 @@ Proceed DIRECTLY to implement the fix. Make the code changes immediately.
         fallback_result["env_diagnosis_count"] = fallback_result.get(
             "env_diagnosis_count", env_diagnosis_count
         )
+        clear_allowed_files(effective_cwd)
         return fallback_result
 
     # Persist valid plan to external cache
@@ -1680,6 +1697,8 @@ Proceed DIRECTLY to implement the fix. Make the code changes immediately.
     _log(f"[AGENT] Phase 3/4: Executing fix (budget: {execution_max_iterations} turns)")
 
     planned_files = [item.get("file") for item in plan_items if item.get("file")]
+    # Activate FileEdit scope guard to prevent edits to unrelated files
+    set_allowed_files(effective_cwd, planned_files)
     planned_files_str = (
         "\n".join(f"  - {f}" for f in planned_files) if planned_files else "  (none specified)"
     )
@@ -1715,8 +1734,8 @@ Planned changes detail:
 
 CRITICAL WORKFLOW:
 1. BEFORE editing, read the relevant test files to understand the exact expected behavior, assertions, and error messages.
-2. Read each planned file ONCE, then edit it immediately. NO additional exploration.
-3. ONLY use FileEdit on files in the "Files to modify" list above.
+2. Read each planned file carefully before editing. If you discover the plan is incomplete (e.g., a related file also needs changes), you MAY read additional files — but stay focused.
+3. ONLY use FileEdit on files in the "Files to modify" list above. Do NOT modify unrelated files.
 4. When using FileEdit, copy the EXACT old_string from the file. Do NOT double-escape backslashes (e.g., use `\\s` not `\\\\s`, use `\\n` not `\\\\n`).
 5. **If FileEdit fails with "String not found" or similar, STOP and do this EXACT sequence:**
    a. Use FileRead to re-read the target file and get the EXACT current text.
@@ -1724,12 +1743,13 @@ CRITICAL WORKFLOW:
    c. Retry FileEdit with the corrected old_string.
    d. If it fails AGAIN, switch to FileWrite (for files < 40 lines) or SmartEditPlanner.
 6. After editing a Python file, run `python3 -m py_compile <filepath>`.
-6. After all edits, run `git diff` to verify ONLY planned files were changed.
-7. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
+7. CRITICAL: Do NOT fix bugs by simply deleting code. If you encounter code that looks wrong (e.g., a function call whose return value is discarded), the correct fix is usually to USE the return value (e.g., assign it to a variable), not to delete the line. Only delete code if you are 100% certain it serves no purpose.
+8. After all edits, run `git diff` to verify ONLY planned files were changed.
+9. Run relevant tests from the list above. If none are listed, run `python3 -m pytest` on the nearest test file.
    - If tests fail due to MISSING C extensions, ImportError, or broken local environment, DO NOT keep retrying.
    - Just verify your changes with `git diff` and declare completion.
-8. If tests fail due to actual logic bugs in YOUR changes, STOP and revise.
-9. Only declare completion when the fix is verified.
+10. If tests fail due to actual logic bugs in YOUR changes, STOP and revise.
+11. Only declare completion when the fix is verified.
 
 COMPLETENESS CHECKLIST (do NOT skip):
 - [ ] Have you updated EVERY call site listed in "Affected call sites"?
@@ -1884,6 +1904,7 @@ Output ONLY the JSON object.
 
         print(json_mod.dumps(best_result, indent=2, default=str))
 
+    clear_allowed_files(effective_cwd)
     return best_result
 
 
@@ -1934,9 +1955,11 @@ Task:
    - If you changed an API, did you update related methods (deconstruct, formfield, check, save, etc.)?
    - If you changed a class, did you update all subclasses that override the same method?
 3. Verify you did NOT fix the bug by simply deleting warnings, validation logic, or features. The fix must address the root cause.
-4. If your patch adds error messages or exception text, read the test assertions to determine whether they use exact match, substring, regex, or formatted placeholders — then follow the SAME pattern. Do not invent your own wording.
-5. Run `python3 -m py_compile` on all modified Python files.
-6. If anything is missing or broken, apply the fixes NOW.
+4. CRITICAL: If you see code that looks "suspicious" or "inefficient" (e.g., a replace() whose return value is unused), DO NOT simply delete it. First understand what the code is TRYING to do. It may be a partially-correct implementation that needs to be FIXED (e.g., assign the return value back to the variable), not REMOVED.
+5. Check if you modified any files that were NOT in the original plan. If so, revert them unless they are absolutely necessary for the fix.
+6. If your patch adds error messages or exception text, read the test assertions to determine whether they use exact match, substring, regex, or formatted placeholders — then follow the SAME pattern. Do not invent your own wording.
+7. Run `python3 -m py_compile` on all modified Python files.
+8. If anything is missing or broken, apply the fixes NOW.
 
 Do NOT declare completion until you are confident the patch is complete and correct.
 """
@@ -2210,7 +2233,7 @@ async def run_headless_with_feedback(
     auto_allow: bool = False,
     json_mode: bool = False,
     max_iterations: int = 100,
-    max_rounds: int = 3,
+    max_rounds: int = 4,
     cwd: str | None = None,
     progress_callback: Callable[[str], None] | None = None,
     use_planning: bool = False,

@@ -132,6 +132,36 @@ REPO_CACHE_DIR = os.environ.get(
     "SWE_BENCH_REPO_CACHE", os.path.join(tempfile.gettempdir(), "swe-bench-work")
 )
 
+# Additional fallback cache directories (in order of preference)
+_FALLBACK_CACHE_DIRS = [
+    "/home/zx/swe-env/repos",
+    "/home/zx/.cache/swe-bench-repos",
+]
+
+
+def _find_repo_in_fallbacks(repo_slug: str, commit: str = "") -> str | None:
+    """Search fallback directories for a usable repo matching repo_slug and optionally commit."""
+    for fb_dir in _FALLBACK_CACHE_DIRS:
+        if not os.path.isdir(fb_dir):
+            continue
+        for entry in os.listdir(fb_dir):
+            entry_path = os.path.join(fb_dir, entry)
+            if not os.path.isdir(os.path.join(entry_path, ".git")):
+                continue
+            if not entry.startswith(repo_slug):
+                continue
+            if commit:
+                rc, head, _ = run_cmd("git rev-parse HEAD", cwd=entry_path)
+                if rc == 0 and head.strip() == commit:
+                    return entry_path
+                # Also check if commit exists in this repo
+                rc2, _, _ = run_cmd(f"git cat-file -t {commit}", cwd=entry_path, timeout=10)
+                if rc2 == 0:
+                    return entry_path
+            else:
+                return entry_path
+    return None
+
 
 def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
     """Clone repo to persistent cache, then copy to work_dir. Reuse if already correct commit."""
@@ -148,28 +178,44 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
             print(f"[CACHE] Reused work_dir {work_dir} at {commit}")
             return True
 
-    # Check persistent cache
+    # Check persistent cache (primary)
     if os.path.isdir(os.path.join(cache_dir, ".git")):
         rc, head, _ = run_cmd("git rev-parse HEAD", cwd=cache_dir)
         if rc == 0 and head.strip() == commit:
             print(f"[CACHE] Reusing cached repo {cache_dir}")
         else:
-            shutil.rmtree(cache_dir, ignore_errors=True)
+            # Check if commit exists locally in this cache
+            rc2, _, _ = run_cmd(f"git cat-file -t {commit}", cwd=cache_dir, timeout=10)
+            if rc2 == 0:
+                print(f"[CACHE] Commit {commit} exists in {cache_dir}, reusing")
+            else:
+                shutil.rmtree(cache_dir, ignore_errors=True)
     else:
         shutil.rmtree(cache_dir, ignore_errors=True)
+
+    # Try fallback caches before cloning
+    if not os.path.exists(cache_dir):
+        fallback = _find_repo_in_fallbacks(repo_slug, commit)
+        if fallback:
+            print(f"[CACHE] Copying fallback repo {fallback} -> {cache_dir}")
+            os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+            shutil.copytree(fallback, cache_dir, symlinks=True)
+            # Ensure correct commit is checked out
+            rc, _, _ = run_cmd("git rev-parse HEAD", cwd=cache_dir)
+            if rc != 0 or rc == 0 and _.strip() != commit:
+                run_cmd(f"git checkout -f {commit}", cwd=cache_dir, timeout=60)
 
     if not os.path.exists(cache_dir):
         os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
         repo_url = f"https://github.com/{repo}.git"
-        # Temporarily disable proxy for git operations (network may be unstable)
-        env_no_proxy = "GIT_CONFIG_GLOBAL=/dev/null"
+        # Use system proxy settings (git config --global http.proxy should be set)
         rc, _, stderr = run_cmd(
-            f"{env_no_proxy} git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}",
-            timeout=60,
+            f"git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}",
+            timeout=600,
         )
         if rc != 0:
             print(f"[WARN] Shallow clone failed: {stderr}")
-            rc, _, stderr = run_cmd(f"{env_no_proxy} git clone {repo_url} {cache_dir}", timeout=120)
+            rc, _, stderr = run_cmd(f"git clone {repo_url} {cache_dir}", timeout=600)
             if rc != 0:
                 print(f"[WARN] Full clone failed: {stderr}")
                 # Fallback: try to reuse any existing repo for the same project
@@ -183,22 +229,21 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
         if not os.path.isdir(os.path.join(cache_dir, ".git")):
             print(f"[ERROR] Cache dir {cache_dir} is not a git repo")
             return False
-        # Fetch/checkout target commit with short timeout
+        # Fetch/checkout target commit
         rc, _, stderr = run_cmd(
-            f"{env_no_proxy} git fetch --depth 1 origin {commit}", cwd=cache_dir, timeout=30
+            f"git fetch --depth 1 origin {commit}", cwd=cache_dir, timeout=300
         )
         if rc != 0:
             rc, _, stderr = run_cmd(
-                f"{env_no_proxy} git fetch origin {commit}", cwd=cache_dir, timeout=60
+                f"git fetch origin {commit}", cwd=cache_dir, timeout=300
             )
-        rc, _, stderr = run_cmd(f"git checkout {commit}", cwd=cache_dir, timeout=30)
+        rc, _, stderr = run_cmd(f"git checkout {commit}", cwd=cache_dir, timeout=60)
         if rc != 0:
             print(f"[WARN] Failed to checkout {commit}: {stderr}")
-            # If we have an existing repo copy, try direct checkout (commit may already be local)
             rc2, _, _ = run_cmd(f"git cat-file -t {commit}", cwd=cache_dir, timeout=10)
             if rc2 == 0:
                 print(f"[CACHE] Commit {commit} exists locally, attempting checkout anyway")
-                rc3, _, stderr3 = run_cmd(f"git checkout -f {commit}", cwd=cache_dir, timeout=30)
+                rc3, _, stderr3 = run_cmd(f"git checkout -f {commit}", cwd=cache_dir, timeout=60)
                 if rc3 != 0:
                     print(f"[ERROR] Checkout failed: {stderr3}")
                     return False
@@ -214,12 +259,14 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
 
 def _find_existing_repo_cache(repo_slug: str) -> str | None:
     """Find any existing cached repo directory for the given repo slug."""
-    if not os.path.isdir(REPO_CACHE_DIR):
-        return None
-    for entry in os.listdir(REPO_CACHE_DIR):
-        entry_path = os.path.join(REPO_CACHE_DIR, entry)
-        if os.path.isdir(os.path.join(entry_path, ".git")) and entry.startswith(repo_slug):
-            return entry_path
+    # Search primary cache first, then fallbacks
+    for search_dir in [REPO_CACHE_DIR] + _FALLBACK_CACHE_DIRS:
+        if not os.path.isdir(search_dir):
+            continue
+        for entry in os.listdir(search_dir):
+            entry_path = os.path.join(search_dir, entry)
+            if os.path.isdir(os.path.join(entry_path, ".git")) and entry.startswith(repo_slug):
+                return entry_path
     return None
 
 
@@ -230,7 +277,7 @@ def run_pilotcode(
     planning_flag = "" if planning else "--no-planning"
     cmd = (
         f"python3 -m pilotcode "
-        f"--skip-config-check --auto-allow --max-iterations {max_iterations} "
+        f"--auto-allow --max-iterations {max_iterations} "
         f"{planning_flag} "
         f"-p {shlex.quote(prompt)}"
     )
@@ -1084,11 +1131,23 @@ def main():
     # Solve instances and append predictions immediately
     processed = 0
     for inst in dataset:
-        pred = solve_instance(inst, model_name=args.model_name)
-        with open(output_path, "a") as f:
-            f.write(json.dumps(pred) + "\n")
-        processed += 1
-        print(f"[INFO] Progress: {processed}/{len(dataset)} instances in this run")
+        inst_id = inst.get("instance_id", "unknown")
+        try:
+            pred = solve_instance(inst, model_name=args.model_name)
+            with open(output_path, "a") as f:
+                f.write(json.dumps(pred) + "\n")
+            processed += 1
+            print(f"[INFO] Progress: {processed}/{len(dataset)} instances in this run")
+        except Exception as e:
+            print(f"[ERROR] Instance {inst_id} failed: {e}")
+            # Write a failed prediction so evaluation knows it was attempted
+            with open(output_path, "a") as f:
+                f.write(json.dumps({
+                    "instance_id": inst_id,
+                    "model_name_or_path": args.model_name,
+                    "model_patch": "",
+                }) + "\n")
+            processed += 1
 
     print(f"\n[INFO] Appended {processed} predictions to {output_path}")
     total_completed = len(completed_ids) + processed
