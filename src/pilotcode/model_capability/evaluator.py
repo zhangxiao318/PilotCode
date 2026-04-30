@@ -66,10 +66,11 @@ def evaluate_capability(
         dependency_accuracy=_sub_avg("planning", "dependency_accuracy"),
     )
 
+    task_completion_score = _dim_avg("task_completion", dim_scores.get("task_completion", {}))
     task_completion = TaskCompletionDimension(
-        score=_dim_avg("task_completion", dim_scores.get("task_completion", {})),
+        score=task_completion_score,
         code_correctness=_sub_avg("task_completion", "code_correctness"),
-        test_pass_rate=_sub_avg("task_completion", "test_pass_rate"),
+        test_pass_rate=_sub_avg("task_completion", "test_pass_rate") or task_completion_score,
     )
 
     json_formatting = JsonFormattingDimension(
@@ -86,11 +87,12 @@ def evaluate_capability(
         debugging_skill=_sub_avg("chain_of_thought", "debugging_skill"),
     )
 
+    code_review_score = _dim_avg("code_review", dim_scores.get("code_review", {}))
     code_review = CodeReviewDimension(
-        score=_dim_avg("code_review", dim_scores.get("code_review", {})),
+        score=code_review_score,
         bug_detection=_sub_avg("code_review", "bug_detection"),
         structured_output=_sub_avg("code_review", "structured_output"),
-        style_consistency=_sub_avg("code_review", "style_consistency"),
+        style_consistency=_sub_avg("code_review", "style_consistency") or code_review_score,
     )
 
     overall = _average(

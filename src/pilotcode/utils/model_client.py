@@ -383,6 +383,16 @@ class ModelClient:
                 payload["tool_choice"] = "auto"
 
         if max_tokens:
+            # DeepSeek reasoning models (V4, R1, etc.) emit reasoning_content
+            # before the final answer.  A small max_tokens limit often
+            # leaves no budget for actual content, producing empty replies.
+            # Bump to a safe floor when the caller requested a small cap.
+            if (
+                self.model
+                and "deepseek" in self.model.lower()
+                and max_tokens < 4096
+            ):
+                max_tokens = 8192
             payload["max_tokens"] = max_tokens
 
         max_retries = 3
@@ -403,7 +413,22 @@ class ModelClient:
                         # strings we could spin forever.  Bail after too many.
                         _empty_line_count = 0
                         _max_empty_lines = 500
-                        async for line in response.aiter_lines():
+                        _stream_read_timeout = 120  # seconds
+
+                        async def _aiter_lines_with_timeout(resp, to):
+                            it = resp.aiter_lines().__aiter__()
+                            while True:
+                                try:
+                                    line = await asyncio.wait_for(it.__anext__(), timeout=to)
+                                    yield line
+                                except asyncio.TimeoutError:
+                                    raise LLMError(
+                                        f"Stream read timed out: no data received for {to}s"
+                                    )
+                                except StopAsyncIteration:
+                                    break
+
+                        async for line in _aiter_lines_with_timeout(response, _stream_read_timeout):
                             if not line:
                                 _empty_line_count += 1
                                 if _empty_line_count > _max_empty_lines:
@@ -667,20 +692,6 @@ class ModelClient:
                 elif owned_by == "deepseek":
                     cap["_provider"] = "deepseek"
                     cap["_backend"] = "deepseek"
-                    # DeepSeek /models endpoint only returns id/owned_by,
-                    # no capability fields. Back-fill from static config.
-                    from .models_config import get_model_info
-
-                    static = get_model_info(self.model)
-                    if static:
-                        if "context_window" not in cap and static.context_window:
-                            cap["context_window"] = static.context_window
-                        if "max_tokens" not in cap and static.max_tokens:
-                            cap["max_tokens"] = static.max_tokens
-                        if "supports_tools" not in cap:
-                            cap["supports_tools"] = static.supports_tools
-                        if "supports_vision" not in cap:
-                            cap["supports_vision"] = static.supports_vision
 
                 # context window
                 if "context_window" not in cap:
@@ -803,6 +814,31 @@ class ModelClient:
             inferred = _infer_provider(cap["display_name"])
             if inferred:
                 cap["_provider"] = inferred
+
+        # ------------------------------------------------------------------
+        # Universal fallback: if the API didn't expose capability fields,
+        # back-fill from the static models.json configuration.
+        # This applies to all cloud providers (deepseek, openai, qwen, etc.)
+        # whose /models endpoint may be sparse.
+        # ------------------------------------------------------------------
+        from .models_config import get_model_info
+
+        static = get_model_info(self.model)
+        if static:
+            if "context_window" not in cap and static.context_window:
+                cap["context_window"] = static.context_window
+            if "max_tokens" not in cap and static.max_tokens:
+                cap["max_tokens"] = static.max_tokens
+            if "supports_tools" not in cap:
+                cap["supports_tools"] = static.supports_tools
+            if "supports_vision" not in cap:
+                cap["supports_vision"] = static.supports_vision
+            if "supports_tool_choice" not in cap:
+                cap["supports_tool_choice"] = static.supports_tool_choice
+            if "display_name" not in cap and static.display_name:
+                cap["display_name"] = static.display_name
+            if "timeout" not in cap and static.timeout:
+                cap["timeout"] = static.timeout
 
         if cap:
             return cap

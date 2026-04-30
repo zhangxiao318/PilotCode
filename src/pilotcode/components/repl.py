@@ -1372,9 +1372,16 @@ async def run_headless(
         import traceback as _tb
 
         success = False
-        response_text = f"Error: {e}"
         _error_type = type(e).__name__
         _traceback = _tb.format_exc()
+        # Provide clear, actionable error messages for common failure modes
+        if _error_type in ("ConnectTimeout", "ConnectError", "ReadTimeout", "WriteTimeout", "TimeoutException"):
+            response_text = f"Error: LLM API connection timeout ({_error_type}) — unable to reach model server. Please check network/proxy settings."
+        elif _error_type in ("RemoteProtocolError", "NetworkError", "ProxyError"):
+            response_text = f"Error: LLM API network error ({_error_type}) — please check network/proxy settings."
+        else:
+            msg = str(e) if str(e) else _error_type
+            response_text = f"Error: {msg}"
 
     # Convert Pydantic messages to plain dicts for JSON serialization
     serializable_messages = []
@@ -1549,19 +1556,24 @@ Instructions:
 Be efficient — use parallel tool calls where possible.
 """
     # Dynamic exploration budget: complex tasks need more reading turns
-    explore_budget = 12
-    if use_planning:
-        explore_budget = 20
-    explore_result = await run_headless(
-        explore_prompt,
-        auto_allow=auto_allow,
-        json_mode=False,
-        max_iterations=explore_budget,
-        cwd=effective_cwd,
-        progress_callback=progress_callback,
-        read_only=True,
-        env_diagnosis_count=env_diagnosis_count,
-    )
+    explore_budget = 15
+    try:
+        explore_result = await asyncio.wait_for(
+            run_headless(
+                explore_prompt,
+                auto_allow=auto_allow,
+                json_mode=False,
+                max_iterations=explore_budget,
+                cwd=effective_cwd,
+                progress_callback=progress_callback,
+                read_only=True,
+                env_diagnosis_count=env_diagnosis_count,
+            ),
+            timeout=600,
+        )
+    except asyncio.TimeoutError:
+        _log("[AGENT] Exploration phase timed out after 10 minutes, proceeding with available context")
+        explore_result = {"response": "", "tool_calls": [], "success": False, "env_diagnosis_count": env_diagnosis_count}
     env_diagnosis_count = explore_result.get("env_diagnosis_count", env_diagnosis_count)
     explore_summary = explore_result.get("response", "").strip()
     _log(f"[AGENT] Exploration complete ({len(explore_summary)} chars)")
@@ -1612,11 +1624,18 @@ Requirements:
 - affected_call_sites MUST list every place that calls or uses the changed code.
 - Output ONLY the JSON object, with no markdown or extra text.
 """
-        plan_text = await _generate_structured_output(
-            system_prompt="You are a software architect. Output ONLY a JSON object. No markdown, no explanations outside the JSON.",
-            user_prompt=plan_prompt,
-            progress_callback=progress_callback,
-        )
+        try:
+            plan_text = await asyncio.wait_for(
+                _generate_structured_output(
+                    system_prompt="You are a software architect. Output ONLY a JSON object. No markdown, no explanations outside the JSON.",
+                    user_prompt=plan_prompt,
+                    progress_callback=progress_callback,
+                ),
+                timeout=300,
+            )
+        except asyncio.TimeoutError:
+            _log("[PLAN] Plan generation timed out after 5 minutes, falling back to direct execution")
+            plan_text = "{}"
         plan = _extract_json(plan_text)
 
     if plan is None:
@@ -1770,15 +1789,22 @@ CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste t
     while attempt < effective_max_attempts:
         attempt += 1
         _log(f"[EXEC] Attempt {attempt}/{effective_max_attempts}")
-        exec_result = await run_headless(
-            current_prompt,
-            auto_allow=auto_allow,
-            json_mode=False,
-            max_iterations=execution_max_iterations,
-            cwd=effective_cwd,
-            progress_callback=progress_callback,
-            env_diagnosis_count=env_diagnosis_count,
-        )
+        try:
+            exec_result = await asyncio.wait_for(
+                run_headless(
+                    current_prompt,
+                    auto_allow=auto_allow,
+                    json_mode=False,
+                    max_iterations=execution_max_iterations,
+                    cwd=effective_cwd,
+                    progress_callback=progress_callback,
+                    env_diagnosis_count=env_diagnosis_count,
+                ),
+                timeout=900,
+            )
+        except asyncio.TimeoutError:
+            _log(f"[EXEC] Attempt {attempt} timed out after 15 minutes, using best result so far")
+            exec_result = best_result if best_result else {"response": "", "tool_calls": [], "success": False, "env_diagnosis_count": env_diagnosis_count}
         env_diagnosis_count = exec_result.get("env_diagnosis_count", env_diagnosis_count)
         best_result = exec_result
 
@@ -1844,11 +1870,18 @@ Verification Steps (FOCUS on planned files only):
 
 Output ONLY the JSON object.
 """
-        verify_text = await _generate_structured_output(
-            system_prompt="You are a verification specialist. Output ONLY a JSON object. No markdown, no explanations outside the JSON.",
-            user_prompt=verification_prompt,
-            progress_callback=progress_callback,
-        )
+        try:
+            verify_text = await asyncio.wait_for(
+                _generate_structured_output(
+                    system_prompt="You are a verification specialist. Output ONLY a JSON object. No markdown, no explanations outside the JSON.",
+                    user_prompt=verification_prompt,
+                    progress_callback=progress_callback,
+                ),
+                timeout=300,
+            )
+        except asyncio.TimeoutError:
+            _log("[VERIFY] Verification timed out after 5 minutes, assuming incomplete")
+            verify_text = '{"complete": false, "missing_changes": [], "unintended_changes": [], "summary": "Verification timed out"}'
         verification = _extract_json(verify_text)
         if verification is None:
             _log("[VERIFY] Could not parse verification, assuming complete")

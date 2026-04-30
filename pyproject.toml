@@ -3,7 +3,7 @@ name = "pilotcode"
 version = "0.1.0"
 description = "Python rewrite of Claude Code - AI-powered coding assistant"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",

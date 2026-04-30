@@ -190,6 +190,11 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
                 print(f"[CACHE] Commit {commit} exists in {cache_dir}, reusing")
             else:
                 shutil.rmtree(cache_dir, ignore_errors=True)
+        # Ensure working tree is populated (blob-less clones may have empty worktree)
+        if os.path.exists(cache_dir) and not os.path.isdir(os.path.join(cache_dir, "django")):
+            print(f"[CACHE] Working tree appears sparse, forcing checkout")
+            run_cmd("git sparse-checkout reapply", cwd=cache_dir, timeout=30)
+            run_cmd(f"git checkout -f {commit}", cwd=cache_dir, timeout=60)
     else:
         shutil.rmtree(cache_dir, ignore_errors=True)
 
@@ -313,13 +318,18 @@ def run_pilotcode_direct(
         )
 
     try:
-        result = asyncio.run(_run())
+        # Overall timeout: exploration (10m) + plan (5m) + execution (15m) + verify (5m)
+        # plus some slack = 40 minutes max per planning run
+        result = asyncio.run(asyncio.wait_for(_run(), timeout=2400))
         output = result.get("response", "")
         # Include tool call summary in output
         tool_calls = result.get("tool_calls", [])
         if tool_calls:
             output += f"\n\n[TOOLS] {len(tool_calls)} tool calls executed."
         return 0, output, result
+    except asyncio.TimeoutError:
+        print("[ERROR] run_pilotcode_direct timed out after 40 minutes")
+        return 1, "Timed out after 40 minutes", None
     except Exception as e:
         import traceback
 
