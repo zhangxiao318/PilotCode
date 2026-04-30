@@ -97,21 +97,19 @@ class TUITestClient:
             return ("mcp-terminator", "terminator")
 
         # Try mcp-tui-test
-        result = subprocess.run(
-            ["which", "mcp-tui-test"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if result.returncode == 0:
-            return ("mcp-tui-test", "tui-test")
+        import shutil
+
+        mcp_path = shutil.which("mcp-tui-test")
+        if mcp_path:
+            return (mcp_path, "tui-test")
 
         # Check if server.py exists in common locations
         possible_paths = [
             Path.home() / ".local" / "bin" / "mcp-tui-test",
             Path.home() / "mcp-tui-test" / "server.py",
             Path("/usr/local/bin/mcp-tui-test"),
+            Path.home() / "AppData" / "Local" / "Programs" / "mcp-tui-test" / "mcp-tui-test.exe",
+            Path.home() / "AppData" / "Roaming" / "Python" / "Scripts" / "mcp-tui-test.exe",
         ]
         for path in possible_paths:
             if path.exists():

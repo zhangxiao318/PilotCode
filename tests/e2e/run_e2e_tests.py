@@ -33,6 +33,42 @@ TASKS_DIR = E2E_DIR / "tasks"
 OUTPUT_BASE = Path.home() / "test" / "pilotcode_e2e_results"
 
 # ---------------------------------------------------------------------------
+# Cross-platform helpers
+# ---------------------------------------------------------------------------
+_NON_EXEC_EXTS = {
+    ".c", ".h", ".o", ".obj", ".txt", ".md", ".log",
+    ".yaml", ".yml", ".json", ".py", ".sh", ".pyc", ".pyo",
+    ".html", ".css", ".js", ".xml", ".ini", ".cfg",
+}
+
+
+def _is_executable_file(path: Path) -> bool:
+    """Check if a path is a likely executable binary, cross-platform."""
+    if not path.is_file():
+        return False
+    name_lower = path.name.lower()
+    if any(name_lower.endswith(ext) for ext in _NON_EXEC_EXTS):
+        return False
+    if sys.platform == "win32":
+        # On Windows, .exe is the strongest indicator; os.access is unreliable
+        return name_lower.endswith(".exe")
+    return os.access(path, os.X_OK)
+
+
+def _resolve_binary_path(task_dir: Path, cmd_part: str) -> Path | None:
+    """Resolve a command string (e.g. './file_reader') to an actual file path."""
+    name = cmd_part.lstrip("./").strip()
+    candidates = [name]
+    if sys.platform == "win32" and not name.lower().endswith(".exe"):
+        candidates.append(name + ".exe")
+    for cand in candidates:
+        p = task_dir / cand
+        if p.exists() and _is_executable_file(p):
+            return p
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 @dataclass
@@ -72,6 +108,75 @@ class TaskResult:
     error: str = ""
 
 
+def _compile_and_run(task_dir: Path, task: TaskDef, files_found: list[dict]) -> tuple[bool, str, bool, str]:
+    """Compile and run the generated code.
+
+    Returns (compile_ok, compile_output, run_ok, run_output).
+    """
+    compile_ok = False
+    compile_output = ""
+
+    if (task_dir / "Makefile").exists():
+        try:
+            cproc = subprocess.run(
+                ["make", "-C", str(task_dir)],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
+            )
+            compile_ok = cproc.returncode == 0
+            compile_output = ((cproc.stdout or "") + (cproc.stderr or ""))[:500]
+        except Exception as e:
+            compile_output = str(e)[:500]
+    elif any(ff["path"].endswith(".c") for ff in files_found):
+        c_files = [str(task_dir / ff["path"]) for ff in files_found if ff["path"].endswith(".c")]
+        try:
+            cproc = subprocess.run(
+                ["gcc", "-Wall", "-Wextra", "-std=c99", "-o", str(task_dir / "test_prog")] + c_files,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
+            )
+            compile_ok = cproc.returncode == 0
+            compile_output = ((cproc.stdout or "") + (cproc.stderr or ""))[:500]
+        except Exception as e:
+            compile_output = str(e)[:500]
+
+    run_ok = False
+    run_output = ""
+    if compile_ok:
+        binary: Path | None = None
+
+        # 1. Default compiled name
+        for cand in [task_dir / "test_prog", task_dir / "test_prog.exe"]:
+            if cand.exists() and _is_executable_file(cand):
+                binary = cand
+                break
+
+        # 2. Scan directory for any executable
+        if binary is None:
+            for f in task_dir.iterdir():
+                if _is_executable_file(f):
+                    binary = f
+                    break
+
+        # 3. Use run_command hints from YAML
+        if binary is None:
+            for cmd_part in task.run_command:
+                resolved = _resolve_binary_path(task_dir, cmd_part)
+                if resolved:
+                    binary = resolved
+                    break
+
+        if binary:
+            try:
+                rproc = subprocess.run(
+                    [str(binary)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30
+                )
+                run_ok = rproc.returncode == 0
+                run_output = ((rproc.stdout or "") + (rproc.stderr or ""))[:1000]
+            except Exception as e:
+                run_output = str(e)[:500]
+
+    return compile_ok, compile_output, run_ok, run_output
+
+
 # ---------------------------------------------------------------------------
 # CLI mode runner
 # ---------------------------------------------------------------------------
@@ -88,18 +193,22 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     env["FORCE_COLOR"] = "0"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
 
     start = time.time()
     proc = subprocess.run(
         [
             sys.executable, "-m", "pilotcode",
-            "--simple", "--auto-allow",
+            "--simple", "--auto-allow", "--no-planning",
             "--prompt", task.prompt + "\n\n请使用中文输出所有测试结果和日志信息。",
             "--cwd", str(task_dir),
             "--max-iterations", "15",
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=env,
         cwd=str(task_dir),
         timeout=timeout,
@@ -128,58 +237,7 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
         for ef in task.expected_files
     )
 
-    # Compile
-    compile_ok = False
-    compile_output = ""
-    if (task_dir / "Makefile").exists():
-        try:
-            cproc = subprocess.run(
-                ["make", "-C", str(task_dir)],
-                capture_output=True, text=True, timeout=120
-            )
-            compile_ok = cproc.returncode == 0
-            compile_output = (cproc.stdout + cproc.stderr)[:500]
-        except Exception as e:
-            compile_output = str(e)[:500]
-    elif any(ff["path"].endswith(".c") for ff in files_found):
-        c_files = [str(task_dir / ff["path"]) for ff in files_found if ff["path"].endswith(".c")]
-        try:
-            cproc = subprocess.run(
-                ["gcc", "-Wall", "-Wextra", "-std=c99", "-o", str(task_dir / "test_prog")] + c_files,
-                capture_output=True, text=True, timeout=120
-            )
-            compile_ok = cproc.returncode == 0
-            compile_output = (cproc.stdout + cproc.stderr)[:500]
-        except Exception as e:
-            compile_output = str(e)[:500]
-
-    # Run
-    run_ok = False
-    run_output = ""
-    if compile_ok:
-        binary = task_dir / "test_prog"
-        if not binary.exists():
-            # Try to find compiled binary
-            for f in task_dir.iterdir():
-                if f.is_file() and os.access(f, os.X_OK) and not f.name.endswith(".sh"):
-                    binary = f
-                    break
-        # Also check expected binary names
-        if not binary.exists():
-            for cmd_part in task.run_command:
-                candidate = task_dir / cmd_part.lstrip("./")
-                if candidate.exists():
-                    binary = candidate
-                    break
-        if binary and binary.exists():
-            try:
-                rproc = subprocess.run(
-                    [str(binary)], capture_output=True, text=True, timeout=30
-                )
-                run_ok = rproc.returncode == 0
-                run_output = (rproc.stdout + rproc.stderr)[:1000]
-            except Exception as e:
-                run_output = str(e)[:500]
+    compile_ok, compile_output, run_ok, run_output = _compile_and_run(task_dir, task, files_found)
 
     # Output check (OR logic: match any = pass; empty run_output = fail if expected exists)
     output_check = True
@@ -284,54 +342,7 @@ async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, time
                 "lines": len(text.splitlines()),
             })
 
-    compile_ok = False
-    compile_output = ""
-    if (task_dir / "Makefile").exists():
-        try:
-            cproc = subprocess.run(
-                ["make", "-C", str(task_dir)],
-                capture_output=True, text=True, timeout=120
-            )
-            compile_ok = cproc.returncode == 0
-            compile_output = (cproc.stdout + cproc.stderr)[:500]
-        except Exception as e:
-            compile_output = str(e)[:500]
-    elif any(ff["path"].endswith(".c") for ff in files_found):
-        c_files = [str(task_dir / ff["path"]) for ff in files_found if ff["path"].endswith(".c")]
-        try:
-            cproc = subprocess.run(
-                ["gcc", "-Wall", "-Wextra", "-std=c99", "-o", str(task_dir / "test_prog")] + c_files,
-                capture_output=True, text=True, timeout=120
-            )
-            compile_ok = cproc.returncode == 0
-            compile_output = (cproc.stdout + cproc.stderr)[:500]
-        except Exception as e:
-            compile_output = str(e)[:500]
-
-    run_ok = False
-    run_output = ""
-    if compile_ok:
-        binary = task_dir / "test_prog"
-        if not binary.exists():
-            for f in task_dir.iterdir():
-                if f.is_file() and os.access(f, os.X_OK) and not f.name.endswith(".sh"):
-                    binary = f
-                    break
-        if not binary.exists():
-            for cmd_part in task.run_command:
-                candidate = task_dir / cmd_part.lstrip("./")
-                if candidate.exists():
-                    binary = candidate
-                    break
-        if binary and binary.exists():
-            try:
-                rproc = subprocess.run(
-                    [str(binary)], capture_output=True, text=True, timeout=30
-                )
-                run_ok = rproc.returncode == 0
-                run_output = (rproc.stdout + rproc.stderr)[:1000]
-            except Exception as e:
-                run_output = str(e)[:500]
+    compile_ok, compile_output, run_ok, run_output = _compile_and_run(task_dir, task, files_found)
 
     # Output check (OR logic: match any = pass; empty run_output = fail if expected exists)
     output_check = True

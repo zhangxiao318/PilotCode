@@ -19,7 +19,7 @@ _TEST_FRAMEWORKS: list[tuple[str, list[str], str]] = [
     ("npm", ["package.json"], "npm test"),
     ("cargo", ["Cargo.toml"], "cargo test"),
     ("go", ["go.mod"], "go test ./..."),
-    ("gradle", ["build.gradle", "build.gradle.kts"], "./gradlew test"),
+    ("gradle", ["build.gradle", "build.gradle.kts"], "gradlew test"),
     ("maven", ["pom.xml"], "mvn test"),
 ]
 

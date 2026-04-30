@@ -1,5 +1,6 @@
 """Message display components for chat interface."""
 
+import os
 import sys
 from typing import Optional
 from textual.widgets import Static, Button, TextArea
@@ -767,19 +768,21 @@ class TextViewerDialog(Screen):
             self.app.notify("❌ Failed to copy", severity="error")
 
     def _save_to_file(self):
-        """Save content to a file in /tmp for downloading."""
+        """Save content to a temp file for downloading."""
+        import tempfile
 
         try:
             # Create a temp file with meaningful name
             timestamp = __import__("time").time()
-            filename = f"/tmp/pilotcode_message_{int(timestamp)}.txt"
+            tmp_dir = tempfile.gettempdir()
+            filename = os.path.join(tmp_dir, f"pilotcode_message_{int(timestamp)}.txt")
 
             with open(filename, "w", encoding="utf-8") as f:
                 f.write(self.content)
 
             self._saved_file_path = filename
             self.app.notify(
-                f"💾 Saved to: {filename}\nDownload: scp user@host:{filename} .",
+                f"💾 Saved to: {filename}",
                 severity="information",
                 timeout=5,
             )

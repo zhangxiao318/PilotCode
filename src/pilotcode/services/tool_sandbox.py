@@ -165,6 +165,15 @@ class CommandAnalyzer:
         "~/.gnupg",
         "~/.aws",
         "~/.kube",
+        # Windows sensitive paths
+        r"C:\Windows\System32",
+        r"C:\Windows\SysWOW64",
+        r"C:\Windows\System32\drivers\etc\hosts",
+        r"C:\Windows\System32\config",
+        r"C:\ProgramData",
+        r"HKLM:\\",
+        r"HKEY_LOCAL_MACHINE",
+        r"HKEY_CURRENT_USER",
     ]
 
     @classmethod

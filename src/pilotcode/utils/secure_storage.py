@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
+import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -280,10 +281,12 @@ def _encrypted_set(value: str) -> bool:
 
         _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         _SALT_FILE.write_bytes(salt)
-        # Set restrictive permissions: only owner can read
-        os.chmod(_SALT_FILE, 0o600)
+        # Set restrictive permissions: only owner can read (Unix only)
+        if sys.platform != "win32":
+            os.chmod(_SALT_FILE, 0o600)
         _ENCRYPTED_FILE.write_bytes(nonce + ciphertext)
-        os.chmod(_ENCRYPTED_FILE, 0o600)
+        if sys.platform != "win32":
+            os.chmod(_ENCRYPTED_FILE, 0o600)
         return True
     except Exception:
         return False

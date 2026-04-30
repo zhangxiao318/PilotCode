@@ -227,7 +227,7 @@ class ModelClient:
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-            timeout=httpx.Timeout(timeout, connect=10.0, read=60.0, write=10.0, pool=5.0),
+            timeout=httpx.Timeout(timeout, connect=10.0, read=300.0, write=10.0, pool=5.0),
             verify=verify_ssl,
         )
 

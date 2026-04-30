@@ -10,6 +10,7 @@ import asyncio
 import os
 import shutil
 import sys
+import tempfile
 from typing import Any
 
 from .base import BaseVerifier, VerificationResult, Verdict
@@ -40,10 +41,10 @@ _COMPILER_CHECKS: dict[str, tuple[str, ...]] = {
     "c": ("gcc", "-fsyntax-only"),
     "cpp": ("g++", "-fsyntax-only"),
     "rust": ("rustc", "--crate-type", "bin", "--emit=metadata"),
-    "go": ("go", "build", "-o", "/dev/null"),
+    "go": ("go", "build", "-o", os.devnull),
     "javascript": ("node", "--check"),
     "typescript": ("tsc", "--noEmit"),
-    "java": ("javac", "-d", "/tmp"),
+    "java": ("javac", "-d", tempfile.gettempdir()),
 }
 
 # Install hints per language and platform family

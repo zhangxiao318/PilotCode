@@ -87,7 +87,11 @@ async def _run_layer_test(layer: str, extra_pytest_args: list[str] | None = None
         pytest_args.extend(extra_pytest_args)
 
     env = os.environ.copy()
-    env["PYTHONPATH"] = f"{project_root / 'src'}:{env.get('PYTHONPATH', '')}"
+    pythonpath = str(project_root / "src")
+    existing = env.get("PYTHONPATH", "")
+    if existing:
+        pythonpath = f"{pythonpath}{os.pathsep}{existing}"
+    env["PYTHONPATH"] = pythonpath
     env["PYTHONUNBUFFERED"] = "1"
 
     # Run pytest with unbuffered output directly to terminal so user sees progress

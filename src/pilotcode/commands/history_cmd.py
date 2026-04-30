@@ -3,14 +3,18 @@
 import os
 import json
 from datetime import datetime
+from pathlib import Path
+
+from platformdirs import user_data_dir
+
 from .base import CommandHandler, register_command, CommandContext
 
-HISTORY_FILE = os.path.expanduser("~/.local/share/pilotcode/history.json")
+HISTORY_FILE = Path(user_data_dir("pilotcode", "pilotcode")) / "history.json"
 
 
 def ensure_history_dir():
     """Ensure history directory exists."""
-    os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
 def load_history():

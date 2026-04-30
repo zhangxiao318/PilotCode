@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -152,7 +153,7 @@ def _run_script(script_code: str, cwd: Path | None = None) -> tuple[bool, str, s
 
     try:
         proc = subprocess.run(
-            ["python3", script_path],
+            [sys.executable, script_path],
             capture_output=True,
             text=True,
             timeout=30,

@@ -3,9 +3,13 @@
 import os
 import json
 from datetime import datetime
+from pathlib import Path
+
+from platformdirs import user_data_dir
+
 from .base import CommandHandler, register_command, CommandContext
 
-MEMORY_DIR = os.path.expanduser("~/.local/share/pilotcode/memory")
+MEMORY_DIR = Path(user_data_dir("pilotcode", "pilotcode")) / "memory"
 
 
 def ensure_memory_dir():

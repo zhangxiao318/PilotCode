@@ -109,6 +109,12 @@ class CommandRiskAnalyzer:
         r"\.gnupg/",
         r"\.aws/",
         r"\.docker/",
+        # Windows dangerous paths (case-insensitive match)
+        r"C:\\Windows\\System32",
+        r"C:\\Windows\\SysWOW64",
+        r"C:\\Windows\\System32\\config",
+        r"C:\\Windows\\System32\\drivers\\etc\\hosts",
+        r"C:\\ProgramData",
     ]
 
     def assess_bash_command(self, command: str) -> RiskAssessment:

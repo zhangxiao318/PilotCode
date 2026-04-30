@@ -633,6 +633,14 @@ DANGEROUS_PATTERNS = [
     # Kill system processes
     (r"\bkillall\s+(systemd|dbus|sshd|ssh)\b", "kill critical system process"),
     (r"\bpkill\s+(systemd|dbus|sshd|ssh)\b", "kill critical system process"),
+    # Windows-specific dangerous commands
+    (r"\bformat\s+[A-Za-z]:", "format Windows drive"),
+    (r"\bdel\s+/f\s+/s\s+/q\s+[A-Za-z]:\\", "mass delete on Windows drive"),
+    (r"\brmdir\s+/s\s+/q\s+['\"]?C:\\Windows", "delete Windows system directory"),
+    (r"\breg\s+delete\s+.*HKLM", "delete registry hive"),
+    (r"\bbcdedit\s+/delete", "delete boot configuration"),
+    (r"\bdiskpart\s+/s", "automated disk partitioning"),
+    (r"\bvssadmin\s+delete\s+shadows", "delete volume shadow copies"),
 ]
 
 

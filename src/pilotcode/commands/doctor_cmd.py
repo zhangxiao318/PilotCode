@@ -3,6 +3,9 @@
 import subprocess
 import sys
 import os
+
+from platformdirs import user_config_dir
+
 from .base import CommandHandler, register_command, CommandContext
 
 
@@ -49,7 +52,7 @@ async def doctor_command(args: list[str], context: CommandContext) -> str:
     checks.append(("API key", "Set" if config.api_key else "Not set", config.api_key is not None))
 
     # Check directories
-    config_dir = os.path.expanduser("~/.config/pilotcode")
+    config_dir = user_config_dir("pilotcode", "pilotcode")
     checks.append(("Config directory", config_dir, os.path.exists(config_dir)))
 
     # Build output

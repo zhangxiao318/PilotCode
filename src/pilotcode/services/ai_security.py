@@ -240,6 +240,18 @@ def simulate_ai_security_analysis(
         reasons.append("Dangerous rm -rf pattern")
         suggestions.append("Double-check the target path before executing")
 
+    # Windows dangerous commands
+    lowered = command.lower()
+    if re.search(r"\bformat\s+[a-z]:", lowered):
+        max_risk = RiskLevel.CRITICAL
+        reasons.append("Windows drive format detected")
+    if re.search(r"\bdel\s+/f\s+/s\s+/q\s+[a-z]:\\", lowered):
+        max_risk = RiskLevel.CRITICAL
+        reasons.append("Windows mass delete detected")
+    if re.search(r"\breg\s+delete\s+.*hklm", lowered):
+        max_risk = RiskLevel.CRITICAL
+        reasons.append("Windows registry deletion detected")
+
     # Check for variable expansion in URLs
     if re.search(r"(curl|wget)\s+.*\$", command):
         if not _is_safe_url_usage(command):
@@ -255,7 +267,8 @@ def simulate_ai_security_analysis(
     # Add context-aware suggestions
     if context:
         cwd = context.get("cwd", "")
-        if cwd and (".." in command or command.startswith("/")):
+        is_abs_path = command.startswith("/") or (len(command) > 1 and command[1] == ":")
+        if cwd and (".." in command or is_abs_path):
             # Path traversal check
             if ".." in command and not _is_safe_path_traversal(command, cwd):
                 suggestions.append("Verify path traversal doesn't escape intended directory")
@@ -317,9 +330,15 @@ def _is_safe_path_traversal(command: str, cwd: str) -> bool:
         r"/etc/",
         r"/root/",
         r"/home/[^/]+/\.",
+        # Windows dangerous path traversals
+        r"\.\.\\\.\.\\\.\.",
+        r"C:\\Windows\\System32",
+        r"C:\\Windows\\SysWOW64",
+        r"HKLM:\\",
+        r"HKEY_LOCAL_MACHINE",
     ]
     for pattern in dangerous_patterns:
-        if re.search(pattern, command):
+        if re.search(pattern, command, re.IGNORECASE):
             return False
     return True
 
