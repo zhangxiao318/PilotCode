@@ -571,10 +571,13 @@ class ModelClient:
         text_parts: list[str] = []
         tool_calls: list[dict[str, Any]] = []
 
+        reasoning_parts: list[str] = []
         for block in content_blocks:
             block_type = block.get("type", "")
             if block_type == "text":
                 text_parts.append(block.get("text", ""))
+            elif block_type == "thinking":
+                reasoning_parts.append(block.get("thinking", ""))
             elif block_type == "tool_use":
                 tool_input = block.get("input", {})
                 tool_calls.append(
@@ -595,6 +598,8 @@ class ModelClient:
         delta: dict[str, Any] = {"role": "assistant"}
         if text_parts:
             delta["content"] = "".join(text_parts)
+        if reasoning_parts:
+            delta["reasoning_content"] = "".join(reasoning_parts)
         if tool_calls:
             delta["tool_calls"] = tool_calls
 

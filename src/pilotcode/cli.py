@@ -360,9 +360,10 @@ async def _quick_probe(timeout: float = 3.0) -> tuple[bool, str]:
     try:
         test_messages = [Message(role="user", content="hi")]
         response_text = ""
+        reasoning_text = ""
         async for chunk in client.chat_completion(
             test_messages,
-            max_tokens=1,
+            max_tokens=5,
             stream=False,
             temperature=0.0,
         ):
@@ -370,9 +371,14 @@ async def _quick_probe(timeout: float = 3.0) -> tuple[bool, str]:
             text = delta.get("content", "")
             if text:
                 response_text += text
+            reasoning = delta.get("reasoning_content", "")
+            if reasoning:
+                reasoning_text += reasoning
 
-        if response_text.strip():
-            console.print(f"[dim]  ✓ Got response: '{response_text.strip()[:40]}'[/dim]")
+        combined = (response_text + reasoning_text).strip()
+        if combined:
+            preview = combined[:40].replace("\n", " ")
+            console.print(f"[dim]  ✓ Got response: '{preview}'[/dim]")
             return True, "LLM responded"
         console.print("[dim]  ✗ Empty response[/dim]")
         return False, "Empty response"
@@ -455,7 +461,13 @@ async def _diagnose_connection() -> None:
                 {"api_protocol": config.api_protocol},
                 None,
             )
-            if proto == "anthropic":
+            if "Empty response" in msg:
+                console.print(
+                    "    [dim]Hint: The server replied but returned no content. "
+                    "This usually means the API protocol doesn't match the endpoint. "
+                    f"Current protocol is '{proto}'; try the other one.[/dim]"
+                )
+            elif proto == "anthropic":
                 console.print(
                     "    [dim]Hint: Anthropic uses 'x-api-key' header. "
                     "Make sure the key is valid and has not expired.[/dim]"
@@ -992,6 +1004,15 @@ def config(
                         console.print(f"  ... and {len(detected_models) - 10} more")
 
                 if api_caps:
+                    api_err = api_caps.get("_error")
+                    if api_err:
+                        console.print(
+                            f"\n[yellow]⚠ Could not probe runtime capabilities: "
+                            f"{api_err}[/yellow]"
+                        )
+                        console.print(
+                            "[dim]  Using static configuration from models.json.[/dim]"
+                        )
                     console.print("\n[bold]Model Capability (Runtime Detected):[/bold]")
                     _print_api_capability(console, api_caps, static_info=static_info)
 
