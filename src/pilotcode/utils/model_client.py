@@ -673,7 +673,10 @@ class ModelClient:
         (e.g. from types.message.to_api_format).
         """
         is_anthropic = self._api_protocol == "anthropic"
-        endpoint = "/v1/messages" if is_anthropic else "/chat/completions"
+        # endpoint is relative to base_url (which may already contain a version
+        # prefix, e.g. "https://api.anthropic.com/v1" or "https://api.openai.com/v1").
+        # Provider config owns base_url; api_protocol owns the endpoint path.
+        endpoint = "/messages" if is_anthropic else "/chat/completions"
 
         if is_anthropic:
             payload = self._build_anthropic_payload(

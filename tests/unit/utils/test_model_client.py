@@ -499,7 +499,8 @@ class TestAnthropicNormalization:
             chunks.append(chunk)
 
         call_args = client.client.post.call_args
-        assert call_args[0][0] == "/v1/messages"
+        # base_url already contains /v1, so endpoint is just /messages
+        assert call_args[0][0] == "/messages"
         assert "model" in call_args[1]["json"]
 
     def test_convert_tools_anthropic_format(self):
