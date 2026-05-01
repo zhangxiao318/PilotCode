@@ -6,6 +6,7 @@ including model selection and API key setup.
 
 import sys
 import os
+from dataclasses import replace
 
 from rich.console import Console
 from rich.panel import Panel
@@ -18,11 +19,9 @@ from .models_config import (
     get_model_info,
     get_international_models,
     get_domestic_models,
-    format_model_list,
     ModelInfo,
-    SUPPORTED_MODELS,
 )
-from .config import GlobalConfig, save_global_config, get_config_manager
+from .config import GlobalConfig, save_global_config, get_config_manager, is_local_url
 
 console = Console()
 
@@ -48,32 +47,37 @@ class ConfigurationWizard:
             )
         )
 
-        # Step 1: Select model category
+        # Step 1: Select model category and specific model
         if not self._select_model_category():
             return False
 
-        # Step 2: Confirm API protocol
-        if not self._select_protocol():
+        # Step 2: Confirm or enter base URL
+        if not self._confirm_url():
             return False
 
         # Step 3: Enter API key
         if not self._enter_api_key():
             return False
 
-        # Step 4: Optional settings
-        self._optional_settings()
+        # Step 4: Select API protocol
+        if not self._select_protocol():
+            return False
 
         # Step 5: Confirm and save
         if self._confirm_and_save():
             console.print("\n[bold green]✅ Configuration saved successfully![/bold green]")
             console.print(f"[dim]Config file: {get_config_manager().SETTINGS_FILE}[/dim]")
+            console.print(
+                "\n[dim]Tip: Run [cyan]pc config --list[/cyan] to probe and fine-tune "
+                "runtime parameters such as context_window.[/dim]"
+            )
             return True
         else:
             console.print("\n[yellow]Configuration cancelled.[/yellow]")
             return False
 
     def _select_model_category(self) -> bool:
-        """Select model category (International/Domestic/Local)."""
+        """Select model category (Domestic/International/Local)."""
         console.print("\n[bold]Step 1: Select Model Category[/bold]")
 
         table = Table(box=box.ROUNDED)
@@ -81,9 +85,9 @@ class ConfigurationWizard:
         table.add_column("Category", style="green")
         table.add_column("Description", style="dim")
 
-        table.add_row("1", "International", "OpenAI, Anthropic Claude, Azure, etc.")
-        table.add_row("2", "Domestic (国内)", "DeepSeek, Qwen, GLM, Moonshot, etc.")
-        table.add_row("3", "Local/Custom", "Ollama, vLLM, or custom OpenAI-compatible endpoint")
+        table.add_row("1", "Domestic (国内)", "DeepSeek, Qwen, GLM, Moonshot, etc.")
+        table.add_row("2", "International", "OpenAI, Anthropic, Azure, Gemini, etc.")
+        table.add_row("3", "Local/Custom", "Ollama, vLLM, llama.cpp, or custom endpoint")
 
         console.print(table)
 
@@ -93,13 +97,12 @@ class ConfigurationWizard:
             return False
 
         categories = {
-            "1": ("International", get_international_models()),
-            "2": ("Domestic", get_domestic_models()),
+            "1": ("Domestic", get_domestic_models()),
+            "2": ("International", get_international_models()),
             "3": (
                 "Local/Custom",
                 {
-                    "ollama": get_model_info("ollama"),
-                    "vllm": get_model_info("vllm"),
+                    "local": get_model_info("vllm"),
                     "custom": get_model_info("custom"),
                 },
             ),
@@ -110,15 +113,52 @@ class ConfigurationWizard:
 
     def _select_specific_model(self, category_name: str, models: dict[str, ModelInfo]) -> bool:
         """Select a specific model from the category."""
-        console.print(f"\n[bold]Available {category_name} Models:[/bold]")
+        console.print(f"\n[bold]Available {category_name} Providers:[/bold]")
 
         table = Table(box=box.ROUNDED)
         table.add_column("#", style="cyan", justify="center")
-        table.add_column("Model", style="green")
+        table.add_column("Provider", style="green")
         table.add_column("Description", style="dim")
         table.add_column("Features", style="blue")
 
         model_list = [(k, v) for k, v in models.items() if v is not None and not v.disabled]
+
+        # De-duplicate by (provider, base_url) so each provider appears once
+        seen = set()
+        deduped = []
+        for key, info in model_list:
+            sig = (info.provider, info.base_url)
+            if sig not in seen:
+                seen.add(sig)
+                deduped.append((key, info))
+        model_list = deduped
+
+        # Add "Other Provider" option for domestic category
+        if category_name == "Domestic":
+            other_info = get_model_info("custom")
+            if other_info:
+                other_info = replace(
+                    other_info,
+                    display_name="Other Provider (Custom URL)",
+                    base_url="",
+                    env_key="",
+                    description="Enter your own provider URL and API key",
+                )
+                model_list.append(("other", other_info))
+
+        # Merge ollama/vllm into a single "Local Server" option
+        for idx, (key, info) in enumerate(model_list):
+            if key == "local":
+                model_list[idx] = (
+                    key,
+                    replace(
+                        info,
+                        display_name="Local Server (Ollama / vLLM / llama.cpp)",
+                        env_key="",
+                        description="Local OpenAI-compatible inference server",
+                    ),
+                )
+
         for idx, (key, info) in enumerate(model_list, 1):
             features = []
             if info.supports_tools:
@@ -136,7 +176,7 @@ class ConfigurationWizard:
         console.print(table)
 
         choices = [str(i) for i in range(1, len(model_list) + 1)] + ["q"]
-        choice = Prompt.ask("Select model", choices=choices)
+        choice = Prompt.ask("Select provider", choices=choices)
 
         if choice == "q":
             return False
@@ -151,48 +191,50 @@ class ConfigurationWizard:
 
         return True
 
-    def _ask_protocol(self, default: str = "openai") -> str:
-        """Ask user to select API protocol via numbered choice."""
-        console.print("\nSelect API protocol:")
-        console.print("  [bold]1.[/bold] OpenAI")
-        console.print("  [bold]2.[/bold] Anthropic")
+    def _confirm_url(self) -> bool:
+        """Confirm or override the base URL.
 
-        default_num = "1" if default == "openai" else "2"
-        choice = Prompt.ask(
-            "Enter choice",
-            choices=["1", "2"],
-            default=default_num,
-        )
-        return "openai" if choice == "1" else "anthropic"
-
-    def _select_protocol(self) -> bool:
-        """Confirm or override the API protocol.
-
-        Most providers use OpenAI-compatible protocol. Anthropic and some
-        custom proxies may use the native Anthropic protocol.
+        For local models the user is asked to enter a URL directly.
+        For cloud providers the default URL is shown and the user can
+        confirm (default) or enter a custom one.
         """
         if not self.selected_model:
             return False
 
-        default_proto = self.config.api_protocol or "openai"
-        console.print("\n[bold]Step 2: API Protocol[/bold]")
-        console.print(
-            f"[dim]Detected protocol for {self.selected_model.display_name}: {default_proto}[/dim]"
-        )
+        default_url = self.config.base_url
+        is_local = is_local_url(default_url or "")
 
-        protocol = self._ask_protocol(default=default_proto)
-        self.config.api_protocol = protocol
+        console.print("\n[bold]Step 2: Base URL[/bold]")
+
+        if is_local:
+            url = Prompt.ask("Enter base URL", default=default_url or "http://localhost:8000/v1")
+            if url:
+                self.config.base_url = url
+            return True
+
+        # Cloud provider or custom with no default URL
+        if not default_url:
+            url = Prompt.ask("Enter base URL")
+            if url:
+                self.config.base_url = url
+            return True
+
+        if Confirm.ask(f"Use default URL {default_url}?", default=True):
+            return True
+
+        url = Prompt.ask("Enter base URL")
+        if url:
+            self.config.base_url = url
         return True
 
     def _enter_api_key(self) -> bool:
         """Enter API key for the selected model."""
-        console.print("\n[bold]Step 3: API Key Configuration[/bold]")
-
         if not self.selected_model:
-            console.print("[red]No model selected![/red]")
             return False
 
-        # For Ollama and vLLM, no API key needed
+        console.print("\n[bold]Step 3: API Key Configuration[/bold]")
+
+        # For local models, no API key needed
         if self.selected_model.name in ("ollama", "vllm"):
             console.print(
                 f"[green]✓[/green] {self.selected_model.display_name} runs locally, no API key needed."
@@ -200,34 +242,54 @@ class ConfigurationWizard:
             self.config.api_key = ""
             return True
 
-        # Show instructions for getting API key
         env_key = self.selected_model.get_env_key()
-        console.print(f"\n[cyan]Model:[/cyan] {self.selected_model.display_name}")
-        console.print(f"[cyan]Required env var:[/cyan] {env_key}")
 
         # Check if already set in environment
         existing_key = os.environ.get(env_key) or os.environ.get("PILOTCODE_API_KEY")
         if existing_key:
-            console.print(f"[green]✓ Found {env_key} in environment variables[/green]")
-            use_existing = Confirm.ask("Use existing API key from environment?", default=True)
-            if use_existing:
+            if Confirm.ask(f"Use existing API key from {env_key}?", default=True):
                 self.config.api_key = existing_key
                 return True
 
         # Prompt for API key
-        console.print("\n[dim]How to get your API key:[/dim]")
-        console.print(self._get_api_key_instructions(self.selected_model.name))
+        while True:
+            api_key = Prompt.ask(
+                f"Enter your API key for {self.selected_model.display_name}",
+                password=True,
+            )
+            if api_key:
+                self.config.api_key = api_key
+                return True
 
-        api_key = Prompt.ask(
-            f"\nEnter your API key for {self.selected_model.display_name}", password=True
+            # No key entered — ask for confirmation (default yes to allow skipping)
+            if Confirm.ask("No API key entered. Continue without API key?", default=True):
+                self.config.api_key = ""
+                return True
+            # User chose to retry
+
+    def _ask_protocol(self, default: str = "openai") -> str:
+        """Ask user to select API protocol via numbered choice."""
+        default_num = "1" if default == "openai" else "2"
+        choice = Prompt.ask(
+            "Select API protocol: 1.OpenAI 2.Anthropic",
+            choices=["1", "2"],
+            default=default_num,
+        )
+        return "openai" if choice == "1" else "anthropic"
+
+    def _select_protocol(self) -> bool:
+        """Confirm or override the API protocol."""
+        if not self.selected_model:
+            return False
+
+        default_proto = self.config.api_protocol or "openai"
+        console.print("\n[bold]Step 4: API Protocol[/bold]")
+        console.print(
+            f"[dim]Detected protocol for {self.selected_model.display_name}: {default_proto}[/dim]"
         )
 
-        if not api_key or len(api_key) < 10:
-            console.print("[yellow]Warning: API key seems too short. Please verify.[/yellow]")
-            if not Confirm.ask("Continue anyway?", default=False):
-                return False
-
-        self.config.api_key = api_key
+        protocol = self._ask_protocol(default=default_proto)
+        self.config.api_protocol = protocol
         return True
 
     def _get_api_key_instructions(self, model_name: str) -> str:
@@ -248,44 +310,6 @@ class ConfigurationWizard:
             "custom": "Enter your custom API endpoint and key",
         }
         return instructions.get(model_name, "Please check the provider's documentation.")
-
-    def _optional_settings(self) -> None:
-        """Configure optional settings."""
-        console.print("\n[bold]Step 4: Optional Settings[/bold] [dim](press Enter to skip)[/dim]")
-
-        # Custom base URL (if needed)
-        # Local models (Ollama, vLLM) may run on another host in the LAN
-        if self.selected_model and self.selected_model.name in (
-            "ollama",
-            "custom",
-            "vllm",
-            "azure",
-        ):
-            custom_url = Prompt.ask("Enter base URL", default=self.config.base_url)
-            if custom_url:
-                self.config.base_url = custom_url
-
-        # Allow overriding protocol in optional settings too
-        if not Confirm.ask(
-            f"Keep API protocol as '{self.config.api_protocol or 'auto'}'?",
-            default=True,
-        ):
-            protocol = self._ask_protocol(default=self.config.api_protocol or "openai")
-            self.config.api_protocol = protocol
-
-        # Theme
-        theme = Prompt.ask(
-            "Select theme",
-            choices=["default", "dark", "light", "high-contrast"],
-            default=self.config.theme,
-        )
-        self.config.theme = theme
-
-        # Auto compact
-        auto_compact = Confirm.ask(
-            "Enable auto context compression?", default=self.config.auto_compact
-        )
-        self.config.auto_compact = auto_compact
 
     def _confirm_and_save(self) -> bool:
         """Confirm configuration and save."""
@@ -346,32 +370,47 @@ def quick_configure(
     model_info = get_model_info(model_name)
     if not model_info:
         console.print(f"[red]Unknown model: {model_name}[/red]")
-        console.print(f"Available models: {', '.join(SUPPORTED_MODELS.keys())}")
         return False
 
     config = GlobalConfig()
-    config.default_model = model_name
+    config.default_model = model_info.name
     config.base_url = base_url or model_info.base_url
     config.model_provider = model_info.provider.value
     config.api_protocol = api_protocol or getattr(model_info, "api_protocol", "")
 
-    # Get API key
-    if api_key:
-        config.api_key = api_key
-    elif model_name not in ("ollama", "vllm"):
+    if api_key is None and model_info.name not in ("ollama", "vllm"):
         env_key = model_info.get_env_key()
-        env_api_key = os.environ.get(env_key) or os.environ.get("PILOTCODE_API_KEY")
-        if env_api_key:
-            config.api_key = env_api_key
-            console.print(f"[green]Using API key from {env_key} environment variable[/green]")
-        else:
-            config.api_key = Prompt.ask(
-                f"Enter API key for {model_info.display_name}", password=True
-            )
+        existing_key = os.environ.get(env_key) or os.environ.get("PILOTCODE_API_KEY")
+        if existing_key:
+            console.print(f"[green]✓ Found {env_key} in environment variables[/green]")
+            use_existing = Confirm.ask("Use existing API key?", default=True)
+            if use_existing:
+                api_key = existing_key
+        if api_key is None:
+            api_key = Prompt.ask(f"Enter your API key for {model_info.display_name}", password=True)
 
-    save_global_config(config)
-    console.print(f"[green]✅ Configured {model_info.display_name}[/green]")
-    return True
+    config.api_key = api_key or ""
+
+    console.print("\n[bold]Configuration Summary:[/bold]")
+    table = Table(box=box.ROUNDED)
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Model", model_info.display_name)
+    table.add_row("Base URL", config.base_url or "Default")
+    api_key_display = (
+        "***" + config.api_key[-4:]
+        if config.api_key and len(config.api_key) > 4
+        else ("Set" if config.api_key else "Not set")
+    )
+    table.add_row("API Key", api_key_display)
+    table.add_row("API Protocol", config.api_protocol or "auto-detect")
+    console.print(table)
+
+    if Confirm.ask("\nSave this configuration?", default=True):
+        save_global_config(config)
+        console.print("[green]✅ Configuration saved![/green]")
+        return True
+    return False
 
 
 def show_current_config() -> None:
@@ -421,6 +460,8 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.list_models:
+        from .models_config import format_model_list
+
         console.print(format_model_list())
         return 0
 

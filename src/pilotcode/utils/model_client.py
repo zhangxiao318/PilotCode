@@ -103,6 +103,16 @@ _PROVIDER_KEYWORDS: dict[str, str] = {
 }
 
 
+def _clean_model_name(name: str) -> str:
+    """Strip the last file extension from a model identifier.
+
+    Useful for backends (e.g. llama-server) that expose raw filenames
+    like ``model.gguf`` as model IDs.  Cloud providers that return
+    clean names such as ``gpt-4o`` are left untouched.
+    """
+    return Path(name).stem
+
+
 def _infer_provider(name: str) -> str | None:
     """Infer provider from model name or path."""
     lowered = name.lower()
@@ -839,12 +849,15 @@ class ModelClient:
                                 break
 
                 # display name and model id from API response
-                if model_data:
+                # Skip for llama-server: /props already gave us a clean display_name
+                # without the .gguf suffix, while /v1/models returns the raw filename.
+                if model_data and cap.get("_backend") != "llama-server":
                     model_id = model_data.get("id")
                     if model_id:
-                        cap["model_id"] = model_id
+                        clean_id = _clean_model_name(model_id)
+                        cap["model_id"] = clean_id
                         if "display_name" not in cap:
-                            cap["display_name"] = model_id
+                            cap["display_name"] = clean_id
 
                 if "_backend" not in cap:
                     cap["_backend"] = "openai-compatible"
@@ -941,10 +954,14 @@ class ModelClient:
                     result = []
                     for m in models:
                         if isinstance(m, dict):
+                            mid = m.get("id", "")
+                            dname = m.get("display_name") or mid
+                            if dname.endswith(".gguf"):
+                                dname = dname[:-5]
                             result.append(
                                 {
-                                    "id": m.get("id", ""),
-                                    "display_name": m.get("display_name") or m.get("id", ""),
+                                    "id": mid,
+                                    "display_name": dname,
                                 }
                             )
                     return result

@@ -29,7 +29,8 @@ from .orchestration.adapter import MissionAdapter
 from .orchestration.report import format_completion, format_failure
 from .version import __version__
 from .utils.config import is_configured, get_config_manager, is_local_url
-from .utils.configure import run_configure_wizard, format_model_list, get_available_model_names
+from .utils.configure import run_configure_wizard, get_available_model_names
+from .utils.models_config import format_model_list
 
 app = typer.Typer(
     name="pilotcode", help="PilotCode - AI-powered coding assistant", add_completion=False
@@ -1035,7 +1036,16 @@ def config(
                                     updates["context_window"] = detected_ctx
 
                     detected_model = api_caps.get("model_id") or api_caps.get("display_name")
-                    if detected_model and config.default_model != detected_model:
+                    if detected_model:
+                        from .utils.model_client import _clean_model_name
+
+                        detected_model = _clean_model_name(detected_model)
+                    config_model = config.default_model or ""
+                    if config_model:
+                        from .utils.model_client import _clean_model_name
+
+                        config_model = _clean_model_name(config_model)
+                    if detected_model and config_model and config_model != detected_model:
                         console.print(
                             f"\n[yellow]⚠ Model name mismatch: "
                             f"settings.json='{config.default_model}', detected='{detected_model}'[/yellow]"
@@ -1067,11 +1077,11 @@ def config(
                             if Confirm.ask("Auto-append /v1 to base_url?", default=True):
                                 updates["base_url"] = url + "/v1"
 
-                        if updates:
-                            for key, val in updates.items():
-                                setattr(config, key, val)
-                            get_config_manager().save_global_config(config)
-                            console.print("[green]✓ settings.json updated.[/green]")
+                    if updates:
+                        for key, val in updates.items():
+                            setattr(config, key, val)
+                        get_config_manager().save_global_config(config)
+                        console.print("[green]✓ settings.json updated.[/green]")
                 elif api_caps and api_caps.get("_error"):
                     err = api_caps["_error"]
                     console.print(f"[red]  Could not connect to backend: {err}[/red]")
