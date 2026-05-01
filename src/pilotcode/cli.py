@@ -338,6 +338,122 @@ def _probe_and_update_local_config(config, config_manager) -> None:
         console.print(f"[dim]Could not probe local model: {e}[/dim]")
 
 
+async def _quick_probe(timeout: float = 3.0) -> tuple[bool, str]:
+    """Lightweight connectivity probe on startup.
+
+    Uses the configured URL and protocol to send a single message.
+    Returns (ok, message).  ok=True if any non-empty response arrives.
+    """
+    from .utils.model_client import ModelClient, Message
+
+    client = ModelClient()
+    try:
+        test_messages = [Message(role="user", content="hi")]
+        response_text = ""
+        async for chunk in client.chat_completion(
+            test_messages,
+            max_tokens=1,
+            stream=False,
+            temperature=0.0,
+        ):
+            delta = chunk.get("choices", [{}])[0].get("delta", {})
+            text = delta.get("content", "")
+            if text:
+                response_text += text
+
+        if response_text.strip():
+            return True, "LLM responded"
+        return False, "Empty response"
+    except asyncio.TimeoutError:
+        return False, f"Connection timeout after {timeout}s"
+    except Exception as e:
+        return False, str(e)[:120]
+    finally:
+        await client.close()
+
+
+async def _diagnose_connection() -> None:
+    """Run detailed diagnostics when the quick probe fails.
+
+    Prints actionable guidance to the console.
+    """
+    from .utils.config import get_global_config
+    from .utils.model_client import ModelClient
+    from pilotcode.utils.models_config import infer_api_protocol
+
+    config = get_global_config()
+    console.print("\n[bold yellow]🔍 Diagnosing connection...[/bold yellow]")
+
+    console.print(f"  Model:      {config.default_model or '(not set)'}")
+    console.print(f"  Base URL:   {config.base_url or '(not set)'}")
+    console.print(f"  Protocol:   {config.api_protocol or 'auto-detect'}")
+    console.print(
+        f"  API Key:    {'***set***' if config.api_key else '[red]Not set[/red]'}"
+    )
+
+    if not config.api_key and not is_local_url(config.base_url or ""):
+        console.print(
+            "\n[yellow]⚠ No API key found in config.\n"
+            "  If you set it via env var, ModelClient will pick it up.[/yellow]\n"
+            "  export PILOTCODE_API_KEY=sk-...\n"
+            "  pilotcode configure"
+        )
+
+    client = ModelClient()
+
+    # 1. Try /v1/models (or /models) to see if the server is up
+    try:
+        models = await asyncio.wait_for(client.detect_models(), timeout=5.0)
+        if models:
+            console.print(
+                f"\n[green]✓ API server reachable[/green] — detected "
+                f"{len(models)} model(s)"
+            )
+            for m in models[:5]:
+                name = m.get("display_name") or m.get("id", "")
+                console.print(f"    • {name}")
+        else:
+            console.print("\n[yellow]⚠ API server reachable but no models found[/yellow]")
+    except Exception as e:
+        console.print(f"\n[red]✗ Cannot reach API server: {e}[/red]")
+        console.print(
+            "\n[dim]Common fixes:[/dim]\n"
+            "  • Check base_url (e.g. https://api.anthropic.com/v1)\n"
+            "  • Check firewall / proxy settings\n"
+            "  • Verify the API server is running (for local models)"
+        )
+        await client.close()
+        return
+
+    # 2. Try a minimal chat completion to catch auth / protocol mismatches
+    try:
+        ok, msg = await asyncio.wait_for(_quick_probe(timeout=5.0), timeout=6.0)
+        if ok:
+            console.print("[green]✓ Chat completion works[/green]")
+        else:
+            console.print(f"\n[yellow]⚠ Chat completion failed: {msg}[/yellow]")
+            proto = infer_api_protocol(
+                config.default_model or "",
+                config.base_url or "",
+                {"api_protocol": config.api_protocol},
+                None,
+            )
+            if proto == "anthropic":
+                console.print(
+                    "  [dim]Hint: Anthropic uses 'x-api-key' header. "
+                    "Make sure the key is valid and has not expired.[/dim]"
+                )
+            elif proto == "openai":
+                console.print(
+                    "  [dim]Hint: Verify the API key and base_url. "
+                    "OpenAI-compatible endpoints should respond to /chat/completions.[/dim]"
+                )
+    except Exception as e:
+        console.print(f"\n[yellow]⚠ Chat completion failed: {e}[/yellow]")
+
+    await client.close()
+
+
 def _show_configuration_prompt(skip_static_check: bool = False) -> bool:
     """Show configuration prompt to user."""
     if not skip_static_check:
@@ -462,13 +578,38 @@ def main(
             console.print("  [cyan]python -m pilotcode.main --configure[/cyan]")
             raise typer.Exit(code=1)
     elif not prompt:
-        # Fast path: only check if configuration exists, skip live probing
+        # Fast path: check config exists, then lightweight probe
         if not is_configured():
             console.print("\n[yellow]Configuration required. Run:[/yellow]")
             console.print("  [cyan]python -m pilotcode configure[/cyan]")
             console.print("or")
             console.print("  [cyan]python -m pilotcode.main --configure[/cyan]")
             raise typer.Exit(code=1)
+
+        # Lightweight startup probe: 3-second connectivity check
+        try:
+            ok, msg = asyncio.run(
+                asyncio.wait_for(_quick_probe(timeout=3.0), timeout=4.0)
+            )
+            if ok:
+                console.print("[dim]✓ LLM reachable[/dim]")
+            else:
+                console.print(f"[yellow]⚠ LLM probe warning: {msg}[/yellow]")
+                asyncio.run(_diagnose_connection())
+                if not typer.confirm(
+                    "\nContinue starting anyway?", default=True
+                ):
+                    raise typer.Exit(code=1)
+        except asyncio.TimeoutError:
+            console.print(
+                "[yellow]⚠ LLM probe timed out (>4s). "
+                "Server may be slow or unreachable.[/yellow]"
+            )
+            asyncio.run(_diagnose_connection())
+            if not typer.confirm(
+                "\nContinue starting anyway?", default=True
+            ):
+                raise typer.Exit(code=1)
 
     if prompt is not None:
         import asyncio
