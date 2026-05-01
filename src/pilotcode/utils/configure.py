@@ -52,14 +52,18 @@ class ConfigurationWizard:
         if not self._select_model_category():
             return False
 
-        # Step 2: Enter API key
+        # Step 2: Confirm API protocol
+        if not self._select_protocol():
+            return False
+
+        # Step 3: Enter API key
         if not self._enter_api_key():
             return False
 
-        # Step 3: Optional settings
+        # Step 4: Optional settings
         self._optional_settings()
 
-        # Step 4: Confirm and save
+        # Step 5: Confirm and save
         if self._confirm_and_save():
             console.print("\n[bold green]✅ Configuration saved successfully![/bold green]")
             console.print(f"[dim]Config file: {get_config_manager().SETTINGS_FILE}[/dim]")
@@ -143,12 +147,51 @@ class ConfigurationWizard:
         self.config.default_model = self.selected_model.name
         self.config.base_url = self.selected_model.base_url
         self.config.model_provider = self.selected_model.provider.value
+        self.config.api_protocol = getattr(self.selected_model, "api_protocol", "")
 
+        return True
+
+    def _select_protocol(self) -> bool:
+        """Confirm or override the API protocol.
+
+        Most providers use OpenAI-compatible protocol. Anthropic and some
+        custom proxies may use the native Anthropic protocol.
+        """
+        if not self.selected_model:
+            return False
+
+        default_proto = self.config.api_protocol or "openai"
+        console.print("\n[bold]Step 2: API Protocol[/bold]")
+        console.print(
+            f"[dim]Detected protocol for {self.selected_model.display_name}: "
+            f"{default_proto}[/dim]"
+        )
+
+        # For custom/local models, always ask; for known providers, offer override
+        if self.selected_model.name in ("custom", "ollama", "vllm"):
+            protocol = Prompt.ask(
+                "Select API protocol",
+                choices=["openai", "anthropic"],
+                default=default_proto,
+            )
+            self.config.api_protocol = protocol
+        else:
+            if Confirm.ask(
+                f"Use {default_proto} protocol? (No to override)", default=True
+            ):
+                self.config.api_protocol = default_proto
+            else:
+                protocol = Prompt.ask(
+                    "Select API protocol",
+                    choices=["openai", "anthropic"],
+                    default="openai",
+                )
+                self.config.api_protocol = protocol
         return True
 
     def _enter_api_key(self) -> bool:
         """Enter API key for the selected model."""
-        console.print("\n[bold]Step 2: API Key Configuration[/bold]")
+        console.print("\n[bold]Step 3: API Key Configuration[/bold]")
 
         if not self.selected_model:
             console.print("[red]No model selected![/red]")
@@ -213,7 +256,7 @@ class ConfigurationWizard:
 
     def _optional_settings(self) -> None:
         """Configure optional settings."""
-        console.print("\n[bold]Step 3: Optional Settings[/bold] [dim](press Enter to skip)[/dim]")
+        console.print("\n[bold]Step 4: Optional Settings[/bold] [dim](press Enter to skip)[/dim]")
 
         # Custom base URL (if needed)
         # Local models (Ollama, vLLM) may run on another host in the LAN
@@ -226,6 +269,20 @@ class ConfigurationWizard:
             custom_url = Prompt.ask("Enter base URL", default=self.config.base_url)
             if custom_url:
                 self.config.base_url = custom_url
+
+        # Allow overriding protocol in optional settings too
+        if Confirm.ask(
+            f"Keep API protocol as '{self.config.api_protocol or 'auto'}'?",
+            default=True,
+        ):
+            pass
+        else:
+            protocol = Prompt.ask(
+                "Select API protocol",
+                choices=["openai", "anthropic"],
+                default=self.config.api_protocol or "openai",
+            )
+            self.config.api_protocol = protocol
 
         # Theme
         theme = Prompt.ask(
@@ -259,6 +316,7 @@ class ConfigurationWizard:
             else ("Set" if self.config.api_key else "Not set")
         )
         table.add_row("API Key", api_key_display)
+        table.add_row("API Protocol", self.config.api_protocol or "auto-detect")
         table.add_row("Theme", self.config.theme)
         table.add_row("Auto Compact", "Yes" if self.config.auto_compact else "No")
 
@@ -280,7 +338,10 @@ def run_configure_wizard() -> bool:
 
 
 def quick_configure(
-    model_name: str, api_key: str | None = None, base_url: str | None = None
+    model_name: str,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    api_protocol: str | None = None,
 ) -> bool:
     """Quickly configure with specific model.
 
@@ -288,6 +349,7 @@ def quick_configure(
         model_name: Name of the model to configure
         api_key: Optional API key (will prompt if not provided)
         base_url: Optional custom base URL
+        api_protocol: Optional API protocol override ("openai" or "anthropic")
 
     Returns:
         True if configuration was successful.
@@ -302,6 +364,7 @@ def quick_configure(
     config.default_model = model_name
     config.base_url = base_url or model_info.base_url
     config.model_provider = model_info.provider.value
+    config.api_protocol = api_protocol or getattr(model_info, "api_protocol", "")
 
     # Get API key
     if api_key:
@@ -338,6 +401,7 @@ def show_current_config() -> None:
     table.add_row("Config File", status["config_file_path"])
     table.add_row("Config File Exists", "Yes" if status["config_file_exists"] else "No")
     table.add_row("Model", status["model"] or "Not set")
+    table.add_row("API Protocol", status.get("api_protocol") or "auto-detect")
     table.add_row("Base URL", status["base_url"] or "Default")
     table.add_row("API Key", "***set***" if status["has_api_key"] else "Not set")
 
@@ -361,6 +425,9 @@ def main() -> int:
     parser.add_argument("--model", "-m", help="Quick configure with model name")
     parser.add_argument("--api-key", "-k", help="API key for quick configure")
     parser.add_argument("--base-url", "-u", help="Custom base URL")
+    parser.add_argument(
+        "--protocol", "-p", help='API protocol: "openai" or "anthropic"'
+    )
     parser.add_argument("--show", "-s", action="store_true", help="Show current config")
     parser.add_argument("--list-models", "-l", action="store_true", help="List all models")
 
@@ -375,7 +442,7 @@ def main() -> int:
         return 0
 
     if args.model:
-        success = quick_configure(args.model, args.api_key, args.base_url)
+        success = quick_configure(args.model, args.api_key, args.base_url, args.protocol)
         return 0 if success else 1
 
     # Default: run wizard

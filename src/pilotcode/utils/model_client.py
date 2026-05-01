@@ -156,9 +156,10 @@ class ModelClient:
         # Determine model name: use provided, or config, or fallback
         model_key = model or config.default_model or "default"
 
-        # For multi-model routing: if a specific model is requested and has
-        # overrides in settings.json, use the per-model config.
-        model_override = config.get_model_config(model_key) if model else {}
+        # For multi-model routing: read per-model overrides and global config.
+        # Always read so that api_protocol/base_url/api_key from settings.json
+        # or env vars are picked up even when 'model' is not explicitly passed.
+        model_override = config.get_model_config(model_key)
         effective_api_key = (
             api_key or model_override.get("api_key") or config.api_key or "sk-placeholder"
         )
@@ -1167,11 +1168,63 @@ class ModelClient:
             if "timeout" not in cap and static.timeout:
                 cap["timeout"] = static.timeout
 
+        # Tag with the active protocol so callers know which normalization
+        # layer produced this result.
+        cap["_api_protocol"] = self._api_protocol
+
         if cap:
             return cap
         if last_error:
             return {"_error": last_error}
         return None
+
+    async def detect_models(self) -> list[dict[str, str]]:
+        """Detect available models from the API.
+
+        Returns a list of {id, display_name} dicts.  Works for both
+        OpenAI-compatible and Anthropic backends.
+        """
+        import asyncio
+
+        base_has_v1 = str(self.client.base_url).rstrip("/").endswith("/v1")
+        candidates: list[str] = []
+        for prefix in ([""] if base_has_v1 else ["/v1", ""]):
+            candidates.append(f"{prefix}/models")
+
+        seen = set()
+        endpoints = []
+        for e in candidates:
+            if e not in seen:
+                seen.add(e)
+                endpoints.append(e)
+
+        for endpoint in endpoints:
+            try:
+                resp = await self.client.get(endpoint, timeout=10.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    models = data.get("data", [])
+                    if not models and isinstance(data, list):
+                        models = data
+                    result = []
+                    for m in models:
+                        if isinstance(m, dict):
+                            result.append(
+                                {
+                                    "id": m.get("id", ""),
+                                    "display_name": m.get("display_name")
+                                    or m.get("id", ""),
+                                }
+                            )
+                    return result
+            except (
+                httpx.HTTPStatusError,
+                httpx.RequestError,
+                json.JSONDecodeError,
+                asyncio.TimeoutError,
+            ):
+                continue
+        return []
 
     async def close(self) -> None:
         """Close the client."""

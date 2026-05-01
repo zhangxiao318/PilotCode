@@ -76,6 +76,7 @@ class GlobalConfig:
     base_url: str = ""
     default_model: str = ""
     model_provider: str = ""
+    api_protocol: str = ""  # "openai" | "anthropic" | "" (auto-detect)
     context_window: int = 0
     allowed_tools: list[str] = field(default_factory=list)
     mcp_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -91,8 +92,9 @@ class GlobalConfig:
     def get_model_config(self, model_name: str) -> dict[str, str]:
         """Get merged configuration for a specific model.
 
-        Returns a dict with 'api_key', 'base_url' for the given model,
-        falling back to global values. Used by multi-model routing.
+        Returns a dict with 'api_key', 'base_url', 'api_protocol' for the
+        given model, falling back to global values. Used by multi-model
+        routing.
         """
         override = self.model_overrides.get(model_name, {})
         info = get_model_info(model_name)
@@ -101,6 +103,9 @@ class GlobalConfig:
             "base_url": override.get("base_url")
             or self.base_url
             or (info.base_url if info else ""),
+            "api_protocol": override.get("api_protocol")
+            or self.api_protocol
+            or (info.api_protocol if info else ""),
         }
 
     def __post_init__(self):
@@ -161,6 +166,7 @@ class ConfigManager:
         "PILOTCODE_API_KEY": "api_key",
         "PILOTCODE_BASE_URL": "base_url",
         "PILOTCODE_MODEL": "default_model",
+        "PILOTCODE_API_PROTOCOL": "api_protocol",
         "PILOTCODE_CONTEXT_WINDOW": "context_window",
         # Legacy env vars for backward compatibility
         "LOCAL_API_KEY": "api_key",
@@ -560,6 +566,7 @@ class ConfigManager:
             "config_file_exists": self.SETTINGS_FILE.exists(),
             "config_file_path": str(self.SETTINGS_FILE),
             "model": config.default_model,
+            "api_protocol": config.api_protocol,
             "base_url": config.base_url,
             "has_api_key": bool(config.api_key),
             "env_overrides": {},

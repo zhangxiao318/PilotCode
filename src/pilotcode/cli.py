@@ -131,6 +131,10 @@ def _print_api_capability(console: Console, caps: dict, static_info=None) -> Non
         static_provider = static_info.provider.value if static_info else None
         _val("Provider", provider, static_provider)
 
+    api_protocol = caps.get("_api_protocol")
+    if api_protocol:
+        console.print(f"  API Protocol: {api_protocol}")
+
     ctx = caps.get("context_window")
     static_ctx = static_info.context_window if static_info else None
     _val("Context", ctx, static_ctx, _fmt_ctx)
@@ -605,6 +609,9 @@ def configure(
     model: str | None = typer.Option(None, "--model", "-m", help="Model name for quick setup"),
     api_key: str | None = typer.Option(None, "--api-key", "-k", help="API key for quick setup"),
     base_url: str | None = typer.Option(None, "--base-url", "-u", help="Custom base URL"),
+    protocol: str | None = typer.Option(
+        None, "--protocol", "-p", help='API protocol: "openai" or "anthropic"'
+    ),
     list_models: bool = typer.Option(
         False, "--list-models", "-l", help="List all available models"
     ),
@@ -622,7 +629,7 @@ def configure(
         return
 
     if model:
-        success = quick_configure(model, api_key, base_url)
+        success = quick_configure(model, api_key, base_url, protocol)
         if not success:
             raise typer.Exit(code=1)
     elif wizard:
@@ -768,6 +775,9 @@ def config(
         console.print(f"  Auto Compact: {config.auto_compact}")
         console.print(f"  Default Model: {config.default_model}")
         console.print(f"  Model Provider: {config.model_provider}")
+        console.print(
+            f"  API Protocol: {config.api_protocol or 'auto-detect'}"
+        )
         console.print(f"  Base URL: {config.base_url or 'Default'}")
         console.print(f"  API Key: {'***set***' if config.api_key else 'Not set'}")
         if config.context_window > 0:
@@ -792,7 +802,7 @@ def config(
             label = "local" if is_local else "remote"
             console.print(f"\n[dim]Probing {label} model runtime info...[/dim]")
 
-            async def _probe() -> dict | None:
+            async def _probe() -> tuple[dict | None, list[dict[str, str]]]:
                 from .utils.model_client import ModelClient
 
                 client = ModelClient(
@@ -801,14 +811,30 @@ def config(
                     model=config.default_model or None,
                 )
                 try:
-                    return await client.fetch_model_capabilities()
+                    caps = await client.fetch_model_capabilities()
+                    models = await client.detect_models()
+                    return caps, models
                 finally:
                     await client.close()
 
             try:
-                api_caps = asyncio.run(asyncio.wait_for(_probe(), timeout=10.0))
+                api_caps, detected_models = asyncio.run(
+                    asyncio.wait_for(_probe(), timeout=15.0)
+                )
+                if detected_models:
+                    console.print("\n[bold]Detected Models:[/bold]")
+                    for m in detected_models[:10]:
+                        name = m.get("display_name") or m.get("id", "")
+                        mid = m.get("id", "")
+                        if name and name != mid:
+                            console.print(f"  • {name} [dim]({mid})[/dim]")
+                        else:
+                            console.print(f"  • {mid}")
+                    if len(detected_models) > 10:
+                        console.print(f"  ... and {len(detected_models) - 10} more")
+
                 if api_caps:
-                    console.print("[bold]Model Capability (Runtime Detected):[/bold]")
+                    console.print("\n[bold]Model Capability (Runtime Detected):[/bold]")
                     _print_api_capability(console, api_caps, static_info=static_info)
 
                     # --- Check settings.json against probed values ---
