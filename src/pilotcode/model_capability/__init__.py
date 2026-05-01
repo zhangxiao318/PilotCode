@@ -39,11 +39,8 @@ from .schema import (
     TaskGranularity,
     VerifierStrategy,
 )
-from .benchmark import (
-    BenchmarkResult,
-    run_all_benchmarks,
-    ALL_BENCHMARKS,
-)
+from .base import BenchmarkResult
+from .suite import run_all_benchmarks, ALL_BENCHMARKS
 from .evaluator import (
     evaluate_capability,
     format_evaluation_report,

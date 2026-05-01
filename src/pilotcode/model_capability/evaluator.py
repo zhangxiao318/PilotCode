@@ -15,7 +15,7 @@ from .schema import (
     ChainOfThoughtDimension,
     CodeReviewDimension,
 )
-from .benchmark import BenchmarkResult
+from .base import BenchmarkResult
 
 
 def _average(scores: list[float]) -> float:
