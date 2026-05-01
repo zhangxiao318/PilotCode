@@ -430,7 +430,11 @@ class ModelClient:
 
         if tools:
             payload["tools"] = self._convert_tools(tools)
-            if self._model_info and self._model_info.supports_tool_choice:
+            # Anthropic protocol always supports tool_choice; for OpenAI
+            # protocol only send it when the provider flag says so.
+            if self._api_protocol == "anthropic" or (
+                self._model_info and self._model_info.supports_tool_choice
+            ):
                 payload["tool_choice"] = {"type": "auto"}
 
         return payload
