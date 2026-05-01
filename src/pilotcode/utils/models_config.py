@@ -5,12 +5,14 @@ Model metadata is loaded from config/models.json so it can be updated
 without touching source code.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
 import json
 import logging
+
+from .model_capabilities import ModelCapabilities
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,7 @@ class ModelInfo:
     disabled: bool = False
     disabled_reason: str = ""
     api_protocol: str = "openai"
+    capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
 
     def get_env_key(self) -> str:
         """Get environment variable key for API key."""
@@ -107,6 +110,7 @@ def _load_models_json() -> dict[str, ModelInfo]:
             disabled=raw.get("disabled", False),
             disabled_reason=raw.get("disabled_reason", ""),
             api_protocol=raw.get("api_protocol", ""),
+            capabilities=ModelCapabilities.from_dict(raw.get("capabilities", {})),
         )
 
     return models

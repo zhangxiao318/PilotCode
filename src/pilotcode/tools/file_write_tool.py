@@ -78,7 +78,11 @@ class FileWriteOutput(BaseModel):
 
 
 async def write_file_atomic(
-    file_path: str, content: str, append: bool = False, cwd: str | None = None, encoding: str | None = None
+    file_path: str,
+    content: str,
+    append: bool = False,
+    cwd: str | None = None,
+    encoding: str | None = None,
 ) -> FileWriteOutput:
     """Write file atomically using temp file and rename."""
     # Security check: validate path is within workspace
@@ -238,6 +242,7 @@ async def file_write_call(
     if not write_encoding and context.read_file_state is not None:
         # Try to inherit encoding from the most recently read file in the same directory
         import os as _os
+
         target_dir = _os.path.dirname(_os.path.abspath(file_path))
         for key, info in sorted(
             context.read_file_state.items(),

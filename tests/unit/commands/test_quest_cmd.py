@@ -253,7 +253,9 @@ class TestRunQuestResumability:
         ]
         _quests[1] = q
 
-        with patch("pilotcode.commands.quest_cmd._execute_mission", new_callable=AsyncMock) as mock_exec:
+        with patch(
+            "pilotcode.commands.quest_cmd._execute_mission", new_callable=AsyncMock
+        ) as mock_exec:
             mock_exec.return_value = {"success": True}
             await _run_quest(q, context)
 

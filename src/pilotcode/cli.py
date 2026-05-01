@@ -17,6 +17,7 @@ if sys.platform == "win32":
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from .components.repl import (
@@ -305,7 +306,7 @@ def _probe_and_update_local_config(config, config_manager) -> None:
                     f"[yellow]⚠ context_window mismatch: "
                     f"settings.json={config.context_window}, detected={detected_ctx}[/yellow]"
                 )
-                if typer.confirm("Update settings.json to match detected value?", default=True):
+                if Confirm.ask("Update settings.json to match detected value?", default=True):
                     local_updates["context_window"] = detected_ctx
 
         # For vLLM, check model name
@@ -316,7 +317,7 @@ def _probe_and_update_local_config(config, config_manager) -> None:
                     f"[yellow]⚠ vLLM model name mismatch: "
                     f"settings.json='{config.default_model}', detected='{detected_model}'[/yellow]"
                 )
-                if typer.confirm("Update default_model in settings.json?", default=True):
+                if Confirm.ask("Update default_model in settings.json?", default=True):
                     local_updates["default_model"] = detected_model
 
         # Check /v1 suffix for OpenAI-compatible backends
@@ -324,7 +325,7 @@ def _probe_and_update_local_config(config, config_manager) -> None:
             url = config.base_url.rstrip("/")
             if not url.endswith("/v1"):
                 console.print(f"[yellow]⚠ base_url missing /v1 suffix: {config.base_url}[/yellow]")
-                if typer.confirm("Auto-append /v1 to base_url?", default=True):
+                if Confirm.ask("Auto-append /v1 to base_url?", default=True):
                     local_updates["base_url"] = url + "/v1"
 
         if local_updates:
@@ -408,9 +409,7 @@ async def _diagnose_connection() -> None:
     console.print(f"  Model:      {config.default_model or '(not set)'}")
     console.print(f"  Base URL:   {config.base_url or '(not set)'}")
     console.print(f"  Protocol:   {config.api_protocol or 'auto-detect'}")
-    console.print(
-        f"  API Key:    {'***set***' if config.api_key else '[red]Not set[/red]'}"
-    )
+    console.print(f"  API Key:    {'***set***' if config.api_key else '[red]Not set[/red]'}")
 
     if not config.api_key and not is_local_url(config.base_url or ""):
         console.print(
@@ -428,8 +427,7 @@ async def _diagnose_connection() -> None:
         models = await asyncio.wait_for(client.detect_models(), timeout=5.0)
         if models:
             console.print(
-                f"[green]  ✓ API server reachable[/green] — detected "
-                f"{len(models)} model(s)"
+                f"[green]  ✓ API server reachable[/green] — detected {len(models)} model(s)"
             )
             for m in models[:5]:
                 name = m.get("display_name") or m.get("id", "")
@@ -500,9 +498,9 @@ def _show_configuration_prompt(skip_static_check: bool = False) -> bool:
     console.print("  [cyan]3.[/cyan] View available models")
     console.print("  [cyan]4.[/cyan] Exit\n")
 
-    choice = typer.prompt("Select option", type=int, default=1)
+    choice = Prompt.ask("Select option", choices=["1", "2", "3", "4"], default="1")
 
-    if choice == 1:
+    if choice == "1":
         return run_configure_wizard()
     elif choice == 2:
         console.print("\n[bold]Environment Variables:[/bold]")
@@ -521,7 +519,7 @@ def _show_configuration_prompt(skip_static_check: bool = False) -> bool:
         )
 
         # Ask if they want to run wizard now
-        if typer.confirm("\nRun configuration wizard now?", default=True):
+        if Confirm.ask("Run configuration wizard now?", default=True):
             return run_configure_wizard()
         return False
     elif choice == 3:
@@ -617,27 +615,20 @@ def main(
 
         # Lightweight startup probe: 3-second connectivity check
         try:
-            ok, msg = asyncio.run(
-                asyncio.wait_for(_quick_probe(timeout=3.0), timeout=4.0)
-            )
+            ok, msg = asyncio.run(asyncio.wait_for(_quick_probe(timeout=3.0), timeout=4.0))
             if ok:
                 console.print("[dim]✓ LLM reachable[/dim]")
             else:
                 console.print(f"[yellow]⚠ LLM probe warning: {msg}[/yellow]")
                 asyncio.run(_diagnose_connection())
-                if not typer.confirm(
-                    "\nContinue starting anyway?", default=True
-                ):
+                if not Confirm.ask("Continue starting anyway?", default=True):
                     raise typer.Exit(code=1)
         except asyncio.TimeoutError:
             console.print(
-                "[yellow]⚠ LLM probe timed out (>4s). "
-                "Server may be slow or unreachable.[/yellow]"
+                "[yellow]⚠ LLM probe timed out (>4s). Server may be slow or unreachable.[/yellow]"
             )
             asyncio.run(_diagnose_connection())
-            if not typer.confirm(
-                "\nContinue starting anyway?", default=True
-            ):
+            if not Confirm.ask("Continue starting anyway?", default=True):
                 raise typer.Exit(code=1)
 
     if prompt is not None:
@@ -842,7 +833,7 @@ def _validate_and_select_remote_model(console, config, base_url: str) -> None:
                 f"  [dim]DeepSeek deprecated this on 2026/07/24. "
                 f"Use {deprecated[current]} instead.[/dim]"
             )
-            if typer.confirm("Update to deepseek-v4-pro?", default=True):
+            if Confirm.ask("Update to deepseek-v4-pro?", default=True):
                 config.default_model = "deepseek-v4-pro"
                 _sync_provider()
                 get_config_manager().save_global_config(config)
@@ -858,7 +849,7 @@ def _validate_and_select_remote_model(console, config, base_url: str) -> None:
             for i, m in enumerate(valid_models, 1):
                 label = "[Recommended]" if m == "deepseek-v4-pro" else ""
                 console.print(f"  {i}. {m} {label}")
-            choice = typer.prompt("Enter number (1/2)", default="1")
+            choice = Prompt.ask("Enter number", choices=["1", "2"], default="1")
             try:
                 idx = int(choice) - 1
                 if 0 <= idx < len(valid_models):
@@ -945,9 +936,7 @@ def config(
         console.print(f"  Auto Compact: {config.auto_compact}")
         console.print(f"  Default Model: {config.default_model}")
         console.print(f"  Model Provider: {config.model_provider}")
-        console.print(
-            f"  API Protocol: {config.api_protocol or 'auto-detect'}"
-        )
+        console.print(f"  API Protocol: {config.api_protocol or 'auto-detect'}")
         console.print(f"  Base URL: {config.base_url or 'Default'}")
         console.print(f"  API Key: {'***set***' if config.api_key else 'Not set'}")
         if config.context_window > 0:
@@ -988,9 +977,7 @@ def config(
                     await client.close()
 
             try:
-                api_caps, detected_models = asyncio.run(
-                    asyncio.wait_for(_probe(), timeout=15.0)
-                )
+                api_caps, detected_models = asyncio.run(asyncio.wait_for(_probe(), timeout=15.0))
                 if detected_models:
                     console.print("\n[bold]Detected Models:[/bold]")
                     for m in detected_models[:10]:
@@ -1007,12 +994,9 @@ def config(
                     api_err = api_caps.get("_error")
                     if api_err:
                         console.print(
-                            f"\n[yellow]⚠ Could not probe runtime capabilities: "
-                            f"{api_err}[/yellow]"
+                            f"\n[yellow]⚠ Could not probe runtime capabilities: {api_err}[/yellow]"
                         )
-                        console.print(
-                            "[dim]  Using static configuration from models.json.[/dim]"
-                        )
+                        console.print("[dim]  Using static configuration from models.json.[/dim]")
                     console.print("\n[bold]Model Capability (Runtime Detected):[/bold]")
                     _print_api_capability(console, api_caps, static_info=static_info)
 
@@ -1041,7 +1025,7 @@ def config(
                                     f"\n[dim]context_window differs slightly: "
                                     f"settings.json={config.context_window}, detected={detected_ctx}[/dim]"
                                 )
-                            if typer.confirm(
+                            if Confirm.ask(
                                 "Update settings.json to match detected value?", default=True
                             ):
                                 updates["context_window"] = detected_ctx
@@ -1052,7 +1036,7 @@ def config(
                             f"\n[yellow]⚠ Model name mismatch: "
                             f"settings.json='{config.default_model}', detected='{detected_model}'[/yellow]"
                         )
-                        if typer.confirm("Update default_model in settings.json?", default=True):
+                        if Confirm.ask("Update default_model in settings.json?", default=True):
                             updates["default_model"] = detected_model
 
                     # --- Suggest /v1 suffix for self-hosted OpenAI-compatible backends ---
@@ -1076,7 +1060,7 @@ def config(
                                 "  [dim]Self-hosted OpenAI-compatible backends (vLLM, TGI, etc.) typically "
                                 "expose endpoints under /v1 (e.g. /v1/chat/completions).[/dim]"
                             )
-                            if typer.confirm("Auto-append /v1 to base_url?", default=True):
+                            if Confirm.ask("Auto-append /v1 to base_url?", default=True):
                                 updates["base_url"] = url + "/v1"
 
                     if updates:
@@ -1154,7 +1138,7 @@ def config(
                     console.print(
                         f"\n[yellow]Model changed from '{old_value}' to '{set_value}'.[/yellow]"
                     )
-                    if typer.confirm("Run capability benchmark for this model?", default=True):
+                    if Confirm.ask("Run capability benchmark for this model?", default=True):
                         from .model_capability import evaluate_model, save_capability
 
                         cap = asyncio.run(evaluate_model(set_value))

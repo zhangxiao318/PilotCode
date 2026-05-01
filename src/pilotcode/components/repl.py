@@ -889,9 +889,20 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
     # ---- Rule 3b: Bug-fixing tasks (e.g. SWE-bench) always need planning ----
     prompt_lower = prompt.lower()
     bug_signals = [
-        "bug report", "bug fix", "fix the bug", "fix a bug", "resolve the issue",
-        "github.com", "issue #", "pr #", "failing test", "test failure",
-        "regression", "broken", "does not work", "not working",
+        "bug report",
+        "bug fix",
+        "fix the bug",
+        "fix a bug",
+        "resolve the issue",
+        "github.com",
+        "issue #",
+        "pr #",
+        "failing test",
+        "test failure",
+        "regression",
+        "broken",
+        "does not work",
+        "not working",
     ]
     if any(s in prompt_lower for s in bug_signals):
         return "PLAN"
@@ -1375,7 +1386,13 @@ async def run_headless(
         _error_type = type(e).__name__
         _traceback = _tb.format_exc()
         # Provide clear, actionable error messages for common failure modes
-        if _error_type in ("ConnectTimeout", "ConnectError", "ReadTimeout", "WriteTimeout", "TimeoutException"):
+        if _error_type in (
+            "ConnectTimeout",
+            "ConnectError",
+            "ReadTimeout",
+            "WriteTimeout",
+            "TimeoutException",
+        ):
             response_text = f"Error: LLM API connection timeout ({_error_type}) — unable to reach model server. Please check network/proxy settings."
         elif _error_type in ("RemoteProtocolError", "NetworkError", "ProxyError"):
             response_text = f"Error: LLM API network error ({_error_type}) — please check network/proxy settings."
@@ -1572,8 +1589,15 @@ Be efficient — use parallel tool calls where possible.
             timeout=600,
         )
     except asyncio.TimeoutError:
-        _log("[AGENT] Exploration phase timed out after 10 minutes, proceeding with available context")
-        explore_result = {"response": "", "tool_calls": [], "success": False, "env_diagnosis_count": env_diagnosis_count}
+        _log(
+            "[AGENT] Exploration phase timed out after 10 minutes, proceeding with available context"
+        )
+        explore_result = {
+            "response": "",
+            "tool_calls": [],
+            "success": False,
+            "env_diagnosis_count": env_diagnosis_count,
+        }
     env_diagnosis_count = explore_result.get("env_diagnosis_count", env_diagnosis_count)
     explore_summary = explore_result.get("response", "").strip()
     _log(f"[AGENT] Exploration complete ({len(explore_summary)} chars)")
@@ -1634,7 +1658,9 @@ Requirements:
                 timeout=300,
             )
         except asyncio.TimeoutError:
-            _log("[PLAN] Plan generation timed out after 5 minutes, falling back to direct execution")
+            _log(
+                "[PLAN] Plan generation timed out after 5 minutes, falling back to direct execution"
+            )
             plan_text = "{}"
         plan = _extract_json(plan_text)
 
@@ -1804,7 +1830,16 @@ CONSTRAINT: You have {execution_max_iterations} tool-call rounds. Do NOT waste t
             )
         except asyncio.TimeoutError:
             _log(f"[EXEC] Attempt {attempt} timed out after 15 minutes, using best result so far")
-            exec_result = best_result if best_result else {"response": "", "tool_calls": [], "success": False, "env_diagnosis_count": env_diagnosis_count}
+            exec_result = (
+                best_result
+                if best_result
+                else {
+                    "response": "",
+                    "tool_calls": [],
+                    "success": False,
+                    "env_diagnosis_count": env_diagnosis_count,
+                }
+            )
         env_diagnosis_count = exec_result.get("env_diagnosis_count", env_diagnosis_count)
         best_result = exec_result
 

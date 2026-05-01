@@ -37,6 +37,7 @@ def _strip_ansi_residuals(text: str) -> str:
     Also handles PowerShell extended colour sequences like '[<59;2;28m'.
     """
     import re
+
     # Standard residual: [35;60;54m
     text = re.sub(r"\[(?:\d+;)*\d+[a-zA-Z]", "", text)
     # PowerShell extended: [<59;2;28m

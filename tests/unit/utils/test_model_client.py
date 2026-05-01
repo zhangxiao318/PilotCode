@@ -12,6 +12,28 @@ from pilotcode.utils.model_client import (
 )
 
 
+@pytest.fixture(autouse=True)
+def clean_config_for_model_client(monkeypatch, request):
+    """Ensure ModelClient tests use a clean global config."""
+    if "test_initialization_with_defaults" in request.node.name:
+        # Clear cache so env vars are re-applied
+        from pilotcode.utils.config import get_config_manager
+
+        manager = get_config_manager()
+        manager._global_config = None
+        manager._settings_mtime = 0.0
+    else:
+        from pilotcode.utils.config import GlobalConfig
+
+        clean = GlobalConfig(
+            default_model="deepseek",
+            api_key="",
+            base_url="",
+            api_protocol="",
+        )
+        monkeypatch.setattr("pilotcode.utils.model_client.get_global_config", lambda: clean)
+
+
 class TestToolCall:
     """Tests for ToolCall dataclass."""
 
@@ -341,7 +363,9 @@ class TestAnthropicNormalization:
 
     def test_build_anthropic_payload_system_extracted(self):
         """System messages should be extracted to top-level 'system' param."""
-        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        client = ModelClient(
+            api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3"
+        )
         messages = [
             Message(role="system", content="Be helpful"),
             Message(role="user", content="Hello"),
@@ -355,10 +379,16 @@ class TestAnthropicNormalization:
 
     def test_build_anthropic_payload_tool_message_conversion(self):
         """Tool messages should become user messages with tool_result blocks."""
-        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        client = ModelClient(
+            api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3"
+        )
         messages = [
             Message(role="user", content="Run ls"),
-            Message(role="assistant", content="", tool_calls=[ToolCall(id="tu_1", name="Bash", arguments={"command": "ls"})]),
+            Message(
+                role="assistant",
+                content="",
+                tool_calls=[ToolCall(id="tu_1", name="Bash", arguments={"command": "ls"})],
+            ),
             Message(role="tool", content="file.txt", tool_call_id="tu_1", name="Bash"),
         ]
         payload = client._build_anthropic_payload(messages, None, 0.7, 1024, True)
@@ -375,7 +405,9 @@ class TestAnthropicNormalization:
 
     def test_build_anthropic_payload_tools_and_max_tokens(self):
         """Tools should be converted to Anthropic format and max_tokens defaulted."""
-        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        client = ModelClient(
+            api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3"
+        )
         tools = [
             {
                 "name": "Bash",
@@ -393,7 +425,9 @@ class TestAnthropicNormalization:
 
     def test_normalize_anthropic_response_text_only(self):
         """Non-streaming text response should normalize to OpenAI chunk."""
-        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        client = ModelClient(
+            api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3"
+        )
         raw = {
             "content": [{"type": "text", "text": "Hello there"}],
             "stop_reason": "end_turn",
@@ -408,7 +442,9 @@ class TestAnthropicNormalization:
 
     def test_normalize_anthropic_response_with_tool_use(self):
         """Non-streaming tool_use response should normalize to tool_calls."""
-        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        client = ModelClient(
+            api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3"
+        )
         raw = {
             "content": [
                 {"type": "tool_use", "id": "tu_1", "name": "Bash", "input": {"command": "ls"}}
@@ -427,20 +463,24 @@ class TestAnthropicNormalization:
     @pytest.mark.asyncio
     async def test_normalize_anthropic_stream_text(self):
         """Streaming text events should yield OpenAI-style chunks."""
-        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        client = ModelClient(
+            api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3"
+        )
 
         raw_lines = [
-            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}",
-            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}",
+            'data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}',
+            'data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}',
             'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}',
             'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}',
             'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}',
         ]
 
         mock_resp = MagicMock()
+
         async def _aiter_lines():
             for line in raw_lines:
                 yield line
+
         mock_resp.aiter_lines = _aiter_lines
 
         chunks = []
@@ -455,19 +495,23 @@ class TestAnthropicNormalization:
     @pytest.mark.asyncio
     async def test_normalize_anthropic_stream_tool_use(self):
         """Streaming tool_use events should yield tool_calls chunks."""
-        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        client = ModelClient(
+            api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3"
+        )
 
         raw_lines = [
-            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}",
+            'data: {"type":"message_start","message":{"usage":{"input_tokens":5}}}',
             'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tu_1","name":"Bash"}}',
             'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"command\\": \\"ls\\"}"}}',
             'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}',
         ]
 
         mock_resp = MagicMock()
+
         async def _aiter_lines():
             for line in raw_lines:
                 yield line
+
         mock_resp.aiter_lines = _aiter_lines
 
         chunks = []
@@ -477,12 +521,17 @@ class TestAnthropicNormalization:
         tool_chunks = [c for c in chunks if "tool_calls" in c["choices"][0]["delta"]]
         assert len(tool_chunks) == 2  # start + partial_json
         assert tool_chunks[0]["choices"][0]["delta"]["tool_calls"][0]["function"]["name"] == "Bash"
-        assert tool_chunks[1]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"] == '{"command": "ls"}'
+        assert (
+            tool_chunks[1]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"]
+            == '{"command": "ls"}'
+        )
 
     @pytest.mark.asyncio
     async def test_chat_completion_anthropic_endpoint(self):
         """Anthropic protocol should call /v1/messages, not /chat/completions."""
-        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        client = ModelClient(
+            api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3"
+        )
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -505,7 +554,9 @@ class TestAnthropicNormalization:
 
     def test_convert_tools_anthropic_format(self):
         """Anthropic client should return flat tool schemas."""
-        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        client = ModelClient(
+            api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3"
+        )
         tools = [
             {
                 "name": "Bash",

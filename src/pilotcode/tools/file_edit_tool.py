@@ -35,7 +35,7 @@ def clear_allowed_files(cwd: str) -> None:
 
 def _is_file_allowed(file_path: str, cwd: str) -> tuple[bool, str | None]:
     """Check if a file is within the allowed list for the given cwd.
-    
+
     Returns (allowed, reason_if_blocked).
     If no restriction is set for this cwd, all files are allowed.
     """
@@ -56,6 +56,7 @@ def _is_file_allowed(file_path: str, cwd: str) -> tuple[bool, str | None]:
         f"If this file truly needs to be modified, update the plan first."
     )
 
+
 from .registry import register_tool
 
 # ---------------------------------------------------------------------------
@@ -70,14 +71,12 @@ import io
 def _count_brackets(text: str) -> dict[str, int]:
     """Count opening/closing brackets in text."""
     counts = {}
-    for ch in "()[]{}\"\'":
+    for ch in "()[]{}\"'":
         counts[ch] = text.count(ch)
     return counts
 
 
-def _check_bracket_balance_delta(
-    old_string: str, new_string: str
-) -> list[str]:
+def _check_bracket_balance_delta(old_string: str, new_string: str) -> list[str]:
     """Check that bracket balance is preserved or intentionally changed.
 
     Returns list of warning messages. Empty list = OK.
@@ -114,9 +113,7 @@ def _check_bracket_balance_delta(
     return warnings
 
 
-def _check_indentation_consistency(
-    old_string: str, new_string: str
-) -> list[str]:
+def _check_indentation_consistency(old_string: str, new_string: str) -> list[str]:
     """Check that indentation patterns are reasonable."""
     warnings = []
 
@@ -143,16 +140,12 @@ def _check_indentation_consistency(
     has_tab = any("\t" in ln for ln in new_lines)
     has_space = any(" " in ln and not ln.startswith("\t") for ln in new_lines)
     if has_tab and has_space:
-        warnings.append(
-            "Mixed tabs and spaces in new_string. Use consistent indentation."
-        )
+        warnings.append("Mixed tabs and spaces in new_string. Use consistent indentation.")
 
     return warnings
 
 
-def _check_critical_structure_deletion(
-    old_string: str, new_string: str
-) -> list[str]:
+def _check_critical_structure_deletion(old_string: str, new_string: str) -> list[str]:
     """Detect accidental deletion of critical structural elements.
 
     Checks for cases where a closing bracket/paren that appears at the
@@ -217,14 +210,13 @@ def _get_ts_parser(lang: str) -> Any:
     """Safely get a tree-sitter parser. Returns None if unavailable."""
     try:
         from tree_sitter_languages import get_parser
+
         return get_parser(lang)
     except Exception:
         return None
 
 
-def _check_tree_sitter_syntax(
-    new_string: str, file_path: str
-) -> tuple[list[str], list[str]]:
+def _check_tree_sitter_syntax(new_string: str, file_path: str) -> tuple[list[str], list[str]]:
     """Check syntax using tree-sitter if available.
 
     Status caching:
@@ -239,7 +231,7 @@ def _check_tree_sitter_syntax(
     blockers = []
     install_hints = []
 
-    ext = file_path[file_path.rfind("."):].lower() if "." in file_path else ""
+    ext = file_path[file_path.rfind(".") :].lower() if "." in file_path else ""
     lang = EXT_TO_TS_LANG.get(ext)
 
     if not lang:
@@ -280,11 +272,13 @@ def _check_tree_sitter_syntax(
     if tree.root_node.has_error:
         # Try to extract the approximate error location
         error_nodes = []
+
         def _collect_errors(node):
             if node.type == "ERROR" or node.is_missing:
                 error_nodes.append(node)
             for child in node.children:
                 _collect_errors(child)
+
         _collect_errors(tree.root_node)
 
         if error_nodes:
@@ -305,9 +299,7 @@ def _check_tree_sitter_syntax(
     return blockers, install_hints
 
 
-def _check_python_ast_fragment(
-    new_string: str, file_path: str
-) -> list[str]:
+def _check_python_ast_fragment(new_string: str, file_path: str) -> list[str]:
     """Try to parse new_string as Python AST (best-effort for fragments).
 
     Kept as fallback when tree-sitter is not available for Python.
@@ -322,9 +314,7 @@ def _check_python_ast_fragment(
         return warnings
 
     # Fallback: stdlib ast module
-    wrapped = f"def _fake():\n" + "\n".join(
-        "    " + ln for ln in new_string.splitlines()
-    )
+    wrapped = f"def _fake():\n" + "\n".join("    " + ln for ln in new_string.splitlines())
     try:
         ast.parse(wrapped)
         return warnings
@@ -372,6 +362,7 @@ def _smart_preview_check(
     for issue in bracket_issues:
         # Extract imbalance count from message
         import re
+
         m = re.search(r"imbalance of ([-+]?\d+)", issue)
         if m and abs(int(m.group(1))) > 1:
             blockers.append(issue)

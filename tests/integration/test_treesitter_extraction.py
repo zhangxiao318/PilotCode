@@ -110,6 +110,14 @@ function greet() {
 """
 
 
+def _has_tsp_language(lang: str) -> bool:
+    try:
+        __import__(f"tree_sitter_{lang}")
+        return True
+    except ImportError:
+        return False
+
+
 class TestTreeSitterAvailability:
     """Tests for tree-sitter availability checks."""
 
@@ -131,6 +139,7 @@ class TestTreeSitterExtraction:
     def indexer(self):
         return CodeIndexer()
 
+    @pytest.mark.skipif(not _has_tsp_language("go"), reason="tree-sitter-go not installed")
     @pytest.mark.asyncio
     async def test_go_extraction(self, indexer):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".go", delete=False) as f:
@@ -151,6 +160,7 @@ class TestTreeSitterExtraction:
         finally:
             Path(temp_path).unlink()
 
+    @pytest.mark.skipif(not _has_tsp_language("rust"), reason="tree-sitter-rust not installed")
     @pytest.mark.asyncio
     async def test_rust_extraction(self, indexer):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".rs", delete=False) as f:
@@ -170,6 +180,7 @@ class TestTreeSitterExtraction:
         finally:
             Path(temp_path).unlink()
 
+    @pytest.mark.skipif(not _has_tsp_language("java"), reason="tree-sitter-java not installed")
     @pytest.mark.asyncio
     async def test_java_extraction(self, indexer):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".java", delete=False) as f:
@@ -248,6 +259,7 @@ class TestTreeSitterExtraction:
         finally:
             Path(temp_path).unlink()
 
+    @pytest.mark.skipif(not _has_tsp_language("go"), reason="tree-sitter-go not installed")
     @pytest.mark.asyncio
     async def test_parser_caching(self, indexer):
         """Tree-sitter parsers should be cached."""

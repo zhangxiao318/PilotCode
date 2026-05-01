@@ -85,3 +85,9 @@ run_single_instance.py
 setup_cache_env.sh
 batch_instances.txt
 src/pilotcode/utils/env_diagnosis.py
+
+# Local PilotCode config
+.pilotcode/
+
+# Temporary test files
+test.txt

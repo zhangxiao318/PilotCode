@@ -6,6 +6,7 @@ Usage:
     python run_e2e_tests.py --category c_complex --mode websocket
     python run_e2e_tests.py --category all --mode cli
 """
+
 import argparse
 import asyncio
 import json
@@ -36,9 +37,26 @@ OUTPUT_BASE = Path.home() / "test" / "pilotcode_e2e_results"
 # Cross-platform helpers
 # ---------------------------------------------------------------------------
 _NON_EXEC_EXTS = {
-    ".c", ".h", ".o", ".obj", ".txt", ".md", ".log",
-    ".yaml", ".yml", ".json", ".py", ".sh", ".pyc", ".pyo",
-    ".html", ".css", ".js", ".xml", ".ini", ".cfg",
+    ".c",
+    ".h",
+    ".o",
+    ".obj",
+    ".txt",
+    ".md",
+    ".log",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".py",
+    ".sh",
+    ".pyc",
+    ".pyo",
+    ".html",
+    ".css",
+    ".js",
+    ".xml",
+    ".ini",
+    ".cfg",
 }
 
 
@@ -108,7 +126,9 @@ class TaskResult:
     error: str = ""
 
 
-def _compile_and_run(task_dir: Path, task: TaskDef, files_found: list[dict]) -> tuple[bool, str, bool, str]:
+def _compile_and_run(
+    task_dir: Path, task: TaskDef, files_found: list[dict]
+) -> tuple[bool, str, bool, str]:
     """Compile and run the generated code.
 
     Returns (compile_ok, compile_output, run_ok, run_output).
@@ -120,7 +140,11 @@ def _compile_and_run(task_dir: Path, task: TaskDef, files_found: list[dict]) -> 
         try:
             cproc = subprocess.run(
                 ["make", "-C", str(task_dir)],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
             )
             compile_ok = cproc.returncode == 0
             compile_output = ((cproc.stdout or "") + (cproc.stderr or ""))[:500]
@@ -141,8 +165,13 @@ def _compile_and_run(task_dir: Path, task: TaskDef, files_found: list[dict]) -> 
         c_files = [str(task_dir / ff["path"]) for ff in files_found if ff["path"].endswith(".c")]
         try:
             cproc = subprocess.run(
-                ["gcc", "-Wall", "-Wextra", "-std=c99", "-o", str(task_dir / "test_prog")] + c_files,
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
+                ["gcc", "-Wall", "-Wextra", "-std=c99", "-o", str(task_dir / "test_prog")]
+                + c_files,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
             )
             compile_ok = cproc.returncode == 0
             compile_output = ((cproc.stdout or "") + (cproc.stderr or ""))[:500]
@@ -180,7 +209,12 @@ def _compile_and_run(task_dir: Path, task: TaskDef, files_found: list[dict]) -> 
         if binary:
             try:
                 rproc = subprocess.run(
-                    [str(binary)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30
+                    [str(binary)],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
                 )
                 run_ok = rproc.returncode == 0
                 run_output = ((rproc.stdout or "") + (rproc.stderr or ""))[:1000]
@@ -201,11 +235,13 @@ def _collect_files(task_dir: Path, log_file: Path) -> list[dict]:
         if f.is_file() and f.name != log_file.name:
             try:
                 text = f.read_text(encoding="utf-8", errors="replace")
-                files_found.append({
-                    "path": str(f.relative_to(task_dir)),
-                    "size": f.stat().st_size,
-                    "lines": len(text.splitlines()),
-                })
+                files_found.append(
+                    {
+                        "path": str(f.relative_to(task_dir)),
+                        "size": f.stat().st_size,
+                        "lines": len(text.splitlines()),
+                    }
+                )
             except Exception:
                 pass
     return files_found
@@ -243,11 +279,18 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
     try:
         proc = subprocess.run(
             [
-                sys.executable, "-m", "pilotcode",
-                "--simple", "--auto-allow", "--no-planning",
-                "--prompt", task.prompt + "\n\n请使用中文输出所有测试结果和日志信息。",
-                "--cwd", str(task_dir),
-                "--max-iterations", "15",
+                sys.executable,
+                "-m",
+                "pilotcode",
+                "--simple",
+                "--auto-allow",
+                "--no-planning",
+                "--prompt",
+                task.prompt + "\n\n请使用中文输出所有测试结果和日志信息。",
+                "--cwd",
+                str(task_dir),
+                "--max-iterations",
+                "15",
             ],
             capture_output=True,
             text=True,
@@ -268,7 +311,9 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
         if isinstance(_err, bytes):
             _err = _err.decode("utf-8", errors="replace")
         proc_stdout = _out or ""
-        proc_stderr = (_err or "") + f"\n[TIMEOUT] Task exceeded {timeout}s limit and was terminated."
+        proc_stderr = (
+            _err or ""
+        ) + f"\n[TIMEOUT] Task exceeded {timeout}s limit and was terminated."
         error_msg = f"Task exceeded {timeout}s limit and was terminated."
 
     elapsed = time.time() - start
@@ -284,10 +329,7 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
     files_found = _collect_files(task_dir, log_file)
 
     # Check expected files
-    expected_found = all(
-        any(ff["path"] == ef for ff in files_found)
-        for ef in task.expected_files
-    )
+    expected_found = all(any(ff["path"] == ef for ff in files_found) for ef in task.expected_files)
 
     compile_ok, compile_output, run_ok, run_output = _compile_and_run(task_dir, task, files_found)
 
@@ -301,7 +343,9 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
             matched = [kw for kw in task.expected_output_contains if kw in run_output]
             if not matched:
                 output_check = False
-                run_output += f"\n[OUTPUT CHECK FAILED: none of {task.expected_output_contains} found]"
+                run_output += (
+                    f"\n[OUTPUT CHECK FAILED: none of {task.expected_output_contains} found]"
+                )
 
     return TaskResult(
         task_id=task.task_id,
@@ -325,7 +369,9 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
 # ---------------------------------------------------------------------------
 # WebSocket mode runner
 # ---------------------------------------------------------------------------
-async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 360) -> TaskResult:
+async def run_task_websocket(
+    task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 360
+) -> TaskResult:
     """Run a single task via WebSocket mode."""
     import websockets
 
@@ -357,7 +403,14 @@ async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, time
         await ws.send(json.dumps({"type": "session_create", "cwd": str(task_dir)}))
         await asyncio.wait_for(ws.recv(), timeout=5)
         # query
-        await ws.send(json.dumps({"type": "query", "message": task.prompt + "\n\n请使用中文输出所有测试结果和日志信息。"}))
+        await ws.send(
+            json.dumps(
+                {
+                    "type": "query",
+                    "message": task.prompt + "\n\n请使用中文输出所有测试结果和日志信息。",
+                }
+            )
+        )
 
         while True:
             remaining = timeout - (time.time() - start)
@@ -371,18 +424,26 @@ async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, time
             elif mtype == "streaming_error":
                 break
             elif mtype == "permission_request":
-                await ws.send(json.dumps({
-                    "type": "permission_response",
-                    "request_id": msg["request_id"],
-                    "granted": True,
-                    "for_session": True,
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "permission_response",
+                            "request_id": msg["request_id"],
+                            "granted": True,
+                            "for_session": True,
+                        }
+                    )
+                )
             elif mtype == "user_question_request":
-                await ws.send(json.dumps({
-                    "type": "user_question_response",
-                    "request_id": msg["request_id"],
-                    "response": "continue",
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "user_question_response",
+                            "request_id": msg["request_id"],
+                            "response": "continue",
+                        }
+                    )
+                )
     except asyncio.TimeoutError:
         error_msg = f"Task exceeded {timeout}s limit and was terminated."
     except Exception as e:
@@ -409,7 +470,9 @@ async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, time
             matched = [kw for kw in task.expected_output_contains if kw in run_output]
             if not matched:
                 output_check = False
-                run_output += f"\n[OUTPUT CHECK FAILED: none of {task.expected_output_contains} found]"
+                run_output += (
+                    f"\n[OUTPUT CHECK FAILED: none of {task.expected_output_contains} found]"
+                )
 
     return TaskResult(
         task_id=task.task_id,
@@ -487,8 +550,16 @@ def run_all(tasks: list[TaskDef], mode: str, timeout: int = 360) -> list[TaskRes
             files_found = _collect_files(task_dir, log_file)
             # Persist whatever output we have
             try:
-                _out = e.stdout if isinstance(e.stdout, str) else (e.stdout.decode("utf-8", errors="replace") if e.stdout else "")
-                _err = e.stderr if isinstance(e.stderr, str) else (e.stderr.decode("utf-8", errors="replace") if e.stderr else "")
+                _out = (
+                    e.stdout
+                    if isinstance(e.stdout, str)
+                    else (e.stdout.decode("utf-8", errors="replace") if e.stdout else "")
+                )
+                _err = (
+                    e.stderr
+                    if isinstance(e.stderr, str)
+                    else (e.stderr.decode("utf-8", errors="replace") if e.stderr else "")
+                )
                 log_file.write_text(
                     f"=== STDOUT ===\n{_out}\n\n=== STDERR ===\n{_err}\n[TIMEOUT] Task exceeded {timeout}s limit.\n",
                     encoding="utf-8",
@@ -526,8 +597,16 @@ def run_all(tasks: list[TaskDef], mode: str, timeout: int = 360) -> list[TaskRes
             files_found = _collect_files(task_dir, log_file)
             try:
                 if isinstance(e, subprocess.TimeoutExpired):
-                    _out = e.stdout if isinstance(e.stdout, str) else (e.stdout.decode("utf-8", errors="replace") if e.stdout else "")
-                    _err = e.stderr if isinstance(e.stderr, str) else (e.stderr.decode("utf-8", errors="replace") if e.stderr else "")
+                    _out = (
+                        e.stdout
+                        if isinstance(e.stdout, str)
+                        else (e.stdout.decode("utf-8", errors="replace") if e.stdout else "")
+                    )
+                    _err = (
+                        e.stderr
+                        if isinstance(e.stderr, str)
+                        else (e.stderr.decode("utf-8", errors="replace") if e.stderr else "")
+                    )
                     log_file.write_text(
                         f"=== STDOUT ===\n{_out}\n\n=== STDERR ===\n{_err}\n[TIMEOUT] Task exceeded {timeout}s limit.\n",
                         encoding="utf-8",
@@ -555,8 +634,12 @@ def run_all(tasks: list[TaskDef], mode: str, timeout: int = 360) -> list[TaskRes
                 error=error_msg,
             )
 
-        print(f"  Elapsed: {result.elapsed:.1f}s  Files: {result.files_generated} ({result.total_lines} lines)")
-        print(f"  Compile: {'OK' if result.compile_ok else 'FAIL'}  Run: {'OK' if result.run_ok else 'FAIL'}  OutputCheck: {'OK' if result.output_check else 'FAIL'}")
+        print(
+            f"  Elapsed: {result.elapsed:.1f}s  Files: {result.files_generated} ({result.total_lines} lines)"
+        )
+        print(
+            f"  Compile: {'OK' if result.compile_ok else 'FAIL'}  Run: {'OK' if result.run_ok else 'FAIL'}  OutputCheck: {'OK' if result.output_check else 'FAIL'}"
+        )
         results.append(result)
 
     overall_elapsed = time.time() - overall_start
@@ -605,16 +688,28 @@ def print_summary(results: list[TaskResult]):
         ru = "OK" if r.run_ok else "FAIL"
         o = "OK" if r.output_check else "FAIL"
         err_info = f" [{r.error}]" if r.error else ""
-        print(f"  {r.task_id:40s} C:{c:5s} R:{ru:5s} O:{o:5s} {r.elapsed:6.1f}s  {r.total_lines:5d}L{err_info}")
+        print(
+            f"  {r.task_id:40s} C:{c:5s} R:{ru:5s} O:{o:5s} {r.elapsed:6.1f}s  {r.total_lines:5d}L{err_info}"
+        )
 
 
 def main():
     parser = argparse.ArgumentParser(description="PilotCode E2E Code Generation Test Runner")
-    parser.add_argument("--category", default="c_simple", help="Task category (c_simple, c_complex, all)")
-    parser.add_argument("--mode", default="cli", choices=["cli", "websocket"], help="Execution mode")
-    parser.add_argument("--ws-url", default="ws://127.0.0.1:8083", help="WebSocket URL (for websocket mode)")
-    parser.add_argument("--ws-recv-timeout", type=int, default=300, help="WebSocket recv timeout in seconds")
-    parser.add_argument("--timeout", type=int, default=360, help="Task timeout in seconds (default: 360)")
+    parser.add_argument(
+        "--category", default="c_simple", help="Task category (c_simple, c_complex, all)"
+    )
+    parser.add_argument(
+        "--mode", default="cli", choices=["cli", "websocket"], help="Execution mode"
+    )
+    parser.add_argument(
+        "--ws-url", default="ws://127.0.0.1:8083", help="WebSocket URL (for websocket mode)"
+    )
+    parser.add_argument(
+        "--ws-recv-timeout", type=int, default=300, help="WebSocket recv timeout in seconds"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=360, help="Task timeout in seconds (default: 360)"
+    )
     args = parser.parse_args()
 
     os.environ["PILOTCODE_WS_URL"] = args.ws_url

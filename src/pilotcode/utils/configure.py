@@ -151,6 +151,20 @@ class ConfigurationWizard:
 
         return True
 
+    def _ask_protocol(self, default: str = "openai") -> str:
+        """Ask user to select API protocol via numbered choice."""
+        console.print("\nSelect API protocol:")
+        console.print("  [bold]1.[/bold] OpenAI")
+        console.print("  [bold]2.[/bold] Anthropic")
+
+        default_num = "1" if default == "openai" else "2"
+        choice = Prompt.ask(
+            "Enter choice",
+            choices=["1", "2"],
+            default=default_num,
+        )
+        return "openai" if choice == "1" else "anthropic"
+
     def _select_protocol(self) -> bool:
         """Confirm or override the API protocol.
 
@@ -163,30 +177,11 @@ class ConfigurationWizard:
         default_proto = self.config.api_protocol or "openai"
         console.print("\n[bold]Step 2: API Protocol[/bold]")
         console.print(
-            f"[dim]Detected protocol for {self.selected_model.display_name}: "
-            f"{default_proto}[/dim]"
+            f"[dim]Detected protocol for {self.selected_model.display_name}: {default_proto}[/dim]"
         )
 
-        # For custom/local models, always ask; for known providers, offer override
-        if self.selected_model.name in ("custom", "ollama", "vllm"):
-            protocol = Prompt.ask(
-                "Select API protocol",
-                choices=["openai", "anthropic"],
-                default=default_proto,
-            )
-            self.config.api_protocol = protocol
-        else:
-            if Confirm.ask(
-                f"Use {default_proto} protocol? (No to override)", default=True
-            ):
-                self.config.api_protocol = default_proto
-            else:
-                protocol = Prompt.ask(
-                    "Select API protocol",
-                    choices=["openai", "anthropic"],
-                    default="openai",
-                )
-                self.config.api_protocol = protocol
+        protocol = self._ask_protocol(default=default_proto)
+        self.config.api_protocol = protocol
         return True
 
     def _enter_api_key(self) -> bool:
@@ -271,17 +266,11 @@ class ConfigurationWizard:
                 self.config.base_url = custom_url
 
         # Allow overriding protocol in optional settings too
-        if Confirm.ask(
+        if not Confirm.ask(
             f"Keep API protocol as '{self.config.api_protocol or 'auto'}'?",
             default=True,
         ):
-            pass
-        else:
-            protocol = Prompt.ask(
-                "Select API protocol",
-                choices=["openai", "anthropic"],
-                default=self.config.api_protocol or "openai",
-            )
+            protocol = self._ask_protocol(default=self.config.api_protocol or "openai")
             self.config.api_protocol = protocol
 
         # Theme
@@ -425,9 +414,7 @@ def main() -> int:
     parser.add_argument("--model", "-m", help="Quick configure with model name")
     parser.add_argument("--api-key", "-k", help="API key for quick configure")
     parser.add_argument("--base-url", "-u", help="Custom base URL")
-    parser.add_argument(
-        "--protocol", "-p", help='API protocol: "openai" or "anthropic"'
-    )
+    parser.add_argument("--protocol", "-p", help='API protocol: "openai" or "anthropic"')
     parser.add_argument("--show", "-s", action="store_true", help="Show current config")
     parser.add_argument("--list-models", "-l", action="store_true", help="List all models")
 

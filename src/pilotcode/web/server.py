@@ -1627,7 +1627,9 @@ def run_websocket_server_sync(host: str, port: int):
         print(f"[WebSocket] Fatal error: {e}")
 
 
-def run_server_standalone(host: str = "127.0.0.1", port: int = 8080, cwd: str = ".", auto_allow: bool = False):
+def run_server_standalone(
+    host: str = "127.0.0.1", port: int = 8080, cwd: str = ".", auto_allow: bool = False
+):
     """Run both HTTP and WebSocket servers."""
     ws_manager.cwd = str(Path(cwd).resolve())
     ws_manager.auto_allow = auto_allow

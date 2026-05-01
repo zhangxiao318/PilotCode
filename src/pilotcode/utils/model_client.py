@@ -11,6 +11,8 @@ import httpx
 
 from .config import get_global_config
 from .models_config import get_model_info
+from .protocol_normalizer import MessageNormalizer, ResponseNormalizer
+from .parameter_generator import ParameterGenerator
 from ..provider.error_patterns import is_context_overflow
 
 # ------------------------------------------------------------------
@@ -231,6 +233,15 @@ class ModelClient:
         )
         self._is_deepseek = self._provider_name == "deepseek"
 
+        # ------------------------------------------------------------------
+        # Three-layer architecture (inspired by opencode)
+        # ------------------------------------------------------------------
+        self._msg_normalizer = MessageNormalizer(self._api_protocol, self._provider_name)
+        self._resp_normalizer = ResponseNormalizer(self._api_protocol)
+        self._param_gen = ParameterGenerator(
+            self._api_protocol, self._model_info, self._provider_name
+        )
+
         # Use granular timeouts to prevent indefinite hangs on half-closed
         # connections (e.g. CLOSE-WAIT) while still allowing long generations.
         # read=60s means any single read operation that stalls >60s will abort.
@@ -243,101 +254,34 @@ class ModelClient:
 
     def _build_auth_headers(self) -> dict[str, str]:
         """Build authentication headers based on API protocol."""
-        if self._api_protocol == "anthropic":
-            return {
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            }
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        return self._param_gen.get_auth_headers(self.api_key)
 
     @property
     def supports_reasoning_content(self) -> bool:
         """Whether the backend uses reasoning_content field (DeepSeek-style)."""
+        if self._model_info and self._model_info.capabilities.reasoning_content_field:
+            return True
         return self._api_protocol == "openai" and self._is_deepseek
 
     def _convert_messages(
         self, messages: list[Message] | list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Convert messages to API format.
+        """Convert messages to API format (OpenAI-compatible).
 
         If messages are already API dicts they are returned as-is (after
         provider-specific field ordering for DeepSeek).
+
+        Note: This method is used by the OpenAI-compatible path only.
+        Anthropic conversion happens inside _build_anthropic_payload.
         """
-        result = []
-        for msg in messages:
-            # Already an API dict — apply provider-specific fixes only
-            if isinstance(msg, dict):
-                api_msg = dict(msg)
-                if (
-                    self._is_deepseek
-                    and api_msg.get("role") == "assistant"
-                    and "reasoning_content" in api_msg
-                ):
-                    # Ensure reasoning_content appears before content for DeepSeek
-                    rc = api_msg.pop("reasoning_content")
-                    api_msg = {"role": api_msg["role"], "reasoning_content": rc, **api_msg}
-                result.append(api_msg)
-                continue
-
-            api_msg: dict[str, Any] = {"role": msg.role}
-
-            # DeepSeek thinking mode: echo reasoning_content back on assistant messages.
-            # Insert immediately after role/content to satisfy provider field-order expectations.
-            if (
-                self._api_protocol == "openai"
-                and self._is_deepseek
-                and msg.reasoning_content
-                and msg.role == "assistant"
-            ):
-                api_msg["reasoning_content"] = msg.reasoning_content
-
-            # OpenAI-compatible APIs require 'content' to be present (can be empty string)
-            api_msg["content"] = msg.content if msg.content is not None else ""
-
-            if msg.tool_calls:
-                api_msg["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
-                    }
-                    for tc in msg.tool_calls
-                ]
-
-            if msg.tool_call_id:
-                api_msg["tool_call_id"] = msg.tool_call_id
-                # Do NOT add "name" here — OpenAI tool messages do not accept this field.
-
-            result.append(api_msg)
-
-        return result
+        # Force OpenAI normalization so system messages are preserved
+        openai_normalizer = MessageNormalizer("openai", self._provider_name)
+        normalized, _ = openai_normalizer.normalize(messages)
+        return normalized
 
     def _convert_tools(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Convert tools to API format."""
-        if self._api_protocol == "anthropic":
-            return [
-                {
-                    "name": tool["name"],
-                    "description": tool.get("description", ""),
-                    "input_schema": tool.get("input_schema", tool.get("parameters", {})),
-                }
-                for tool in tools
-            ]
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool.get("description", ""),
-                    "parameters": tool.get("input_schema", {}),
-                },
-            }
-            for tool in tools
-        ]
+        return self._param_gen._convert_tools(tools)
 
     def _build_anthropic_payload(
         self,
@@ -348,279 +292,34 @@ class ModelClient:
         stream: bool,
     ) -> dict[str, Any]:
         """Build Anthropic /v1/messages request payload from OpenAI-style inputs."""
-        system_texts: list[str] = []
-        anthropic_messages: list[dict[str, Any]] = []
-
-        for msg in messages:
-            if isinstance(msg, dict):
-                role = msg.get("role", "")
-                content = msg.get("content", "")
-                tool_calls = msg.get("tool_calls", [])
-                tool_call_id = msg.get("tool_call_id", "")
-            else:
-                role = msg.role
-                content = msg.content if msg.content is not None else ""
-                tool_calls = msg.tool_calls or []
-                tool_call_id = msg.tool_call_id or ""
-
-            if role == "system":
-                if isinstance(content, str):
-                    system_texts.append(content)
-                continue
-
-            if role == "tool":
-                anthropic_messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tool_call_id,
-                                "content": content if isinstance(content, str) else str(content),
-                            }
-                        ],
-                    }
-                )
-                continue
-
-            if role == "assistant" and tool_calls:
-                content_blocks: list[dict[str, Any]] = []
-                if content:
-                    content_blocks.append({"type": "text", "text": content})
-                for tc in tool_calls:
-                    if isinstance(tc, dict):
-                        tc_id = tc.get("id", "")
-                        tc_name = tc.get("function", {}).get("name", "")
-                        tc_args = tc.get("function", {}).get("arguments", "")
-                    else:
-                        tc_id = tc.id
-                        tc_name = tc.name
-                        tc_args = json.dumps(tc.arguments)
-                    try:
-                        input_data = json.loads(tc_args) if isinstance(tc_args, str) else tc_args
-                    except json.JSONDecodeError:
-                        input_data = {}
-                    content_blocks.append(
-                        {"type": "tool_use", "id": tc_id, "name": tc_name, "input": input_data}
-                    )
-                anthropic_messages.append({"role": "assistant", "content": content_blocks})
-                continue
-
-            # user or assistant without tool_calls
-            anthropic_messages.append(
-                {"role": role if role in ("user", "assistant") else "user", "content": content}
-            )
-
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": anthropic_messages,
-            "temperature": temperature,
-            "stream": stream,
-        }
-
-        if system_texts:
-            payload["system"] = "\n".join(system_texts)
-
-        if max_tokens:
-            payload["max_tokens"] = max_tokens
-        elif self._model_info and self._model_info.max_tokens > 0:
-            payload["max_tokens"] = self._model_info.max_tokens
-        else:
-            payload["max_tokens"] = 4096
-
-        if tools:
-            payload["tools"] = self._convert_tools(tools)
-            # Anthropic protocol always supports tool_choice; for OpenAI
-            # protocol only send it when the provider flag says so.
-            if self._api_protocol == "anthropic" or (
-                self._model_info and self._model_info.supports_tool_choice
-            ):
-                payload["tool_choice"] = {"type": "auto"}
-
-        return payload
+        normalized, system = self._msg_normalizer.normalize(messages)
+        return self._param_gen.build_payload(
+            self.model,
+            normalized,
+            temperature,
+            max_tokens,
+            stream,
+            tools,
+            system,
+        )
 
     async def _normalize_anthropic_stream(
         self, response: httpx.Response
     ) -> AsyncIterator[dict[str, Any]]:
         """Convert Anthropic SSE stream to OpenAI-style chunks."""
-        current_blocks: dict[int, dict[str, Any]] = {}
-        accumulated_usage: dict[str, int] = {}
-
-        async def _aiter_lines_with_timeout(resp: httpx.Response, to: float):
-            it = resp.aiter_lines().__aiter__()
-            while True:
-                try:
-                    line = await asyncio.wait_for(it.__anext__(), timeout=to)
-                    yield line
-                except asyncio.TimeoutError:
-                    raise LLMError(f"Stream read timed out: no data received for {to}s")
-                except StopAsyncIteration:
-                    break
-
-        async for line in _aiter_lines_with_timeout(response, 120):
-            if not line or not line.startswith("data: "):
-                continue
-            data = line[6:]
-            if data == "[DONE]":
-                break
-            try:
-                event = json.loads(data)
-            except json.JSONDecodeError:
-                continue
-
-            event_type = event.get("type", "")
-
-            if event_type == "message_start":
-                msg = event.get("message", {})
-                usage = msg.get("usage", {})
-                if usage:
-                    accumulated_usage["prompt_tokens"] = usage.get("input_tokens", 0)
-                yield {"choices": [{"delta": {"role": "assistant"}, "finish_reason": None}]}
-                continue
-
-            if event_type == "content_block_start":
-                idx = event.get("index", 0)
-                block = event.get("content_block", {})
-                block_type = block.get("type", "")
-                current_blocks[idx] = {"type": block_type}
-                if block_type == "tool_use":
-                    tool_id = block.get("id", "")
-                    tool_name = block.get("name", "")
-                    yield {
-                        "choices": [
-                            {
-                                "delta": {
-                                    "tool_calls": [
-                                        {
-                                            "index": idx,
-                                            "id": tool_id,
-                                            "type": "function",
-                                            "function": {"name": tool_name, "arguments": ""},
-                                        }
-                                    ]
-                                },
-                                "finish_reason": None,
-                            }
-                        ]
-                    }
-                continue
-
-            if event_type == "content_block_delta":
-                idx = event.get("index", 0)
-                delta = event.get("delta", {})
-                delta_type = delta.get("type", "")
-                if delta_type == "text_delta":
-                    text = delta.get("text", "")
-                    if text:
-                        yield {"choices": [{"delta": {"content": text}, "finish_reason": None}]}
-                elif delta_type == "thinking_delta":
-                    thinking = delta.get("thinking", "")
-                    if thinking:
-                        yield {
-                            "choices": [
-                                {
-                                    "delta": {"reasoning_content": thinking},
-                                    "finish_reason": None,
-                                }
-                            ]
-                        }
-                elif delta_type == "input_json_delta":
-                    partial = delta.get("partial_json", "")
-                    if partial:
-                        yield {
-                            "choices": [
-                                {
-                                    "delta": {
-                                        "tool_calls": [
-                                            {
-                                                "index": idx,
-                                                "function": {"arguments": partial},
-                                            }
-                                        ]
-                                    },
-                                    "finish_reason": None,
-                                }
-                            ]
-                        }
-                continue
-
-            if event_type == "content_block_stop":
-                idx = event.get("index", 0)
-                current_blocks.pop(idx, None)
-                continue
-
-            if event_type == "message_delta":
-                delta = event.get("delta", {})
-                stop_reason = delta.get("stop_reason", "")
-                finish = "stop" if stop_reason in ("end_turn", "stop_sequence") else stop_reason
-                usage = event.get("usage", {})
-                if usage:
-                    accumulated_usage["completion_tokens"] = usage.get("output_tokens", 0)
-                chunk: dict[str, Any] = {"choices": [{"delta": {}, "finish_reason": finish}]}
-                if accumulated_usage:
-                    chunk["usage"] = {
-                        "prompt_tokens": accumulated_usage.get("prompt_tokens", 0),
-                        "completion_tokens": accumulated_usage.get("completion_tokens", 0),
-                        "total_tokens": sum(accumulated_usage.values()),
-                    }
+        try:
+            async for chunk in self._resp_normalizer._normalize_anthropic_stream(response):
                 yield chunk
-                continue
+        except Exception as exc:
+            from .protocol_normalizer import NormalizationError
 
-            if event_type == "message_stop":
-                continue
+            if isinstance(exc, NormalizationError):
+                raise LLMError(str(exc)) from exc
+            raise
 
     def _normalize_anthropic_response(self, data: dict[str, Any]) -> dict[str, Any]:
         """Convert Anthropic non-streaming response to OpenAI-style chunk."""
-        content_blocks = data.get("content", [])
-        text_parts: list[str] = []
-        tool_calls: list[dict[str, Any]] = []
-
-        reasoning_parts: list[str] = []
-        for block in content_blocks:
-            block_type = block.get("type", "")
-            if block_type == "text":
-                text_parts.append(block.get("text", ""))
-            elif block_type == "thinking":
-                reasoning_parts.append(block.get("thinking", ""))
-            elif block_type == "tool_use":
-                tool_input = block.get("input", {})
-                tool_calls.append(
-                    {
-                        "id": block.get("id", ""),
-                        "type": "function",
-                        "function": {
-                            "name": block.get("name", ""),
-                            "arguments": (
-                                json.dumps(tool_input)
-                                if isinstance(tool_input, dict)
-                                else str(tool_input)
-                            ),
-                        },
-                    }
-                )
-
-        delta: dict[str, Any] = {"role": "assistant"}
-        if text_parts:
-            delta["content"] = "".join(text_parts)
-        if reasoning_parts:
-            delta["reasoning_content"] = "".join(reasoning_parts)
-        if tool_calls:
-            delta["tool_calls"] = tool_calls
-
-        stop_reason = data.get("stop_reason", "")
-        finish = "stop" if stop_reason in ("end_turn", "stop_sequence") else stop_reason
-
-        chunk: dict[str, Any] = {"choices": [{"delta": delta, "finish_reason": finish}]}
-
-        usage = data.get("usage", {})
-        if usage:
-            chunk["usage"] = {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
-            }
-
-        return chunk
+        return self._resp_normalizer._normalize_anthropic_response(data)
 
     def _classify_error(
         self, status_code: int, body: bytes, headers: httpx.Headers | None = None
@@ -682,36 +381,27 @@ class ModelClient:
         Accepts either internal Message dataclasses or raw API dicts
         (e.g. from types.message.to_api_format).
         """
-        is_anthropic = self._api_protocol == "anthropic"
-        # endpoint is relative to base_url (which may already contain a version
-        # prefix, e.g. "https://api.anthropic.com/v1" or "https://api.openai.com/v1").
-        # Provider config owns base_url; api_protocol owns the endpoint path.
-        endpoint = "/messages" if is_anthropic else "/chat/completions"
+        # ------------------------------------------------------------------
+        # Three-layer architecture (inspired by opencode)
+        # 1. MessageNormalizer    -> protocol-specific message transformation
+        # 2. ParameterGenerator   -> endpoint, headers, payload assembly
+        # 3. ResponseNormalizer   -> provider response -> OpenAI-style chunks
+        # ------------------------------------------------------------------
+        endpoint = self._param_gen.get_endpoint()
 
-        if is_anthropic:
-            payload = self._build_anthropic_payload(
-                messages, tools, temperature, max_tokens, stream
-            )
-        else:
-            payload = {
-                "model": self.model,
-                "messages": self._convert_messages(messages),
-                "temperature": temperature,
-                "stream": stream,
-            }
-            if stream:
-                payload["stream_options"] = {"include_usage": True}
-            if tools:
-                payload["tools"] = self._convert_tools(tools)
-                supports_tool_choice = (
-                    self._model_info.supports_tool_choice if self._model_info else True
-                )
-                if supports_tool_choice:
-                    payload["tool_choice"] = "auto"
-            if max_tokens:
-                if self.model and "deepseek" in self.model.lower() and max_tokens < 4096:
-                    max_tokens = 8192
-                payload["max_tokens"] = max_tokens
+        # Layer 1: normalize messages for the target protocol
+        normalized_msgs, system = self._msg_normalizer.normalize(messages)
+
+        # Layer 2: generate request payload
+        payload = self._param_gen.build_payload(
+            self.model,
+            normalized_msgs,
+            temperature,
+            max_tokens,
+            stream,
+            tools,
+            system,
+        )
 
         max_retries = 3
         base_delay = 1.0
@@ -725,7 +415,7 @@ class ModelClient:
                             body = await response.aread()
                             raise self._classify_error(response.status_code, body, response.headers)
 
-                        if is_anthropic:
+                        if self._api_protocol == "anthropic":
                             async for chunk in self._normalize_anthropic_stream(response):
                                 yield chunk
                             return
@@ -796,7 +486,7 @@ class ModelClient:
                         ) from exc
                     data = response.json()
 
-                    if is_anthropic:
+                    if self._api_protocol == "anthropic":
                         yield self._normalize_anthropic_response(data)
                         return
 
@@ -1177,6 +867,26 @@ class ModelClient:
             if "timeout" not in cap and static.timeout:
                 cap["timeout"] = static.timeout
 
+            # Capability matrix fallbacks
+            if static.capabilities:
+                caps = static.capabilities
+                if "capabilities" not in cap:
+                    cap["capabilities"] = caps.to_dict()
+                if "supports_reasoning" not in cap:
+                    cap["supports_reasoning"] = caps.reasoning
+                if "supports_image_input" not in cap:
+                    cap["supports_image_input"] = caps.image_input
+                if "supports_audio_input" not in cap:
+                    cap["supports_audio_input"] = caps.audio_input
+                if "supports_video_input" not in cap:
+                    cap["supports_video_input"] = caps.video_input
+                if "supports_pdf_input" not in cap:
+                    cap["supports_pdf_input"] = caps.pdf_input
+                if "supports_attachment" not in cap:
+                    cap["supports_attachment"] = caps.attachment
+                if "requires_tool_choice_explicit" not in cap:
+                    cap["requires_tool_choice_explicit"] = caps.requires_tool_choice_explicit
+
         # Tag with the active protocol so callers know which normalization
         # layer produced this result.
         cap["_api_protocol"] = self._api_protocol
@@ -1197,7 +907,7 @@ class ModelClient:
 
         base_has_v1 = str(self.client.base_url).rstrip("/").endswith("/v1")
         candidates: list[str] = []
-        for prefix in ([""] if base_has_v1 else ["/v1", ""]):
+        for prefix in [""] if base_has_v1 else ["/v1", ""]:
             candidates.append(f"{prefix}/models")
 
         seen = set()
@@ -1221,8 +931,7 @@ class ModelClient:
                             result.append(
                                 {
                                     "id": m.get("id", ""),
-                                    "display_name": m.get("display_name")
-                                    or m.get("id", ""),
+                                    "display_name": m.get("display_name") or m.get("id", ""),
                                 }
                             )
                     return result

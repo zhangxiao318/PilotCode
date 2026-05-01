@@ -60,6 +60,7 @@ async def read_file_content(
             return p.read_text(encoding="utf-8", errors="replace"), "utf-8"
 
         import sys
+
         content, detected_encoding = await asyncio.to_thread(_read_with_fallback, path)
 
         # Split into lines for offset/limit handling

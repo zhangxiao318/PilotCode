@@ -681,12 +681,11 @@ class CodebaseIndexer:
         """Filter out files that haven't changed since last index.
 
         Uses a two-layer check for speed:
-        1. mtime comparison (fast, no I/O for unchanged files)
-        2. SHA256 content hash (slow but accurate, catches content edits
-           that preserve mtime)
+        1. mtime comparison (fast path, but still verifies hash)
+        2. SHA256 content hash (accurate, catches content edits
+           that preserve mtime or occur within the same second)
         """
         changed = []
-        # Layer 1: fast mtime check
         for file_path in files:
             path_str = str(file_path)
             try:
@@ -694,12 +693,21 @@ class CodebaseIndexer:
                 mtime = stat.st_mtime
                 mtime_key = f"{path_str}:mtime"
                 stored_mtime = self._file_hashes.get(mtime_key)
-                # If mtime unchanged and we have a stored hash, skip reading
-                if stored_mtime == str(mtime) and path_str in self._file_hashes:
-                    continue  # File unchanged
-                # mtime changed or no prior record -> need hash check
+
+                # Always read content and compare hash so that sub-second
+                # edits (where mtime does not change) are not missed.
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
                 current_hash = hashlib.sha256(content.encode()).hexdigest()
+
+                if (
+                    stored_mtime == str(mtime)
+                    and path_str in self._file_hashes
+                    and self._file_hashes[path_str] == current_hash
+                ):
+                    # File truly unchanged
+                    continue
+
+                # Hash differs -> file changed
                 if self._file_hashes.get(path_str) != current_hash:
                     changed.append(file_path)
                     self._file_hashes[path_str] = current_hash

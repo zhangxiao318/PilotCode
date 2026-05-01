@@ -5,6 +5,7 @@ Usage:
     python analyze_results.py <summary.json>                  # Single run report
     python analyze_results.py <cli_summary.json> <ws_summary.json>  # Compare modes
 """
+
 import json
 import sys
 from pathlib import Path
@@ -50,7 +51,13 @@ def print_single_report(data: dict):
     for r in results:
         cat = r.get("category", "unknown")
         if cat not in categories:
-            categories[cat] = {"count": 0, "compile_ok": 0, "run_ok": 0, "total_lines": 0, "total_time": 0}
+            categories[cat] = {
+                "count": 0,
+                "compile_ok": 0,
+                "run_ok": 0,
+                "total_lines": 0,
+                "total_time": 0,
+            }
         categories[cat]["count"] += 1
         categories[cat]["compile_ok"] += 1 if r.get("compile_ok") else 0
         categories[cat]["run_ok"] += 1 if r.get("run_ok") else 0
@@ -63,7 +70,9 @@ def print_single_report(data: dict):
     for cat, stats in sorted(categories.items()):
         avg_time = stats["total_time"] / stats["count"] if stats["count"] else 0
         avg_lines = stats["total_lines"] // stats["count"] if stats["count"] else 0
-        print(f"| {cat} | {stats['count']} | {stats['compile_ok']}/{stats['count']} | {stats['run_ok']}/{stats['count']} | {avg_time:.1f}s | {avg_lines} |")
+        print(
+            f"| {cat} | {stats['count']} | {stats['compile_ok']}/{stats['count']} | {stats['run_ok']}/{stats['count']} | {avg_time:.1f}s | {avg_lines} |"
+        )
     print()
 
     # Failed tasks detail
@@ -92,8 +101,12 @@ def print_comparison(data_cli: dict, data_ws: dict):
     all_tasks = sorted(set(cli_results) | set(ws_results))
 
     print(f"# PilotCode E2E: CLI vs WebSocket Comparison\n")
-    print(f"| Task | CLI Compile | CLI Run | CLI Time | CLI Lines | WS Compile | WS Run | WS Time | WS Lines |")
-    print(f"|------|-------------|---------|----------|-----------|------------|--------|---------|----------|")
+    print(
+        f"| Task | CLI Compile | CLI Run | CLI Time | CLI Lines | WS Compile | WS Run | WS Time | WS Lines |"
+    )
+    print(
+        f"|------|-------------|---------|----------|-----------|------------|--------|---------|----------|"
+    )
 
     cli_total_time = 0
     ws_total_time = 0
@@ -124,12 +137,16 @@ def print_comparison(data_cli: dict, data_ws: dict):
         if wr.get("compile_ok") and wr.get("run_ok"):
             ws_ok += 1
 
-    print(f"| **Total** | | | **{cli_total_time:.1f}s** | **{cli_total_lines}** | | | **{ws_total_time:.1f}s** | **{ws_total_lines}** |")
+    print(
+        f"| **Total** | | | **{cli_total_time:.1f}s** | **{cli_total_lines}** | | | **{ws_total_time:.1f}s** | **{ws_total_lines}** |"
+    )
     print()
     print(f"- CLI: {cli_ok}/{len(all_tasks)} tasks fully passed")
     print(f"- WebSocket: {ws_ok}/{len(all_tasks)} tasks fully passed")
     print(f"- Time ratio (WS/CLI): {ws_total_time/cli_total_time:.2f}x" if cli_total_time else "")
-    print(f"- Lines ratio (WS/CLI): {ws_total_lines/cli_total_lines:.2f}x" if cli_total_lines else "")
+    print(
+        f"- Lines ratio (WS/CLI): {ws_total_lines/cli_total_lines:.2f}x" if cli_total_lines else ""
+    )
     print()
 
 

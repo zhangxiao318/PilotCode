@@ -64,7 +64,7 @@ async def quest_command(args: list[str], context: CommandContext) -> str:
         if not _quests:
             return (
                 "No active quests.\n"
-                "  /quest \"<description>\"     → Start autonomous development quest\n"
+                '  /quest "<description>"     → Start autonomous development quest\n'
                 "  /quest status [#id]          → Show quest progress\n"
                 "  /quest pause [#id]           → Pause running quest\n"
                 "  /quest resume [#id]          → Resume paused quest\n"
@@ -237,7 +237,9 @@ async def _run_quest(quest: QuestState, context: CommandContext) -> None:
             )
 
             existing_results = (
-                quest.phases[1].missions if len(quest.phases) > 1 and quest.phases[1].missions else []
+                quest.phases[1].missions
+                if len(quest.phases) > 1 and quest.phases[1].missions
+                else []
             )
             start_idx = len(existing_results)
 
@@ -297,9 +299,7 @@ async def _run_quest(quest: QuestState, context: CommandContext) -> None:
 
             missions_data = quest.phases[0].missions if quest.phases else []
             results_data = (
-                [m["result"] for m in quest.phases[1].missions]
-                if len(quest.phases) > 1
-                else []
+                [m["result"] for m in quest.phases[1].missions] if len(quest.phases) > 1 else []
             )
 
             summary = _generate_summary(quest.description, missions_data, results_data)
@@ -419,9 +419,7 @@ async def _execute_mission(
     return result
 
 
-def _generate_summary(
-    description: str, missions: list[dict], results: list[dict]
-) -> str:
+def _generate_summary(description: str, missions: list[dict], results: list[dict]) -> str:
     """Generate human-readable summary of quest results."""
     success_count = sum(1 for r in results if r.get("success"))
     total = len(results)
