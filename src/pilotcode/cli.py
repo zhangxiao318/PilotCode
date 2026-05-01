@@ -2,7 +2,7 @@
 
 import sys
 import asyncio
-from typing import Any, Callable
+from typing import Any, Callable, List
 
 # Fix Windows encoding issues
 if sys.platform == "win32":
@@ -342,9 +342,19 @@ async def _quick_probe(timeout: float = 3.0) -> tuple[bool, str]:
     """Lightweight connectivity probe on startup.
 
     Uses the configured URL and protocol to send a single message.
+    Prints what it is probing and the result.
     Returns (ok, message).  ok=True if any non-empty response arrives.
     """
     from .utils.model_client import ModelClient, Message
+    from .utils.config import get_global_config
+
+    config = get_global_config()
+    proto = config.api_protocol or "auto-detect"
+    url = config.base_url or "(not set)"
+    console.print(
+        f"[dim]  → Probing LLM at {url} "
+        f"(protocol: {proto}, model: {config.default_model or 'default'})...[/dim]"
+    )
 
     client = ModelClient()
     try:
@@ -362,12 +372,17 @@ async def _quick_probe(timeout: float = 3.0) -> tuple[bool, str]:
                 response_text += text
 
         if response_text.strip():
+            console.print(f"[dim]  ✓ Got response: '{response_text.strip()[:40]}'[/dim]")
             return True, "LLM responded"
+        console.print("[dim]  ✗ Empty response[/dim]")
         return False, "Empty response"
     except asyncio.TimeoutError:
+        console.print(f"[dim]  ✗ Timeout after {timeout}s[/dim]")
         return False, f"Connection timeout after {timeout}s"
     except Exception as e:
-        return False, str(e)[:120]
+        err = str(e)[:120]
+        console.print(f"[dim]  ✗ Error: {err}[/dim]")
+        return False, err
     finally:
         await client.close()
 
@@ -402,20 +417,21 @@ async def _diagnose_connection() -> None:
     client = ModelClient()
 
     # 1. Try /v1/models (or /models) to see if the server is up
+    console.print("[dim]  → Detecting available models from API...[/dim]")
     try:
         models = await asyncio.wait_for(client.detect_models(), timeout=5.0)
         if models:
             console.print(
-                f"\n[green]✓ API server reachable[/green] — detected "
+                f"[green]  ✓ API server reachable[/green] — detected "
                 f"{len(models)} model(s)"
             )
             for m in models[:5]:
                 name = m.get("display_name") or m.get("id", "")
                 console.print(f"    • {name}")
         else:
-            console.print("\n[yellow]⚠ API server reachable but no models found[/yellow]")
+            console.print("[yellow]  ⚠ API server reachable but no models found[/yellow]")
     except Exception as e:
-        console.print(f"\n[red]✗ Cannot reach API server: {e}[/red]")
+        console.print(f"[red]  ✗ Cannot reach API server: {e}[/red]")
         console.print(
             "\n[dim]Common fixes:[/dim]\n"
             "  • Check base_url (e.g. https://api.anthropic.com/v1)\n"
@@ -426,12 +442,13 @@ async def _diagnose_connection() -> None:
         return
 
     # 2. Try a minimal chat completion to catch auth / protocol mismatches
+    console.print("[dim]  → Testing chat completion (auth / protocol check)...[/dim]")
     try:
         ok, msg = await asyncio.wait_for(_quick_probe(timeout=5.0), timeout=6.0)
         if ok:
-            console.print("[green]✓ Chat completion works[/green]")
+            console.print("[green]  ✓ Chat completion works[/green]")
         else:
-            console.print(f"\n[yellow]⚠ Chat completion failed: {msg}[/yellow]")
+            console.print(f"[yellow]  ⚠ Chat completion failed: {msg}[/yellow]")
             proto = infer_api_protocol(
                 config.default_model or "",
                 config.base_url or "",
@@ -440,16 +457,16 @@ async def _diagnose_connection() -> None:
             )
             if proto == "anthropic":
                 console.print(
-                    "  [dim]Hint: Anthropic uses 'x-api-key' header. "
+                    "    [dim]Hint: Anthropic uses 'x-api-key' header. "
                     "Make sure the key is valid and has not expired.[/dim]"
                 )
             elif proto == "openai":
                 console.print(
-                    "  [dim]Hint: Verify the API key and base_url. "
+                    "    [dim]Hint: Verify the API key and base_url. "
                     "OpenAI-compatible endpoints should respond to /chat/completions.[/dim]"
                 )
     except Exception as e:
-        console.print(f"\n[yellow]⚠ Chat completion failed: {e}[/yellow]")
+        console.print(f"[yellow]  ⚠ Chat completion failed: {e}[/yellow]")
 
     await client.close()
 
@@ -943,7 +960,7 @@ def config(
             label = "local" if is_local else "remote"
             console.print(f"\n[dim]Probing {label} model runtime info...[/dim]")
 
-            async def _probe() -> tuple[dict | None, list[dict[str, str]]]:
+            async def _probe() -> tuple[dict | None, List[dict[str, str]]]:
                 from .utils.model_client import ModelClient
 
                 client = ModelClient(
