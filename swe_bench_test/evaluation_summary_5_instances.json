@@ -1,0 +1,49 @@
+{
+  "label": "5_instances",
+  "timestamp": "2026-04-30T07:48:24.356373",
+  "predictions_file": "predictions_5_simple_v3.jsonl",
+  "run_id": "pilotcode_v3_5eval",
+  "total": 5,
+  "evaluated": 0,
+  "resolved": 0,
+  "failed": 0,
+  "empty_patch": 0,
+  "resolution_rate": 0.0,
+  "details": [
+    {
+      "instance_id": "astropy__astropy-12907",
+      "resolved": false,
+      "patch_exists": true,
+      "patch_applied": false,
+      "no_report": true
+    },
+    {
+      "instance_id": "django__django-10914",
+      "resolved": false,
+      "patch_exists": true,
+      "patch_applied": false,
+      "no_report": true
+    },
+    {
+      "instance_id": "django__django-10924",
+      "resolved": false,
+      "patch_exists": true,
+      "patch_applied": false,
+      "no_report": true
+    },
+    {
+      "instance_id": "django__django-11019",
+      "resolved": false,
+      "patch_exists": true,
+      "patch_applied": false,
+      "no_report": true
+    },
+    {
+      "instance_id": "django__django-11742",
+      "resolved": false,
+      "patch_exists": false,
+      "patch_applied": false,
+      "no_report": true
+    }
+  ]
+}

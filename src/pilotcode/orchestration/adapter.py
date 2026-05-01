@@ -1053,7 +1053,20 @@ class MissionAdapter:
             msg.name in ("Bash", "bash", "PowerShell", "powershell")
             and any(
                 kw in (msg.input.get("command", "") + " " + msg.input.get("script", "")).lower()
-                for kw in ("gcc", "g++", "make", "cmake", "cl ", "msbuild", "rustc", "cargo", "go build", "javac", "npm run build", "tsc")
+                for kw in (
+                    "gcc",
+                    "g++",
+                    "make",
+                    "cmake",
+                    "cl ",
+                    "msbuild",
+                    "rustc",
+                    "cargo",
+                    "go build",
+                    "javac",
+                    "npm run build",
+                    "tsc",
+                )
             )
             for msg in engine.messages
             if isinstance(msg, ToolUseMessage)
@@ -1091,7 +1104,8 @@ class MissionAdapter:
                 try:
                     # If the worker is still writing files this turn, skip project build
                     has_file_write = any(
-                        msg.name in ("FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch")
+                        msg.name
+                        in ("FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch")
                         for msg in engine.messages
                         if isinstance(msg, ToolUseMessage)
                     )

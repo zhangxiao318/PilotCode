@@ -50,8 +50,18 @@ _COMPILER_CHECKS: dict[str, tuple[str, ...]] = {
 # Project-level build systems — checked before per-file syntax checks
 _BUILD_SYSTEMS: list[dict[str, Any]] = [
     {"name": "make", "files": ["Makefile", "makefile", "GNUmakefile"], "cmd": ["make"]},
-    {"name": "cmake", "files": ["CMakeLists.txt"], "cmd": ["cmake", "--build", "."], "fallback_cmd": ["make"]},
-    {"name": "npm", "files": ["package.json"], "cmd": ["npm", "run", "build"], "fallback_cmd": ["npm", "test"]},
+    {
+        "name": "cmake",
+        "files": ["CMakeLists.txt"],
+        "cmd": ["cmake", "--build", "."],
+        "fallback_cmd": ["make"],
+    },
+    {
+        "name": "npm",
+        "files": ["package.json"],
+        "cmd": ["npm", "run", "build"],
+        "fallback_cmd": ["npm", "test"],
+    },
     {"name": "cargo", "files": ["Cargo.toml"], "cmd": ["cargo", "build"]},
     {"name": "go_mod", "files": ["go.mod"], "cmd": ["go", "build"]},
     {"name": "meson", "files": ["meson.build"], "cmd": ["meson", "compile", "-C", "build"]},
@@ -548,12 +558,14 @@ class TestRunnerVerifier(BaseVerifier):
             ok = False
             err = (result["stderr"] or result["stdout"])[:800]
             penalty += 30.0
-            issues.append({
-                "severity": "error",
-                "category": "build_error",
-                "message": f"{build_system['name']}: {err}",
-                "blocking": True,
-            })
+            issues.append(
+                {
+                    "severity": "error",
+                    "category": "build_error",
+                    "message": f"{build_system['name']}: {err}",
+                    "blocking": True,
+                }
+            )
             feedback = f"{build_system['name']} build failed: {err[:200]}"
         else:
             feedback = f"{build_system['name']} build passed"

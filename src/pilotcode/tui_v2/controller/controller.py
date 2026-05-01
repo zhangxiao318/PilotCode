@@ -744,8 +744,24 @@ class TUIController:
             has_compile_command = any(
                 tool_msg.name in ("Bash", "bash", "PowerShell", "powershell")
                 and any(
-                    kw in (tool_msg.input.get("command", "") + " " + tool_msg.input.get("script", "")).lower()
-                    for kw in ("gcc", "g++", "make", "cmake", "cl ", "msbuild", "rustc", "cargo", "go build", "javac", "npm run build", "tsc")
+                    kw
+                    in (
+                        tool_msg.input.get("command", "") + " " + tool_msg.input.get("script", "")
+                    ).lower()
+                    for kw in (
+                        "gcc",
+                        "g++",
+                        "make",
+                        "cmake",
+                        "cl ",
+                        "msbuild",
+                        "rustc",
+                        "cargo",
+                        "go build",
+                        "javac",
+                        "npm run build",
+                        "tsc",
+                    )
                 )
                 for tool_msg in pending_tools
             )
@@ -790,9 +806,8 @@ class TUIController:
                 verifier = TestRunnerVerifier()
                 try:
                     has_file_write = any(
-                        tool_msg.name in (
-                            "FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch"
-                        )
+                        tool_msg.name
+                        in ("FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch")
                         for tool_msg in pending_tools
                     )
                     v_result = await verifier.verify(

@@ -1,0 +1,6 @@
+Hello World!
+This is a test file for C language.
+It contains multiple lines of text.
+We will count characters, words and lines.
+C programming is powerful and efficient.
+File reading operations are essential in many applications.

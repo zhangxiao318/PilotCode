@@ -48,7 +48,8 @@ class TestGetModelContextWindow:
         mock_config.default_model = "openai"
 
         with patch("pilotcode.utils.config.get_global_config", return_value=mock_config):
-            result = get_model_context_window()
+            with patch("pilotcode.utils.models_config._probe_backend_limits", return_value=None):
+                result = get_model_context_window()
 
         # openai in models.json has context_window=128000
         assert result == 128_000
@@ -61,7 +62,8 @@ class TestGetModelContextWindow:
         mock_config.default_model = "openai"
 
         with patch("pilotcode.utils.config.get_global_config", return_value=mock_config):
-            result = get_model_context_window()
+            with patch("pilotcode.utils.models_config._probe_backend_limits", return_value=None):
+                result = get_model_context_window()
 
         assert result == 64000
 
@@ -89,7 +91,8 @@ class TestGetModelMaxTokens:
         mock_config.default_model = "openai"
 
         with patch("pilotcode.utils.config.get_global_config", return_value=mock_config):
-            result = get_model_max_tokens()
+            with patch("pilotcode.utils.models_config._probe_backend_limits", return_value=None):
+                result = get_model_max_tokens()
 
         # openai in models.json has max_tokens=4096
         assert result == 4096

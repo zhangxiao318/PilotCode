@@ -4,6 +4,77 @@
 
 ---
 
+## 2026-05-02
+
+### 模型配置与向导更新
+- `models.json` 默认值全面更新至最新提供商模型（Qwen3.5-plus、kimi-k2.6、claude-4-sonnet、gpt-4o、qwen2.5 等）。
+- 修复 `config --list` 中 `context_window` 保存 bug（llama-server 更新无法持久化）。
+- 通用化模型文件扩展名清理，防止脏 ID 覆盖显示名称。
+- 重写 `pc configure` 向导：默认国内模型、步骤重排、去重、本地服务器合并、空 Key 跳过。
+
+### 编译器/语法验证（全端同步）
+- `MissionAdapter` / `SimpleCLI` / `TUIController` / `WebSocketManager` 统一新增修改代码文件的编译检查。
+- 自动检测编译命令（gcc、make、cmake、rustc、cargo 等），若 LLM 未执行则自动补做。
+- `PytestRunnerVerifier` 重命名为 `TestRunnerVerifier`，扩展项目级构建系统检测（make、cmake、npm、cargo、go mod、meson）。
+- 支持 `skip_project_build` 参数，避免不完整源码误报。
+
+### CLI 与测试修复
+- 修复 `main()` 内冗余局部 `import asyncio` 导致的 `UnboundLocalError`。
+- 远程模型测试补充 mock `_probe_backend_limits`，测试耗时从 55 秒降至 0.33 秒。
+
+---
+
+## 2026-05-01
+
+### 多模型支持三层架构重构
+- 引入 `ModelCapabilities` 数据类、`MessageNormalizer` / `ResponseNormalizer`、`ParameterGenerator`。
+- 统一 `chat_completion` 为单一路径，委托给三层处理。
+- 新增架构文档与 49 个单元测试。
+
+### Anthropic 协议完整支持
+- `api_protocol` 解耦 Provider 身份与 API 协议格式。
+- `ModelClient` 新增 Anthropic 规范化层，支持 `thinking` 块映射到 `reasoning_content`。
+- 配置向导新增协议选择，CLI 新增 `--protocol` 选项。
+
+### 启动诊断与 JSON 鲁棒性
+- 默认启动 3 秒轻量级 LLM 探测，失败自动运行诊断。
+- 生产代码全面替换贪婪正则 JSON 提取为平衡括号/方括号扫描。
+- 解决尾随解释或代码块导致的静默解析失败。
+
+### 基准测试与自适应补偿重构
+- `benchmark.py` 拆分为 7 个维度模块，难度升级为中等-困难。
+- 自适应补偿从基准分数驱动切换为运行时成功率驱动（滑动窗口 + 乐观默认值）。
+- 2195 passed, 94 skipped。
+
+---
+
+## 2026-04-30
+
+### E2E 测试框架扩展
+- 新增 C 代码生成 E2E 任务（AVL 树、哈希表、JSON 解析器、内存池等）。
+- 新增 `quest` 命令支持批量任务下发。
+- WebSocket 支持 `auto_allow`，Runner 新增 `--timeout` 参数（默认 360s）。
+- 超时优雅处理，分析结果使用 `PASS/FAIL` 替代 emoji 适配 Windows。
+
+### FileEdit 智能预编辑预览
+- 括号平衡、缩进一致性、关键结构删除检测。
+- Tree-sitter 多语言语法检查（10+ 语言），两级严重程度。
+
+### SWE-bench 与 Windows 兼容性
+- SWE-bench Review Prompt 反删除保护、动态 explore 预算、FileEdit 范围守卫。
+- Windows PowerShell 显示、编码回退、ANSI 清理、路径适配、超时延长。
+
+---
+
+## 2026-04-29
+
+### SWE-bench 成功率提升
+- 测试期望注入、断言差异比对、删除式修复检测。
+- FileEdit 失败回退协议、降低补偿阈值与持久性弱模型阈值。
+- 改进调用链分析的 explore/execution/review Prompt。
+
+---
+
 ## 2026-04-27
 
 ### `/format` 与 `/lint` 命令增强

@@ -790,7 +790,11 @@ class Orchestrator:
         # LLM knows exactly what failed (e.g. gcc compile errors).
         for level_key in ("_verification_1", "_verification_2", "_verification_3"):
             v_result = node.artifacts.get(level_key)
-            if isinstance(v_result, VerificationResult) and not v_result.passed and v_result.feedback:
+            if (
+                isinstance(v_result, VerificationResult)
+                and not v_result.passed
+                and v_result.feedback
+            ):
                 adjusted_task.objective += (
                     f"\n\n[VERIFICATION FAILED - Level {v_result.level}]\n"
                     f"{v_result.feedback}\n"

@@ -713,8 +713,26 @@ class SimpleCLI:
                 has_compile_command = any(
                     tool_msg.name in ("Bash", "bash", "PowerShell", "powershell")
                     and any(
-                        kw in (tool_msg.input.get("command", "") + " " + tool_msg.input.get("script", "")).lower()
-                        for kw in ("gcc", "g++", "make", "cmake", "cl ", "msbuild", "rustc", "cargo", "go build", "javac", "npm run build", "tsc")
+                        kw
+                        in (
+                            tool_msg.input.get("command", "")
+                            + " "
+                            + tool_msg.input.get("script", "")
+                        ).lower()
+                        for kw in (
+                            "gcc",
+                            "g++",
+                            "make",
+                            "cmake",
+                            "cl ",
+                            "msbuild",
+                            "rustc",
+                            "cargo",
+                            "go build",
+                            "javac",
+                            "npm run build",
+                            "tsc",
+                        )
                     )
                     for tool_msg in pending_tools
                 )
@@ -736,7 +754,11 @@ class SimpleCLI:
                                 or tool_msg.input.get("base_path", "")
                             )
                             # Skip header-only changes — headers cannot be compiled standalone
-                            if path and not path.endswith((".h", ".hpp")) and path not in changed_files:
+                            if (
+                                path
+                                and not path.endswith((".h", ".hpp"))
+                                and path not in changed_files
+                            ):
                                 changed_files.append(path)
 
                 if changed_files:
@@ -757,8 +779,14 @@ class SimpleCLI:
                     try:
                         # Skip project build if LLM is still actively writing files this turn
                         has_file_write = any(
-                            tool_msg.name in (
-                                "FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch"
+                            tool_msg.name
+                            in (
+                                "FileWrite",
+                                "write",
+                                "FileEdit",
+                                "edit",
+                                "ApplyPatch",
+                                "apply_patch",
                             )
                             for tool_msg in pending_tools
                         )

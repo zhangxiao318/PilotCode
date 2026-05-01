@@ -633,8 +633,6 @@ def main(
                 raise typer.Exit(code=1)
 
     if prompt is not None:
-        import asyncio
-
         async def _run_headless():
             if planning:
                 mode = await classify_task_complexity(prompt, cwd=cwd)
@@ -722,7 +720,6 @@ def main(
             console.print("\n[yellow]Server stopped.[/yellow]")
     elif simple:
         # Launch Simple CLI (non-TUI)
-        import asyncio
         from .tui.simple_cli import SimpleCLI
 
         cli = SimpleCLI(auto_allow=auto_allow, max_iterations=max_iterations)

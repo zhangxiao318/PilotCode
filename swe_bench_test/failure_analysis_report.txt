@@ -1,0 +1,207 @@
+
+================================================================================
+SWE-BENCH FAILURE ANALYSIS REPORT
+================================================================================
+
+一、总体概况
+
+25-Instance (predictions_all.jsonl):
+  - Total: 25
+  - Resolved: 10 (40%)
+  - Failed: 13
+  - Empty patch: 2 (django-11133 有 patch 但无 report, django-11742 空 patch)
+
+5-Instance v3 (predictions_5_simple_v3.jsonl):
+  - Total: 5
+  - Resolved: 2 (40%)
+  - Failed: 2
+  - Empty patch: 1 (django-11742)
+
+关键对比:
+  - django-10924: v3 成功(Resolved), 25-instance 失败(语法错误)
+  - astropy-12907: v3 失败(无关修改), 25-instance 成功(498 chars clean patch)
+  - django-11019: v3 和 25-instance 都失败(文件选择错误)
+
+================================================================================
+
+二、失败模式分类
+
+【模式 A: 文件选择错误】3 个实例
+─────────────────────────────────────────────────────────────────
+
+A1. django__django-11564
+  官方 patch: django/conf/__init__.py — 添加 _add_script_prefix() 方法
+  我们的 patch: django/contrib/staticfiles/storage.py + django/templatetags/static.py
+  原因: 模型错误地认为问题出在 static URL 生成的地方，而不是 settings 配置
+  结果: FTP 0/2, PTP 完好
+
+A2. django__django-11620
+  官方 patch: django/views/debug.py — 将 Resolver404 改为 Http404
+  我们的 patch: django/urls/resolvers.py — 在 converter 中添加了错误的 except Http404
+  原因: 模型完全误解了问题位置，在 URL resolver 中添加了破坏性的异常处理
+  结果: FTP 0/1, PTP 0/66 (严重 regression!)
+
+A3. django__django-11797
+  官方 patch: django/db/models/lookups.py — 添加 has_select_fields 检查
+  我们的 patch: django/db/models/sql/compiler.py — 修改了子查询 SQL 生成逻辑
+  原因: 模型错误地定位到 compiler 而不是 lookups
+  结果: FTP 0/1, PTP 完好
+
+【模式 B: 修复不完整】3 个实例
+─────────────────────────────────────────────────────────────────
+
+B1. astropy__astropy-14182
+  官方 patch: 修改 rst.py 的 __init__ + SimpleRSTData.start_line + docstring
+  我们的 patch: 只修改了 __init__，添加了 header_rows 参数
+  遗漏: 没有修改 SimpleRSTData.start_line (从 3 改为 None/动态)
+  结果: FTP 0/1, PTP 完好
+
+B2. astropy__astropy-14365
+  官方 patch: 两处修改: 1) re.IGNORECASE 2) v.upper() == "NO"
+  我们的 patch: 只修改了 _command_re 添加 (?i)，遗漏了 v.upper() 检查
+  结果: FTP 0/1, PTP 丢失 2 个
+
+B3. astropy__astropy-7746
+  官方 patch: 在两个方法(_return_list_of_arrays + _return_single_array)中添加空数组检查
+  我们的 patch: 只在 _return_list_of_arrays 中添加检查，且逻辑过度复杂
+  遗漏: 没有修改 _return_single_array
+  结果: FTP 0/1, PTP 完好
+
+【模式 C: 完全错误的修改方向】4 个实例
+─────────────────────────────────────────────────────────────────
+
+C1. django__django-11001 (最严重 regression)
+  官方 patch: compiler.py 中正则添加 ^ 和 re.MULTILINE | re.DOTALL
+  我们的 patch: 把 SQL 中的换行替换为空格: sql_oneline = ' '.join(sql.split('
+'))
+  原因: 完全误解了问题，用暴力替换破坏了所有 SQL 解析
+  结果: FTP 0/2, PTP 0/118 (118 个已有测试全部失败!)
+
+C2. django__django-11019
+  官方 patch: 大幅重写 Media 类，使用拓扑排序处理依赖
+  我们的 patch: 只改了引号 (单引号 ' → 双引号 ")
+  原因: 完全没有理解问题，做了一个无关的格式修改
+  结果: FTP 0/16
+
+C3. astropy__astropy-14995
+  官方 patch: elif operand is None: → elif operand.mask is None:
+  我们的 patch: 在条件上添加 and operand.mask is not None，逻辑完全错误
+  原因: 对条件分支的理解完全错误
+  结果: FTP 0/1, PTP 完好
+
+C4. django__django-11422
+  官方 patch: 修改 iter_modules_and_files 中的 __main__ 处理
+  我们的 patch: 在 run_with_reloader 中添加了 reloader.watch_file(manage_py_path)
+  原因: 修改了完全错误的位置和逻辑
+  结果: FTP 0/1, PTP 丢失 3 个
+
+【模式 D: 删除式修复】1 个实例
+─────────────────────────────────────────────────────────────────
+
+D1. astropy__astropy-6938
+  官方 patch: output_field[:] = output_field.replace(b'E', b'D')
+  我们的 patch: 直接删除了 3 行代码（注释 + if 块），没有添加任何正确代码
+  原因: 模型认为删除有问题的代码就能修复，但实际上需要替换逻辑
+  结果: FTP 0/2
+
+【模式 E: 过度修改 + 语法错误】2 个实例
+─────────────────────────────────────────────────────────────────
+
+E1. django__django-11179
+  官方 patch: 添加一行 setattr(instance, model._meta.pk.attname, None)
+  我们的 patch: 大幅重构了 if 条件，删除了 with transaction 块，缩进混乱
+  原因: 过度修改了原本只需要一行代码的地方
+  结果: FTP 1/1 (碰巧通过) 但 PTP 丢失 21 个
+
+E2. django__django-10924 (25-instance)
+  官方 patch: 只在 formfield() 中修改一行
+  我们的 patch: 修改了 2 个文件，但 formfield() 中缺少闭合的 })
+  具体错误: 
+    return super().formfield(**{
+        ...
+        **kwargs,
+    -})   <-- 删除了闭合的 })
+  原因: FileEdit 执行错误，删除了不该删除的字符
+  结果: FTP 0/1, PTP 0/1 (语法错误导致所有测试失败)
+
+【模式 F: 无关修改导致 regression】1 个实例 (v3)
+─────────────────────────────────────────────────────────────────
+
+F1. astropy__astropy-12907 (v3)
+  正确修改: separable.py 中 _cstack 的逻辑修复
+  错误修改: setup_package.py 中 setuptools.dep_util → setuptools.util
+  原因: 模型做了计划外的修改，破坏了 astropy 的编译
+  结果: FTP 0/2, PTP 丢失 7 个
+
+================================================================================
+
+三、根因总结
+
+1. 文件定位错误 (File Selection Error): 23%
+   - 3/13 失败实例修改了错误的文件
+   - 说明 explore 阶段对代码结构的理解不足
+
+2. 修复不完整 (Incomplete Fix): 23%
+   - 3/13 失败实例只做了部分修改
+   - 模型没有阅读完整的官方 patch 或理解所有需要修改的位置
+
+3. 完全错误的方案 (Wrong Approach): 31%
+   - 4/13 失败实例的修改方向完全错误
+   - 包括对问题的根本误解、修改了错误的位置、或者做了无关的修改
+
+4. FileEdit 执行错误 (Edit Execution Error): 15%
+   - 2/13 失败实例因为 FileEdit 的精确性问题导致语法错误或过度修改
+   - django-10924 缺少闭合符号，django-11179 缩进混乱
+
+5. 删除式修复 (Deletion Fix): 8%
+   - 1/13 失败实例直接删除了代码而不是修复
+   - astropy-6938 删除了整个处理逻辑
+
+================================================================================
+
+四、与 resolved 实例的对比
+
+Resolved 实例的特征:
+  - 平均 patch 大小: 1276 chars
+  - 平均修改文件数: 1.1 个
+  - 文件选择准确率: 100%
+  - 无语法错误
+
+Failed 实例的特征:
+  - 平均 patch 大小: 1014 chars (差异不大)
+  - 平均修改文件数: 1.2 个
+  - 文件选择准确率: 77% (3/13 选错)
+  - 15% 有语法错误
+
+关键差异:
+  - 成功的实例: 修改精确、位置正确、无多余修改
+  - 失败的实例: 要么位置错误，要么修改不完整，要么引入了语法错误
+
+================================================================================
+
+五、改进建议
+
+【高优先级】
+1. 强化 explore 阶段的文件定位
+   - 要求模型在编辑前用 Grep 确认官方 patch 中修改的文件
+   - 添加 "修改文件验证" 步骤: 编辑完成后检查是否只修改了预期的文件
+
+2. 防止 FileEdit 语法错误
+   - 在 harness 中增加 patch 应用前的语法检查 (py_compile)
+   - 如果 FileEdit 导致语法错误，立即回滚并重新尝试
+   - 限制每次 FileEdit 只做最小修改
+
+3. 防止无关修改
+   - 在 system prompt 中明确禁止修改未计划的文件
+   - 在 review 阶段检查 patch 是否只包含预期的文件
+
+【中优先级】
+4. 修复完整性检查
+   - 要求模型在编辑前阅读完整的 test patch
+   - 添加 "是否所有测试预期都已满足" 的检查清单
+
+5. 删除式修复检测
+   - 自动检测删除行数 >> 添加行数的 patch
+   - 在 review 阶段标记可能的删除式修复
+
+================================================================================

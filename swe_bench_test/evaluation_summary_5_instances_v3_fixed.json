@@ -1,0 +1,59 @@
+{
+  "label": "5_instances_v3",
+  "timestamp": "2026-04-30T10:26:01.717392",
+  "total": 5,
+  "evaluated": 4,
+  "resolved": 2,
+  "failed": 2,
+  "empty_patch": 1,
+  "resolution_rate": 0.4,
+  "details": [
+    {
+      "instance_id": "astropy__astropy-12907",
+      "resolved": false,
+      "patch_exists": true,
+      "patch_applied": true,
+      "ftp_success": 0,
+      "ftp_failure": 2,
+      "ptp_success": 6,
+      "ptp_failure": 7
+    },
+    {
+      "instance_id": "django__django-10914",
+      "resolved": true,
+      "patch_exists": true,
+      "patch_applied": true,
+      "ftp_success": 1,
+      "ftp_failure": 0,
+      "ptp_success": 98,
+      "ptp_failure": 0
+    },
+    {
+      "instance_id": "django__django-10924",
+      "resolved": true,
+      "patch_exists": true,
+      "patch_applied": true,
+      "ftp_success": 1,
+      "ftp_failure": 0,
+      "ptp_success": 1,
+      "ptp_failure": 0
+    },
+    {
+      "instance_id": "django__django-11019",
+      "resolved": false,
+      "patch_exists": true,
+      "patch_applied": true,
+      "ftp_success": 0,
+      "ftp_failure": 16,
+      "ptp_success": 54,
+      "ptp_failure": 4
+    },
+    {
+      "instance_id": "django__django-11742",
+      "resolved": false,
+      "patch_exists": false,
+      "patch_applied": false,
+      "no_report": true
+    }
+  ]
+}
