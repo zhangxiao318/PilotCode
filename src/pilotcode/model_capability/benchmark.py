@@ -33,47 +33,124 @@ class BenchmarkResult:
             self.metadata = {}
 
 
+class BenchmarkConnectionError(Exception):
+    """Raised when the benchmark cannot reach the model API."""
+
+
+def _is_connection_error(exc: Exception) -> bool:
+    """Check if an exception indicates the model API is unreachable."""
+    name = type(exc).__name__
+    if name in ("ConnectError", "ConnectTimeout", "TimeoutException", "NetworkError"):
+        return True
+    # httpx / aiohttp wrappers
+    if name in ("HTTPStatusError", "RemoteProtocolError"):
+        return True
+    msg = str(exc).lower()
+    indicators = [
+        "connection",
+        "connect",
+        "unreachable",
+        "refused",
+        "timeout",
+        "name or service not known",
+        "no route to host",
+        "all connection attempts failed",
+    ]
+    return any(ind in msg for ind in indicators)
+
+
 async def _call_llm(
     messages: list[Message],
     temperature: float = 0.3,
     max_tokens: int | None = None,
 ) -> str:
-    """Helper to call LLM and accumulate response."""
+    """Helper to call LLM and accumulate response.
+
+    When ``max_tokens`` is provided it is clamped to the model's actual
+    capability (probed or configured) so the benchmark never requests more
+    than the backend can deliver.  If ``max_tokens`` is omitted the model's
+    own default is used.
+
+    Raises:
+        BenchmarkConnectionError: If the API is unreachable.
+    """
+    from pilotcode.utils.models_config import get_model_max_tokens
+
     client = get_model_client()
-    accumulated = ""
-    async for chunk in client.chat_completion(
-        messages=messages,
-        temperature=temperature,
-        stream=False,
-        max_tokens=max_tokens,
-    ):
-        delta = chunk.get("choices", [{}])[0].get("delta", {})
-        c = delta.get("content")
-        if c:
-            accumulated += c
-    return accumulated.strip()
+
+    # Clamp to model's real max_tokens so small-context local models don't
+    # silently truncate output (or error) when the benchmark asks for too much.
+    if max_tokens is not None:
+        model_max = get_model_max_tokens()
+        if model_max > 0:
+            max_tokens = min(max_tokens, model_max)
+
+    try:
+        accumulated = ""
+        async for chunk in client.chat_completion(
+            messages=messages,
+            temperature=temperature,
+            stream=False,
+            max_tokens=max_tokens,
+        ):
+            delta = chunk.get("choices", [{}])[0].get("delta", {})
+            c = delta.get("content")
+            if c:
+                accumulated += c
+        return accumulated.strip()
+    except Exception as e:
+        if _is_connection_error(e):
+            raise BenchmarkConnectionError(
+                f"Cannot reach model API at {client.base_url}: {e}"
+            ) from e
+        raise
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
-    """Extract JSON object from text."""
-    # Try direct parse first
+    """Extract JSON object from text.
+
+    Uses balanced-brace scanning so that trailing text containing
+    ``{...}`` (e.g. code examples, status markers) does not cause
+    greedy-regex over-matching.
+    """
+    # 1. Direct parse
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Try regex extraction
-    patterns = [
-        r"```json\s*(.*?)\s*```",
-        r"```\s*(.*?)\s*```",
-        r"(\{[\s\S]*\})",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError:
-                continue
+
+    # 2. Strip markdown fences and re-parse
+    stripped = text.strip()
+    for prefix in ("```json", "```"):
+        if stripped.startswith(prefix):
+            stripped = stripped[len(prefix) :].strip()
+        if stripped.endswith("```"):
+            stripped = stripped[:-3].strip()
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Balanced-brace scan: find every top-level ``{...}`` and try
+    #    parsing it.  This avoids the greedy-regex problem where
+    #    ``{...}`` in trailing text is swallowed.
+    for match in re.finditer(r"\{", text):
+        start = match.start()
+        depth = 1
+        for i in range(start + 1, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start : i + 1]
+                    try:
+                        result = json.loads(candidate)
+                        if isinstance(result, dict):
+                            return result
+                    except json.JSONDecodeError:
+                        pass
+                    break
     return None
 
 
@@ -529,7 +606,7 @@ Output your final answer as a single number on the last line, prefixed with "ANS
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.2,
-        max_tokens=400,
+        max_tokens=800,
     )
     # Expected: 120 + (60 * 1.5 * 1.5) = 120 + 135 = 255
     answer_match = re.search(r"ANSWER:\s*(\d+(?:\.\d+)?)", raw)
@@ -798,18 +875,41 @@ async def run_all_benchmarks(
     results: list[BenchmarkResult] = []
     total = len(ALL_BENCHMARKS)
 
+    # Mapping from test function name to (dimension, sub_dimension)
+    _DIMENSION_MAP = {
+        "test_planning_json_validity": ("planning", "dag_correctness"),
+        "test_planning_dependency_accuracy": ("planning", "dependency_accuracy"),
+        "test_planning_granularity": ("planning", "task_granularity_appropriateness"),
+        "test_code_generation_correctness": ("task_completion", "code_correctness"),
+        "test_bug_fixing": ("task_completion", "code_correctness"),
+        "test_json_schema_compliance": ("json_formatting", "schema_compliance"),
+        "test_json_self_correction": ("json_formatting", "self_correction"),
+        "test_json_in_complex_context": ("json_formatting", "valid_json_rate"),
+        "test_reasoning_depth": ("chain_of_thought", "reasoning_depth"),
+        "test_error_diagnosis": ("chain_of_thought", "error_diagnosis"),
+        "test_debugging_skill": ("chain_of_thought", "debugging_skill"),
+        "test_bug_detection": ("code_review", "bug_detection"),
+        "test_review_structured_output": ("code_review", "structured_output"),
+    }
+
     for i, test_fn in enumerate(ALL_BENCHMARKS):
         name = test_fn.__name__
         if progress_callback:
             progress_callback(name, i + 1, total)
         try:
             result = await test_fn()
+        except BenchmarkConnectionError:
+            # API is unreachable — abort immediately so the user sees a clear
+            # error instead of a misleading low score.
+            raise
         except Exception as e:
-            # Extract dimension info from the function defaults
+            # Test executed but the model response was wrong / malformed.
+            # Record as a failure (score 0.0) and continue.
+            dim, sub_dim = _DIMENSION_MAP.get(name, ("unknown", "unknown"))
             result = BenchmarkResult(
                 test_name=name,
-                dimension="unknown",
-                sub_dimension="unknown",
+                dimension=dim,
+                sub_dimension=sub_dim,
                 score=0.0,
                 error=str(e),
             )

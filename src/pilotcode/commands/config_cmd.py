@@ -23,14 +23,31 @@ async def _run_capability_benchmark() -> str:
     Returns:
         Analysis report text with capability scores and file path.
     """
-    from ..model_capability import evaluate_model, save_capability, format_evaluation_report
+    from ..model_capability import (
+        evaluate_model,
+        save_capability,
+        format_evaluation_report,
+    )
+    from ..model_capability.benchmark import BenchmarkConnectionError
     from ..utils.config import get_global_config
     from pathlib import Path
 
     config = get_global_config()
     model_name = config.default_model or "unknown"
 
-    cap = await evaluate_model(model_name)
+    try:
+        cap = await evaluate_model(model_name)
+    except BenchmarkConnectionError as e:
+        return (
+            f"[red]Benchmark aborted: cannot reach model API.[/red]\n"
+            f"  Model: {model_name}\n"
+            f"  Base URL: {config.base_url}\n"
+            f"  Error: {e}\n\n"
+            f"Please check:\n"
+            f"  1. The model server is running and accessible\n"
+            f"  2. The base_url in your config is correct\n"
+            f"  3. Network / firewall settings allow the connection"
+        )
 
     # Save to standard location
     save_path = Path.home() / ".pilotcode" / "model_capability.json"

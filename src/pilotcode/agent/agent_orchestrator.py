@@ -276,19 +276,28 @@ Previous discussion:
 
     def _parse_subtasks(self, decomposition: str) -> list[str]:
         """Parse subtasks from decomposition."""
-        # Simplified parsing - in reality would use proper JSON parsing
         import re
 
-        # Try to find JSON array
-        match = re.search(r"\[.*\]", decomposition, re.DOTALL)
-        if match:
-            try:
-                import json
+        # Try to find JSON array using balanced-bracket scan
+        # (avoids greedy-regex over-matching when trailing text contains [])
+        for match in re.finditer(r"\[", decomposition):
+            start = match.start()
+            depth = 1
+            for i in range(start + 1, len(decomposition)):
+                if decomposition[i] == "[":
+                    depth += 1
+                elif decomposition[i] == "]":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = decomposition[start : i + 1]
+                        try:
+                            import json
 
-                data = json.loads(match.group())
-                return [item.get("description", str(item)) for item in data]
-            except json.JSONDecodeError:
-                pass
+                            data = json.loads(candidate)
+                            return [item.get("description", str(item)) for item in data]
+                        except json.JSONDecodeError:
+                            pass
+                        break
 
         # Fallback: split by numbered items
         lines = [line.strip() for line in decomposition.split("\n") if line.strip()]

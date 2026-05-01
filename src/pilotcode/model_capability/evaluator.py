@@ -48,7 +48,7 @@ def evaluate_capability(
             dim_scores[dim][sub] = []
         dim_scores[dim][sub].append(r.score)
 
-    def _dim_avg(dim_name: str, sub_scores: dict[str, list[float]], default: float = 0.5) -> float:
+    def _dim_avg(dim_name: str, sub_scores: dict[str, list[float]], default: float = 0.0) -> float:
         all_scores = []
         for scores in sub_scores.values():
             all_scores.extend(scores)

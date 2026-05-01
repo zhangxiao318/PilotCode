@@ -997,38 +997,42 @@ def config(
                             f"\n[yellow]⚠ Could not probe runtime capabilities: {api_err}[/yellow]"
                         )
                         console.print("[dim]  Using static configuration from models.json.[/dim]")
-                    console.print("\n[bold]Model Capability (Runtime Detected):[/bold]")
-                    _print_api_capability(console, api_caps, static_info=static_info)
+                        if static_info:
+                            console.print("\n[bold]Model Capability (Static Config):[/bold]")
+                            _print_model_capability(console, static_info, source="static")
+                    else:
+                        console.print("\n[bold]Model Capability (Runtime Detected):[/bold]")
+                        _print_api_capability(console, api_caps, static_info=static_info)
 
-                    # --- Check settings.json against probed values ---
-                    updates: dict[str, Any] = {}
+                        # --- Check settings.json against probed values ---
+                        updates: dict[str, Any] = {}
 
-                    detected_ctx = api_caps.get("context_window")
-                    if detected_ctx is not None:
-                        if config.context_window <= 0:
-                            console.print(
-                                f"\n[yellow]⚠ context_window not set in settings.json. "
-                                f"Detected: {detected_ctx}[/yellow]"
-                            )
-                            updates["context_window"] = detected_ctx
-                        elif config.context_window != detected_ctx:
-                            # Warn if user's value is way off (e.g. 10x smaller)
-                            ratio = detected_ctx / max(config.context_window, 1)
-                            if ratio >= 2 or ratio <= 0.5:
+                        detected_ctx = api_caps.get("context_window")
+                        if detected_ctx is not None:
+                            if config.context_window <= 0:
                                 console.print(
-                                    f"\n[yellow]⚠ context_window mismatch: "
-                                    f"settings.json={config.context_window}, detected={detected_ctx}"
-                                    f" (ratio {ratio:.1f}x)[/yellow]"
+                                    f"\n[yellow]⚠ context_window not set in settings.json. "
+                                    f"Detected: {detected_ctx}[/yellow]"
                                 )
-                            else:
-                                console.print(
-                                    f"\n[dim]context_window differs slightly: "
-                                    f"settings.json={config.context_window}, detected={detected_ctx}[/dim]"
-                                )
-                            if Confirm.ask(
-                                "Update settings.json to match detected value?", default=True
-                            ):
                                 updates["context_window"] = detected_ctx
+                            elif config.context_window != detected_ctx:
+                                # Warn if user's value is way off (e.g. 10x smaller)
+                                ratio = detected_ctx / max(config.context_window, 1)
+                                if ratio >= 2 or ratio <= 0.5:
+                                    console.print(
+                                        f"\n[yellow]⚠ context_window mismatch: "
+                                        f"settings.json={config.context_window}, detected={detected_ctx}"
+                                        f" (ratio {ratio:.1f}x)[/yellow]"
+                                    )
+                                else:
+                                    console.print(
+                                        f"\n[dim]context_window differs slightly: "
+                                        f"settings.json={config.context_window}, detected={detected_ctx}[/dim]"
+                                    )
+                                if Confirm.ask(
+                                    "Update settings.json to match detected value?", default=True
+                                ):
+                                    updates["context_window"] = detected_ctx
 
                     detected_model = api_caps.get("model_id") or api_caps.get("display_name")
                     if detected_model and config.default_model != detected_model:
@@ -1063,11 +1067,11 @@ def config(
                             if Confirm.ask("Auto-append /v1 to base_url?", default=True):
                                 updates["base_url"] = url + "/v1"
 
-                    if updates:
-                        for key, val in updates.items():
-                            setattr(config, key, val)
-                        get_config_manager().save_global_config(config)
-                        console.print("[green]✓ settings.json updated.[/green]")
+                        if updates:
+                            for key, val in updates.items():
+                                setattr(config, key, val)
+                            get_config_manager().save_global_config(config)
+                            console.print("[green]✓ settings.json updated.[/green]")
                 elif api_caps and api_caps.get("_error"):
                     err = api_caps["_error"]
                     console.print(f"[red]  Could not connect to backend: {err}[/red]")

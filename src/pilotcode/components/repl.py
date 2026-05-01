@@ -1479,13 +1479,25 @@ async def run_headless_with_planning(
                 return json.loads(code_block_match.group(1).strip())
             except json.JSONDecodeError:
                 pass
-        # 3. Fall back to first { ... } pair
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
+        # 3. Balanced-brace scan to avoid greedy-regex over-matching
+        #    when trailing text contains its own { ... } blocks.
+        for match in re.finditer(r"\{", text):
+            start = match.start()
+            depth = 1
+            for i in range(start + 1, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[start : i + 1]
+                        try:
+                            result = json.loads(candidate)
+                            if isinstance(result, dict):
+                                return result
+                        except json.JSONDecodeError:
+                            pass
+                        break
         return None
 
     def _get_git_diff(work_dir: str) -> str:

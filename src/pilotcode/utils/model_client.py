@@ -540,6 +540,7 @@ class ModelClient:
 
         cap: dict[str, Any] = {}
         last_error: str | None = None
+        runtime_success = False  # Track whether any endpoint returned real data
 
         # Derive root URL (strip trailing /v1 so we can hit backend-specific
         # endpoints like /props or /api/show).
@@ -565,15 +566,18 @@ class ModelClient:
                     n_ctx = dgs.get("n_ctx")
                     if n_ctx is not None:
                         cap["context_window"] = int(n_ctx)
+                        runtime_success = True
                     # max_tokens from params (llama-server uses -1 for infinite)
                     params = dgs.get("params", {})
                     max_tok = params.get("max_tokens", params.get("n_predict"))
                     if max_tok is not None and max_tok > 0:
                         cap["max_tokens"] = int(max_tok)
+                        runtime_success = True
                     # vision from modalities
                     modalities = data.get("modalities", {})
                     if "vision" in modalities:
                         cap["supports_vision"] = bool(modalities["vision"])
+                        runtime_success = True
                     # model path gives us display name hint
                     model_path = data.get("model_path")
                     if model_path:
@@ -584,6 +588,7 @@ class ModelClient:
                     if "_provider" not in cap:
                         cap["_provider"] = "custom"
                     cap["_backend"] = "llama-server"
+                    runtime_success = True
             except Exception as e:
                 last_error = f"llama-server /props: {type(e).__name__}: {e}"
 
@@ -610,11 +615,13 @@ class ModelClient:
                         val = model_info.get(ctx_key)
                         if val is not None:
                             cap["context_window"] = int(val)
+                            runtime_success = True
                     # Fallback: any key ending with context_length
                     if "context_window" not in cap:
                         for k, v in model_info.items():
                             if k.endswith(".context_length") and v is not None:
                                 cap["context_window"] = int(v)
+                                runtime_success = True
                                 break
                     # Ollama capabilities array
                     capabilities = data.get("capabilities", [])
@@ -626,6 +633,7 @@ class ModelClient:
                         cap["display_name"] = ollama_name
                     cap["_provider"] = "ollama"
                     cap["_backend"] = "ollama"
+                    runtime_success = True
             except Exception as e:
                 last_error = f"Ollama /api/show: {type(e).__name__}: {e}"
 
@@ -646,12 +654,16 @@ class ModelClient:
                         ctx = info.get("max_input_tokens") or info.get("max_tokens")
                         if ctx is not None:
                             cap["context_window"] = int(ctx)
+                            runtime_success = True
                         out = info.get("max_output_tokens")
                         if out is not None:
                             cap["max_tokens"] = int(out)
+                            runtime_success = True
                         if "supports_vision" in info:
                             cap["supports_vision"] = bool(info["supports_vision"])
+                            runtime_success = True
                         cap["_backend"] = "litellm"
+                        runtime_success = True
             except Exception as e:
                 last_error = f"LiteLLM /model/info: {type(e).__name__}: {e}"
 
@@ -704,6 +716,7 @@ class ModelClient:
                     continue
 
             if model_data:
+                runtime_success = True
                 # Detect known cloud providers from metadata
                 owned_by = model_data.get("owned_by", "")
                 root = model_data.get("root", "")
@@ -891,10 +904,10 @@ class ModelClient:
         # layer produced this result.
         cap["_api_protocol"] = self._api_protocol
 
+        if not runtime_success and last_error:
+            return {"_error": last_error}
         if cap:
             return cap
-        if last_error:
-            return {"_error": last_error}
         return None
 
     async def detect_models(self) -> list[dict[str, str]]:
