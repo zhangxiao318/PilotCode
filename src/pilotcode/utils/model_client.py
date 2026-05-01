@@ -221,19 +221,42 @@ class ModelClient:
             except ValueError:
                 pass
 
+        # Provider flags for provider-specific handling
+        self._provider_name = self._model_info.provider.value if self._model_info else "unknown"
+        from .models_config import infer_api_protocol
+
+        self._api_protocol = infer_api_protocol(
+            model_key, effective_base_url, model_override, self._model_info
+        )
+        self._is_deepseek = self._provider_name == "deepseek"
+
         # Use granular timeouts to prevent indefinite hangs on half-closed
         # connections (e.g. CLOSE-WAIT) while still allowing long generations.
         # read=60s means any single read operation that stalls >60s will abort.
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            headers=self._build_auth_headers(),
             timeout=httpx.Timeout(timeout, connect=10.0, read=300.0, write=10.0, pool=5.0),
             verify=verify_ssl,
         )
 
-        # Provider flags for provider-specific handling
-        self._provider_name = self._model_info.provider.value if self._model_info else "unknown"
-        self._is_deepseek = self._provider_name == "deepseek"
+    def _build_auth_headers(self) -> dict[str, str]:
+        """Build authentication headers based on API protocol."""
+        if self._api_protocol == "anthropic":
+            return {
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            }
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+    @property
+    def supports_reasoning_content(self) -> bool:
+        """Whether the backend uses reasoning_content field (DeepSeek-style)."""
+        return self._api_protocol == "openai" and self._is_deepseek
 
     def _convert_messages(
         self, messages: list[Message] | list[dict[str, Any]]
@@ -263,7 +286,12 @@ class ModelClient:
 
             # DeepSeek thinking mode: echo reasoning_content back on assistant messages.
             # Insert immediately after role/content to satisfy provider field-order expectations.
-            if self._is_deepseek and msg.reasoning_content and msg.role == "assistant":
+            if (
+                self._api_protocol == "openai"
+                and self._is_deepseek
+                and msg.reasoning_content
+                and msg.role == "assistant"
+            ):
                 api_msg["reasoning_content"] = msg.reasoning_content
 
             # OpenAI-compatible APIs require 'content' to be present (can be empty string)
@@ -387,11 +415,7 @@ class ModelClient:
             # before the final answer.  A small max_tokens limit often
             # leaves no budget for actual content, producing empty replies.
             # Bump to a safe floor when the caller requested a small cap.
-            if (
-                self.model
-                and "deepseek" in self.model.lower()
-                and max_tokens < 4096
-            ):
+            if self.model and "deepseek" in self.model.lower() and max_tokens < 4096:
                 max_tokens = 8192
             payload["max_tokens"] = max_tokens
 

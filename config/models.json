@@ -30,6 +30,7 @@
       "name": "anthropic",
       "display_name": "Anthropic Claude",
       "provider": "anthropic",
+      "api_protocol": "anthropic",
       "base_url": "https://api.anthropic.com/v1",
       "default_model": "claude-3-5-sonnet-20241022",
       "description": "Anthropic Claude 3.5 Sonnet - Excellent coding assistant (Native API adapter coming soon)",

@@ -764,9 +764,6 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         # Get available tools
         tools = self.config.tools if self.config.tools else []
 
-        # Detect DeepSeek for provider-specific handling
-        is_deepseek = "deepseek" in getattr(self.client, "base_url", "").lower()
-
         # Stream response with automatic context-window recovery
         _context_attempt = 0
         _rate_limit_retry = 0
@@ -826,7 +823,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                         self._last_api_usage_hash = self._compute_state_hash()
 
                     # Handle reasoning content (DeepSeek thinking mode only)
-                    if is_deepseek:
+                    if getattr(self.client, "supports_reasoning_content", False):
                         reasoning = delta.get("reasoning_content")
                         if reasoning:
                             accumulated_reasoning += reasoning
@@ -919,7 +916,11 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             if accumulated_content or accumulated_reasoning or current_tool_call:
                 assistant_msg = AssistantMessage(
                     content=accumulated_content,
-                    reasoning_content=(accumulated_reasoning or None) if is_deepseek else None,
+                    reasoning_content=(
+                        (accumulated_reasoning or None)
+                        if getattr(self.client, "supports_reasoning_content", False)
+                        else None
+                    ),
                 )
                 self.messages.append(assistant_msg)
                 yield QueryResult(message=assistant_msg, is_complete=True)

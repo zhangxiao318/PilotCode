@@ -50,6 +50,7 @@ class ModelInfo:
     env_key: str = ""
     disabled: bool = False
     disabled_reason: str = ""
+    api_protocol: str = "openai"
 
     def get_env_key(self) -> str:
         """Get environment variable key for API key."""
@@ -105,6 +106,7 @@ def _load_models_json() -> dict[str, ModelInfo]:
             env_key=raw.get("env_key", ""),
             disabled=raw.get("disabled", False),
             disabled_reason=raw.get("disabled_reason", ""),
+            api_protocol=raw.get("api_protocol", ""),
         )
 
     return models
@@ -459,6 +461,52 @@ def get_model_from_env() -> tuple[str, str] | None:
         return (pilotcode_model or "custom", pilotcode_key)
 
     return None
+
+
+def infer_api_protocol(
+    model_name: str,
+    base_url: str,
+    model_override: dict[str, str] | None = None,
+    model_info: ModelInfo | None = None,
+) -> str:
+    """Infer the API protocol for a model configuration.
+
+    Resolution order:
+        1. Explicit override from settings.json (model_overrides.api_protocol)
+        2. Explicit config from models.json (model_info.api_protocol)
+        3. URL path heuristics (/v1/messages -> anthropic, /chat/completions -> openai)
+        4. Model name heuristics (claude-* -> anthropic, gpt-* -> openai)
+        5. Provider field fallback (anthropic -> anthropic, others -> openai)
+        6. Default to "openai"
+    """
+    # 1. User override
+    if model_override and model_override.get("api_protocol"):
+        return model_override["api_protocol"]
+
+    # 2. models.json explicit config
+    if model_info and model_info.api_protocol:
+        return model_info.api_protocol
+
+    # 3. URL path heuristics
+    url = (base_url or "").lower().rstrip("/")
+    if "/messages" in url and "/chat/completions" not in url:
+        return "anthropic"
+    if "/chat/completions" in url:
+        return "openai"
+
+    # 4. Model name heuristics
+    mn = (model_name or "").lower()
+    if mn.startswith("claude-"):
+        return "anthropic"
+    if mn.startswith("gpt-") or mn.startswith("o1") or mn.startswith("o3"):
+        return "openai"
+
+    # 5. Provider fallback
+    if model_info and model_info.provider == ModelProvider.ANTHROPIC:
+        return "anthropic"
+
+    # 6. Default
+    return "openai"
 
 
 def format_model_list() -> str:
