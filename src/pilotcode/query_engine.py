@@ -1213,10 +1213,7 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         now = time.monotonic()
 
         # 2a: Exact cache hit (same state) → return immediately.
-        if (
-            self._last_precise_count is not None
-            and current_hash == self._last_precise_count_hash
-        ):
+        if self._last_precise_count is not None and current_hash == self._last_precise_count_hash:
             return self._last_precise_count
 
         # 2b: Time-based rate limit. If we computed a precise count recently,

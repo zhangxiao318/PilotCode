@@ -18,6 +18,7 @@ Then run evaluation:
 """
 
 import argparse
+import asyncio
 import json
 import os
 import py_compile
@@ -38,10 +39,13 @@ from swebench.harness.constants import (
 )
 
 # Import PilotCode complexity classifier for routing
-import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from pilotcode.components.repl import classify_task_complexity
+from pilotcode.utils.env_diagnosis import (
+    looks_like_environment_error,
+    diagnose_and_fix_environment,
+)
 
 # Patch pytest spec to use Python 3.10 (current pytest main requires >=3.10)
 if "pytest-dev/pytest" in MAP_REPO_VERSION_TO_SPECS:
@@ -192,7 +196,7 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
                 shutil.rmtree(cache_dir, ignore_errors=True)
         # Ensure working tree is populated (blob-less clones may have empty worktree)
         if os.path.exists(cache_dir) and not os.path.isdir(os.path.join(cache_dir, "django")):
-            print(f"[CACHE] Working tree appears sparse, forcing checkout")
+            print("[CACHE] Working tree appears sparse, forcing checkout")
             run_cmd("git sparse-checkout reapply", cwd=cache_dir, timeout=30)
             run_cmd(f"git checkout -f {commit}", cwd=cache_dir, timeout=60)
     else:
@@ -235,13 +239,9 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
             print(f"[ERROR] Cache dir {cache_dir} is not a git repo")
             return False
         # Fetch/checkout target commit
-        rc, _, stderr = run_cmd(
-            f"git fetch --depth 1 origin {commit}", cwd=cache_dir, timeout=300
-        )
+        rc, _, stderr = run_cmd(f"git fetch --depth 1 origin {commit}", cwd=cache_dir, timeout=300)
         if rc != 0:
-            rc, _, stderr = run_cmd(
-                f"git fetch origin {commit}", cwd=cache_dir, timeout=300
-            )
+            rc, _, stderr = run_cmd(f"git fetch origin {commit}", cwd=cache_dir, timeout=300)
         rc, _, stderr = run_cmd(f"git checkout {commit}", cwd=cache_dir, timeout=60)
         if rc != 0:
             print(f"[WARN] Failed to checkout {commit}: {stderr}")
@@ -345,13 +345,6 @@ def get_git_diff(cwd: str) -> str:
     return ""
 
 
-import asyncio
-from pilotcode.utils.env_diagnosis import (
-    looks_like_environment_error,
-    diagnose_and_fix_environment,
-)
-
-
 def get_test_targets_from_patch(test_patch: str, repo: str) -> list[str]:
     """Extract test targets from test_patch diff."""
     targets = []
@@ -451,10 +444,10 @@ def run_instance_tests(
                 )
             )
             if fixed:
-                print(f"[TEST ENV] Fix applied, re-running tests...")
+                print("[TEST ENV] Fix applied, re-running tests...")
                 continue
             else:
-                print(f"[TEST ENV] Auto-fix failed.")
+                print("[TEST ENV] Auto-fix failed.")
         break
     return rc, combined
 
@@ -613,7 +606,6 @@ def review_patch_locally(
         # 3e. Check patch size is reasonable (not bloated with unrelated changes)
         # Estimate expected patch size: ~150 chars per planned file + 100 per hunk
         hunks = len(re.findall(r"^@@ ", patch, re.MULTILINE))
-        expected_min = max(50, len(planned_files) * 50)
         expected_max = max(500, len(planned_files) * 300 + hunks * 200)
         if len(patch) > expected_max:
             issues.append(
@@ -700,7 +692,10 @@ def extract_test_expectations(test_patch: str, max_chars: int = 4000) -> str:
             content = line[1:]
             stripped = content.strip()
             # Capture assertion lines and error message expectations
-            if any(k in stripped for k in ("assert", "self.assert", "raise", "Error(", "messages", "expected")):
+            if any(
+                k in stripped
+                for k in ("assert", "self.assert", "raise", "Error(", "messages", "expected")
+            ):
                 expectations.append(content)
                 # Capture continuation lines (indented or part of multi-line structure)
                 j = i + 1
@@ -710,7 +705,9 @@ def extract_test_expectations(test_patch: str, max_chars: int = 4000) -> str:
                         break
                     next_content = next_line[1:]
                     # Continue if next line is more indented or closes a bracket
-                    if next_content.strip() and (len(next_content) - len(next_content.lstrip())) > (len(content) - len(content.lstrip())):
+                    if next_content.strip() and (len(next_content) - len(next_content.lstrip())) > (
+                        len(content) - len(content.lstrip())
+                    ):
                         expectations.append(next_content)
                         j += 1
                     elif next_content.strip() in (")", "]", "}", "),", "],", "},"):
@@ -746,13 +743,28 @@ def extract_test_errors(test_output: str, max_chars: int = 6000) -> str:
 
     for i, line in enumerate(lines):
         # Detect start of traceback / assertion error
-        if any(k in line for k in ("FAIL:", "ERROR:", "Traceback", "AssertionError", "TypeError", "ValueError", "NameError")):
+        if any(
+            k in line
+            for k in (
+                "FAIL:",
+                "ERROR:",
+                "Traceback",
+                "AssertionError",
+                "TypeError",
+                "ValueError",
+                "NameError",
+            )
+        ):
             in_traceback = True
             error_lines.append(line)
             continue
 
         # Detect assertion diff blocks (e.g. "- expected" / "+ actual")
-        if line.strip().startswith("-") or line.strip().startswith("+") or line.strip().startswith("?"):
+        if (
+            line.strip().startswith("-")
+            or line.strip().startswith("+")
+            or line.strip().startswith("?")
+        ):
             in_diff = True
             diff_buffer.append(line)
             continue
@@ -900,7 +912,7 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                         continue
                     else:
                         print(
-                            f"[WARN] Syntax redesign produced empty patch, keeping previous patch."
+                            "[WARN] Syntax redesign produced empty patch, keeping previous patch."
                         )
                         break
                 except subprocess.TimeoutExpired as e:
@@ -910,7 +922,7 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
             # 2) Run tests (skip for astropy — local env always broken)
             if repo == "astropy/astropy":
                 print(
-                    f"[SKIP] Local tests disabled for astropy instances — running static review instead."
+                    "[SKIP] Local tests disabled for astropy instances — running static review instead."
                 )
                 review_ok, review_issues = review_patch_locally(work_dir, patch, plan=plan)
                 if not review_ok:
@@ -937,20 +949,20 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                             continue
                         else:
                             print(
-                                f"[WARN] Review redesign produced empty patch, keeping previous patch."
+                                "[WARN] Review redesign produced empty patch, keeping previous patch."
                             )
                             break
                     except subprocess.TimeoutExpired as e:
                         print(f"[ERROR] Review redesign timed out for {instance_id}: {e}")
                         break
                 else:
-                    print(f"[REVIEW] Patch passed static review — relying on Docker eval.")
+                    print("[REVIEW] Patch passed static review — relying on Docker eval.")
                 break
 
             print(f"[TEST] Running tests for {instance_id} (redesign {redesign})...")
             test_rc, test_output = run_instance_tests(work_dir, instance)
             if test_rc == 0:
-                print(f"[INFO] Tests passed.")
+                print("[INFO] Tests passed.")
                 break
             # Print raw test output so humans can see what failed
             print("[TEST OUTPUT BEGIN]")
@@ -958,7 +970,7 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
             print("[TEST OUTPUT END]")
 
             if looks_like_environment_error(test_output):
-                print(f"[WARN] Test environment issue detected — running static review instead.")
+                print("[WARN] Test environment issue detected — running static review instead.")
                 review_ok, review_issues = review_patch_locally(work_dir, patch, plan=plan)
                 if not review_ok:
                     print(f"[REVIEW {redesign + 1}] Issues found:")
@@ -984,14 +996,14 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                             continue
                         else:
                             print(
-                                f"[WARN] Review redesign produced empty patch, keeping previous patch."
+                                "[WARN] Review redesign produced empty patch, keeping previous patch."
                             )
                             break
                     except subprocess.TimeoutExpired as e:
                         print(f"[ERROR] Review redesign timed out for {instance_id}: {e}")
                         break
                 else:
-                    print(f"[REVIEW] Patch passed static review — relying on Docker eval.")
+                    print("[REVIEW] Patch passed static review — relying on Docker eval.")
                 break
 
             print(f"[REDESIGN {redesign + 1}] Tests failed. Feeding errors back to LLM...")
@@ -1002,7 +1014,9 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                 problem_statement=problem_statement,
             )
             # Reset repo to clean state before redesign
-            checkout_rc, checkout_out, checkout_err = run_cmd(f"git checkout {base_commit}", cwd=work_dir)
+            checkout_rc, checkout_out, checkout_err = run_cmd(
+                f"git checkout {base_commit}", cwd=work_dir
+            )
             if checkout_rc != 0:
                 print(f"[WARN] git checkout failed: {checkout_err or checkout_out}")
             run_cmd("git reset --hard", cwd=work_dir)
@@ -1017,7 +1031,7 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                     patch = new_patch
                     print(f"[INFO] Redesign generated new patch ({len(patch)} chars)")
                 else:
-                    print(f"[WARN] Redesign produced empty patch, keeping previous patch.")
+                    print("[WARN] Redesign produced empty patch, keeping previous patch.")
                     break
             except subprocess.TimeoutExpired as e:
                 print(f"[ERROR] Redesign timed out for {instance_id}: {e}")
@@ -1160,11 +1174,16 @@ def main():
             print(f"[ERROR] Instance {inst_id} failed: {e}")
             # Write a failed prediction so evaluation knows it was attempted
             with open(output_path, "a") as f:
-                f.write(json.dumps({
-                    "instance_id": inst_id,
-                    "model_name_or_path": args.model_name,
-                    "model_patch": "",
-                }) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "instance_id": inst_id,
+                            "model_name_or_path": args.model_name,
+                            "model_patch": "",
+                        }
+                    )
+                    + "\n"
+                )
             processed += 1
 
     print(f"\n[INFO] Appended {processed} predictions to {output_path}")
