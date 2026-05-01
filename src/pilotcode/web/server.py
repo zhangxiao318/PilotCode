@@ -262,7 +262,7 @@ class WebSocketManager:
         """Create a new Session context with its own QueryEngine and Store."""
         from dataclasses import replace
         from pilotcode.query_engine import QueryEngine, QueryEngineConfig
-        from pilotcode.tools.registry import get_all_tools
+        from pilotcode.tools.registry import get_core_tools
         from pilotcode.state.app_state import get_default_app_state
         from pilotcode.state.store import Store
         from pilotcode.utils.config import get_global_config
@@ -270,7 +270,7 @@ class WebSocketManager:
         session_cwd = str(cwd or self.cwd)
         store = Store(get_default_app_state())
         store.set_state(lambda s: replace(s, cwd=session_cwd))
-        tools = get_all_tools()
+        tools = get_core_tools(session_cwd)
         global_cfg = get_global_config()
 
         def _on_notify(event_type: str, payload: dict) -> None:

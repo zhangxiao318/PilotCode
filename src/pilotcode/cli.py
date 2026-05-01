@@ -633,6 +633,7 @@ def main(
                 raise typer.Exit(code=1)
 
     if prompt is not None:
+
         async def _run_headless():
             if planning:
                 mode = await classify_task_complexity(prompt, cwd=cwd)

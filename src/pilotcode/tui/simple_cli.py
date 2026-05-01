@@ -73,7 +73,7 @@ class SimpleCLI:
         # Initialize query engine
         try:
             from pilotcode.query_engine import QueryEngineConfig
-            from pilotcode.tools.registry import get_all_tools
+            from pilotcode.tools.registry import get_core_tools
             from pilotcode.permissions import get_tool_executor
             from pilotcode.permissions.permission_manager import (
                 ToolPermission,
@@ -104,7 +104,7 @@ class SimpleCLI:
                     else:
                         print(f"\n🔄 Auto-compacted context (~{saved} tokens saved)")
 
-            tools = get_all_tools()
+            tools = get_core_tools(self._cwd)
             global_cfg = get_global_config()
             config = QueryEngineConfig(
                 cwd=self._cwd,

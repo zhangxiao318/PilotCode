@@ -19,7 +19,7 @@ from rich.status import Status
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
-from ..tools.registry import get_all_tools
+from ..tools.registry import get_core_tools
 from ..tools.base import ToolUseContext
 from ..tools.file_edit_tool import set_allowed_files, clear_allowed_files
 from ..commands.base import process_user_input, CommandContext
@@ -75,7 +75,7 @@ class REPL:
         )
 
         # Enable tools (filter out write tools in read-only mode)
-        tools = get_all_tools()
+        tools = get_core_tools(self._cwd)
         if read_only:
             tools = [t for t in tools if t.name not in self.WRITE_TOOLS]
 
@@ -1172,7 +1172,7 @@ async def run_headless(
         "CronDelete",
         "CronUpdate",
     }
-    tools = get_all_tools()
+    tools = get_core_tools(os.getcwd())
     if read_only:
         tools = [t for t in tools if t.name not in write_tools]
     global_cfg = get_global_config()

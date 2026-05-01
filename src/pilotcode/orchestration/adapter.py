@@ -16,7 +16,7 @@ from typing import Any, Callable
 from pilotcode.utils.model_client import get_model_client, Message, ModelClient
 from pilotcode.utils.model_router import ModelRouter, ModelTier
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
-from pilotcode.tools.registry import get_all_tools
+from pilotcode.tools.registry import get_core_tools
 from pilotcode.state.app_state import get_default_app_state
 from pilotcode.state.store import Store
 from pilotcode.tools.base import ToolUseContext
@@ -674,7 +674,7 @@ class MissionAdapter:
             "ExitPlanMode",
             "UpdatePlanStep",
         }
-        autonomous_tools = [t for t in get_all_tools() if t.name not in excluded_tools]
+        autonomous_tools = [t for t in get_core_tools(self._cwd) if t.name not in excluded_tools]
 
         # Select model client based on task complexity / worker type
         model_client = self._select_model_client(task)

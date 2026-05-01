@@ -15,7 +15,7 @@ from pilotcode.types.message import (
     SystemMessage,
 )
 from pilotcode.services.fileedit_compensation import FileEditCompensationTracker
-from pilotcode.tools.registry import get_all_tools
+from pilotcode.tools.registry import get_core_tools
 from pilotcode.tools.base import ToolUseContext
 
 try:
@@ -242,7 +242,7 @@ class TUIController:
         def _on_notify(event_type: str, payload: dict) -> None:
             self._pending_notifications.append((event_type, payload))
 
-        tools = get_all_tools()
+        tools = get_core_tools(self.session_options.get("cwd", str(Path.cwd())))
         from pilotcode.utils.config import get_global_config
 
         global_cfg = get_global_config()

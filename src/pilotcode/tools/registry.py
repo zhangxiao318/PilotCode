@@ -1,11 +1,111 @@
 """Tool registry for managing tools."""
 
+import os
+import sys
 from typing import TYPE_CHECKING
 from .base import Tool, Tools
 from ..types.permissions import ToolPermissionContext
 
 if TYPE_CHECKING:
     pass
+
+
+# Core tools always sent to the LLM (minimal set for maximum utility)
+_CORE_TOOL_NAMES: set[str] = {
+    "Bash",
+    "FileRead",
+    "FileEdit",
+    "FileWrite",
+    "ApplyPatch",
+    "Glob",
+    "Grep",
+    "AskUser",
+}
+
+# Contextually-loaded tool groups
+_CONTEXT_TOOL_GROUPS: dict[str, set[str]] = {
+    "git": {"GitStatus", "GitDiff", "GitLog", "GitBranch"},
+    "notebook": {"NotebookEdit"},
+    "web": {"WebSearch", "WebFetch"},
+    "cron": {"CronCreate", "CronDelete", "CronList", "CronUpdate"},
+    "task": {"TaskCreate", "TaskGet", "TaskList", "TaskStop", "TaskUpdate", "TaskOutput"},
+    "config": {"Config"},
+    "agent": {"Agent"},
+    "plan": {"EnterPlanMode", "ExitPlanMode", "UpdatePlanStep"},
+    "mcp": {"ListMcpResources", "ReadMcpResource", "MCP"},
+    "worktree": {"EnterWorktree", "ExitWorktree", "ListWorktrees"},
+    "message": {"SendMessage", "ReceiveMessage"},
+    "lsp": {"LSP"},
+    "code_index": {"CodeIndex", "CodeSearch", "CodeContext"},
+    "repl": {"REPL"},
+    "skill": {"Skill"},
+    "sleep": {"Sleep"},
+    "todo": {"TodoWrite"},
+    "tool_search": {"ToolSearch"},
+    "brief": {"Brief"},
+    "smart_edit": {"SmartEditPlanner"},
+    "synthetic": {"SyntheticOutput"},
+    "remote": {"RemoteTrigger"},
+    "browser": {"WebBrowser"},
+    "ripgrep": {"Ripgrep"},
+    "powershell": {"PowerShell"},
+}
+
+
+def _detect_context_groups(cwd: str) -> set[str]:
+    """Detect which contextual tool groups are relevant for the current workspace."""
+    groups: set[str] = set()
+    cwd = os.path.abspath(cwd or ".")
+
+    # Git repository
+    if os.path.isdir(os.path.join(cwd, ".git")):
+        groups.add("git")
+
+    # Node.js / web project
+    if os.path.exists(os.path.join(cwd, "package.json")):
+        groups.add("web")
+
+    # Jupyter notebooks
+    for root, _dirs, files in os.walk(cwd):
+        if any(f.endswith(".ipynb") for f in files):
+            groups.add("notebook")
+            break
+        # Limit walk depth to avoid scanning huge trees
+        if root.count(os.sep) - cwd.count(os.sep) >= 2:
+            break
+
+    # Python project (LSP, REPL useful)
+    if os.path.exists(os.path.join(cwd, "pyproject.toml")) or os.path.exists(
+        os.path.join(cwd, "setup.py")
+    ):
+        groups.add("lsp")
+        groups.add("repl")
+
+    # Large codebase (code indexing useful)
+    if sum(1 for _ in os.scandir(cwd) if _.is_dir()) >= 3:
+        groups.add("code_index")
+
+    # Always load some convenience tools
+    groups.update({"todo", "config", "task", "sleep", "skill", "brief", "tool_search"})
+
+    # Plan mode always available
+    groups.add("plan")
+
+    # MCP if configured (check for mcp_servers in config)
+    try:
+        from pilotcode.utils.config import get_global_config
+
+        cfg = get_global_config()
+        if getattr(cfg, "mcp_servers", None):
+            groups.add("mcp")
+    except Exception:
+        pass
+
+    # PowerShell only on Windows
+    if sys.platform == "win32":
+        groups.add("powershell")
+
+    return groups
 
 
 class ToolRegistry:
@@ -44,6 +144,37 @@ class ToolRegistry:
         # TODO: Implement permission-based filtering
         return self.get_all()
 
+    def get_core_tools(self, cwd: str = ".") -> Tools:
+        """Return core + contextually-relevant tools for the given directory.
+
+        Instead of sending all 50+ tools on every turn, we send ~12 core tools
+        plus groups that are actually useful for the current workspace (e.g. Git
+        tools only when inside a git repo, NotebookEdit only when .ipynb files
+        exist, etc.).
+        """
+        all_tools = self.get_all()
+        name_map = {t.name: t for t in all_tools}
+
+        # Start with core tools
+        selected_names = set(_CORE_TOOL_NAMES)
+
+        # Add contextually-relevant groups
+        context_groups = _detect_context_groups(cwd)
+        for group in context_groups:
+            selected_names.update(_CONTEXT_TOOL_GROUPS.get(group, set()))
+
+        # Build ordered list: core first, then extras
+        result: Tools = []
+        for name in _CORE_TOOL_NAMES:
+            if name in name_map:
+                result.append(name_map[name])
+        for group in context_groups:
+            for name in _CONTEXT_TOOL_GROUPS.get(group, set()):
+                if name in name_map and name not in _CORE_TOOL_NAMES:
+                    result.append(name_map[name])
+
+        return result
+
 
 # Global registry instance
 _global_registry: ToolRegistry | None = None
@@ -74,14 +205,33 @@ def get_tool_by_name(name: str) -> Tool | None:
     return get_tool_registry().get(name)
 
 
+def get_core_tools(cwd: str = ".") -> Tools:
+    """Get core + contextually-relevant tools for the given directory."""
+    return get_tool_registry().get_core_tools(cwd)
+
+
 def assemble_tool_pool(
-    permission_context: ToolPermissionContext, mcp_tools: Tools | None = None
+    permission_context: ToolPermissionContext,
+    mcp_tools: Tools | None = None,
+    cwd: str = ".",
+    use_core_only: bool = True,
 ) -> Tools:
-    """Assemble tool pool from built-in and MCP tools."""
+    """Assemble tool pool from built-in and MCP tools.
+
+    Args:
+        permission_context: Permission context for filtering.
+        mcp_tools: Optional list of MCP tools.
+        cwd: Current working directory for context detection.
+        use_core_only: If True, only send core + context tools (~15-25)
+            instead of all registered tools (~50+).
+    """
     registry = get_tool_registry()
 
-    # Get built-in tools
-    built_in_tools = registry.filter_by_permission(permission_context)
+    # Get built-in tools (core or all)
+    if use_core_only:
+        built_in_tools = registry.get_core_tools(cwd)
+    else:
+        built_in_tools = registry.filter_by_permission(permission_context)
 
     # Get MCP tools
     mcp_tools = mcp_tools or []

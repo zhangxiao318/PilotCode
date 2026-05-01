@@ -539,57 +539,8 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         return cleaned.strip()
 
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
-        """Convert tools to API format."""
-        result = []
-
-        # Static descriptions for built-in tools
-        static_descriptions = {
-            "Bash": "Execute bash commands in the working directory. Use for running code, tests, git commands, etc.",
-            "FileRead": "Read the contents of a file. ALWAYS use this to read files before analyzing or modifying them.",
-            "FileWrite": "Create a new file with the specified content. Will fail if file already exists (read first).",
-            "FileEdit": "Edit an existing file by replacing specific content. Use for precise changes.",
-            "Glob": "Find files matching a pattern (e.g., '*.py', 'src/**/*.js'). After finding files, you MUST read them with FileRead.",
-            "Grep": "Search for text patterns in files across the codebase. Useful for finding specific code.",
-            "AskUser": "Ask the user a question when you need clarification or additional information.",
-            "TodoWrite": "Manage a todo list. Use to track tasks and progress.",
-            "WebSearch": "Search the web for documentation, examples, or current information.",
-            "WebFetch": "Fetch the content of a specific webpage.",
-            "Agent": "Spawn a sub-agent to handle a specific task independently.",
-            "TaskCreate": "Create a background task for long-running operations.",
-            "TaskList": "List all background tasks and their status.",
-            "TaskGet": "Get details about a specific background task.",
-            "TaskStop": "Stop a running background task.",
-            "TaskUpdate": "Update task progress or status.",
-            "Config": "Read or write configuration settings.",
-            "LSP": "Use Language Server Protocol for code intelligence (go to definition, find references, etc.)",
-            "CodeIndex": "Index the codebase for intelligent search. Run this first when working with a new repository.",
-            "CodeSearch": "Search code using semantic (natural language), symbol, or regex search.",
-            "CodeContext": "Build code context for a query using RAG. Use this to understand large codebases.",
-            "NotebookEdit": "Edit Jupyter notebook files (.ipynb).",
-            "PowerShell": "Execute PowerShell commands (cross-platform support).",
-        }
-
-        for tool in tools:
-            # Use static description if available, otherwise try to get from tool
-            if tool.name in static_descriptions:
-                description = static_descriptions[tool.name]
-            elif isinstance(tool.description, str):
-                description = tool.description
-            else:
-                # Fallback for callable descriptions
-                description = f"{tool.name} tool for file operations and code assistance"
-
-            tool_def = {
-                "name": tool.name,
-                "description": description,
-                "input_schema": (
-                    tool.input_schema.model_json_schema()
-                    if hasattr(tool.input_schema, "model_json_schema")
-                    else {"type": "object"}
-                ),
-            }
-            result.append(tool_def)
-        return result
+        """Convert tools to slim OpenAI function-calling schema."""
+        return [tool.to_openai_schema() for tool in tools]
 
     def _convert_to_api_messages(self, messages: list[MessageType]) -> list[dict[str, Any]]:
         """Convert internal messages to API format.

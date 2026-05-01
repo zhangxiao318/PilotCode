@@ -254,7 +254,9 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
     # Heuristic: detect likely backend type from URL to avoid spamming
     # unrelated endpoints that pollute server logs.
     url_lower = base_url.lower()
-    looks_like_ollama = "ollama" in url_lower or base_url.endswith(":11434") or base_url.endswith(":11434/v1")
+    looks_like_ollama = (
+        "ollama" in url_lower or base_url.endswith(":11434") or base_url.endswith(":11434/v1")
+    )
 
     # ------------------------------------------------------------------
     # 1. OpenAI-compatible -> GET /v1/models (most universal)

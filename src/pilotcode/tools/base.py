@@ -134,6 +134,7 @@ class Tool:
         render_tool_result_message: Callable[[Any, list[Any], dict[str, Any]], str] | None = None,
         render_tool_use_progress: Callable[[list[Any], dict[str, Any]], str] | None = None,
         render_tool_use_rejected: Callable[[Any, dict[str, Any]], str] | None = None,
+        _slim_schema: bool = True,
     ):
         self.name = name
         self.description = description
@@ -158,6 +159,115 @@ class Tool:
         self.render_tool_result_message = render_tool_result_message
         self.render_tool_use_progress = render_tool_use_progress
         self.render_tool_use_rejected = render_tool_use_rejected
+
+    def to_openai_schema(self) -> dict[str, Any]:
+        """Convert tool to slim OpenAI function-calling schema.
+
+        Strips Pydantic JSON Schema bloat ($defs, title, long descriptions,
+        redundant anyOf wrappers) to minimize token usage.
+        """
+        raw = (
+            self.input_schema.model_json_schema()
+            if hasattr(self.input_schema, "model_json_schema")
+            else {"type": "object"}
+        )
+        slim_params = _slim_json_schema(raw)
+        desc = self.description
+        if callable(desc):
+            desc = f"{self.name} tool"
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": desc,
+                "parameters": slim_params,
+            },
+        }
+
+
+def _slim_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Strip bloat from Pydantic JSON Schema.
+
+    Keeps only: type, properties (name+type+description+enum),
+    required, additionalProperties.
+    """
+    if not isinstance(schema, dict):
+        return schema
+
+    slim: dict[str, Any] = {}
+
+    # Preserve structural keys
+    for key in ("type", "required", "additionalProperties", "enum"):
+        if key in schema:
+            slim[key] = schema[key]
+
+    # Recurse into properties
+    if "properties" in schema:
+        slim["properties"] = {}
+        for prop_name, prop_schema in schema["properties"].items():
+            slim_prop: dict[str, Any] = {}
+            if isinstance(prop_schema, dict):
+                # Keep type (or infer from anyOf)
+                if "type" in prop_schema:
+                    slim_prop["type"] = prop_schema["type"]
+                elif "anyOf" in prop_schema:
+                    # Collapse anyOf [string, null] -> type string + nullable feel
+                    types = [
+                        item.get("type")
+                        for item in prop_schema["anyOf"]
+                        if isinstance(item, dict) and "type" in item
+                    ]
+                    if "null" in types:
+                        types.remove("null")
+                    if types:
+                        slim_prop["type"] = types[0]
+                    # Keep enum if present
+                    if "enum" in prop_schema:
+                        slim_prop["enum"] = prop_schema["enum"]
+                # Keep description (trimmed)
+                if "description" in prop_schema:
+                    d = prop_schema["description"]
+                    if isinstance(d, str):
+                        # Truncate very long descriptions to first sentence
+                        first_sentence = d.split(".")[0] + "." if "." in d else d[:80]
+                        slim_prop["description"] = first_sentence[:120]
+                # Keep enum
+                if "enum" in prop_schema:
+                    slim_prop["enum"] = prop_schema["enum"]
+                # Keep default for high-signal params (action, limit, max_results)
+                if "default" in prop_schema and prop_name in (
+                    "action",
+                    "limit",
+                    "max_results",
+                    "max_count",
+                    "timeout",
+                    "max_tokens",
+                    "context_lines",
+                    "head_limit",
+                    "offset",
+                ):
+                    slim_prop["default"] = prop_schema["default"]
+                # Recurse into nested objects (shallow only)
+                if prop_schema.get("type") == "object" and "properties" in prop_schema:
+                    slim_prop["properties"] = {
+                        k: {
+                            "type": v.get("type", "string"),
+                            "description": v.get("description", "")[:60],
+                        }
+                        for k, v in prop_schema["properties"].items()
+                        if isinstance(v, dict)
+                    }
+                if prop_schema.get("type") == "array" and "items" in prop_schema:
+                    items = prop_schema["items"]
+                    if isinstance(items, dict):
+                        slim_prop["items"] = {"type": items.get("type", "string")}
+            slim["properties"][prop_name] = slim_prop
+
+    # Drop empty objects
+    if not slim.get("properties") and "type" not in slim:
+        slim["type"] = "object"
+
+    return slim
 
 
 def build_tool(
