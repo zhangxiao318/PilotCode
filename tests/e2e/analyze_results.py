@@ -35,9 +35,9 @@ def print_single_report(data: dict):
     print("| Task | Compile | Run | Output | Elapsed | Lines | Files |")
     print("|------|---------|-----|--------|---------|-------|-------|")
     for r in results:
-        c = "✅" if r.get("compile_ok") else "❌"
-        ru = "✅" if r.get("run_ok") else "❌"
-        o = "✅" if r.get("output_check") else "❌"
+        c = "PASS" if r.get("compile_ok") else "FAIL"
+        ru = "PASS" if r.get("run_ok") else "FAIL"
+        o = "PASS" if r.get("output_check") else "FAIL"
         tid = r.get("task_id", "?")
         elapsed = r.get("elapsed", 0)
         lines = r.get("total_lines", 0)
@@ -72,6 +72,8 @@ def print_single_report(data: dict):
         print("## Failed Tasks Detail\n")
         for r in failed:
             print(f"### {r['task_id']}")
+            if r.get("error"):
+                print(f"**Error:** `{r['error']}`")
             if not r.get("compile_ok"):
                 print(f"**Compile Error:**")
                 print(f"```\n{r.get('compile_output', 'N/A')[:500]}\n```")
@@ -103,10 +105,10 @@ def print_comparison(data_cli: dict, data_ws: dict):
     for tid in all_tasks:
         cr = cli_results.get(tid, {})
         wr = ws_results.get(tid, {})
-        cc = "✅" if cr.get("compile_ok") else "❌" if cr else "N/A"
-        rc = "✅" if cr.get("run_ok") else "❌" if cr else "N/A"
-        wc = "✅" if wr.get("compile_ok") else "❌" if wr else "N/A"
-        wru = "✅" if wr.get("run_ok") else "❌" if wr else "N/A"
+        cc = "PASS" if cr.get("compile_ok") else "FAIL" if cr else "N/A"
+        rc = "PASS" if cr.get("run_ok") else "FAIL" if cr else "N/A"
+        wc = "PASS" if wr.get("compile_ok") else "FAIL" if wr else "N/A"
+        wru = "PASS" if wr.get("run_ok") else "FAIL" if wr else "N/A"
         ct = cr.get("elapsed", 0)
         cl = cr.get("total_lines", 0)
         wt = wr.get("elapsed", 0)

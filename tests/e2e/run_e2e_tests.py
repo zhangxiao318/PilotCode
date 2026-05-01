@@ -124,6 +124,17 @@ def _compile_and_run(task_dir: Path, task: TaskDef, files_found: list[dict]) -> 
             )
             compile_ok = cproc.returncode == 0
             compile_output = ((cproc.stdout or "") + (cproc.stderr or ""))[:500]
+            # Makefiles often bundle compile + run in the 'all' target.
+            # On Windows, ./target fails even though compilation succeeded.
+            # If an executable was produced, treat it as a successful compile.
+            if not compile_ok:
+                for f in task_dir.iterdir():
+                    if _is_executable_file(f):
+                        compile_ok = True
+                        compile_output += "\n[make exit non-zero, but executable was produced — treating as compile success]"
+                        break
+        except subprocess.TimeoutExpired:
+            compile_output = "[TIMEOUT] make exceeded 120s limit"
         except Exception as e:
             compile_output = str(e)[:500]
     elif any(ff["path"].endswith(".c") for ff in files_found):
@@ -135,6 +146,8 @@ def _compile_and_run(task_dir: Path, task: TaskDef, files_found: list[dict]) -> 
             )
             compile_ok = cproc.returncode == 0
             compile_output = ((cproc.stdout or "") + (cproc.stderr or ""))[:500]
+        except subprocess.TimeoutExpired:
+            compile_output = "[TIMEOUT] gcc exceeded 120s limit"
         except Exception as e:
             compile_output = str(e)[:500]
 
@@ -171,10 +184,31 @@ def _compile_and_run(task_dir: Path, task: TaskDef, files_found: list[dict]) -> 
                 )
                 run_ok = rproc.returncode == 0
                 run_output = ((rproc.stdout or "") + (rproc.stderr or ""))[:1000]
+            except subprocess.TimeoutExpired:
+                run_output = "[TIMEOUT] program execution exceeded 30s limit"
             except Exception as e:
                 run_output = str(e)[:500]
 
     return compile_ok, compile_output, run_ok, run_output
+
+
+def _collect_files(task_dir: Path, log_file: Path) -> list[dict]:
+    """Collect generated files from task_dir, excluding the log file."""
+    files_found: list[dict] = []
+    if not task_dir.exists():
+        return files_found
+    for f in sorted(task_dir.rglob("*")):
+        if f.is_file() and f.name != log_file.name:
+            try:
+                text = f.read_text(encoding="utf-8", errors="replace")
+                files_found.append({
+                    "path": str(f.relative_to(task_dir)),
+                    "size": f.stat().st_size,
+                    "lines": len(text.splitlines()),
+                })
+            except Exception:
+                pass
+    return files_found
 
 
 # ---------------------------------------------------------------------------
@@ -186,9 +220,15 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
     task_dir.mkdir(parents=True, exist_ok=True)
     for f in task_dir.iterdir():
         if f.is_file():
-            f.unlink()
+            try:
+                f.unlink()
+            except Exception:
+                pass
         elif f.is_dir():
-            shutil.rmtree(f)
+            try:
+                shutil.rmtree(f)
+            except Exception:
+                pass
 
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
@@ -197,39 +237,51 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
     env["PYTHONUTF8"] = "1"
 
     start = time.time()
-    proc = subprocess.run(
-        [
-            sys.executable, "-m", "pilotcode",
-            "--simple", "--auto-allow", "--no-planning",
-            "--prompt", task.prompt + "\n\n请使用中文输出所有测试结果和日志信息。",
-            "--cwd", str(task_dir),
-            "--max-iterations", "15",
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        cwd=str(task_dir),
-        timeout=timeout,
-    )
+    proc_stdout = ""
+    proc_stderr = ""
+    error_msg = ""
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable, "-m", "pilotcode",
+                "--simple", "--auto-allow", "--no-planning",
+                "--prompt", task.prompt + "\n\n请使用中文输出所有测试结果和日志信息。",
+                "--cwd", str(task_dir),
+                "--max-iterations", "15",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            cwd=str(task_dir),
+            timeout=timeout,
+        )
+        proc_stdout = proc.stdout
+        proc_stderr = proc.stderr
+    except subprocess.TimeoutExpired as exc:
+        # Defensive: on some Python versions/platforms stdout/stderr may be bytes
+        _out = exc.stdout
+        _err = exc.stderr
+        if isinstance(_out, bytes):
+            _out = _out.decode("utf-8", errors="replace")
+        if isinstance(_err, bytes):
+            _err = _err.decode("utf-8", errors="replace")
+        proc_stdout = _out or ""
+        proc_stderr = (_err or "") + f"\n[TIMEOUT] Task exceeded {timeout}s limit and was terminated."
+        error_msg = f"Task exceeded {timeout}s limit and was terminated."
+
     elapsed = time.time() - start
 
-    log_file.write_text(
-        f"=== STDOUT ===\n{proc.stdout}\n\n=== STDERR ===\n{proc.stderr}\n",
-        encoding="utf-8",
-    )
+    try:
+        log_file.write_text(
+            f"=== STDOUT ===\n{proc_stdout}\n\n=== STDERR ===\n{proc_stderr}\n",
+            encoding="utf-8",
+        )
+    except Exception as log_exc:
+        proc_stderr += f"\n[LOG WRITE ERROR] {log_exc}"
 
-    # Collect files
-    files_found = []
-    for f in sorted(task_dir.rglob("*")):
-        if f.is_file() and f.name != log_file.name:
-            text = f.read_text(encoding="utf-8", errors="replace")
-            files_found.append({
-                "path": str(f.relative_to(task_dir)),
-                "size": f.stat().st_size,
-                "lines": len(text.splitlines()),
-            })
+    files_found = _collect_files(task_dir, log_file)
 
     # Check expected files
     expected_found = all(
@@ -266,6 +318,7 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
         run_ok=run_ok,
         run_output=run_output,
         output_check=output_check,
+        error=error_msg,
     )
 
 
@@ -283,12 +336,19 @@ async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, time
     task_dir.mkdir(parents=True, exist_ok=True)
     for f in task_dir.iterdir():
         if f.is_file():
-            f.unlink()
+            try:
+                f.unlink()
+            except Exception:
+                pass
         elif f.is_dir():
-            shutil.rmtree(f)
+            try:
+                shutil.rmtree(f)
+            except Exception:
+                pass
 
     ws = None
     start = time.time()
+    error_msg = ""
     try:
         ws = await websockets.connect(WS_URL)
         # server_info
@@ -323,7 +383,10 @@ async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, time
                     "request_id": msg["request_id"],
                     "response": "continue",
                 }))
+    except asyncio.TimeoutError:
+        error_msg = f"Task exceeded {timeout}s limit and was terminated."
     except Exception as e:
+        error_msg = f"{type(e).__name__}: {e}"
         traceback.print_exc()
     finally:
         if ws:
@@ -332,15 +395,7 @@ async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, time
     elapsed = time.time() - start
 
     # Same validation as CLI
-    files_found = []
-    for f in sorted(task_dir.rglob("*")):
-        if f.is_file():
-            text = f.read_text(encoding="utf-8", errors="replace")
-            files_found.append({
-                "path": str(f.relative_to(task_dir)),
-                "size": f.stat().st_size,
-                "lines": len(text.splitlines()),
-            })
+    files_found = _collect_files(task_dir, log_file)
 
     compile_ok, compile_output, run_ok, run_output = _compile_and_run(task_dir, task, files_found)
 
@@ -371,6 +426,7 @@ async def run_task_websocket(task: TaskDef, task_dir: Path, log_file: Path, time
         run_ok=run_ok,
         run_output=run_output,
         output_check=output_check,
+        error=error_msg,
     )
 
 
@@ -425,25 +481,78 @@ def run_all(tasks: list[TaskDef], mode: str, timeout: int = 360) -> list[TaskRes
                 result = run_task_cli(task, task_dir, log_file, timeout=timeout)
             else:
                 result = asyncio.run(run_task_websocket(task, task_dir, log_file, timeout=timeout))
-        except Exception as e:
-            print(f"  [CRASH] {e}")
-            traceback.print_exc()
+        except subprocess.TimeoutExpired as e:
+            elapsed = time.time() - task_start
+            print(f"  [TIMEOUT] Task exceeded {timeout}s limit (elapsed: {elapsed:.1f}s)")
+            files_found = _collect_files(task_dir, log_file)
+            # Persist whatever output we have
+            try:
+                _out = e.stdout if isinstance(e.stdout, str) else (e.stdout.decode("utf-8", errors="replace") if e.stdout else "")
+                _err = e.stderr if isinstance(e.stderr, str) else (e.stderr.decode("utf-8", errors="replace") if e.stderr else "")
+                log_file.write_text(
+                    f"=== STDOUT ===\n{_out}\n\n=== STDERR ===\n{_err}\n[TIMEOUT] Task exceeded {timeout}s limit.\n",
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
             result = TaskResult(
                 task_id=task.task_id,
                 category=task.category,
                 mode=mode,
-                elapsed=0,
+                elapsed=round(elapsed, 1),
                 start_time=start_str,
                 end_time=time.strftime("%H:%M:%S"),
-                files_generated=0,
-                total_lines=0,
-                files_found=[],
+                files_generated=len(files_found),
+                total_lines=sum(f["lines"] for f in files_found),
+                files_found=files_found,
                 compile_ok=False,
                 compile_output="",
                 run_ok=False,
                 run_output="",
                 output_check=False,
-                error=str(e),
+                error=f"Task timed out after {timeout}s",
+            )
+        except Exception as e:
+            elapsed = time.time() - task_start
+            exc_type = type(e).__name__
+            # Gracefully handle TimeoutExpired even if it leaks from inner try/except
+            if isinstance(e, subprocess.TimeoutExpired):
+                print(f"  [TIMEOUT] Task exceeded {timeout}s limit (elapsed: {elapsed:.1f}s)")
+                error_msg = f"Task timed out after {timeout}s"
+            else:
+                print(f"  [CRASH] {exc_type}: {e} (elapsed: {elapsed:.1f}s)")
+                traceback.print_exc()
+                error_msg = f"{exc_type}: {e}"
+            files_found = _collect_files(task_dir, log_file)
+            try:
+                if isinstance(e, subprocess.TimeoutExpired):
+                    _out = e.stdout if isinstance(e.stdout, str) else (e.stdout.decode("utf-8", errors="replace") if e.stdout else "")
+                    _err = e.stderr if isinstance(e.stderr, str) else (e.stderr.decode("utf-8", errors="replace") if e.stderr else "")
+                    log_file.write_text(
+                        f"=== STDOUT ===\n{_out}\n\n=== STDERR ===\n{_err}\n[TIMEOUT] Task exceeded {timeout}s limit.\n",
+                        encoding="utf-8",
+                    )
+                else:
+                    tb_str = traceback.format_exc()
+                    log_file.write_text(f"[CRASH] {exc_type}: {e}\n\n{tb_str}\n", encoding="utf-8")
+            except Exception:
+                pass
+            result = TaskResult(
+                task_id=task.task_id,
+                category=task.category,
+                mode=mode,
+                elapsed=round(elapsed, 1),
+                start_time=start_str,
+                end_time=time.strftime("%H:%M:%S"),
+                files_generated=len(files_found),
+                total_lines=sum(f["lines"] for f in files_found),
+                files_found=files_found,
+                compile_ok=False,
+                compile_output="",
+                run_ok=False,
+                run_output="",
+                output_check=False,
+                error=error_msg,
             )
 
         print(f"  Elapsed: {result.elapsed:.1f}s  Files: {result.files_generated} ({result.total_lines} lines)")
@@ -495,7 +604,8 @@ def print_summary(results: list[TaskResult]):
         c = "OK" if r.compile_ok else "FAIL"
         ru = "OK" if r.run_ok else "FAIL"
         o = "OK" if r.output_check else "FAIL"
-        print(f"  {r.task_id:40s} C:{c:5s} R:{ru:5s} O:{o:5s} {r.elapsed:6.1f}s  {r.total_lines:5d}L")
+        err_info = f" [{r.error}]" if r.error else ""
+        print(f"  {r.task_id:40s} C:{c:5s} R:{ru:5s} O:{o:5s} {r.elapsed:6.1f}s  {r.total_lines:5d}L{err_info}")
 
 
 def main():
