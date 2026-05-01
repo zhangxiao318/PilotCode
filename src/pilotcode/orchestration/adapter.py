@@ -47,7 +47,7 @@ from .project_memory import ProjectMemory
 from ..model_capability import (
     load_capability_or_default,
     AdaptiveConfigMapper,
-    RuntimeCalibrator,
+    RuntimeTracker,
     VerifierStrategy,
 )
 
@@ -106,7 +106,7 @@ class MissionAdapter:
             )
 
         self.adaptive_config = AdaptiveConfigMapper.from_capability(self.capability)
-        self.calibrator = RuntimeCalibrator(self.capability)
+        self.calibrator = RuntimeTracker()
 
         # Compensation engine for dimension-specific weak-model compensation
         from .adaptive_edit import CompensationEngine
@@ -1270,7 +1270,7 @@ class MissionAdapter:
     def _calibrate_from_mission_result(self, mission_id: str) -> None:
         """Analyze mission execution results and update capability scores."""
         from .results import ExecutionResult
-        from ..model_capability.runtime_calibrator import TaskOutcome
+        from ..model_capability.runtime_tracker import TaskOutcome
 
         dag = self._orchestrator.tracker.get_dag(mission_id)
         if not dag:
@@ -1313,10 +1313,11 @@ class MissionAdapter:
         import logging
 
         logger = logging.getLogger(__name__)
-        cap = self.calibrator.get_calibrated_capability()
+        stats = self.calibrator.get_stats()
         logger.info(
-            "Runtime calibration updated: overall=%.2f -> %.2f (success_rate=%.1f%%)",
-            self.capability.overall_score,
-            cap.overall_score,
+            "Runtime tracking: success_rate=%.1f%% json=%.1f%% code=%.1f%% planning=%.1f%%",
             self.calibrator.get_success_rate() * 100,
+            stats.get_rate("json") * 100,
+            stats.get_rate("code") * 100,
+            stats.get_rate("planning") * 100,
         )

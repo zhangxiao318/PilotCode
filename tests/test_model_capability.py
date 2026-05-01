@@ -17,17 +17,18 @@ from pilotcode.model_capability.schema import (
     VerifierStrategy,
 )
 from pilotcode.model_capability.evaluator import evaluate_capability
-from pilotcode.model_capability.benchmark import BenchmarkResult
+from pilotcode.model_capability.base import BenchmarkResult
 from pilotcode.model_capability.adaptive_config import (
     AdaptiveConfigMapper,
     AdaptiveOrchestratorConfig,
 )
-from pilotcode.model_capability.runtime_calibrator import (
-    RuntimeCalibrator,
+from pilotcode.model_capability.runtime_tracker import (
+    RuntimeTracker,
     TaskOutcome,
     classify_failure,
     classify_planning_failure,
 )
+from pilotcode.model_capability.schema import RuntimeStats
 
 
 class TestModelCapabilitySchema:
@@ -155,31 +156,30 @@ class TestAdaptiveConfigMapper:
         assert config.verifier_strategy == VerifierStrategy.FULL_L3
         assert config.task_granularity == TaskGranularity.COARSE
 
-    def test_weak_model_template_based(self):
-        cap = ModelCapability(
-            model_name="weak",
-            overall_score=0.3,
-            planning=PlanningDimension(score=0.3),
-            chain_of_thought=ChainOfThoughtDimension(score=0.3),
-            code_review=CodeReviewDimension(score=0.2),
-            json_formatting=JsonFormattingDimension(score=0.3),
-        )
-        config = AdaptiveConfigMapper.from_capability(cap)
-        assert config.planning_strategy == PlanningStrategy.TEMPLATE_BASED
-        assert config.verifier_strategy == VerifierStrategy.STATIC_ONLY
+    def test_runtime_driven_compensation(self):
+        # Default config is optimistic
+        config = AdaptiveConfigMapper.default_config()
+        assert config.planning_strategy == PlanningStrategy.FULL_DAG
+        assert config.task_granularity == TaskGranularity.COARSE
+
+        # Simulate struggling planning → config tightens
+        stats = RuntimeStats(window_size=5)
+        for _ in range(3):
+            stats.record("planning", False)
+        config = AdaptiveConfigMapper.update_from_runtime(config, stats)
+        assert config.planning_strategy == PlanningStrategy.PHASED
         assert config.task_granularity == TaskGranularity.FINE
 
-    def test_moderate_model_phased(self):
-        cap = ModelCapability(
-            model_name="moderate",
-            overall_score=0.6,
-            planning=PlanningDimension(score=0.6),
-            chain_of_thought=ChainOfThoughtDimension(score=0.6),
-            code_review=CodeReviewDimension(score=0.6),
-            json_formatting=JsonFormattingDimension(score=0.6),
-        )
-        config = AdaptiveConfigMapper.from_capability(cap)
-        assert config.planning_strategy == PlanningStrategy.PHASED
+    def test_runtime_json_struggling(self):
+        config = AdaptiveConfigMapper.default_config()
+        assert config.json_max_retries == 2
+
+        stats = RuntimeStats(window_size=5)
+        for _ in range(3):
+            stats.record("json", False)
+        config = AdaptiveConfigMapper.update_from_runtime(config, stats)
+        assert config.json_max_retries == 3
+        assert config.verifier_strategy == VerifierStrategy.SIMPLIFIED_L3
 
     def test_config_to_dict(self):
         config = AdaptiveOrchestratorConfig()
@@ -189,59 +189,53 @@ class TestAdaptiveConfigMapper:
         assert "task_granularity" in d
 
 
-class TestRuntimeCalibrator:
-    """Test runtime capability calibration."""
+class TestRuntimeTracker:
+    """Test runtime success-rate tracking."""
 
     def test_record_success(self):
-        cap = ModelCapability(model_name="test")
-        cal = RuntimeCalibrator(cap)
+        tracker = RuntimeTracker(window_size=5)
         outcome = TaskOutcome(
             task_id="t1",
             success=True,
             completion_percentage=1.0,
             correctness_score=1.0,
         )
-        cal.record_task_outcome(outcome)
-        assert cal.get_success_rate() == 1.0
-        # Small positive adjustment to task_completion
-        effective = cal.capability.get_effective_dimension("task_completion")
-        assert effective["code_correctness"] > 0.5
+        tracker.record_task_outcome(outcome)
+        assert tracker.get_success_rate() == 1.0
+        assert tracker.get_stats().get_rate("code") == 1.0
 
     def test_record_json_failure(self):
-        cap = ModelCapability(model_name="test")
-        cal = RuntimeCalibrator(cap)
-        outcome = TaskOutcome(
-            task_id="t1",
-            success=False,
-            completion_percentage=0.0,
-            correctness_score=0.0,
-            error_text="json.JSONDecodeError: Expecting ',' delimiter",
-        )
-        cal.record_task_outcome(outcome)
-        effective = cal.capability.get_effective_dimension("json_formatting")
-        assert effective["valid_json_rate"] < 0.5
+        tracker = RuntimeTracker(window_size=5)
+        for i in range(3):
+            tracker.record_task_outcome(
+                TaskOutcome(
+                    task_id=f"t{i}",
+                    success=False,
+                    completion_percentage=0.0,
+                    correctness_score=0.0,
+                    error_text="json.JSONDecodeError: Expecting ',' delimiter",
+                )
+            )
+        assert tracker.get_stats().get_rate("json") == 0.0
+        assert tracker.get_stats().is_struggling("json")
 
     def test_record_syntax_failure(self):
-        cap = ModelCapability(model_name="test")
-        cal = RuntimeCalibrator(cap)
-        outcome = TaskOutcome(
-            task_id="t1",
-            success=False,
-            error_text="SyntaxError: invalid syntax",
-        )
-        cal.record_task_outcome(outcome)
-        effective = cal.capability.get_effective_dimension("task_completion")
-        assert effective["code_correctness"] < 0.5
+        tracker = RuntimeTracker(window_size=5)
+        for i in range(3):
+            tracker.record_task_outcome(
+                TaskOutcome(
+                    task_id=f"t{i}",
+                    success=False,
+                    error_text="SyntaxError: invalid syntax",
+                )
+            )
+        assert tracker.get_stats().get_rate("code") == 0.0
+        assert tracker.get_stats().is_struggling("code")
 
-    def test_should_escalate(self):
-        cap = ModelCapability(model_name="test")
-        cal = RuntimeCalibrator(cap)
-        # Not enough samples
-        assert not cal.should_escalate_to_stronger_model()
-
-        # Many failures across multiple dimensions (completion=0 to get full penalty)
-        for i in range(4):
-            cal.record_task_outcome(
+    def test_sliding_window(self):
+        tracker = RuntimeTracker(window_size=3)
+        for i in range(5):
+            tracker.record_task_outcome(
                 TaskOutcome(
                     task_id=f"t{i}",
                     success=False,
@@ -249,25 +243,19 @@ class TestRuntimeCalibrator:
                     error_text="SyntaxError",
                 )
             )
-        for i in range(4):
-            cal.record_task_outcome(
+        # Window size 3, all failures
+        assert tracker.get_stats().get_rate("code") == 0.0
+        # Add 3 successes — oldest 3 failures drop out
+        for i in range(3):
+            tracker.record_task_outcome(
                 TaskOutcome(
-                    task_id=f"t{i+4}",
-                    success=False,
-                    completion_percentage=0.0,
-                    error_text="json.JSONDecodeError",
+                    task_id=f"s{i}",
+                    success=True,
+                    correctness_score=1.0,
                 )
             )
-        for i in range(4):
-            cal.record_task_outcome(
-                TaskOutcome(
-                    task_id=f"t{i+8}",
-                    success=False,
-                    completion_percentage=0.0,
-                    error_text="AssertionError",
-                )
-            )
-        assert cal.should_escalate_to_stronger_model()
+        assert tracker.get_stats().get_rate("code") == 1.0
+        assert not tracker.get_stats().is_struggling("code")
 
     def test_classify_failure(self):
         assert classify_failure("json.JSONDecodeError") == "json_error"

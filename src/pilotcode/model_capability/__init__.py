@@ -35,6 +35,7 @@ from .schema import (
     CodeReviewDimension,
     RuntimeAdjustment,
     CalibrationRecord,
+    RuntimeStats,
     PlanningStrategy,
     TaskGranularity,
     VerifierStrategy,
@@ -50,8 +51,8 @@ from .adaptive_config import (
     AdaptiveConfigMapper,
     apply_adaptive_config_to_strategy_config,
 )
-from .runtime_calibrator import (
-    RuntimeCalibrator,
+from .runtime_tracker import (
+    RuntimeTracker,
     TaskOutcome,
     classify_failure,
     classify_planning_failure,
@@ -198,6 +199,7 @@ __all__ = [
     "CodeReviewDimension",
     "RuntimeAdjustment",
     "CalibrationRecord",
+    "RuntimeStats",
     "PlanningStrategy",
     "TaskGranularity",
     "VerifierStrategy",
@@ -213,7 +215,7 @@ __all__ = [
     "AdaptiveConfigMapper",
     "apply_adaptive_config_to_strategy_config",
     # Runtime Calibration
-    "RuntimeCalibrator",
+    "RuntimeTracker",
     "TaskOutcome",
     "classify_failure",
     "classify_planning_failure",

@@ -4,6 +4,8 @@ import tempfile
 from pathlib import Path
 
 from pilotcode.model_capability.schema import (
+    TaskGranularity,
+    RuntimeStats,
     ModelCapability,
     PlanningDimension,
     TaskCompletionDimension,
@@ -42,7 +44,7 @@ class TestCompensationEngine:
         config = self._make_config(
             enable_auto_verify=False,
             enable_smart_edit_planner=False,
-            task_granularity=AdaptiveConfigMapper._select_task_granularity(0.85, 0.85),
+            task_granularity=TaskGranularity.COARSE,
         )
         cap = self._make_cap(0.85)
         engine = CompensationEngine(config, cap)
@@ -55,7 +57,7 @@ class TestCompensationEngine:
         config = self._make_config(
             enable_auto_verify=True,
             enable_smart_edit_planner=True,
-            task_granularity=AdaptiveConfigMapper._select_task_granularity(0.50, 0.50),
+            task_granularity=TaskGranularity.FINE,
             ask_user_on_critical_decisions=True,
         )
         cap = self._make_cap(0.50)
@@ -68,9 +70,7 @@ class TestCompensationEngine:
         assert "AskUser" in suffix
 
     def test_planning_compensation_for_fine_granularity(self):
-        config = self._make_config(
-            task_granularity=AdaptiveConfigMapper._select_task_granularity(0.50, 0.50)
-        )
+        config = self._make_config(task_granularity=TaskGranularity.FINE)
         cap = self._make_cap(0.50)
         engine = CompensationEngine(config, cap)
 
@@ -79,9 +79,7 @@ class TestCompensationEngine:
         assert "granular" in suffix.lower()
 
     def test_no_planning_compensation_for_coarse(self):
-        config = self._make_config(
-            task_granularity=AdaptiveConfigMapper._select_task_granularity(0.85, 0.85)
-        )
+        config = self._make_config(task_granularity=TaskGranularity.COARSE)
         cap = self._make_cap(0.85)
         engine = CompensationEngine(config, cap)
 
@@ -219,76 +217,48 @@ class TestEditValidator:
 
 
 class TestAdaptiveConfigMapperCompensation:
-    """Test that AdaptiveConfigMapper applies dimension-specific compensation."""
+    """Test runtime-driven compensation via update_from_runtime."""
+
+    def _make_stats(self, **kwargs) -> RuntimeStats:
+        stats = RuntimeStats(window_size=5)
+        for task_type, outcomes in kwargs.items():
+            for success in outcomes:
+                stats.record(task_type, success)
+        return stats
 
     def test_planning_weak_gets_fine_granularity(self):
-        cap = ModelCapability(
-            model_name="test",
-            overall_score=0.50,
-            planning=PlanningDimension(score=0.40),
-            task_completion=TaskCompletionDimension(score=0.80),
-            json_formatting=JsonFormattingDimension(score=0.80),
-            chain_of_thought=ChainOfThoughtDimension(score=0.80),
-            code_review=CodeReviewDimension(score=0.80),
-        )
-        config = AdaptiveConfigMapper.from_capability(cap)
-        assert config.task_granularity.value == "fine"
-        assert config.max_tasks_per_phase == 2
-        assert config.max_lines_per_task == 50
+        config = AdaptiveConfigMapper.default_config()
+        stats = self._make_stats(planning=[False, False, False])
+        config = AdaptiveConfigMapper.update_from_runtime(config, stats)
+        assert config.task_granularity == TaskGranularity.FINE
+        assert config.planning_strategy.value == "phased"
+        assert config.max_lines_per_task == 80
 
     def test_json_weak_gets_relaxed_schema(self):
-        cap = ModelCapability(
-            model_name="test",
-            overall_score=0.50,
-            planning=PlanningDimension(score=0.80),
-            task_completion=TaskCompletionDimension(score=0.80),
-            json_formatting=JsonFormattingDimension(score=0.40),
-            chain_of_thought=ChainOfThoughtDimension(score=0.80),
-            code_review=CodeReviewDimension(score=0.80),
-        )
-        config = AdaptiveConfigMapper.from_capability(cap)
+        config = AdaptiveConfigMapper.default_config()
+        stats = self._make_stats(json=[False, False, False])
+        config = AdaptiveConfigMapper.update_from_runtime(config, stats)
         assert config.require_json_schema is False
         assert config.json_max_retries == 3
 
     def test_completion_weak_gets_auto_verify(self):
-        cap = ModelCapability(
-            model_name="test",
-            overall_score=0.50,
-            planning=PlanningDimension(score=0.80),
-            task_completion=TaskCompletionDimension(score=0.40),
-            json_formatting=JsonFormattingDimension(score=0.80),
-            chain_of_thought=ChainOfThoughtDimension(score=0.80),
-            code_review=CodeReviewDimension(score=0.80),
-        )
-        config = AdaptiveConfigMapper.from_capability(cap)
+        config = AdaptiveConfigMapper.default_config()
+        stats = self._make_stats(code=[False, False, False])
+        config = AdaptiveConfigMapper.update_from_runtime(config, stats)
         assert config.enable_auto_verify is True
         assert config.verify_after_each_edit is True
         assert config.max_edits_per_round == 1
 
     def test_cot_weak_gets_ask_user(self):
-        cap = ModelCapability(
-            model_name="test",
-            overall_score=0.50,
-            planning=PlanningDimension(score=0.80),
-            task_completion=TaskCompletionDimension(score=0.80),
-            json_formatting=JsonFormattingDimension(score=0.80),
-            chain_of_thought=ChainOfThoughtDimension(score=0.40),
-            code_review=CodeReviewDimension(score=0.80),
-        )
-        config = AdaptiveConfigMapper.from_capability(cap)
+        config = AdaptiveConfigMapper.default_config()
+        stats = self._make_stats(reasoning=[False, False, False])
+        config = AdaptiveConfigMapper.update_from_runtime(config, stats)
         assert config.ask_user_on_critical_decisions is True
         assert config.inject_objective_reminder_every == 1
 
     def test_review_weak_gets_enforced_tests(self):
-        cap = ModelCapability(
-            model_name="test",
-            overall_score=0.50,
-            planning=PlanningDimension(score=0.80),
-            task_completion=TaskCompletionDimension(score=0.80),
-            json_formatting=JsonFormattingDimension(score=0.80),
-            chain_of_thought=ChainOfThoughtDimension(score=0.80),
-            code_review=CodeReviewDimension(score=0.40),
-        )
-        config = AdaptiveConfigMapper.from_capability(cap)
+        config = AdaptiveConfigMapper.default_config()
+        stats = self._make_stats(review=[False, False, False])
+        config = AdaptiveConfigMapper.update_from_runtime(config, stats)
         assert config.enforce_test_before_mark_complete is True
         assert config.verifier_strategy.value == "static_only"

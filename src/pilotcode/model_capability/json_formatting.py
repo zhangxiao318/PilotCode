@@ -86,9 +86,7 @@ Rules:
         settings = meta.get("settings", {})
         notif = settings.get("notifications", {})
         checks["notif_nested"] = isinstance(notif.get("push"), dict)
-        checks["push_priority_str"] = isinstance(
-            notif.get("push", {}).get("priority"), str
-        )
+        checks["push_priority_str"] = isinstance(notif.get("push", {}).get("priority"), str)
 
         depts = company.get("departments", [])
         checks["depts_list"] = isinstance(depts, list) and len(depts) >= 2

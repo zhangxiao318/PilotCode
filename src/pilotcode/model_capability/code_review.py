@@ -80,11 +80,7 @@ The bug is subtle — it only manifests with certain inputs.
     score = (
         1.0
         if has_bug and found_split_bug and has_fix
-        else 0.6
-        if has_bug and found_split_bug
-        else 0.3
-        if has_bug
-        else 0.0
+        else 0.6 if has_bug and found_split_bug else 0.3 if has_bug else 0.0
     )
 
     return BenchmarkResult(
@@ -153,18 +149,13 @@ Output your review as JSON with these exact fields:
 
     perf = data.get("performance", "").lower()
     mentions_hash_set = any(
-        kw in perf
-        for kw in ["hash", "set", "o(n)", "linear", "dictionary", "dict"]
+        kw in perf for kw in ["hash", "set", "o(n)", "linear", "dictionary", "dict"]
     )
 
     score = (
         1.0
         if has_all and types_ok and mentions_hash_set
-        else 0.7
-        if has_all and types_ok
-        else 0.3
-        if has_all
-        else 0.0
+        else 0.7 if has_all and types_ok else 0.3 if has_all else 0.0
     )
 
     return BenchmarkResult(

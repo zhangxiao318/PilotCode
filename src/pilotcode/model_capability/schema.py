@@ -135,6 +135,49 @@ class CalibrationRecord:
 
 
 @dataclass
+class RuntimeStats:
+    """Window-based success-rate tracking per task type.
+
+    Used to dynamically adjust orchestration strategy based on observed
+    runtime behaviour rather than static benchmark scores.
+    """
+
+    window_size: int = 10
+
+    json_attempts: list[bool] = field(default_factory=list)
+    code_attempts: list[bool] = field(default_factory=list)
+    planning_attempts: list[bool] = field(default_factory=list)
+    reasoning_attempts: list[bool] = field(default_factory=list)
+    review_attempts: list[bool] = field(default_factory=list)
+
+    def record(self, task_type: str, success: bool) -> None:
+        """Record an outcome.  Silently ignores unknown task types."""
+        attr = f"{task_type}_attempts"
+        if not hasattr(self, attr):
+            return
+        attempts: list[bool] = getattr(self, attr)
+        attempts.append(success)
+        if len(attempts) > self.window_size:
+            attempts.pop(0)
+        setattr(self, attr, attempts)
+
+    def get_rate(self, task_type: str) -> float:
+        """Success rate for a task type (0.0-1.0).  Defaults to 1.0."""
+        attr = f"{task_type}_attempts"
+        if not hasattr(self, attr):
+            return 1.0
+        attempts: list[bool] = getattr(self, attr)
+        if not attempts:
+            return 1.0
+        return sum(attempts) / len(attempts)
+
+    def is_struggling(self, task_type: str, threshold: float = 0.5) -> bool:
+        """True when enough samples exist and success rate is below threshold."""
+        attempts: list[bool] = getattr(self, f"{task_type}_attempts", [])
+        return len(attempts) >= 3 and self.get_rate(task_type) < threshold
+
+
+@dataclass
 class ModelCapability:
     """Complete capability profile for a language model.
 

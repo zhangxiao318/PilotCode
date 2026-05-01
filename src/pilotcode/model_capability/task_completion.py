@@ -38,7 +38,12 @@ Output ONLY the class definition, no explanation, no markdown fences, no test co
         tree = ast.parse(code)
         local_ns: dict[str, Any] = {}
         import time
-        exec(compile(tree, "<string>", "exec"), {"__builtins__": __builtins__, "time": time}, local_ns)
+
+        exec(
+            compile(tree, "<string>", "exec"),
+            {"__builtins__": __builtins__, "time": time},
+            local_ns,
+        )
         TTLCache = local_ns.get("TTLCache")
 
         if not TTLCache:
@@ -190,9 +195,7 @@ Output ONLY the corrected class, no explanation, no markdown.
                 f"Race condition: total {actual_total} != expected {expected_total}"
             )
         if a.balance < 0 or b.balance < 0:
-            raise AssertionError(
-                f"Negative balance: a={a.balance}, b={b.balance}"
-            )
+            raise AssertionError(f"Negative balance: a={a.balance}, b={b.balance}")
 
         race_detected = False
 

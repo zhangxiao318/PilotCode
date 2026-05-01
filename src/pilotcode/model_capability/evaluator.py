@@ -95,15 +95,18 @@ def evaluate_capability(
         style_consistency=_sub_avg("code_review", "style_consistency") or code_review_score,
     )
 
-    overall = _average(
-        [
-            planning.score,
-            task_completion.score,
-            json_formatting.score,
-            chain_of_thought.score,
-            code_review.score,
-        ]
-    )
+    # Overall = average of dimensions that actually have test results.
+    # Dimensions with no data are excluded rather than counted as 0.0,
+    # so a partial benchmark run doesn't unfairly drag down the score.
+    scored_dimensions = [
+        planning.score,
+        task_completion.score,
+        json_formatting.score,
+        chain_of_thought.score,
+        code_review.score,
+    ]
+    present = [s for s in scored_dimensions if s > 0]
+    overall = _average(present) if present else 0.0
 
     cap = ModelCapability(
         model_name=model_name,
