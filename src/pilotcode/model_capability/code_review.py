@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from pilotcode.utils.model_client import Message
 
 from .base import BenchmarkResult, _call_llm, _extract_json

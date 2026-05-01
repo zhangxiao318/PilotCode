@@ -8,6 +8,9 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
+from .registry import register_tool
+
+import ast
 
 # ---------------------------------------------------------------------------
 # FileEdit scope guard: restrict edits to planned/allowed files
@@ -57,15 +60,9 @@ def _is_file_allowed(file_path: str, cwd: str) -> tuple[bool, str | None]:
     )
 
 
-from .registry import register_tool
-
 # ---------------------------------------------------------------------------
 # Smart pre-edit preview / validation
 # ---------------------------------------------------------------------------
-
-import ast
-import tokenize
-import io
 
 
 def _count_brackets(text: str) -> dict[str, int]:
@@ -155,7 +152,6 @@ def _check_critical_structure_deletion(old_string: str, new_string: str) -> list
     """
     warnings = []
 
-    pairs = {"(": ")", "[": "]", "{": "}"}
     old_stripped = old_string.rstrip()
     new_stripped = new_string.rstrip()
 
@@ -314,7 +310,7 @@ def _check_python_ast_fragment(new_string: str, file_path: str) -> list[str]:
         return warnings
 
     # Fallback: stdlib ast module
-    wrapped = f"def _fake():\n" + "\n".join("    " + ln for ln in new_string.splitlines())
+    wrapped = "def _fake():\n" + "\n".join("    " + ln for ln in new_string.splitlines())
     try:
         ast.parse(wrapped)
         return warnings
@@ -323,7 +319,7 @@ def _check_python_ast_fragment(new_string: str, file_path: str) -> list[str]:
             ast.parse(new_string)
             return warnings
         except SyntaxError:
-            wrapped_cls = f"class _Fake:\n" + "\n".join(
+            wrapped_cls = "class _Fake:\n" + "\n".join(
                 "    " + ln for ln in new_string.splitlines()
             )
             try:
@@ -354,6 +350,8 @@ def _smart_preview_check(
       - Indentation shift
       - Closing sequence count mismatch
     """
+    import re
+
     blockers = []
     warnings = []
 
@@ -361,10 +359,9 @@ def _smart_preview_check(
     bracket_issues = _check_bracket_balance_delta(old_string, new_string)
     for issue in bracket_issues:
         # Extract imbalance count from message
-        import re
-
-        m = re.search(r"imbalance of ([-+]?\d+)", issue)
-        if m and abs(int(m.group(1))) > 1:
+        # Message format: "... has {N} unclosed ..." or "... has {N} extra ..."
+        m = re.search(r"has (\d+) (unclosed|extra)", issue)
+        if m and int(m.group(1)) > 1:
             blockers.append(issue)
         else:
             warnings.append(issue)
@@ -375,7 +372,8 @@ def _smart_preview_check(
     # 3. Critical structure — warning unless paired with bracket blocker
     struct_issues = _check_critical_structure_deletion(old_string, new_string)
     if blockers:
-        warnings.extend(struct_issues)
+        # Escalate to blocker when brackets are already broken
+        blockers.extend(struct_issues)
     else:
         warnings.extend(struct_issues)
 
@@ -764,7 +762,7 @@ async def edit_file_content(
 
                 # --- Smart preview check (P0) ---
                 preview_ok, preview_warnings = _smart_preview_check(
-                    matched_block, new_string_normalized, str(path)
+                    best_match, new_string_normalized, str(path)
                 )
                 if not preview_ok:
                     path.write_text(original_content, encoding="utf-8")
@@ -904,6 +902,7 @@ async def edit_file_content(
                     context_snippet = f"\n\nFile starts with:\n```\n{original_content[:500]}\n```"
 
             mismatch_hint = ""
+            search_term = old_string.strip().splitlines()[0][:40] if old_string.strip() else ""
             if len(old_string) <= 200 and search_term:
                 matched_idx = original_content.find(search_term)
                 if matched_idx != -1:

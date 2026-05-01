@@ -264,7 +264,7 @@ async def _run_quest(quest: QuestState, context: CommandContext) -> None:
                     )
 
                     if result.get("success"):
-                        console.print(f"[green dim]  │  └─ ✓ Completed[/green dim]")
+                        console.print("[green dim]  │  └─ ✓ Completed[/green dim]")
                     else:
                         error = result.get("error", "unknown")
                         error_str = str(error)[:60] + "..." if len(str(error)) > 60 else str(error)
@@ -425,7 +425,7 @@ def _generate_summary(description: str, missions: list[dict], results: list[dict
     total = len(results)
 
     lines = [
-        f"## Quest Summary",
+        "## Quest Summary",
         "",
         f"**Request**: {description}",
         f"**Result**: {success_count}/{total} missions succeeded",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
 from .base import BenchmarkConnectionError, BenchmarkResult
 from .chain_of_thought import (
