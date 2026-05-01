@@ -1431,7 +1431,10 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                         self.messages[i] = UserMessage(content=truncated_text)
                         did_compact = True
                     elif isinstance(msg, AssistantMessage):
-                        self.messages[i] = AssistantMessage(content=truncated_text)
+                        self.messages[i] = AssistantMessage(
+                            content=truncated_text,
+                            reasoning_content=getattr(msg, "reasoning_content", None),
+                        )
                         did_compact = True
                     elif isinstance(msg, ToolResultMessage):
                         self.messages[i] = ToolResultMessage(

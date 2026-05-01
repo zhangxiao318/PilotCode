@@ -952,6 +952,10 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
             if test_rc == 0:
                 print(f"[INFO] Tests passed.")
                 break
+            # Print raw test output so humans can see what failed
+            print("[TEST OUTPUT BEGIN]")
+            print(test_output)
+            print("[TEST OUTPUT END]")
 
             if looks_like_environment_error(test_output):
                 print(f"[WARN] Test environment issue detected — running static review instead.")
@@ -998,7 +1002,11 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                 problem_statement=problem_statement,
             )
             # Reset repo to clean state before redesign
-            run_cmd(f"git checkout {base_commit}", cwd=work_dir)
+            checkout_rc, checkout_out, checkout_err = run_cmd(f"git checkout {base_commit}", cwd=work_dir)
+            if checkout_rc != 0:
+                print(f"[WARN] git checkout failed: {checkout_err or checkout_out}")
+            run_cmd("git reset --hard", cwd=work_dir)
+            run_cmd("git clean -fdx", cwd=work_dir)
             try:
                 rc, output = run_pilotcode(
                     work_dir, redesign_prompt, max_iterations=DEFAULT_MAX_ITERATIONS

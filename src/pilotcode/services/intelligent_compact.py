@@ -233,7 +233,10 @@ class IntelligentContextCompactor:
                     if isinstance(msg, UserMessage):
                         msg = UserMessage(content=truncated)
                     else:
-                        msg = AssistantMessage(content=truncated)
+                        msg = AssistantMessage(
+                            content=truncated,
+                            reasoning_content=getattr(msg, "reasoning_content", None),
+                        )
                     summaries_generated += 1
 
             # Compact old tool results
