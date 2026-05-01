@@ -66,10 +66,12 @@ async def _call_llm(
 ) -> str:
     """Helper to call LLM and accumulate response.
 
-    When ``max_tokens`` is provided it is clamped to the model's actual
-    capability (probed or configured) so the benchmark never requests more
-    than the backend can deliver.  If ``max_tokens`` is omitted the model's
-    own default is used.
+    ``max_tokens`` is not clamped downward – if a caller explicitly passes a
+    value it is honoured so that the model can be as verbose as it needs to be
+    to answer the prompt correctly.  When ``max_tokens`` is omitted the
+    model's reported capability (or a safe fallback) is used so that backends
+    with a tiny default (e.g. llama-server's 256) do not silently truncate
+    output.
 
     Raises:
         BenchmarkConnectionError: If the API is unreachable.
@@ -78,12 +80,14 @@ async def _call_llm(
 
     client = get_model_client()
 
-    # Clamp to model's real max_tokens so small-context local models don't
-    # silently truncate output (or error) when the benchmark asks for too much.
-    if max_tokens is not None:
+    # When the caller does not specify a budget, use the model's own upper
+    # limit.  This prevents backends whose default max_tokens is very small
+    # from truncating long answers, without forcing the benchmark tests to
+    # guess how many tokens each task needs.
+    if max_tokens is None:
         model_max = get_model_max_tokens()
         if model_max > 0:
-            max_tokens = min(max_tokens, model_max)
+            max_tokens = model_max
 
     try:
         accumulated = ""
@@ -197,7 +201,6 @@ async def test_planning_json_validity() -> BenchmarkResult:
     raw = await _call_llm(
         [Message(role="user", content=PLANNING_TEST_PROMPT)],
         temperature=0.3,
-        max_tokens=800,
     )
     data = _extract_json(raw)
     is_valid = data is not None and "phases" in data
@@ -233,7 +236,6 @@ CRITICAL: Task dependencies MUST form a valid DAG (no cycles, only reference exi
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.3,
-        max_tokens=800,
     )
     data = _extract_json(raw)
     if not data or "phases" not in data:
@@ -296,7 +298,6 @@ Format:
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.3,
-        max_tokens=1000,
     )
     data = _extract_json(raw)
     if not data:
@@ -352,7 +353,6 @@ Output ONLY the function code, no explanation, no markdown.
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.2,
-        max_tokens=300,
     )
     code = raw.strip()
     # Remove markdown fences if present
@@ -422,7 +422,6 @@ Output ONLY the corrected function, no explanation.
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.2,
-        max_tokens=300,
     )
     code = raw.strip()
     code = re.sub(r"^```python\s*", "", code)
@@ -462,7 +461,6 @@ Output ONLY the JSON, no markdown, no explanation.
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.1,
-        max_tokens=200,
     )
     data = _extract_json(raw)
     if not data:
@@ -505,7 +503,6 @@ Notice the missing closing brace. Output EXACTLY as shown.
     raw1 = await _call_llm(
         [Message(role="user", content=prompt1)],
         temperature=0.1,
-        max_tokens=100,
     )
 
     # Now ask to fix it
@@ -516,7 +513,6 @@ Notice the missing closing brace. Output EXACTLY as shown.
     raw2 = await _call_llm(
         [Message(role="user", content=prompt2)],
         temperature=0.1,
-        max_tokens=100,
     )
 
     data = _extract_json(raw2)
@@ -551,7 +547,6 @@ Calculate correctly and output ONLY valid JSON.
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.2,
-        max_tokens=300,
     )
     data = _extract_json(raw)
     if not data:
@@ -606,7 +601,6 @@ Output your final answer as a single number on the last line, prefixed with "ANS
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.2,
-        max_tokens=800,
     )
     # Expected: 120 + (60 * 1.5 * 1.5) = 120 + 135 = 255
     answer_match = re.search(r"ANSWER:\s*(\d+(?:\.\d+)?)", raw)
@@ -656,7 +650,6 @@ Output your answer in this JSON format:
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.2,
-        max_tokens=300,
     )
     data = _extract_json(raw)
     if not data:
@@ -713,7 +706,6 @@ Output the fixed function only, no explanation.
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.2,
-        max_tokens=300,
     )
     code = raw.strip()
     code = re.sub(r"^```python\s*", "", code)
@@ -761,7 +753,6 @@ Output JSON: {"has_bug": true/false, "bug_description": "...", "severity": "high
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.2,
-        max_tokens=200,
     )
     data = _extract_json(raw)
     if not data:
@@ -807,7 +798,6 @@ Output your review as JSON with these exact fields:
     raw = await _call_llm(
         [Message(role="user", content=prompt)],
         temperature=0.2,
-        max_tokens=300,
     )
     data = _extract_json(raw)
     if not data:
