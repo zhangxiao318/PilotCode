@@ -251,49 +251,77 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
 
     cap: dict[str, int] = {}
 
-    # Anthropic protocol: skip local backend probes, try /v1/models directly
-    if api_protocol == "anthropic":
-        try:
-            with httpx.Client(timeout=3.0, follow_redirects=True) as client:
-                resp = client.get(f"{root_url}/v1/models")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    models = data.get("data", [])
-                    if models:
-                        model_data = models[0]
-                        ctx = model_data.get("context_window")
-                        if ctx is not None:
-                            cap["context_window"] = int(ctx)
-                        max_out = model_data.get("max_output_tokens")
-                        if max_out is not None:
-                            cap["max_tokens"] = int(max_out)
-        except Exception as exc:
-            logger.debug("Anthropic backend probe /v1/models failed: %s", exc)
-        if cap:
-            _backend_limits_cache[base_url] = cap
-            logger.debug("Probed Anthropic backend limits for %s: %s", base_url, cap)
-            return cap
-        return None
+    # Heuristic: detect likely backend type from URL to avoid spamming
+    # unrelated endpoints that pollute server logs.
+    url_lower = base_url.lower()
+    looks_like_ollama = "ollama" in url_lower or base_url.endswith(":11434") or base_url.endswith(":11434/v1")
 
-    # 1. llama.cpp / llama-server -> GET /props
+    # ------------------------------------------------------------------
+    # 1. OpenAI-compatible -> GET /v1/models (most universal)
+    # ------------------------------------------------------------------
     try:
         with httpx.Client(timeout=3.0, follow_redirects=True) as client:
-            resp = client.get(f"{root_url}/props")
+            resp = client.get(f"{root_url}/v1/models")
             if resp.status_code == 200:
                 data = resp.json()
-                dgs = data.get("default_generation_settings", {})
-                n_ctx = dgs.get("n_ctx")
-                if n_ctx is not None:
-                    cap["context_window"] = int(n_ctx)
-                params = dgs.get("params", {})
-                max_tok = params.get("max_tokens", params.get("n_predict"))
-                if max_tok is not None and max_tok > 0:
-                    cap["max_tokens"] = int(max_tok)
+                models = data.get("data", [])
+                if models:
+                    model_data = models[0]
+                    for key in ("context_length", "context_window", "max_model_len"):
+                        val = model_data.get(key)
+                        if val is not None:
+                            cap["context_window"] = int(val)
+                            break
+                    max_out = model_data.get("max_output_tokens")
+                    if max_out is not None:
+                        cap["max_tokens"] = int(max_out)
     except Exception as exc:
-        logger.debug("Backend probe /props failed: %s", exc)
+        logger.debug("Backend probe /v1/models failed: %s", exc)
 
-    # 2. Ollama -> POST /api/show
-    if "context_window" not in cap:
+    # If we already got what we need, stop here — don't bother llama-specific
+    # or Ollama-specific endpoints for generic OpenAI-compatible servers.
+    if cap:
+        _backend_limits_cache[base_url] = cap
+        logger.debug("Probed backend limits via /v1/models for %s: %s", base_url, cap)
+        return cap
+
+    # ------------------------------------------------------------------
+    # Anthropic protocol: try /v1/models (already done above) and stop
+    # ------------------------------------------------------------------
+    if api_protocol == "anthropic":
+        return None
+
+    # ------------------------------------------------------------------
+    # 2. llama.cpp / llama-server -> GET /props
+    # Skip for Ollama — it doesn't have /props and logs errors.
+    # ------------------------------------------------------------------
+    if not looks_like_ollama:
+        try:
+            with httpx.Client(timeout=3.0, follow_redirects=True) as client:
+                resp = client.get(f"{root_url}/props")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    dgs = data.get("default_generation_settings", {})
+                    n_ctx = dgs.get("n_ctx")
+                    if n_ctx is not None:
+                        cap["context_window"] = int(n_ctx)
+                    params = dgs.get("params", {})
+                    max_tok = params.get("max_tokens", params.get("n_predict"))
+                    if max_tok is not None and max_tok > 0:
+                        cap["max_tokens"] = int(max_tok)
+        except Exception as exc:
+            logger.debug("Backend probe /props failed: %s", exc)
+
+    if cap:
+        _backend_limits_cache[base_url] = cap
+        logger.debug("Probed backend limits via /props for %s: %s", base_url, cap)
+        return cap
+
+    # ------------------------------------------------------------------
+    # 3. Ollama -> POST /api/show
+    # Only hit this when the URL actually looks like Ollama.
+    # ------------------------------------------------------------------
+    if looks_like_ollama:
         try:
             with httpx.Client(timeout=3.0, follow_redirects=True) as client:
                 resp = client.post(f"{root_url}/api/show", json={"model": "default"})
@@ -308,27 +336,9 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
         except Exception as exc:
             logger.debug("Backend probe /api/show failed: %s", exc)
 
-    # 3. OpenAI-compatible -> GET /v1/models
-    if "context_window" not in cap:
-        try:
-            with httpx.Client(timeout=3.0, follow_redirects=True) as client:
-                resp = client.get(f"{root_url}/v1/models")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    models = data.get("data", [])
-                    if models:
-                        model_data = models[0]
-                        for key in ("context_length", "context_window", "max_model_len"):
-                            val = model_data.get(key)
-                            if val is not None:
-                                cap["context_window"] = int(val)
-                                break
-        except Exception as exc:
-            logger.debug("Backend probe /v1/models failed: %s", exc)
-
     if cap:
         _backend_limits_cache[base_url] = cap
-        logger.debug("Probed backend limits for %s: %s", base_url, cap)
+        logger.debug("Probed backend limits via /api/show for %s: %s", base_url, cap)
         return cap
 
     return None
