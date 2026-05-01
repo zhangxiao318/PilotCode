@@ -336,5 +336,187 @@ class TestGetModelClient:
             mc._client = original_client
 
 
+class TestAnthropicNormalization:
+    """Tests for Anthropic API protocol normalization."""
+
+    def test_build_anthropic_payload_system_extracted(self):
+        """System messages should be extracted to top-level 'system' param."""
+        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        messages = [
+            Message(role="system", content="Be helpful"),
+            Message(role="user", content="Hello"),
+        ]
+        payload = client._build_anthropic_payload(messages, None, 0.7, 1024, True)
+
+        assert payload["model"] == "claude-3"
+        assert payload["system"] == "Be helpful"
+        assert all(m["role"] != "system" for m in payload["messages"])
+        assert payload["messages"][0]["role"] == "user"
+
+    def test_build_anthropic_payload_tool_message_conversion(self):
+        """Tool messages should become user messages with tool_result blocks."""
+        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        messages = [
+            Message(role="user", content="Run ls"),
+            Message(role="assistant", content="", tool_calls=[ToolCall(id="tu_1", name="Bash", arguments={"command": "ls"})]),
+            Message(role="tool", content="file.txt", tool_call_id="tu_1", name="Bash"),
+        ]
+        payload = client._build_anthropic_payload(messages, None, 0.7, 1024, True)
+
+        anthropic_msgs = payload["messages"]
+        assert len(anthropic_msgs) == 3
+        # assistant with tool_use
+        assert anthropic_msgs[1]["role"] == "assistant"
+        assert anthropic_msgs[1]["content"][0]["type"] == "tool_use"
+        # tool -> user with tool_result
+        assert anthropic_msgs[2]["role"] == "user"
+        assert anthropic_msgs[2]["content"][0]["type"] == "tool_result"
+        assert anthropic_msgs[2]["content"][0]["tool_use_id"] == "tu_1"
+
+    def test_build_anthropic_payload_tools_and_max_tokens(self):
+        """Tools should be converted to Anthropic format and max_tokens defaulted."""
+        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        tools = [
+            {
+                "name": "Bash",
+                "description": "Run shell commands",
+                "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}},
+            }
+        ]
+        messages = [Message(role="user", content="Hi")]
+        payload = client._build_anthropic_payload(messages, tools, 0.5, None, False)
+
+        assert payload["tools"][0]["name"] == "Bash"
+        assert "input_schema" in payload["tools"][0]
+        assert "type" not in payload["tools"][0]  # Anthropic doesn't use "type": "function"
+        assert payload["max_tokens"] == 4096  # default when not provided
+
+    def test_normalize_anthropic_response_text_only(self):
+        """Non-streaming text response should normalize to OpenAI chunk."""
+        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        raw = {
+            "content": [{"type": "text", "text": "Hello there"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 2},
+        }
+        chunk = client._normalize_anthropic_response(raw)
+
+        assert chunk["choices"][0]["delta"]["content"] == "Hello there"
+        assert chunk["choices"][0]["finish_reason"] == "stop"
+        assert chunk["usage"]["prompt_tokens"] == 10
+        assert chunk["usage"]["completion_tokens"] == 2
+
+    def test_normalize_anthropic_response_with_tool_use(self):
+        """Non-streaming tool_use response should normalize to tool_calls."""
+        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        raw = {
+            "content": [
+                {"type": "tool_use", "id": "tu_1", "name": "Bash", "input": {"command": "ls"}}
+            ],
+            "stop_reason": "tool_use",
+            "usage": {"input_tokens": 15, "output_tokens": 20},
+        }
+        chunk = client._normalize_anthropic_response(raw)
+
+        tool_calls = chunk["choices"][0]["delta"]["tool_calls"]
+        assert len(tool_calls) == 1
+        assert tool_calls[0]["id"] == "tu_1"
+        assert tool_calls[0]["function"]["name"] == "Bash"
+        assert tool_calls[0]["function"]["arguments"] == '{"command": "ls"}'
+
+    @pytest.mark.asyncio
+    async def test_normalize_anthropic_stream_text(self):
+        """Streaming text events should yield OpenAI-style chunks."""
+        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+
+        raw_lines = [
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}",
+            'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}',
+            'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}',
+            'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}',
+        ]
+
+        mock_resp = MagicMock()
+        async def _aiter_lines():
+            for line in raw_lines:
+                yield line
+        mock_resp.aiter_lines = _aiter_lines
+
+        chunks = []
+        async for chunk in client._normalize_anthropic_stream(mock_resp):
+            chunks.append(chunk)
+
+        texts = [c["choices"][0]["delta"].get("content", "") for c in chunks]
+        assert "".join(texts) == "Hello world"
+        assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+        assert chunks[-1]["usage"]["completion_tokens"] == 2
+
+    @pytest.mark.asyncio
+    async def test_normalize_anthropic_stream_tool_use(self):
+        """Streaming tool_use events should yield tool_calls chunks."""
+        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+
+        raw_lines = [
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}",
+            'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tu_1","name":"Bash"}}',
+            'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"command\\": \\"ls\\"}"}}',
+            'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}',
+        ]
+
+        mock_resp = MagicMock()
+        async def _aiter_lines():
+            for line in raw_lines:
+                yield line
+        mock_resp.aiter_lines = _aiter_lines
+
+        chunks = []
+        async for chunk in client._normalize_anthropic_stream(mock_resp):
+            chunks.append(chunk)
+
+        tool_chunks = [c for c in chunks if "tool_calls" in c["choices"][0]["delta"]]
+        assert len(tool_chunks) == 2  # start + partial_json
+        assert tool_chunks[0]["choices"][0]["delta"]["tool_calls"][0]["function"]["name"] == "Bash"
+        assert tool_chunks[1]["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"] == '{"command": "ls"}'
+
+    @pytest.mark.asyncio
+    async def test_chat_completion_anthropic_endpoint(self):
+        """Anthropic protocol should call /v1/messages, not /chat/completions."""
+        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "content": [{"type": "text", "text": "Hi"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 3, "output_tokens": 1},
+        }
+        mock_response.raise_for_status = MagicMock()
+        client.client.post = AsyncMock(return_value=mock_response)
+
+        messages = [Message(role="user", content="Hello")]
+        chunks = []
+        async for chunk in client.chat_completion(messages, stream=False):
+            chunks.append(chunk)
+
+        call_args = client.client.post.call_args
+        assert call_args[0][0] == "/v1/messages"
+        assert "model" in call_args[1]["json"]
+
+    def test_convert_tools_anthropic_format(self):
+        """Anthropic client should return flat tool schemas."""
+        client = ModelClient(api_key="test", base_url="https://api.anthropic.com/v1", model="claude-3")
+        tools = [
+            {
+                "name": "Bash",
+                "description": "Run commands",
+                "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}},
+            }
+        ]
+        result = client._convert_tools(tools)
+        assert result[0]["name"] == "Bash"
+        assert "input_schema" in result[0]
+        assert "type" not in result[0]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
