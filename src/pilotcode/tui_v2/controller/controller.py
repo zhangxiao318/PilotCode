@@ -740,8 +740,78 @@ class TUIController:
             if self._abort_current_turn:
                 break
 
-            # Continue with empty prompt to get LLM response to tool results
-            current_prompt = ""
+            # --- Compiler / syntax verification for changed code files ---
+            has_compile_command = any(
+                tool_msg.name in ("Bash", "bash", "PowerShell", "powershell")
+                and any(
+                    kw in (tool_msg.input.get("command", "") + " " + tool_msg.input.get("script", "")).lower()
+                    for kw in ("gcc", "g++", "make", "cmake", "cl ", "msbuild", "rustc", "cargo", "go build", "javac", "npm run build", "tsc")
+                )
+                for tool_msg in pending_tools
+            )
+
+            changed_files: list[str] = []
+            if not has_compile_command:
+                for tool_msg in pending_tools:
+                    if tool_msg.name in (
+                        "FileWrite",
+                        "write",
+                        "FileEdit",
+                        "edit",
+                        "ApplyPatch",
+                        "apply_patch",
+                    ):
+                        path = (
+                            tool_msg.input.get("file_path")
+                            or tool_msg.input.get("path")
+                            or tool_msg.input.get("base_path", "")
+                        )
+                        if path and not path.endswith((".h", ".hpp")) and path not in changed_files:
+                            changed_files.append(path)
+
+            if changed_files:
+                from pilotcode.orchestration.task_spec import TaskSpec
+                from pilotcode.orchestration.results import ExecutionResult
+                from pilotcode.orchestration.verifier.level2_tests import TestRunnerVerifier
+
+                temp_task = TaskSpec(
+                    id="tui_v2_verify",
+                    title="verification",
+                    objective="verify compilation",
+                )
+                temp_exec = ExecutionResult(
+                    task_id="tui_v2_verify",
+                    success=True,
+                    artifacts={
+                        "changed_files": changed_files,
+                        "cwd": self.session_options.get("cwd", str(Path.cwd())),
+                    },
+                )
+                verifier = TestRunnerVerifier()
+                try:
+                    has_file_write = any(
+                        tool_msg.name in (
+                            "FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch"
+                        )
+                        for tool_msg in pending_tools
+                    )
+                    v_result = await verifier.verify(
+                        temp_task, temp_exec, skip_project_build=has_file_write
+                    )
+                    if not v_result.passed and v_result.feedback:
+                        current_prompt = (
+                            "[FRAMEWORK VERIFICATION - COMPILE CHECK]\n"
+                            f"{v_result.feedback}\n"
+                            "Fix these errors before proceeding."
+                        )
+                    else:
+                        current_prompt = ""
+                except Exception:
+                    current_prompt = ""
+            else:
+                current_prompt = ""
+
+            # Continue with prompt to get LLM response to tool results
             accumulated_content = ""
         else:
             # -- System Layer: max iterations reached --

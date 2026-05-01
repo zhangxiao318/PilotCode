@@ -47,6 +47,16 @@ _COMPILER_CHECKS: dict[str, tuple[str, ...]] = {
     "java": ("javac", "-d", tempfile.gettempdir()),
 }
 
+# Project-level build systems — checked before per-file syntax checks
+_BUILD_SYSTEMS: list[dict[str, Any]] = [
+    {"name": "make", "files": ["Makefile", "makefile", "GNUmakefile"], "cmd": ["make"]},
+    {"name": "cmake", "files": ["CMakeLists.txt"], "cmd": ["cmake", "--build", "."], "fallback_cmd": ["make"]},
+    {"name": "npm", "files": ["package.json"], "cmd": ["npm", "run", "build"], "fallback_cmd": ["npm", "test"]},
+    {"name": "cargo", "files": ["Cargo.toml"], "cmd": ["cargo", "build"]},
+    {"name": "go_mod", "files": ["go.mod"], "cmd": ["go", "build"]},
+    {"name": "meson", "files": ["meson.build"], "cmd": ["meson", "compile", "-C", "build"]},
+]
+
 # Install hints per language and platform family
 _INSTALL_HINTS: dict[str, dict[str, str]] = {
     "c": {
@@ -130,7 +140,7 @@ def _install_hint(lang: str) -> str:
     return "Please install the required compiler for this language."
 
 
-class PytestRunnerVerifier(BaseVerifier):
+class TestRunnerVerifier(BaseVerifier):
     """Level 2 verifier: runs tests against task outputs.
 
     Supports:
@@ -152,7 +162,20 @@ class PytestRunnerVerifier(BaseVerifier):
     # Public API
     # ------------------------------------------------------------------
 
-    async def verify(self, task: TaskSpec, execution_result: ExecutionResult) -> VerificationResult:
+    async def verify(
+        self,
+        task: TaskSpec,
+        execution_result: ExecutionResult,
+        skip_project_build: bool = False,
+    ) -> VerificationResult:
+        """Run verification.
+
+        Args:
+            skip_project_build: If True, skip project-level build commands (make,
+                cmake, etc.) and only run per-file syntax checks.  Callers should set
+                this to True when the LLM is still actively writing files — project
+                builds are likely to fail due to incomplete source files.
+        """
         issues: list[dict[str, Any]] = []
         metrics: dict[str, Any] = {}
         score = 100.0
@@ -163,20 +186,34 @@ class PytestRunnerVerifier(BaseVerifier):
         langs = {k: v for k, v in langs.items() if k != "generic"}
         metrics["languages"] = list(langs.keys())
 
-        # If no code files to verify, skip
-        if not langs:
-            return self._make_result(
-                task,
-                passed=True,
-                score=80.0,
-                issues=[],
-                feedback="No code outputs to verify.",
-                verdict=Verdict.APPROVE,
-                metrics=metrics,
-            )
+        # Determine working directory from artifacts or changed files
+        cwd = execution_result.artifacts.get("cwd", ".")
+        changed_files = execution_result.artifacts.get("changed_files", []) or []
+        if changed_files and cwd == ".":
+            first = changed_files[0]
+            dir_part = os.path.dirname(first)
+            if dir_part and os.path.isdir(dir_part):
+                cwd = dir_part
 
         results: list[dict[str, Any]] = []
 
+        # Step 1: Project-level build check (only when NOT in write phase)
+        build_system = self._detect_build_system(cwd)
+        if build_system and not skip_project_build:
+            build_res = await self._verify_project_build(build_system, cwd)
+            results.append(build_res)
+            issues.extend(build_res.get("issues", []))
+            score -= build_res.get("score_penalty", 0.0)
+            metrics["build_system"] = build_system["name"]
+
+            # If project build actually ran (command available), skip per-file checks
+            # for compiled languages regardless of pass/fail — the build result is
+            # the ground truth.  If command is missing, fall back to per-file checks.
+            if not build_res.get("command_missing"):
+                compiled_langs = {"c", "cpp", "rust", "go", "java"}
+                langs = {k: v for k, v in langs.items() if k not in compiled_langs}
+
+        # Step 2: Per-language checks for remaining languages
         for lang, files in langs.items():
             if lang == "python":
                 res = await self._verify_python(files, task)
@@ -187,6 +224,18 @@ class PytestRunnerVerifier(BaseVerifier):
             results.append(res)
             issues.extend(res.get("issues", []))
             score -= res.get("score_penalty", 0.0)
+
+        # If nothing to check at all, auto-pass
+        if not results:
+            return self._make_result(
+                task,
+                passed=True,
+                score=80.0,
+                issues=[],
+                feedback="No code outputs to verify.",
+                verdict=Verdict.APPROVE,
+                metrics=metrics,
+            )
 
         score = max(0.0, min(100.0, score))
         # Blocking errors trigger NEEDS_REWORK; warnings are recorded but don't block
@@ -204,6 +253,11 @@ class PytestRunnerVerifier(BaseVerifier):
         for r in results:
             status = "✓" if r.get("ok") else "✗"
             lines.append(f"{status} {r['lang']}: {r['feedback']}")
+            for issue in r.get("issues", []):
+                if issue.get("severity") == "error":
+                    detail = issue.get("message", "")
+                    if detail:
+                        lines.append(f"    → {detail}")
         feedback = "\n".join(lines)
 
         metrics["score"] = score
@@ -419,12 +473,13 @@ class PytestRunnerVerifier(BaseVerifier):
             sys.executable, "-m", "pytest", *test_files, "-q", "--tb=short"
         )
 
-    async def _run_command(self, *cmd: str) -> dict[str, Any]:
+    async def _run_command(self, *cmd: str, cwd: str | None = None) -> dict[str, Any]:
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
             )
             stdout, stderr = await proc.communicate()
             return {
@@ -438,6 +493,78 @@ class PytestRunnerVerifier(BaseVerifier):
                 "stdout": "",
                 "stderr": str(e),
             }
+
+    def _detect_build_system(self, cwd: str) -> dict[str, Any] | None:
+        """Detect project-level build system in the given directory."""
+        for bs in _BUILD_SYSTEMS:
+            for f in bs["files"]:
+                if os.path.exists(os.path.join(cwd, f)):
+                    return bs
+        return None
+
+    async def _verify_project_build(self, build_system: dict[str, Any], cwd: str) -> dict[str, Any]:
+        """Run project-level build command (make, cmake, npm, cargo, etc.)."""
+        issues: list[dict[str, Any]] = []
+        ok = True
+        penalty = 0.0
+
+        # Check primary command exists
+        binary = build_system["cmd"][0]
+        if not shutil.which(binary):
+            return {
+                "lang": build_system["name"],
+                "ok": True,
+                "issues": [
+                    {
+                        "severity": "warning",
+                        "category": "command_missing",
+                        "message": f"{binary} not found; skipping project build",
+                        "blocking": False,
+                    }
+                ],
+                "score_penalty": 0.0,
+                "feedback": f"{binary} not installed; skipped project build",
+                "command_missing": True,
+            }
+
+        # Try primary command
+        cmd = build_system["cmd"]
+        result = await self._run_command(*cmd, cwd=cwd)
+
+        if result["exit_code"] != 0:
+            # Try fallback command if available
+            fallback = build_system.get("fallback_cmd")
+            if fallback and shutil.which(fallback[0]):
+                result = await self._run_command(*fallback, cwd=cwd)
+                if result["exit_code"] == 0:
+                    return {
+                        "lang": build_system["name"],
+                        "ok": True,
+                        "issues": [],
+                        "score_penalty": 0.0,
+                        "feedback": f"{build_system['name']} build passed (via fallback)",
+                    }
+
+            ok = False
+            err = (result["stderr"] or result["stdout"])[:800]
+            penalty += 30.0
+            issues.append({
+                "severity": "error",
+                "category": "build_error",
+                "message": f"{build_system['name']}: {err}",
+                "blocking": True,
+            })
+            feedback = f"{build_system['name']} build failed: {err[:200]}"
+        else:
+            feedback = f"{build_system['name']} build passed"
+
+        return {
+            "lang": build_system["name"],
+            "ok": ok,
+            "issues": issues,
+            "score_penalty": penalty,
+            "feedback": feedback,
+        }
 
     def _parse_failures(self, output: str) -> list[str]:
         failed = []

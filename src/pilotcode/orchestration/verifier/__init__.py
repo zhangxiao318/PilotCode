@@ -8,7 +8,7 @@ Three-level verification system:
 
 from .base import VerificationResult, Verdict, BaseVerifier
 from .level1_static import StaticAnalysisVerifier
-from .level2_tests import PytestRunnerVerifier as TestRunnerVerifier
+from .level2_tests import TestRunnerVerifier
 from .level3_review import CodeReviewVerifier
 
 __all__ = [

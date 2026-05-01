@@ -36,7 +36,7 @@ from .verifiers.adapter_verifiers import (
     l1_simple_verifier,
     l3_code_review_verifier,
 )
-from .verifier.level2_tests import PytestRunnerVerifier
+from .verifier.level2_tests import TestRunnerVerifier
 from .explorers.code_explorer import explore_codebase
 from .context_strategy import (
     ContextStrategySelector,
@@ -178,8 +178,8 @@ class MissionAdapter:
             self._orchestrator.register_verifier(3, static_analysis_l3_verifier)
 
     def _make_l2_verifier(self) -> Callable:
-        """Build the L2 verifier: PytestRunnerVerifier with optional enforcement."""
-        verifier = PytestRunnerVerifier()
+        """Build the L2 verifier: TestRunnerVerifier with optional enforcement."""
+        verifier = TestRunnerVerifier()
 
         async def handler(task: TaskSpec, exec_result: ExecutionResult) -> VerificationResult:
             # Optionally inject test criterion for weak models (only if code was produced)
@@ -1046,6 +1046,70 @@ class MissionAdapter:
                     parts.append(
                         f"\n[FRAMEWORK VERIFICATION] Edit in {edit_path} passed all checks."
                     )
+
+        # --- Compiler / syntax verification for changed code files ---
+        # Detect whether LLM already ran a compile command this turn
+        has_compile_command = any(
+            msg.name in ("Bash", "bash", "PowerShell", "powershell")
+            and any(
+                kw in (msg.input.get("command", "") + " " + msg.input.get("script", "")).lower()
+                for kw in ("gcc", "g++", "make", "cmake", "cl ", "msbuild", "rustc", "cargo", "go build", "javac", "npm run build", "tsc")
+            )
+            for msg in engine.messages
+            if isinstance(msg, ToolUseMessage)
+        )
+
+        if changed and not has_compile_command:
+            code_files = [
+                f
+                for f in changed
+                if f.endswith(
+                    (
+                        ".py",
+                        ".c",
+                        ".cpp",
+                        ".cc",
+                        ".cxx",
+                        ".rs",
+                        ".go",
+                        ".js",
+                        ".ts",
+                        ".java",
+                    )
+                )
+            ]
+            if code_files:
+                temp_exec = ExecutionResult(
+                    task_id=task.id,
+                    success=True,
+                    artifacts={
+                        "changed_files": code_files,
+                        "cwd": getattr(engine.config, "cwd", ".") or ".",
+                    },
+                )
+                verifier = TestRunnerVerifier()
+                try:
+                    # If the worker is still writing files this turn, skip project build
+                    has_file_write = any(
+                        msg.name in ("FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch")
+                        for msg in engine.messages
+                        if isinstance(msg, ToolUseMessage)
+                    )
+                    v_result = await verifier.verify(
+                        task, temp_exec, skip_project_build=has_file_write
+                    )
+                    if not v_result.passed and v_result.feedback:
+                        parts.append(
+                            f"\n[FRAMEWORK VERIFICATION - COMPILE CHECK]\n"
+                            f"{v_result.feedback}\n"
+                            f"Fix these errors before proceeding."
+                        )
+                    elif v_result.passed:
+                        parts.append(
+                            "\n[FRAMEWORK VERIFICATION - COMPILE CHECK] All code changes passed syntax check."
+                        )
+                except Exception:
+                    pass  # Silently skip if verifier fails internally
 
         parts.append(f"\nTask objective: {task.objective}")
         parts.append("Continue where you left off. Do not repeat completed actions.")

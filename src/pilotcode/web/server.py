@@ -1470,8 +1470,77 @@ class WebSocketManager:
                         },
                     )
 
-                # Switch to internal continuation query
-                query = "Please continue based on the tool results above."
+                # --- Compiler / syntax verification for changed code files ---
+                has_compile_command = any(
+                    tool_msg.name in ("Bash", "bash", "PowerShell", "powershell")
+                    and any(
+                        kw in (tool_msg.input.get("command", "") + " " + tool_msg.input.get("script", "")).lower()
+                        for kw in ("gcc", "g++", "make", "cmake", "cl ", "msbuild", "rustc", "cargo", "go build", "javac", "npm run build", "tsc")
+                    )
+                    for tool_msg in pending_tools
+                )
+
+                changed_files: list[str] = []
+                if not has_compile_command:
+                    for tool_msg in pending_tools:
+                        if tool_msg.name in (
+                            "FileWrite",
+                            "write",
+                            "FileEdit",
+                            "edit",
+                            "ApplyPatch",
+                            "apply_patch",
+                        ):
+                            path = (
+                                tool_msg.input.get("file_path")
+                                or tool_msg.input.get("path")
+                                or tool_msg.input.get("base_path", "")
+                            )
+                            if path and not path.endswith((".h", ".hpp")) and path not in changed_files:
+                                changed_files.append(path)
+
+                if changed_files:
+                    from pilotcode.orchestration.task_spec import TaskSpec
+                    from pilotcode.orchestration.results import ExecutionResult
+                    from pilotcode.orchestration.verifier.level2_tests import TestRunnerVerifier
+
+                    temp_task = TaskSpec(
+                        id="web_verify",
+                        title="verification",
+                        objective="verify compilation",
+                    )
+                    temp_exec = ExecutionResult(
+                        task_id="web_verify",
+                        success=True,
+                        artifacts={
+                            "changed_files": changed_files,
+                            "cwd": getattr(store.get_state(), "cwd", "") or self.cwd,
+                        },
+                    )
+                    verifier = TestRunnerVerifier()
+                    try:
+                        has_file_write = any(
+                            tool_msg.name in (
+                                "FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch"
+                            )
+                            for tool_msg in pending_tools
+                        )
+                        v_result = await verifier.verify(
+                            temp_task, temp_exec, skip_project_build=has_file_write
+                        )
+                        if not v_result.passed and v_result.feedback:
+                            query = (
+                                "[FRAMEWORK VERIFICATION - COMPILE CHECK]\n"
+                                f"{v_result.feedback}\n"
+                                "Fix these errors before proceeding."
+                            )
+                        else:
+                            query = "Please continue based on the tool results above."
+                    except Exception:
+                        query = "Please continue based on the tool results above."
+                else:
+                    query = "Please continue based on the tool results above."
+
                 is_continue_query = True
                 # Reset content length tracking for new response
                 sent_content_length = 0

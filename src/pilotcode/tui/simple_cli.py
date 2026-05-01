@@ -33,6 +33,9 @@ from pilotcode.services.session_context import (  # noqa: E402
 )
 from pilotcode.services.context_compression import get_context_compressor  # noqa: E402
 from pilotcode.components.repl import classify_task_complexity  # noqa: E402
+from pilotcode.orchestration.task_spec import TaskSpec  # noqa: E402
+from pilotcode.orchestration.results import ExecutionResult  # noqa: E402
+from pilotcode.orchestration.verifier.level2_tests import TestRunnerVerifier  # noqa: E402
 
 
 @dataclass
@@ -705,9 +708,77 @@ class SimpleCLI:
                         # P0: FileEdit compensation tracking
                         self._apply_compensation_if_needed(tool_name, False, err_text)
 
+                # --- Compiler / syntax verification for changed code files ---
+                # Skip if LLM already ran a compile command this turn — avoid redundant checks
+                has_compile_command = any(
+                    tool_msg.name in ("Bash", "bash", "PowerShell", "powershell")
+                    and any(
+                        kw in (tool_msg.input.get("command", "") + " " + tool_msg.input.get("script", "")).lower()
+                        for kw in ("gcc", "g++", "make", "cmake", "cl ", "msbuild", "rustc", "cargo", "go build", "javac", "npm run build", "tsc")
+                    )
+                    for tool_msg in pending_tools
+                )
+
+                changed_files: list[str] = []
+                if not has_compile_command:
+                    for tool_msg in pending_tools:
+                        if tool_msg.name in (
+                            "FileWrite",
+                            "write",
+                            "FileEdit",
+                            "edit",
+                            "ApplyPatch",
+                            "apply_patch",
+                        ):
+                            path = (
+                                tool_msg.input.get("file_path")
+                                or tool_msg.input.get("path")
+                                or tool_msg.input.get("base_path", "")
+                            )
+                            # Skip header-only changes — headers cannot be compiled standalone
+                            if path and not path.endswith((".h", ".hpp")) and path not in changed_files:
+                                changed_files.append(path)
+
+                if changed_files:
+                    temp_task = TaskSpec(
+                        id="simple_cli_verify",
+                        title="verification",
+                        objective="verify compilation",
+                    )
+                    temp_exec = ExecutionResult(
+                        task_id="simple_cli_verify",
+                        success=True,
+                        artifacts={
+                            "changed_files": changed_files,
+                            "cwd": getattr(self.store.get_state(), "cwd", ".") or ".",
+                        },
+                    )
+                    verifier = TestRunnerVerifier()
+                    try:
+                        # Skip project build if LLM is still actively writing files this turn
+                        has_file_write = any(
+                            tool_msg.name in (
+                                "FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch"
+                            )
+                            for tool_msg in pending_tools
+                        )
+                        v_result = await verifier.verify(
+                            temp_task, temp_exec, skip_project_build=has_file_write
+                        )
+                        if not v_result.passed and v_result.feedback:
+                            current_prompt = (
+                                "[FRAMEWORK VERIFICATION - COMPILE CHECK]\n"
+                                f"{v_result.feedback}\n"
+                                "Fix these errors before proceeding."
+                            )
+                        else:
+                            current_prompt = ""
+                    except Exception:
+                        current_prompt = ""
+                else:
+                    current_prompt = ""
+
                 # Continue loop to get LLM response with tool results
-                # Use empty string to continue without adding new user message
-                current_prompt = ""
             else:
                 # Loop exited because max_iterations was reached (not break)
                 max_reached = True

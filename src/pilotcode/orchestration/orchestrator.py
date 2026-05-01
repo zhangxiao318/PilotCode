@@ -785,6 +785,18 @@ class Orchestrator:
 
         # Adjust task
         adjusted_task = self._adjust_task_for_retry(node.task, analysis)
+
+        # Inject verifier feedback (L1/L2/L3) into rework objective so the
+        # LLM knows exactly what failed (e.g. gcc compile errors).
+        for level_key in ("_verification_1", "_verification_2", "_verification_3"):
+            v_result = node.artifacts.get(level_key)
+            if isinstance(v_result, VerificationResult) and not v_result.passed and v_result.feedback:
+                adjusted_task.objective += (
+                    f"\n\n[VERIFICATION FAILED - Level {v_result.level}]\n"
+                    f"{v_result.feedback}\n"
+                    f"You MUST fix these issues before completing the task."
+                )
+
         adjusted_node = DagNode(task_id=task_id, task=adjusted_task)
         adjusted_node.state = TaskState.PENDING
         adjusted_node.depth = node.depth
