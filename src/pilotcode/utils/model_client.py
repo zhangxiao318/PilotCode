@@ -556,45 +556,50 @@ class ModelClient:
         if root_url.endswith("/v1"):
             root_url = root_url[:-3]
 
+        is_anthropic = self._api_protocol == "anthropic"
+
         # ------------------------------------------------------------------
         # 1. llama.cpp / llama-server  ->  GET /props
         #    Returns: default_generation_settings.n_ctx, model_path, etc.
         # ------------------------------------------------------------------
-        try:
-            resp = await self.client.get(f"{root_url}/props", timeout=5.0, follow_redirects=True)
-            if resp.status_code == 200:
-                data = resp.json()
-                dgs = data.get("default_generation_settings", {})
-                n_ctx = dgs.get("n_ctx")
-                if n_ctx is not None:
-                    cap["context_window"] = int(n_ctx)
-                # max_tokens from params (llama-server uses -1 for infinite)
-                params = dgs.get("params", {})
-                max_tok = params.get("max_tokens", params.get("n_predict"))
-                if max_tok is not None and max_tok > 0:
-                    cap["max_tokens"] = int(max_tok)
-                # vision from modalities
-                modalities = data.get("modalities", {})
-                if "vision" in modalities:
-                    cap["supports_vision"] = bool(modalities["vision"])
-                # model path gives us display name hint
-                model_path = data.get("model_path")
-                if model_path:
-                    cap["display_name"] = Path(model_path).stem
-                    inferred = _infer_provider(cap["display_name"])
-                    if inferred:
-                        cap["_provider"] = inferred
-                if "_provider" not in cap:
-                    cap["_provider"] = "custom"
-                cap["_backend"] = "llama-server"
-        except Exception as e:
-            last_error = f"llama-server /props: {type(e).__name__}: {e}"
+        if not is_anthropic:
+            try:
+                resp = await self.client.get(
+                    f"{root_url}/props", timeout=5.0, follow_redirects=True
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    dgs = data.get("default_generation_settings", {})
+                    n_ctx = dgs.get("n_ctx")
+                    if n_ctx is not None:
+                        cap["context_window"] = int(n_ctx)
+                    # max_tokens from params (llama-server uses -1 for infinite)
+                    params = dgs.get("params", {})
+                    max_tok = params.get("max_tokens", params.get("n_predict"))
+                    if max_tok is not None and max_tok > 0:
+                        cap["max_tokens"] = int(max_tok)
+                    # vision from modalities
+                    modalities = data.get("modalities", {})
+                    if "vision" in modalities:
+                        cap["supports_vision"] = bool(modalities["vision"])
+                    # model path gives us display name hint
+                    model_path = data.get("model_path")
+                    if model_path:
+                        cap["display_name"] = Path(model_path).stem
+                        inferred = _infer_provider(cap["display_name"])
+                        if inferred:
+                            cap["_provider"] = inferred
+                    if "_provider" not in cap:
+                        cap["_provider"] = "custom"
+                    cap["_backend"] = "llama-server"
+            except Exception as e:
+                last_error = f"llama-server /props: {type(e).__name__}: {e}"
 
         # ------------------------------------------------------------------
         # 2. Ollama  ->  POST /api/show
         #    Returns: model_info.{family}.context_length
         # ------------------------------------------------------------------
-        if "context_window" not in cap:
+        if not is_anthropic and "context_window" not in cap:
             try:
                 resp = await self.client.post(
                     f"{root_url}/api/show",
@@ -635,7 +640,7 @@ class ModelClient:
         # ------------------------------------------------------------------
         # 3. LiteLLM proxy  ->  GET /model/info
         # ------------------------------------------------------------------
-        if "context_window" not in cap:
+        if not is_anthropic and "context_window" not in cap:
             try:
                 resp = await self.client.get(
                     f"{root_url}/model/info", timeout=5.0, follow_redirects=True
@@ -659,8 +664,8 @@ class ModelClient:
                 last_error = f"LiteLLM /model/info: {type(e).__name__}: {e}"
 
         # ------------------------------------------------------------------
-        # 4. Standard OpenAI-compatible  ->  GET /v1/models / /models/{id}
-        #    (vLLM, TGI, SGLang, cloud providers, etc.)
+        # 4. Standard OpenAI-compatible / Anthropic  ->  GET /v1/models / /models/{id}
+        #    (vLLM, TGI, SGLang, cloud providers, Anthropic, etc.)
         # ------------------------------------------------------------------
         if "context_window" not in cap or "max_tokens" not in cap:
             model_data = None
@@ -716,6 +721,12 @@ class ModelClient:
                 elif owned_by == "deepseek":
                     cap["_provider"] = "deepseek"
                     cap["_backend"] = "deepseek"
+                elif (
+                    model_data.get("type") == "model"
+                    and "claude" in str(model_data.get("id", "")).lower()
+                ):
+                    cap["_provider"] = "anthropic"
+                    cap["_backend"] = "anthropic"
 
                 # context window
                 if "context_window" not in cap:

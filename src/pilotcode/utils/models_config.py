@@ -219,7 +219,7 @@ def get_domestic_models() -> dict[str, ModelInfo]:
 _backend_limits_cache: dict[str, dict[str, int]] = {}
 
 
-def _probe_backend_limits(base_url: str) -> dict[str, int] | None:
+def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[str, int] | None:
     """Synchronously probe the backend for actual model limits.
 
     Queries llama-server /props, Ollama /api/show, and OpenAI-compatible
@@ -246,6 +246,30 @@ def _probe_backend_limits(base_url: str) -> dict[str, int] | None:
         root_url = root_url[:-3]
 
     cap: dict[str, int] = {}
+
+    # Anthropic protocol: skip local backend probes, try /v1/models directly
+    if api_protocol == "anthropic":
+        try:
+            with httpx.Client(timeout=3.0, follow_redirects=True) as client:
+                resp = client.get(f"{root_url}/v1/models")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    models = data.get("data", [])
+                    if models:
+                        model_data = models[0]
+                        ctx = model_data.get("context_window")
+                        if ctx is not None:
+                            cap["context_window"] = int(ctx)
+                        max_out = model_data.get("max_output_tokens")
+                        if max_out is not None:
+                            cap["max_tokens"] = int(max_out)
+        except Exception as exc:
+            logger.debug("Anthropic backend probe /v1/models failed: %s", exc)
+        if cap:
+            _backend_limits_cache[base_url] = cap
+            logger.debug("Probed Anthropic backend limits for %s: %s", base_url, cap)
+            return cap
+        return None
 
     # 1. llama.cpp / llama-server -> GET /props
     try:
@@ -330,7 +354,13 @@ def get_model_limits(model_name: str | None = None) -> dict[str, int]:
     probed: dict[str, int] | None = None
     probed_context = False
     if base_url:
-        probed = _probe_backend_limits(base_url)
+        protocol = infer_api_protocol(
+            model_name or config.default_model,
+            base_url,
+            config.get_model_config(model_name or config.default_model),
+            get_model_info(model_name or config.default_model),
+        )
+        probed = _probe_backend_limits(base_url, protocol)
         if probed:
             result.update(probed)
             if "context_window" in probed:
