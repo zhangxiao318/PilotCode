@@ -184,8 +184,6 @@ class ModelClient:
         from .config import is_local_url
 
         is_local = is_local_url(effective_base_url)
-        if not is_local and model_key in ("ollama", "vllm"):
-            is_local = True
 
         if is_local:
             self.model = model_key
@@ -736,10 +734,7 @@ class ModelClient:
                 elif owned_by == "deepseek":
                     cap["_provider"] = "deepseek"
                     cap["_backend"] = "deepseek"
-                elif (
-                    model_data.get("type") == "model"
-                    and "claude" in str(model_data.get("id", "")).lower()
-                ):
+                elif "claude" in str(model_data.get("id", "")).lower():
                     cap["_provider"] = "anthropic"
                     cap["_backend"] = "anthropic"
 
@@ -954,14 +949,14 @@ class ModelClient:
                     result = []
                     for m in models:
                         if isinstance(m, dict):
-                            mid = m.get("id", "")
+                            mid = m.get("id") or ""
                             dname = m.get("display_name") or mid
-                            if dname.endswith(".gguf"):
-                                dname = dname[:-5]
+                            clean_id = _clean_model_name(mid)
+                            clean_name = _clean_model_name(dname)
                             result.append(
                                 {
-                                    "id": mid,
-                                    "display_name": dname,
+                                    "id": clean_id,
+                                    "display_name": clean_name or clean_id,
                                 }
                             )
                     return result

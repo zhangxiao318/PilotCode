@@ -988,6 +988,7 @@ def config(
                     if len(detected_models) > 10:
                         console.print(f"  ... and {len(detected_models) - 10} more")
 
+                updates: dict[str, Any] = {}
                 if api_caps:
                     api_err = api_caps.get("_error")
                     if api_err:
@@ -1003,7 +1004,6 @@ def config(
                         _print_api_capability(console, api_caps, static_info=static_info)
 
                         # --- Check settings.json against probed values ---
-                        updates: dict[str, Any] = {}
 
                         detected_ctx = api_caps.get("context_window")
                         if detected_ctx is not None:
@@ -1079,15 +1079,7 @@ def config(
                             setattr(config, key, val)
                         get_config_manager().save_global_config(config)
                         console.print("[green]✓ settings.json updated.[/green]")
-                elif api_caps and api_caps.get("_error"):
-                    err = api_caps["_error"]
-                    console.print(f"[red]  Could not connect to backend: {err}[/red]")
-                    console.print(
-                        "  [dim]Tips:[/dim]\n"
-                        "    • Check if the server is running\n"
-                        "    • Verify base_url uses the correct protocol (http vs https)\n"
-                        "    • Check firewall / port accessibility"
-                    )
+
                     if static_info:
                         console.print("\n[bold]Model Capability (Static Config):[/bold]")
                         _print_model_capability(console, static_info, source="static")
@@ -1119,7 +1111,7 @@ def config(
                 _print_model_capability(console, static_info, source="static")
             else:
                 console.print(
-                    "\n[yellow]No static config found for model '{config.default_model}'. "
+                    f"\n[yellow]No static config found for model '{config.default_model}'. "
                     "Run with --wizard to configure.[/yellow]"
                 )
 

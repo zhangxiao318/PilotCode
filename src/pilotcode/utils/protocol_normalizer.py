@@ -399,7 +399,10 @@ class ResponseNormalizer:
                         yield {
                             "choices": [
                                 {
-                                    "delta": {"reasoning_content": thinking},
+                                    "delta": {
+                                        "content": "",
+                                        "reasoning_content": thinking,
+                                    },
                                     "finish_reason": None,
                                 }
                             ]
@@ -431,7 +434,7 @@ class ResponseNormalizer:
 
             if event_type == "message_delta":
                 delta = event.get("delta", {})
-                stop_reason = delta.get("stop_reason", "")
+                stop_reason = delta.get("stop_reason")
                 finish = "stop" if stop_reason in ("end_turn", "stop_sequence") else stop_reason
                 usage = event.get("usage", {})
                 if usage:
@@ -483,15 +486,13 @@ class ResponseNormalizer:
                     }
                 )
 
-        delta: dict[str, Any] = {"role": "assistant"}
-        if text_parts:
-            delta["content"] = "".join(text_parts)
+        delta: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
         if reasoning_parts:
             delta["reasoning_content"] = "".join(reasoning_parts)
         if tool_calls:
             delta["tool_calls"] = tool_calls
 
-        stop_reason = data.get("stop_reason", "")
+        stop_reason = data.get("stop_reason")
         finish = "stop" if stop_reason in ("end_turn", "stop_sequence") else stop_reason
 
         chunk: dict[str, Any] = {"choices": [{"delta": delta, "finish_reason": finish}]}

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -964,6 +965,7 @@ class MissionAdapter:
 
     async def _build_continue_prompt(self, engine: QueryEngine, task: TaskSpec) -> str:
         """Build a contextual continue prompt instead of bare 'Please continue.'."""
+        logger = logging.getLogger(__name__)
         # Summarize what has happened so far
         actions: list[str] = []
         changed: list[str] = []
@@ -986,6 +988,10 @@ class MissionAdapter:
                     actions.append(f"edited {path}")
                     changed.append(path)
                     recent_edits.append((path, old_str))
+                elif name in ("ApplyPatch", "apply_patch"):
+                    path = msg.input.get("file_path") or msg.input.get("path", "?")
+                    actions.append(f"patched {path}")
+                    changed.append(path)
                 elif name in ("BashTool", "Bash", "bash"):
                     cmd = msg.input.get("command", "?")[:60]
                     actions.append(f"ran bash: {cmd}")
@@ -1049,8 +1055,16 @@ class MissionAdapter:
 
         # --- Compiler / syntax verification for changed code files ---
         # Detect whether LLM already ran a compile command this turn
+        # Only check the most recent turn (after last AssistantMessage)
+        recent_tool_msgs: list[ToolUseMessage] = []
+        for msg in reversed(engine.messages):
+            if isinstance(msg, AssistantMessage):
+                break
+            if isinstance(msg, ToolUseMessage):
+                recent_tool_msgs.append(msg)
+
         has_compile_command = any(
-            msg.name in ("Bash", "bash", "PowerShell", "powershell")
+            msg.name in ("Bash", "bash", "BashTool", "PowerShell", "powershell")
             and any(
                 kw in (msg.input.get("command", "") + " " + msg.input.get("script", "")).lower()
                 for kw in (
@@ -1058,7 +1072,6 @@ class MissionAdapter:
                     "g++",
                     "make",
                     "cmake",
-                    "cl ",
                     "msbuild",
                     "rustc",
                     "cargo",
@@ -1068,8 +1081,7 @@ class MissionAdapter:
                     "tsc",
                 )
             )
-            for msg in engine.messages
-            if isinstance(msg, ToolUseMessage)
+            for msg in recent_tool_msgs
         )
 
         if changed and not has_compile_command:
@@ -1083,6 +1095,8 @@ class MissionAdapter:
                         ".cpp",
                         ".cc",
                         ".cxx",
+                        ".h",
+                        ".hpp",
                         ".rs",
                         ".go",
                         ".js",
@@ -1106,8 +1120,7 @@ class MissionAdapter:
                     has_file_write = any(
                         msg.name
                         in ("FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch")
-                        for msg in engine.messages
-                        if isinstance(msg, ToolUseMessage)
+                        for msg in recent_tool_msgs
                     )
                     v_result = await verifier.verify(
                         task, temp_exec, skip_project_build=has_file_write
@@ -1122,8 +1135,8 @@ class MissionAdapter:
                         parts.append(
                             "\n[FRAMEWORK VERIFICATION - COMPILE CHECK] All code changes passed syntax check."
                         )
-                except Exception:
-                    pass  # Silently skip if verifier fails internally
+                except Exception as exc:
+                    logger.debug("Compiler check skipped due to internal error: %s", exc)
 
         parts.append(f"\nTask objective: {task.objective}")
         parts.append("Continue where you left off. Do not repeat completed actions.")

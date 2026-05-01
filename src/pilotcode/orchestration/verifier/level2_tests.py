@@ -48,14 +48,15 @@ _COMPILER_CHECKS: dict[str, tuple[str, ...]] = {
 }
 
 # Project-level build systems — checked before per-file syntax checks
+# Order matters: more specific systems should come before generic ones
 _BUILD_SYSTEMS: list[dict[str, Any]] = [
-    {"name": "make", "files": ["Makefile", "makefile", "GNUmakefile"], "cmd": ["make"]},
     {
         "name": "cmake",
         "files": ["CMakeLists.txt"],
         "cmd": ["cmake", "--build", "."],
         "fallback_cmd": ["make"],
     },
+    {"name": "make", "files": ["Makefile", "makefile", "GNUmakefile"], "cmd": ["make"]},
     {
         "name": "npm",
         "files": ["package.json"],
@@ -194,8 +195,6 @@ class TestRunnerVerifier(BaseVerifier):
         langs = self._detect_languages(task, execution_result)
         # Filter out non-code files (md, txt, log, etc.)
         langs = {k: v for k, v in langs.items() if k != "generic"}
-        metrics["languages"] = list(langs.keys())
-
         # Determine working directory from artifacts or changed files
         cwd = execution_result.artifacts.get("cwd", ".")
         changed_files = execution_result.artifacts.get("changed_files", []) or []
@@ -204,6 +203,11 @@ class TestRunnerVerifier(BaseVerifier):
             dir_part = os.path.dirname(first)
             if dir_part and os.path.isdir(dir_part):
                 cwd = dir_part
+
+        # Resolve cwd to absolute for reliable build-system detection
+        cwd = os.path.abspath(cwd)
+
+        metrics["languages"] = list(langs.keys())
 
         results: list[dict[str, Any]] = []
 
@@ -220,8 +224,9 @@ class TestRunnerVerifier(BaseVerifier):
             # for compiled languages regardless of pass/fail — the build result is
             # the ground truth.  If command is missing, fall back to per-file checks.
             if not build_res.get("command_missing"):
-                compiled_langs = {"c", "cpp", "rust", "go", "java"}
+                compiled_langs = {"c", "cpp", "rust", "go", "java", "javascript", "typescript"}
                 langs = {k: v for k, v in langs.items() if k not in compiled_langs}
+                metrics["languages"] = list(langs.keys())
 
         # Step 2: Per-language checks for remaining languages
         for lang, files in langs.items():
@@ -505,11 +510,19 @@ class TestRunnerVerifier(BaseVerifier):
             }
 
     def _detect_build_system(self, cwd: str) -> dict[str, Any] | None:
-        """Detect project-level build system in the given directory."""
-        for bs in _BUILD_SYSTEMS:
-            for f in bs["files"]:
-                if os.path.exists(os.path.join(cwd, f)):
-                    return bs
+        """Detect project-level build system in the given directory.
+
+        Also walks up the directory tree to find build files in parent
+        directories (common when changed files are in src/ but Makefile
+        is in the project root).
+        """
+        current = os.path.abspath(cwd)
+        while current and current != os.path.dirname(current):
+            for bs in _BUILD_SYSTEMS:
+                for f in bs["files"]:
+                    if os.path.exists(os.path.join(current, f)):
+                        return bs
+            current = os.path.dirname(current)
         return None
 
     async def _verify_project_build(self, build_system: dict[str, Any], cwd: str) -> dict[str, Any]:
@@ -517,6 +530,39 @@ class TestRunnerVerifier(BaseVerifier):
         issues: list[dict[str, Any]] = []
         ok = True
         penalty = 0.0
+
+        # For npm: check package.json actually has a build script before penalizing
+        if build_system["name"] == "npm":
+            pkg_path = os.path.join(cwd, "package.json")
+            try:
+                import json as _json
+
+                with open(pkg_path, "r", encoding="utf-8") as f:
+                    pkg = _json.load(f)
+                scripts = pkg.get("scripts", {})
+                if "build" not in scripts and "test" not in scripts:
+                    return {
+                        "lang": "npm",
+                        "ok": True,
+                        "issues": [
+                            {
+                                "severity": "warning",
+                                "category": "command_missing",
+                                "message": "No build/test script in package.json; skipping project build",
+                                "blocking": False,
+                            }
+                        ],
+                        "score_penalty": 0.0,
+                        "feedback": "No build/test script in package.json; skipped project build",
+                        "command_missing": True,
+                    }
+                if "build" not in scripts and "test" in scripts:
+                    # Only test exists; treat as fallback path
+                    build_system = dict(build_system)
+                    build_system["cmd"] = ["npm", "test"]
+                    build_system.pop("fallback_cmd", None)
+            except Exception:
+                pass
 
         # Check primary command exists
         binary = build_system["cmd"][0]
@@ -552,7 +598,8 @@ class TestRunnerVerifier(BaseVerifier):
                         "ok": True,
                         "issues": [],
                         "score_penalty": 0.0,
-                        "feedback": f"{build_system['name']} build passed (via fallback)",
+                        "feedback": f"{build_system['name']} {fallback[0]} passed (fallback)",
+                        "command_missing": False,
                     }
 
             ok = False
@@ -576,6 +623,7 @@ class TestRunnerVerifier(BaseVerifier):
             "issues": issues,
             "score_penalty": penalty,
             "feedback": feedback,
+            "command_missing": False,
         }
 
     def _parse_failures(self, output: str) -> list[str]:
