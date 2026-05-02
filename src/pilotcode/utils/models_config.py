@@ -263,6 +263,7 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
     # ------------------------------------------------------------------
     # 1. OpenAI-compatible -> GET /v1/models (most universal)
     # ------------------------------------------------------------------
+    v1_models_works = False
     try:
         with httpx.Client(timeout=3.0, follow_redirects=True) as client:
             resp = client.get(f"{root_url}/v1/models")
@@ -270,6 +271,7 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
                 data = resp.json()
                 models = data.get("data", [])
                 if models:
+                    v1_models_works = True
                     model_data = models[0]
                     for key in ("context_length", "context_window", "max_model_len"):
                         val = model_data.get(key)
@@ -289,15 +291,25 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
         logger.debug("Probed backend limits via /v1/models for %s: %s", base_url, cap)
         return cap
 
+    # If /v1/models returned a valid model list but without limit fields,
+    # this is a standard OpenAI-compatible server (vLLM, TGI, etc.).
+    # Don't spam /props — it's llama-server-specific and causes ERROR logs.
+    if v1_models_works:
+        _backend_limits_cache[base_url] = {}
+        return None
+
     # ------------------------------------------------------------------
     # Anthropic protocol: try /v1/models (already done above) and stop
     # ------------------------------------------------------------------
     if api_protocol == "anthropic":
+        _backend_limits_cache[base_url] = {}
         return None
 
     # ------------------------------------------------------------------
     # 2. llama.cpp / llama-server -> GET /props
     # Skip for Ollama — it doesn't have /props and logs errors.
+    # Only probe /props when /v1/models completely failed (suggesting
+    # a non-standard backend that might be llama-server).
     # ------------------------------------------------------------------
     if not looks_like_ollama:
         try:
