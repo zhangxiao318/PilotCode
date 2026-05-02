@@ -64,11 +64,11 @@ class MissionAdapter:
 
     # Complexity-to-turns mapping for the LLM worker loop
     DEFAULT_TURN_LIMITS: dict[ComplexityLevel, int] = {
-        ComplexityLevel.VERY_SIMPLE: 5,
-        ComplexityLevel.SIMPLE: 10,
-        ComplexityLevel.MODERATE: 20,
-        ComplexityLevel.COMPLEX: 30,
-        ComplexityLevel.VERY_COMPLEX: 50,
+        ComplexityLevel.VERY_SIMPLE: 3,
+        ComplexityLevel.SIMPLE: 6,
+        ComplexityLevel.MODERATE: 10,
+        ComplexityLevel.COMPLEX: 15,
+        ComplexityLevel.VERY_COMPLEX: 25,
     }
 
     def __init__(
@@ -117,6 +117,9 @@ class MissionAdapter:
 
         # P0: FileEdit failure streak counter for real-time compensation escalation
         self._fileedit_failure_streak = 0
+
+        # Per-task compiler check cache: avoid re-verifying unchanged files
+        self._verified_files_this_task: set[str] = set()
 
         # Multi-model router for tiered task routing
         self.router = ModelRouter()
@@ -681,6 +684,9 @@ class MissionAdapter:
         # Progressive disclosure: collect thinking + tool timeline
         task_details: list[dict[str, Any]] = []
 
+        # Reset per-task compiler check cache
+        self._verified_files_this_task = set()
+
         try:
             async with SessionCleanup() as cleanup:
                 # Register cleanup: mark any unfinished tool calls as aborted
@@ -1073,6 +1079,7 @@ class MissionAdapter:
                 f
                 for f in changed
                 if f.endswith(CODE_FILE_EXTENSIONS)
+                and f not in self._verified_files_this_task
             ]
             if code_files:
                 temp_exec = ExecutionResult(
@@ -1094,6 +1101,7 @@ class MissionAdapter:
                     v_result = await verifier.verify(
                         task, temp_exec, skip_project_build=has_file_write
                     )
+                    self._verified_files_this_task.update(code_files)
                     if not v_result.passed and v_result.feedback:
                         parts.append(
                             f"\n[FRAMEWORK VERIFICATION - COMPILE CHECK]\n"
