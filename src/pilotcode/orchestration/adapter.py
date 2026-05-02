@@ -29,7 +29,8 @@ from pilotcode.permissions.permission_manager import (
 from pilotcode.types.message import ToolUseMessage, AssistantMessage
 from pilotcode.services.cleanup import SessionCleanup
 
-from .task_spec import Mission, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion, CODE_FILE_EXTENSIONS
+from .task_spec import Mission, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion
+from .shared import CODE_FILE_EXTENSIONS
 from .orchestrator import Orchestrator, OrchestratorConfig
 from .results import ExecutionResult
 from .verifier.base import VerificationResult
