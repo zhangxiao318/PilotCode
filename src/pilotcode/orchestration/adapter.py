@@ -1231,9 +1231,9 @@ class MissionAdapter:
         Returns:
             True if full exploration + plan is needed, False to skip straight to execute.
         """
-        from .auto_config import get_auto_config
+        from .auto_config import AutoDecompositionConfig
 
-        config = get_auto_config()
+        config = AutoDecompositionConfig()
         if not config.enabled:
             # Auto-decomposition disabled — always do full planning
             return True
