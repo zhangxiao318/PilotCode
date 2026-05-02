@@ -69,7 +69,7 @@ class MissionSnapshot:
 class MissionTracker:
     """Global mission tracking center.
 
-    Singleton-like pattern: use get_tracker() to get the global instance.
+    Each Orchestrator creates its own MissionTracker instance.
     """
 
     def __init__(self, db_path: str | None = None):
@@ -323,19 +323,3 @@ class MissionTracker:
         return dag.all_done() if dag else False
 
 
-# Global instance
-_tracker: MissionTracker | None = None
-
-
-def get_tracker(db_path: str | None = None) -> MissionTracker:
-    """Get global mission tracker instance."""
-    global _tracker
-    if _tracker is None:
-        _tracker = MissionTracker(db_path=db_path)
-    return _tracker
-
-
-def reset_tracker() -> None:
-    """Reset global tracker (mainly for testing)."""
-    global _tracker
-    _tracker = None
