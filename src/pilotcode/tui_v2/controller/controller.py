@@ -210,31 +210,40 @@ class TUIController:
 
     # ------------------------------------------------------------------
 
-    def _update_session_cwd(self, new_cwd: str) -> None:
+    def _update_session_cwd(self, new_cwd: str) -> bool:
         """Update the session's working directory across all layers.
 
         This synchronizes the new cwd into:
         - session_options (for future MissionAdapter runs)
         - query_engine.config.cwd (for DIRECT mode tool calls)
         - app_state (for tool resolve_cwd)
+
+        Returns True if the directory was successfully changed.
         """
+        # Expand ~ and resolve to absolute path
+        new_cwd = os.path.expanduser(new_cwd)
         new_cwd = str(Path(new_cwd).resolve())
         old_cwd = self.session_options.get("cwd", str(Path.cwd()))
         if new_cwd == old_cwd:
-            return
-        self.session_options["cwd"] = new_cwd
-        if self.query_engine and self.query_engine.config:
-            self.query_engine.config = replace(self.query_engine.config, cwd=new_cwd)
-        if self.set_app_state:
-            self.set_app_state(lambda s: replace(s, cwd=new_cwd))
+            return True
         # Also change the actual OS working directory so external tools
         # (e.g. git, file dialogs) operate in the correct path.
         try:
             os.chdir(new_cwd)
         except OSError as e:
-            self._pending_notifications.append(
-                ("system", {"text": f"Warning: could not change directory to {new_cwd}: {e}"})
-            )
+            warning = f"Warning: could not change directory to {new_cwd}: {e}"
+            self._pending_notifications.append(("system", {"text": warning}))
+            # Inject into LLM context so it knows the directory change failed
+            if getattr(self, "query_engine", None) is not None:
+                self.query_engine.messages.append(SystemMessage(content=warning))
+            return False
+        # Only update state if chdir succeeded
+        self.session_options["cwd"] = new_cwd
+        if self.query_engine and self.query_engine.config:
+            self.query_engine.config = replace(self.query_engine.config, cwd=new_cwd)
+        if self.set_app_state:
+            self.set_app_state(lambda s: replace(s, cwd=new_cwd))
+        return True
 
     def _init_engine(self) -> None:
         """Initialize QueryEngine and session."""
@@ -604,11 +613,11 @@ class TUIController:
             # Sync any cwd detected by MissionAdapter back into the session
             # so follow-up messages target the correct project.
             if adapter._cwd != cwd:
-                self._update_session_cwd(adapter._cwd)
-                yield UIMessage(
-                    type=UIMessageType.SYSTEM,
-                    content=f"📁 Working directory updated to: {adapter._cwd}",
-                )
+                if self._update_session_cwd(adapter._cwd):
+                    yield UIMessage(
+                        type=UIMessageType.SYSTEM,
+                        content=f"📁 Working directory updated to: {adapter._cwd}",
+                    )
 
     async def submit_message(self, text: str, force_plan: bool = False) -> AsyncIterator[UIMessage]:
         """Submit a message and yield UI messages.
@@ -650,11 +659,11 @@ class TUIController:
 
         detected_cwd = _extract_target_path(text)
         if detected_cwd and detected_cwd != self.session_options.get("cwd", str(Path.cwd())):
-            self._update_session_cwd(detected_cwd)
-            yield UIMessage(
-                type=UIMessageType.SYSTEM,
-                content=f"📁 Working directory updated to: {detected_cwd}",
-            )
+            if self._update_session_cwd(detected_cwd):
+                yield UIMessage(
+                    type=UIMessageType.SYSTEM,
+                    content=f"📁 Working directory updated to: {detected_cwd}",
+                )
 
         # New user input = fresh context: reset FileEdit failure tracking
         self._fileedit_tracker.reset()

@@ -247,6 +247,14 @@ class ToolExecutor:
                 tool = t
                 break
 
+        # Case-insensitive fallback (LLMs may vary casing, e.g. "Read" vs "read")
+        if tool is None:
+            lower_name = tool_name.lower()
+            for t in all_tools:
+                if t.name.lower() == lower_name or any(a.lower() == lower_name for a in t.aliases):
+                    tool = t
+                    break
+
         if tool is None:
             return ToolExecutionResult(
                 success=False,

@@ -314,13 +314,14 @@ async def git_branch_call(
 class GitInput(BaseModel):
     """Input for unified Git tool."""
 
-    action: str = Field(description="Action: status, diff, log, branch")
+    action: str = Field(description="Action: status, diff, log, branch, show")
     path: str = Field(default=".", description="Repository path")
-    file: str | None = Field(default=None, description="For diff/log: specific file")
+    file: str | None = Field(default=None, description="For diff/log/show: specific file")
     staged: bool = Field(default=False, description="For diff: show staged changes")
     max_count: int = Field(default=10, description="For log: max commits")
     branch_name: str | None = Field(default=None, description="For branch: branch name")
     branch_action: str = Field(default="list", description="For branch: list, create, switch")
+    commit: str | None = Field(default=None, description="For show: commit hash or ref")
 
 
 class GitOutputUnified(BaseModel):
@@ -400,6 +401,20 @@ async def git_call(
             error=result.error,
         )
 
+    elif action == "show":
+        cmd = ["show"]
+        if input_data.commit:
+            cmd.append(input_data.commit)
+        if input_data.file:
+            cmd.extend(["--", input_data.file])
+        rc, stdout, stderr = run_git_command(cmd, input_data.path)
+        if rc == 0:
+            return ToolResult(
+                data=GitOutputUnified(result={"show": stdout[:10000]}, message="Git show")
+            )
+        else:
+            return ToolResult(data=GitOutputUnified(), error=f"Git show failed: {stderr[:500]}")
+
     else:
         return ToolResult(data=GitOutputUnified(), error=f"Unknown action: {action}")
 
@@ -412,7 +427,7 @@ GitTool = build_tool(
     call=git_call,
     aliases=["git"],
     is_read_only=lambda x: (
-        x.action in ("status", "diff", "log", "branch")
+        x.action in ("status", "diff", "log", "branch", "show")
         and getattr(x, "branch_action", "list") == "list"
         if x
         else True

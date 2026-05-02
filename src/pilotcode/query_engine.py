@@ -28,6 +28,7 @@ from .utils.model_client import (
     ModelClient,
     ContextWindowError,
     RateLimitError,
+    LLMError,
 )
 from .services.token_estimation import get_token_estimator
 from .services.precise_tokenizer import get_precise_tokenizer
@@ -844,6 +845,41 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
                     _rate_limit_retry += 1
                     continue
                 raise
+            except LLMError as exc:
+                # DeepSeek thinking mode: reasoning_content must be passed back.
+                # If we lost it during message processing, strip all reasoning
+                # from history and retry without thinking mode.
+                error_text = str(exc)
+                if "reasoning_content" in error_text and any(
+                    isinstance(m, AssistantMessage) and m.reasoning_content for m in self.messages
+                ):
+                    logger.warning(
+                        "DeepSeek reasoning_content error — stripping reasoning from "
+                        "history and retrying without thinking mode..."
+                    )
+                    cleared = 0
+                    for msg in self.messages:
+                        if isinstance(msg, AssistantMessage) and msg.reasoning_content:
+                            msg.reasoning_content = None
+                            cleared += 1
+                    logger.info(
+                        "Cleared reasoning_content from %d assistant messages, retrying...",
+                        cleared,
+                    )
+                    continue
+                # Not a reasoning_content error — re-raise with guidance
+                logger.error("LLM API error (unrecoverable): %s", exc)
+                yield QueryResult(
+                    message=AssistantMessage(
+                        content=f"API Error: {exc}\n\n"
+                        "The model returned an error. You can try:\n"
+                        "- Sending a shorter message\n"
+                        "- Restarting the conversation with /clear\n"
+                        "- Checking your API key and quota"
+                    ),
+                    is_complete=True,
+                )
+                return
 
             # Fallback: parse XML-style tool calls from content if API didn't return standard tool_calls
             # MUST parse before stripping XML, otherwise content is empty for parsing.
