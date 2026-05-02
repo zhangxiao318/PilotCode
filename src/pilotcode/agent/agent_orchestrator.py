@@ -12,7 +12,7 @@ from .agent_manager import (
     AgentStatus,
 )
 from ..utils.model_client import get_model_client
-from ..tools.base import ToolUseContext
+from ..tools.base import ToolUseContext, _slim_json_schema
 
 
 class WorkflowType(Enum):

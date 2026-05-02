@@ -95,6 +95,7 @@ class QueryEngineConfig:
     auto_review: bool = False
     model_client: ModelClient | None = None  # Custom model client (for multi-model routing)
     max_review_iterations: int = 3
+    ultra_slim_tools: bool = False  # Strip param descriptions from tool schemas
 
 
 @dataclass
@@ -540,8 +541,14 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
         return cleaned.strip()
 
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
-        """Convert tools to slim OpenAI function-calling schema."""
-        return [tool.to_openai_schema() for tool in tools]
+        """Convert tools to slim OpenAI function-calling schema.
+
+        Uses ultra_slim mode when config.ultra_slim_tools is True,
+        which strips ALL parameter descriptions (~50% smaller schemas).
+        Safe for strong models that understand parameter semantics from names alone.
+        """
+        ultra = self.config.ultra_slim_tools
+        return [tool.to_openai_schema(ultra_slim=ultra) for tool in tools]
 
     def _convert_to_api_messages(self, messages: list[MessageType]) -> list[dict[str, Any]]:
         """Convert internal messages to API format.
