@@ -27,7 +27,7 @@ from ..query_engine import QueryEngine, QueryEngineConfig
 from ..state.app_state import get_default_app_state, AppState
 from ..state.store import Store, set_global_store
 from ..utils.config import get_global_config
-from ..types.message import AssistantMessage, ToolUseMessage
+from ..types.message import AssistantMessage, SystemMessage, ToolUseMessage
 from ..permissions import get_tool_executor
 from ..utils.model_client import get_model_client, Message
 
@@ -318,6 +318,7 @@ class REPL:
                 break
 
             permission_denied = False
+            pending_compensation_hints: list[str] = []
             for tool_idx, tool_msg in enumerate(pending_tools, 1):
                 # OpenCode-style doom-loop detection: check at the moment of call
                 doom_reason = self.loop_guard.check_call(tool_msg.name, tool_msg.input)
@@ -330,7 +331,7 @@ class REPL:
                         f"produce your final answer or code changes immediately. "
                         f"Do NOT call the same tools again."
                     )
-                    self.query_engine.messages.append(AssistantMessage(content=warning))
+                    self.query_engine.messages.append(SystemMessage(content=warning))
                     # Block remaining tools in this round
                     for remaining_msg in pending_tools[tool_idx - 1 :]:
                         self.query_engine.add_tool_result(
@@ -423,7 +424,7 @@ class REPL:
                     tool_msg.name, exec_result.success, result_content
                 )
                 if compensation_hint:
-                    self.query_engine.messages.append(AssistantMessage(content=compensation_hint))
+                    pending_compensation_hints.append(compensation_hint)
                     self.console.print(
                         f"[yellow]⚠️  FileEdit compensation activated after "
                         f"{self._fileedit_tracker.failure_streak} consecutive failures[/yellow]"
@@ -433,6 +434,10 @@ class REPL:
 
             if permission_denied:
                 break
+
+            # --- Flush deferred compensation hints (after all tool outputs) ---
+            for hint in pending_compensation_hints:
+                self.query_engine.messages.append(SystemMessage(content=hint))
 
             # -- System Layer: loop detection --
             loop_reason = self.loop_guard.record(pending_tools)
@@ -445,7 +450,7 @@ class REPL:
                     f"Do NOT call the same tools again."
                 )
                 # Inject warning so the model sees it on the next turn
-                self.query_engine.messages.append(AssistantMessage(content=warning))
+                self.query_engine.messages.append(SystemMessage(content=warning))
 
             # -- Status Layer: turn budget prompts (injected into model context) --
             remaining = self.max_iterations - iteration
