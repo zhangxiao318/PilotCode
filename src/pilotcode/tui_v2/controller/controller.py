@@ -232,8 +232,8 @@ class TUIController:
         try:
             os.chdir(new_cwd)
         except OSError as e:
-            self._notify(
-                "system", {"text": f"Warning: could not change directory to {new_cwd}: {e}"}
+            self._pending_notifications.append(
+                ("system", {"text": f"Warning: could not change directory to {new_cwd}: {e}"})
             )
 
     def _init_engine(self) -> None:
@@ -680,6 +680,8 @@ class TUIController:
                     else:
                         content = f"🔄 Auto-compacted context (~{saved} tokens saved)"
                     yield UIMessage(type=UIMessageType.SYSTEM, content=content)
+                elif event_type == "system":
+                    yield UIMessage(type=UIMessageType.SYSTEM, content=payload.get("text", ""))
 
             async for result in self.query_engine.submit_message(current_prompt):
                 msg = result.message
