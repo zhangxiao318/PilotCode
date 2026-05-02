@@ -236,9 +236,11 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
     if not base_url:
         return None
 
-    # Use cached result if available
+    # Use cached result if available (including empty-dict sentinel that
+    # means "already probed, nothing found" so we don't hammer the server).
     if base_url in _backend_limits_cache:
-        return _backend_limits_cache[base_url]
+        cached = _backend_limits_cache[base_url]
+        return cached if cached else None
 
     try:
         import httpx
@@ -343,6 +345,9 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
         logger.debug("Probed backend limits via /api/show for %s: %s", base_url, cap)
         return cap
 
+    # Cache negative result so we don't keep re-probing a backend that
+    # doesn't expose limits (e.g. generic OpenAI-compatible servers).
+    _backend_limits_cache[base_url] = {}
     return None
 
 
