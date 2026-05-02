@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from .task_spec import Mission, TaskSpec, ComplexityLevel
 from .state_machine import TaskState, StateMachine, Transition, InvalidTransitionError
 from .dag import DagExecutor, DagNode
-from .tracker import get_tracker
+from .tracker import MissionTracker
 from .results import ExecutionResult
 from .shared import CODE_FILE_EXTENSIONS
 from .verifier.base import VerificationResult, Verdict
@@ -48,7 +48,7 @@ class Orchestrator:
 
     def __init__(self, config: OrchestratorConfig | None = None):
         self.config = config or OrchestratorConfig()
-        self.tracker = get_tracker(db_path=self.config.db_path)
+        self.tracker = MissionTracker(db_path=self.config.db_path)
         self._worker_registry: dict[str, Callable[[TaskSpec, dict], Awaitable[ExecutionResult]]] = (
             {}
         )
