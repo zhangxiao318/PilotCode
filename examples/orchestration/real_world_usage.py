@@ -151,9 +151,10 @@ async def example_3_code_review_automation():
     print("  Example 3: Automated Code Review")
     print("=" * 70)
 
-    from pilotcode.orchestration.smart_coordinator import SmartCoordinator
+    from pilotcode.orchestration import MissionAdapter, TaskDecomposer, DecompositionStrategy
 
-    coordinator = SmartCoordinator(agent_factory)
+    adapter = MissionAdapter()
+    decomposer = TaskDecomposer()
 
     pr_description = """Review pull request #123:
     - New payment gateway integration
@@ -163,19 +164,21 @@ async def example_3_code_review_automation():
 
     print(f"\n📋 PR: {pr_description}")
 
-    # Smart coordinator decides if decomposition is needed
-    result, preview = await coordinator.run_with_preview(pr_description)
+    # MissionAdapter auto-detects if full P-EVR planning is needed
+    will_plan = MissionAdapter._should_explore_and_plan(pr_description)
+    analysis = decomposer.analyze(pr_description)
 
     print(f"\n🔍 Analysis Preview:")
-    print(f"  Will Decompose: {preview['will_decompose']}")
-    print(f"  Strategy: {preview['strategy']}")
+    print(f"  Will Plan (P-EVR): {will_plan}")
+    print(f"  Strategy: {analysis.strategy.name}")
 
-    if preview["will_decompose"]:
-        print(f"\n📝 Review Plan ({len(preview['subtasks'])} reviewers):")
-        for i, st in enumerate(preview["subtasks"], 1):
-            print(f"  {i}. {st['role']}: {st['description']}")
+    if analysis.strategy != DecompositionStrategy.NONE:
+        result = decomposer.auto_decompose(pr_description)
+        print(f"\n📝 Review Plan ({len(result.subtasks)} reviewers):")
+        for i, st in enumerate(result.subtasks, 1):
+            print(f"  {i}. {st.role}: {st.description}")
 
-        print(f"\n⏱️  Estimated Duration: {preview['estimated_duration']}s")
+        print(f"\n⏱️  Estimated Duration: {result.estimated_duration}s")
 
 
 async def example_4_refactoring_project():

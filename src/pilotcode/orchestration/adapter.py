@@ -1220,11 +1220,46 @@ class MissionAdapter:
                 return "cn"
         return "en"
 
+    @staticmethod
+    def _should_explore_and_plan(user_request: str) -> bool:
+        """Heuristically decide if a request needs codebase exploration + LLM planning.
+
+        Short/simple requests skip directly to single-task execution without the
+        overhead of P-EVR planning.  This replaces the former SmartCoordinator
+        pass-through layer with inline auto-detection.
+
+        Returns:
+            True if full exploration + plan is needed, False to skip straight to execute.
+        """
+        from .auto_config import get_auto_config
+
+        config = get_auto_config()
+        if not config.enabled:
+            # Auto-decomposition disabled — always do full planning
+            return True
+
+        # Very short tasks likely don't need decomposition
+        if len(user_request) < config.max_simple_task_length:
+            return False
+
+        # Simple pattern heuristic: queries, typos, read-only operations
+        simple_patterns = (
+            r"^(read|show|display|list|cat|head|tail|find|locate)\s",
+            r"^(fix typo|fix the typo|correct typo)\s",
+            r"^(what|how|where|who|when|which)\s",
+            r"^(查看|显示|列出|读取|找到|搜索)\s",
+        )
+        for pat in simple_patterns:
+            if re.match(pat, user_request, re.IGNORECASE):
+                return False
+
+        return True
+
     async def run(
         self,
         user_request: str,
         progress_callback: Callable[[str, dict], None] | None = None,
-        explore_first: bool = True,
+        explore_first: bool | None = None,
         cwd: str | None = None,
     ) -> dict[str, Any]:
         """Plan and execute a mission from a natural language request.
@@ -1232,12 +1267,19 @@ class MissionAdapter:
         Args:
             user_request: The user's natural language request.
             progress_callback: Optional callback(event_type, data) for progress updates.
-            explore_first: Whether to explore codebase before planning (default True).
+            explore_first: Whether to explore codebase before planning.
+                - None (default): auto-detect based on task complexity heuristics.
+                - True: always run full P-EVR plan + execute cycle.
+                - False: skip exploration and planning, execute directly.
             cwd: Working directory override. If omitted, auto-detect from user_request.
 
         Returns:
             Execution summary dict with keys: mission_id, snapshot, success, error, mission, metrics.
         """
+        # Resolve auto-detect for explore_first
+        if explore_first is None:
+            explore_first = self._should_explore_and_plan(user_request)
+
         # Allow per-run override of the working directory
         if cwd and cwd != str(Path.cwd()):
             # Caller explicitly provided a non-default cwd — use it

@@ -1,11 +1,11 @@
 """Demo: Automatic task decomposition in action.
 
-Shows how SmartCoordinator automatically decides when to decompose tasks.
+Shows how MissionAdapter.run() auto-detects task complexity
+and decides when to use full P-EVR planning vs direct execution.
 """
 
 import asyncio
-from pilotcode.orchestration import TaskDecomposer, DecompositionStrategy
-from pilotcode.orchestration.smart_coordinator import SmartCoordinator
+from pilotcode.orchestration import TaskDecomposer, DecompositionStrategy, MissionAdapter
 from pilotcode.orchestration.auto_config import configure_auto_decomposition
 
 
@@ -92,13 +92,19 @@ def demo_auto_patterns():
 
 
 def demo_smart_coordinator():
-    """Demonstrate SmartCoordinator behavior."""
+    """Demonstrate MissionAdapter auto-detection behavior.
+
+    MissionAdapter.run() with explore_first=None (the new default) uses
+    _should_explore_and_plan() to auto-detect whether a task needs
+    full P-EVR planning or can execute directly.
+    """
     print("=" * 70)
-    print("DEMO: SmartCoordinator Auto-Decomposition")
+    print("DEMO: MissionAdapter Auto-Detection (formerly SmartCoordinator)")
     print("=" * 70)
     print()
 
-    coordinator = SmartCoordinator(mock_agent_factory)
+    # Create an adapter — it now has _should_explore_and_plan() built in
+    adapter = MissionAdapter()
 
     # Configure for demo
     configure_auto_decomposition(enabled=True, require_confirmation=False)
@@ -110,19 +116,22 @@ def demo_smart_coordinator():
         "Refactor the database connection pooling",
     ]
 
-    print("SmartCoordinator will automatically decide when to decompose:\n")
+    print("MissionAdapter.run() will auto-detect when to plan:\n")
 
     for task in test_tasks:
-        # Analyze only (don't actually execute)
-        analysis = coordinator.decomposer.analyze(task)
-        will_decompose = analysis.strategy != DecompositionStrategy.NONE
+        # Use the built-in heuristic (same logic that run() uses internally)
+        will_plan = MissionAdapter._should_explore_and_plan(task)
+
+        # Also get a full analysis from TaskDecomposer for richer info
+        decomposer = TaskDecomposer()
+        analysis = decomposer.analyze(task)
 
         print(f"Task: {task}")
-        print(f"  → Will decompose: {will_decompose}")
+        print(f"  → Will Plan (P-EVR): {will_plan}")
         print(f"  → Strategy: {analysis.strategy.name}")
         print(f"  → Confidence: {analysis.confidence:.2f}")
 
-        if will_decompose:
+        if will_plan:
             print(f"  → Subtasks: {len(analysis.subtasks)}")
         print()
 
