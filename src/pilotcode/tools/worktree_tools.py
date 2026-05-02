@@ -210,7 +210,92 @@ async def list_worktrees_call(
     return ToolResult(data=ListWorktreesOutput(worktrees=worktrees, current=current))
 
 
-# Register worktree tools
+# ------------------------------------------------------------------
+# Unified Worktree tool (replaces EnterWorktree/ExitWorktree/ListWorktrees)
+# ------------------------------------------------------------------
+
+
+class WorktreeInput(BaseModel):
+    """Input for unified Worktree tool."""
+
+    action: str = Field(description="Action: enter, exit, list")
+    path: str | None = Field(default=None, description="For enter: worktree path")
+
+
+class WorktreeOutputUnified(BaseModel):
+    """Unified output for Worktree tool."""
+
+    result: dict[str, Any] = Field(default_factory=dict)
+    message: str = Field(default="")
+
+
+async def worktree_call(
+    input_data: WorktreeInput,
+    context: ToolUseContext,
+    can_use_tool: Any,
+    parent_message: Any,
+    on_progress: Any,
+) -> ToolResult[WorktreeOutputUnified]:
+    """Unified worktree handler."""
+    action = input_data.action
+
+    if action == "enter":
+        if not input_data.path:
+            return ToolResult(data=WorktreeOutputUnified(), error="path required for enter")
+        result = await enter_worktree_call(
+            EnterWorktreeInput(path=input_data.path),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=WorktreeOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Entered worktree"
+            ),
+            error=result.error,
+        )
+
+    elif action == "exit":
+        result = await exit_worktree_call(
+            ExitWorktreeInput(), context, can_use_tool, parent_message, on_progress
+        )
+        return ToolResult(
+            data=WorktreeOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Exited worktree"
+            ),
+            error=result.error,
+        )
+
+    elif action == "list":
+        result = await list_worktrees_call(
+            ListWorktreesInput(), context, can_use_tool, parent_message, on_progress
+        )
+        return ToolResult(
+            data=WorktreeOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Worktrees listed"
+            ),
+            error=result.error,
+        )
+
+    else:
+        return ToolResult(data=WorktreeOutputUnified(), error=f"Unknown action: {action}")
+
+
+WorktreeTool = build_tool(
+    name="Worktree",
+    description=lambda x, o: f"Worktree {x.action}",
+    input_schema=WorktreeInput,
+    output_schema=WorktreeOutputUnified,
+    call=worktree_call,
+    aliases=["worktree"],
+    is_read_only=lambda x: x.action in ("list", "exit") if x else True,
+    is_concurrency_safe=lambda x: x.action in ("list", "exit") if x else True,
+)
+
+register_tool(WorktreeTool)
+
+# Old fine-grained tools kept for direct import compatibility only.
 EnterWorktreeTool = build_tool(
     name="EnterWorktree",
     description=lambda x, o: f"Enter worktree: {x.path}",
@@ -244,6 +329,6 @@ ListWorktreesTool = build_tool(
     is_concurrency_safe=lambda _: True,
 )
 
-register_tool(EnterWorktreeTool)
-register_tool(ExitWorktreeTool)
-register_tool(ListWorktreesTool)
+# register_tool(EnterWorktreeTool)  # Merged into Worktree
+# register_tool(ExitWorktreeTool)
+# register_tool(ListWorktreesTool)

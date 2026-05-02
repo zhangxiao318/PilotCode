@@ -373,7 +373,173 @@ async def task_update_call(
     )
 
 
-# Register task tools
+# ------------------------------------------------------------------
+# Unified Task tool (replaces TaskCreate/TaskGet/TaskList/TaskStop/
+# TaskUpdate/TaskOutput)
+# ------------------------------------------------------------------
+
+
+class TaskInput(BaseModel):
+    """Input for unified Task tool."""
+
+    action: str = Field(description="Action: create, get, list, stop, update, output")
+    description: str | None = Field(default=None, description="For create: task description")
+    command: str | None = Field(default=None, description="For create: command to execute")
+    file_path: str | None = Field(default=None, description="For create: file to execute")
+    task_id: str | None = Field(default=None, description="For get/stop/update/output")
+    status: str | None = Field(default=None, description="For update: new status")
+    limit: int = Field(default=10, description="For list: max results")
+    follow: bool = Field(default=False, description="For output: follow in real-time")
+    tail: int | None = Field(default=None, description="For output: get last N lines")
+
+
+class TaskOutputUnified(BaseModel):
+    """Unified output for Task tool."""
+
+    result: dict[str, Any] = Field(default_factory=dict, description="Result data")
+    message: str = Field(default="", description="Status message")
+
+
+async def task_call(
+    input_data: TaskInput,
+    context: ToolUseContext,
+    can_use_tool: Any,
+    parent_message: Any,
+    on_progress: Any,
+) -> ToolResult[TaskOutputUnified]:
+    """Unified task handler."""
+    action = input_data.action
+
+    if action == "create":
+        result = await task_create_call(
+            TaskCreateInput(
+                description=input_data.description or "",
+                command=input_data.command,
+                file_path=input_data.file_path,
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=TaskOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Task created"
+            ),
+            error=result.error,
+        )
+
+    elif action == "get":
+        if not input_data.task_id:
+            return ToolResult(data=TaskOutputUnified(), error="task_id required for get")
+        result = await task_get_call(
+            TaskGetInput(task_id=input_data.task_id),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=TaskOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Task retrieved"
+            ),
+            error=result.error,
+        )
+
+    elif action == "list":
+        result = await task_list_call(
+            TaskListInput(status=None, limit=input_data.limit),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=TaskOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Tasks listed"
+            ),
+            error=result.error,
+        )
+
+    elif action == "stop":
+        if not input_data.task_id:
+            return ToolResult(data=TaskOutputUnified(), error="task_id required for stop")
+        result = await task_stop_call(
+            TaskStopInput(task_id=input_data.task_id),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=TaskOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Task stopped"
+            ),
+            error=result.error,
+        )
+
+    elif action == "update":
+        if not input_data.task_id:
+            return ToolResult(data=TaskOutputUnified(), error="task_id required for update")
+        result = await task_update_call(
+            TaskUpdateInput(
+                task_id=input_data.task_id,
+                description=input_data.description,
+                status=input_data.status,
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=TaskOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Task updated"
+            ),
+            error=result.error,
+        )
+
+    elif action == "output":
+        if not input_data.task_id:
+            return ToolResult(data=TaskOutputUnified(), error="task_id required for output")
+        from .task_output_tool import task_output_call, TaskOutputInput
+
+        result = await task_output_call(
+            TaskOutputInput(
+                task_id=input_data.task_id, follow=input_data.follow, tail=input_data.tail
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=TaskOutputUnified(
+                result=result.data.model_dump() if result.data else {},
+                message="Task output retrieved",
+            ),
+            error=result.error,
+        )
+
+    else:
+        return ToolResult(data=TaskOutputUnified(), error=f"Unknown action: {action}")
+
+
+TaskTool = build_tool(
+    name="Task",
+    description=lambda x, o: f"Task {x.action}",
+    input_schema=TaskInput,
+    output_schema=TaskOutputUnified,
+    call=task_call,
+    aliases=["task"],
+    is_read_only=lambda x: x.action in ("get", "list", "output") if x else True,
+    is_concurrency_safe=lambda x: x.action in ("get", "list", "output") if x else True,
+)
+
+register_tool(TaskTool)
+
+# Old fine-grained tools are no longer registered (kept for backward compat
+# in case external code imports them directly).
 TaskCreateTool = build_tool(
     name="TaskCreate",
     description=lambda x, o: f"Creating task: {x.description[:50]}",
@@ -429,11 +595,11 @@ TaskUpdateTool = build_tool(
     is_concurrency_safe=lambda _: True,
 )
 
-register_tool(TaskCreateTool)
-register_tool(TaskGetTool)
-register_tool(TaskListTool)
-register_tool(TaskStopTool)
-register_tool(TaskUpdateTool)
+# register_tool(TaskCreateTool)  # Merged into Task
+# register_tool(TaskGetTool)
+# register_tool(TaskListTool)
+# register_tool(TaskStopTool)
+# register_tool(TaskUpdateTool)
 
 
 async def cleanup_all_tasks():

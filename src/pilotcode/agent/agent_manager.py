@@ -250,9 +250,7 @@ Use <complete> when the plan is ready for execution.""",
             "Glob",
             "CodeSearch",
             "Bash",
-            "GitDiff",
-            "GitLog",
-            "GitStatus",
+            "Git",
         ],
         color="cyan",
         icon="📋",
@@ -276,7 +274,7 @@ Guidelines:
 - Be efficient: spawn multiple parallel tool calls where possible
 
 Use <complete> when you have found the relevant information.""",
-        allowed_tools=["FileRead", "Grep", "Glob", "CodeSearch", "Bash", "GitDiff", "GitLog"],
+        allowed_tools=["FileRead", "Grep", "Glob", "CodeSearch", "Bash", "Git"],
         color="magenta",
         icon="🔍",
         max_turns=12,
@@ -322,7 +320,7 @@ or VERDICT: FAIL
 or VERDICT: PARTIAL
 
 Use <complete> when verification is done.""",
-        allowed_tools=["FileRead", "Grep", "Bash", "GitDiff", "GitStatus"],
+        allowed_tools=["FileRead", "Grep", "Bash", "Git"],
         color="red",
         icon="✅",
         max_turns=20,

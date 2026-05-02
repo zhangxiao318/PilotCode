@@ -126,10 +126,10 @@ class TestToolRiskAnalyzer:
         assert result.read_only is True
 
     def test_assess_git_status(self, analyzer):
-        """Test GitStatus tool assessment."""
-        result = analyzer.assess_tool("GitStatus", {})
+        """Test Git tool assessment."""
+        result = analyzer.assess_tool("Git", {})
 
-        # GitStatus is not in TOOL_RISKS, defaults to MEDIUM
+        # Git is not in TOOL_RISKS, defaults to MEDIUM
         # but is effectively read-only
         assert result.level is not None
 

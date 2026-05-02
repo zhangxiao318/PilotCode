@@ -75,4 +75,5 @@ TaskOutputTool = build_tool(
     is_concurrency_safe=lambda _: True,
 )
 
-register_tool(TaskOutputTool)
+# Merged into unified Task tool (action="output")
+# register_tool(TaskOutputTool)

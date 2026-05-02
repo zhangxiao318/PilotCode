@@ -670,9 +670,7 @@ class MissionAdapter:
             "AskUser",
             "ask",
             "question",
-            "EnterPlanMode",
-            "ExitPlanMode",
-            "UpdatePlanStep",
+            "PlanMode",
         }
         autonomous_tools = [t for t in get_core_tools(self._cwd) if t.name not in excluded_tools]
 

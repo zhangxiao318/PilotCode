@@ -114,13 +114,33 @@ class ParameterGenerator:
         return result
 
     def _convert_tools(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Convert tools to API format."""
+        """Convert tools to API format.
+
+        Accepts both legacy flat format {"name": ..., "input_schema": ...}
+        and OpenAI format {"type": "function", "function": {"name": ...}}.
+        """
+
+        def _extract(tool: dict[str, Any]) -> dict[str, Any]:
+            """Extract name/description/schema from either format."""
+            if tool.get("type") == "function" and "function" in tool:
+                fn = tool["function"]
+                return {
+                    "name": fn["name"],
+                    "description": fn.get("description", ""),
+                    "input_schema": fn.get("parameters", {}),
+                }
+            return {
+                "name": tool["name"],
+                "description": tool.get("description", ""),
+                "input_schema": tool.get("input_schema", tool.get("parameters", {})),
+            }
+
         if self.api_protocol == "anthropic":
             return [
                 {
-                    "name": tool["name"],
-                    "description": tool.get("description", ""),
-                    "input_schema": tool.get("input_schema", tool.get("parameters", {})),
+                    "name": _extract(tool)["name"],
+                    "description": _extract(tool)["description"],
+                    "input_schema": _extract(tool)["input_schema"],
                 }
                 for tool in tools
             ]
@@ -128,9 +148,9 @@ class ParameterGenerator:
             {
                 "type": "function",
                 "function": {
-                    "name": tool["name"],
-                    "description": tool.get("description", ""),
-                    "parameters": tool.get("input_schema", {}),
+                    "name": _extract(tool)["name"],
+                    "description": _extract(tool)["description"],
+                    "parameters": _extract(tool)["input_schema"],
                 },
             }
             for tool in tools

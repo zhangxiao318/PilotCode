@@ -24,16 +24,16 @@ _CORE_TOOL_NAMES: set[str] = {
 
 # Contextually-loaded tool groups
 _CONTEXT_TOOL_GROUPS: dict[str, set[str]] = {
-    "git": {"GitStatus", "GitDiff", "GitLog", "GitBranch"},
+    "git": {"Git"},
     "notebook": {"NotebookEdit"},
     "web": {"WebSearch", "WebFetch"},
-    "cron": {"CronCreate", "CronDelete", "CronList", "CronUpdate"},
-    "task": {"TaskCreate", "TaskGet", "TaskList", "TaskStop", "TaskUpdate", "TaskOutput"},
+    "cron": {"Cron"},
+    "task": {"Task"},
     "config": {"Config"},
     "agent": {"Agent"},
-    "plan": {"EnterPlanMode", "ExitPlanMode", "UpdatePlanStep"},
-    "mcp": {"ListMcpResources", "ReadMcpResource", "MCP"},
-    "worktree": {"EnterWorktree", "ExitWorktree", "ListWorktrees"},
+    "plan": {"PlanMode"},
+    "mcp": {"MCP"},
+    "worktree": {"Worktree"},
     "message": {"SendMessage", "ReceiveMessage"},
     "lsp": {"LSP"},
     "code_index": {"CodeIndex", "CodeSearch", "CodeContext"},

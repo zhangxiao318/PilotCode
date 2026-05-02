@@ -48,9 +48,7 @@ class REPL:
         "FileWrite",
         "ApplyPatch",
         "NotebookEdit",
-        "CronCreate",
-        "CronDelete",
-        "CronUpdate",
+        "Cron",
     }
 
     def __init__(
@@ -1109,8 +1107,7 @@ class LoopGuard:
             "Grep",
             "CodeSearch",
             "CodeIndex",
-            "GitDiff",
-            "GitStatus",
+            "Git",
             "FileTree",
             "WebSearch",  # WebSearch intentionally excluded — external search is never a loop
         }
@@ -1168,9 +1165,7 @@ async def run_headless(
         "FileWrite",
         "ApplyPatch",
         "NotebookEdit",
-        "CronCreate",
-        "CronDelete",
-        "CronUpdate",
+        "Cron",
     }
     tools = get_core_tools(os.getcwd())
     if read_only:
@@ -1269,9 +1264,7 @@ async def run_headless(
                 "FileWrite",
                 "ApplyPatch",
                 "NotebookEdit",
-                "CronCreate",
-                "CronDelete",
-                "CronUpdate",
+                "Cron",
             }
             for tool_idx, tool_msg in enumerate(pending_tools, 1):
                 # OpenCode-style doom-loop detection: check at the moment of call
@@ -1311,7 +1304,7 @@ async def run_headless(
                 if read_only and tool_msg.name in write_tool_names:
                     result_content = (
                         f"Tool '{tool_msg.name}' is not available in read-only planning mode. "
-                        "You can only use read-only tools (FileRead, Grep, Glob, CodeSearch, Bash, GitDiff, etc.)."
+                        "You can only use read-only tools (FileRead, Grep, Glob, CodeSearch, Bash, Git, etc.)."
                     )
                     success = False
                     exec_result = None

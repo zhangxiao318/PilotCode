@@ -85,7 +85,7 @@ class TestE2EConversation:
         mock_model_client.set_responses(
             [
                 MockLLMResponse.with_tool_call("Bash", {"command": "git --version"}),
-                MockLLMResponse.with_tool_call("GitStatus", {"repo_path": "."}),
+                MockLLMResponse.with_tool_call("Git", {"action": "status", "path": "."}),
                 MockLLMResponse.with_text("All good."),
             ]
         )
@@ -93,7 +93,7 @@ class TestE2EConversation:
         executor = ToolExecutor()
         ctx = ToolUseContext()
 
-        for expected_tool in ("Bash", "GitStatus"):
+        for expected_tool in ("Bash", "Git"):
             t = []
             async for result in engine.submit_message("Run command"):
                 if isinstance(result.message, ToolUseMessage):
@@ -129,7 +129,10 @@ class TestE2EConversation:
                         {
                             "id": "c2",
                             "type": "function",
-                            "function": {"name": "GitStatus", "arguments": '{"repo_path": "."}'},
+                            "function": {
+                                "name": "Git",
+                                "arguments": '{"action": "status", "path": "."}',
+                            },
                         },
                     ],
                     finish_reason="tool_calls",

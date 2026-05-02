@@ -48,14 +48,10 @@ CRITICAL_TOOLS = {
     "AskUser",
     "TodoWrite",
     "Agent",
-    "TaskCreate",
-    "TaskGet",
-    "TaskList",
-    "TaskStop",
+    "Task",
     "Brief",
     "NotebookEdit",
-    "EnterPlanMode",
-    "ExitPlanMode",
+    "PlanMode",
 }
 
 CRITICAL_COMMANDS = {
@@ -103,49 +99,28 @@ def audit_tools() -> AuditResult:
         "Brief",
         "NotebookEdit",
         # Plan/Worktree
-        "EnterPlanMode",
-        "ExitPlanMode",
-        "UpdatePlanStep",
-        "EnterWorktree",
-        "ExitWorktree",
-        "ListWorktrees",
+        "PlanMode",
+        "Worktree",
         # Tasks
-        "TaskOutput",
-        "TaskStop",
-        "TaskCreate",
-        "TaskGet",
-        "TaskUpdate",
-        "TaskList",
+        "Task",
         # Communication
         "SendMessage",
         "ReceiveMessage",
-        "TeamCreate",
-        "TeamDelete",
-        "TeamAddMember",
-        "TeamList",
         # MCP/LSP
         "MCP",
-        "ListMcpResources",
-        "ReadMcpResource",
         "LSP",
         # Utility
         "ToolSearch",
         "SyntheticOutput",
         # Git
-        "GitStatus",
-        "GitDiff",
-        "GitLog",
-        "GitBranch",
+        "Git",
         # Config/Other
         "Config",
         "PowerShell",
         "REPL",
         "Sleep",
         "RemoteTrigger",
-        "CronCreate",
-        "CronDelete",
-        "CronList",
-        "CronUpdate",
+        "Cron",
     }
     implemented = {t.name for t in get_all_tools()}
     missing = sorted(expected_tools - implemented)

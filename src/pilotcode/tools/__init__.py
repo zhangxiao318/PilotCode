@@ -35,36 +35,17 @@ from .web_search_tool import WebSearchTool  # noqa: F401
 from .web_fetch_tool import WebFetchTool  # noqa: F401
 from .powershell_tool import PowerShellTool  # noqa: F401
 from .agent_tool import AgentTool  # noqa: F401
-from .task_tools import (  # noqa: F401
-    TaskCreateTool,
-    TaskGetTool,
-    TaskListTool,
-    TaskStopTool,
-    TaskUpdateTool,
-)
+from .task_tools import TaskTool  # noqa: F401
 from .config_tool import ConfigTool  # noqa: F401
 from .notebook_edit_tool import NotebookEditTool  # noqa: F401
 from .lsptool import LSPTool  # noqa: F401
-from .mcp_tools import ListMcpResourcesTool, ReadMcpResourceTool, MCPTool  # noqa: F401
-from .plan_mode_tools import (  # noqa: F401
-    EnterPlanModeTool,
-    ExitPlanModeTool,
-    UpdatePlanStepTool,
-)
-from .git_tools import GitStatusTool, GitDiffTool, GitLogTool, GitBranchTool  # noqa: F401
+from .mcp_tools import MCPUnifiedTool  # noqa: F401
+from .plan_mode_tools import PlanModeToolUnified  # noqa: F401
+from .git_tools import GitTool  # noqa: F401
 from .tool_search_tool import ToolSearchTool  # noqa: F401
 from .brief_tool import BriefTool  # noqa: F401
-from .cron_tools import (  # noqa: F401
-    CronCreateTool,
-    CronDeleteTool,
-    CronListTool,
-    CronUpdateTool,
-)
-from .worktree_tools import (  # noqa: F401
-    EnterWorktreeTool,
-    ExitWorktreeTool,
-    ListWorktreesTool,
-)
+from .cron_tools import CronTool  # noqa: F401
+from .worktree_tools import WorktreeTool  # noqa: F401
 from .sleep_tool import SleepTool  # noqa: F401
 from .team_tools import (  # noqa: F401
     TeamCreate,
@@ -80,7 +61,8 @@ from .web_browser_tool import WebBrowserTool  # noqa: F401
 from .send_message_tool import SendMessageTool, ReceiveMessageTool  # noqa: F401
 from .smart_edit_planner import SmartEditPlanner  # noqa: F401
 from .repl_tool import REPLTool  # noqa: F401
-from .task_output_tool import TaskOutputTool  # noqa: F401
+
+# TaskOutput merged into TaskTool
 from .synthetic_output_tool import SyntheticOutputTool  # noqa: F401
 from .remote_trigger_tool import RemoteTriggerTool  # noqa: F401
 from .code_index_tool import CodeIndexTool  # noqa: F401

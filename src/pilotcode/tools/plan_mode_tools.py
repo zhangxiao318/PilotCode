@@ -174,7 +174,117 @@ async def update_plan_step_call(
     )
 
 
-# Register plan mode tools
+# ------------------------------------------------------------------
+# Unified PlanMode tool (replaces EnterPlanMode/ExitPlanMode/UpdatePlanStep)
+# ------------------------------------------------------------------
+
+
+class PlanModeInput(BaseModel):
+    """Input for unified PlanMode tool."""
+
+    action: str = Field(description="Action: enter, exit, update_step")
+    description: str | None = Field(default=None, description="For enter: plan description")
+    steps: list[str] | None = Field(default=None, description="For enter: list of steps")
+    plan_id: str | None = Field(default=None, description="For exit/update: plan ID")
+    completed: bool = Field(default=True, description="For exit: whether completed")
+    step_number: int | None = Field(default=None, description="For update_step: step number")
+    status: str | None = Field(
+        default=None, description="For update_step: pending, in_progress, completed, failed"
+    )
+    notes: str | None = Field(default=None, description="For update_step: step notes")
+
+
+class PlanModeOutputUnified(BaseModel):
+    """Unified output for PlanMode tool."""
+
+    result: dict[str, Any] = Field(default_factory=dict)
+    message: str = Field(default="")
+
+
+async def plan_mode_call(
+    input_data: PlanModeInput,
+    context: ToolUseContext,
+    can_use_tool: Any,
+    parent_message: Any,
+    on_progress: Any,
+) -> ToolResult[PlanModeOutputUnified]:
+    """Unified plan mode handler."""
+    action = input_data.action
+
+    if action == "enter":
+        result = await enter_plan_mode_call(
+            EnterPlanModeInput(
+                description=input_data.description or "", steps=input_data.steps or []
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=PlanModeOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Plan mode entered"
+            ),
+            error=result.error,
+        )
+
+    elif action == "exit":
+        result = await exit_plan_mode_call(
+            ExitPlanModeInput(plan_id=input_data.plan_id or "", completed=input_data.completed),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=PlanModeOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Plan mode exited"
+            ),
+            error=result.error,
+        )
+
+    elif action == "update_step":
+        if input_data.step_number is None:
+            return ToolResult(
+                data=PlanModeOutputUnified(), error="step_number required for update_step"
+            )
+        result = await update_plan_step_call(
+            UpdatePlanStepInput(
+                plan_id=input_data.plan_id or "",
+                step_number=input_data.step_number,
+                status=input_data.status or "",
+                notes=input_data.notes,
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=PlanModeOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Plan step updated"
+            ),
+            error=result.error,
+        )
+
+    else:
+        return ToolResult(data=PlanModeOutputUnified(), error=f"Unknown action: {action}")
+
+
+PlanModeToolUnified = build_tool(
+    name="PlanMode",
+    description=lambda x, o: f"PlanMode {x.action}",
+    input_schema=PlanModeInput,
+    output_schema=PlanModeOutputUnified,
+    call=plan_mode_call,
+    aliases=["plan_mode", "plan"],
+    is_read_only=lambda _: False,
+    is_concurrency_safe=lambda _: True,
+)
+
+register_tool(PlanModeToolUnified)
+
+# Old fine-grained tools kept for direct import compatibility only.
 EnterPlanModeTool = build_tool(
     name="EnterPlanMode",
     description=lambda x, o: f"Enter plan mode: {x.description[:50]}",
@@ -208,6 +318,6 @@ UpdatePlanStepTool = build_tool(
     is_concurrency_safe=lambda _: True,
 )
 
-register_tool(EnterPlanModeTool)
-register_tool(ExitPlanModeTool)
-register_tool(UpdatePlanStepTool)
+# register_tool(EnterPlanModeTool)  # Merged into PlanMode
+# register_tool(ExitPlanModeTool)
+# register_tool(UpdatePlanStepTool)

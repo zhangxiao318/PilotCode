@@ -19,7 +19,7 @@ TOOL_NAMES = sorted([t.name for t in ALL_TOOLS])
 
 class TestToolDiscovery:
     def test_all_tools_registered(self):
-        assert len(ALL_TOOLS) >= 48  # Updated to match actual tool count
+        assert len(ALL_TOOLS) >= 37  # Updated to match actual tool count after merges
 
     @pytest.mark.parametrize("tool", ALL_TOOLS, ids=lambda t: t.name)
     def test_tool_has_name_and_schema(self, tool):
@@ -47,16 +47,9 @@ class TestToolDiscovery:
             "Agent",
             "Brief",
             "NotebookEdit",
-            "EnterPlanMode",
-            "ExitPlanMode",
-            "TaskCreate",
-            "TaskGet",
-            "TaskList",
-            "TaskStop",
-            "GitStatus",
-            "GitDiff",
-            "GitLog",
-            "GitBranch",
+            "PlanMode",
+            "Task",
+            "Git",
             "Config",
             "PowerShell",
             "ToolSearch",
@@ -218,23 +211,23 @@ class TestWebTools:
 class TestGitTools:
     @pytest.mark.asyncio
     async def test_git_status_in_repo(self):
-        result = await allow_all("GitStatus", {"repo_path": "."})
-        assert result.data.branch is not None
+        result = await allow_all("Git", {"action": "status", "path": "."})
+        assert result.data.result.get("branch") is not None
 
     @pytest.mark.asyncio
     async def test_git_branch_lists_branches(self):
-        result = await allow_all("GitBranch", {"repo_path": "."})
-        assert len(result.data.branches) > 0
+        result = await allow_all("Git", {"action": "branch", "path": ".", "branch_action": "list"})
+        assert len(result.data.result.get("branches", [])) > 0
 
     @pytest.mark.asyncio
     async def test_git_diff_returns_string(self):
-        result = await allow_all("GitDiff", {"repo_path": "."})
+        result = await allow_all("Git", {"action": "diff", "path": "."})
         assert result.data is not None
 
     @pytest.mark.asyncio
     async def test_git_log_returns_commits(self):
-        result = await allow_all("GitLog", {"repo_path": ".", "max_count": 5})
-        assert len(result.data.commits) >= 0
+        result = await allow_all("Git", {"action": "log", "path": ".", "max_count": 5})
+        assert len(result.data.result.get("commits", [])) >= 0
 
 
 # ---------------------------------------------------------------------------
@@ -289,25 +282,30 @@ class TestAgentTools:
 class TestTaskTools:
     @pytest.mark.asyncio
     async def test_task_create_list_stop(self):
-        create = await allow_all("TaskCreate", {"description": "echo task", "command": "echo task"})
-        task_id = create.data.task_id
-        list_r = await allow_all("TaskList", {})
-        ids = [t.get("task_id") if isinstance(t, dict) else t.task_id for t in list_r.data.tasks]
+        create = await allow_all(
+            "Task", {"action": "create", "description": "echo task", "command": "echo task"}
+        )
+        task_id = create.data.result.get("task_id")
+        list_r = await allow_all("Task", {"action": "list"})
+        ids = [
+            t.get("task_id") if isinstance(t, dict) else t.task_id
+            for t in list_r.data.result.get("tasks", [])
+        ]
         assert task_id in ids
-        get_r = await allow_all("TaskGet", {"task_id": task_id})
-        assert get_r.data.task_id == task_id
-        stop = await allow_all("TaskStop", {"task_id": task_id})
+        get_r = await allow_all("Task", {"action": "get", "task_id": task_id})
+        assert get_r.data.result.get("task_id") == task_id
+        stop = await allow_all("Task", {"action": "stop", "task_id": task_id})
         assert stop.data is not None
 
     @pytest.mark.asyncio
     async def test_task_output_returns_logs(self):
         create = await allow_all(
-            "TaskCreate", {"description": "echo output", "command": "echo output"}
+            "Task", {"action": "create", "description": "echo output", "command": "echo output"}
         )
-        task_id = create.data.task_id
+        task_id = create.data.result.get("task_id")
         # Wait a tiny bit for process to start
         await asyncio.sleep(0.2)
-        out = await allow_all("TaskOutput", {"task_id": task_id})
+        out = await allow_all("Task", {"action": "output", "task_id": task_id})
         assert out.data is not None
 
 
@@ -317,15 +315,13 @@ class TestTaskTools:
 class TestPlanWorktreeTools:
     @pytest.mark.asyncio
     async def test_plan_mode_tools_exist(self):
-        for name in ("EnterPlanMode", "ExitPlanMode", "UpdatePlanStep"):
-            tool = get_tool_by_name(name)
-            assert tool is not None, f"Missing {name}"
+        tool = get_tool_by_name("PlanMode")
+        assert tool is not None, "Missing PlanMode"
 
     @pytest.mark.asyncio
     async def test_worktree_tools_exist(self):
-        for name in ("EnterWorktree", "ExitWorktree", "ListWorktrees"):
-            tool = get_tool_by_name(name)
-            assert tool is not None, f"Missing {name}"
+        tool = get_tool_by_name("Worktree")
+        assert tool is not None, "Missing Worktree"
 
 
 # ---------------------------------------------------------------------------
@@ -339,12 +335,12 @@ class TestMcpLspTools:
 
     @pytest.mark.asyncio
     async def test_list_mcp_resources_exists(self):
-        tool = get_tool_by_name("ListMcpResources")
+        tool = get_tool_by_name("MCP")
         assert tool is not None
 
     @pytest.mark.asyncio
     async def test_read_mcp_resource_exists(self):
-        tool = get_tool_by_name("ReadMcpResource")
+        tool = get_tool_by_name("MCP")
         assert tool is not None
 
     @pytest.mark.asyncio

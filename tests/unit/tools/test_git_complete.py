@@ -9,8 +9,8 @@ import pytest
 from tests.base import ToolTestBase, CategoryMarkers
 
 
-class TestGitStatusTool(ToolTestBase):
-    """Test GitStatus tool.
+class TestGitStatus(ToolTestBase):
+    """Test Git status action.
 
     Coverage:
     - Clean repository status
@@ -19,7 +19,7 @@ class TestGitStatusTool(ToolTestBase):
     - Repository with staged changes
     """
 
-    tool_name = "GitStatus"
+    tool_name = "Git"
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -27,16 +27,16 @@ class TestGitStatusTool(ToolTestBase):
         """Test status in clean repository.
 
         Given: A clean git repository
-        When: GitStatus is called
+        When: Git status action is called
         Then: Returns clean status with current branch
         """
-        result = await self.run_tool({"path": str(temp_git_repo)})
+        result = await self.run_tool({"action": "status", "path": str(temp_git_repo)})
 
         self.assert_success(result)
-        assert result.data.is_clean is True
-        assert result.data.branch in ["master", "main"]
-        assert len(result.data.modified) == 0
-        assert len(result.data.untracked) == 0
+        assert result.data.result.get("is_clean") is True
+        assert result.data.result.get("branch") in ["master", "main"]
+        assert len(result.data.result.get("modified", [])) == 0
+        assert len(result.data.result.get("untracked", [])) == 0
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -44,17 +44,17 @@ class TestGitStatusTool(ToolTestBase):
         """Test status with untracked files.
 
         Given: Repository with new untracked files
-        When: GitStatus is called
+        When: Git status action is called
         Then: Reports untracked files
         """
         # Create untracked file
         (temp_git_repo / "new_file.txt").write_text("new content")
 
-        result = await self.run_tool({"path": str(temp_git_repo)})
+        result = await self.run_tool({"action": "status", "path": str(temp_git_repo)})
 
         self.assert_success(result)
-        assert result.data.is_clean is False
-        assert "new_file.txt" in result.data.untracked
+        assert result.data.result.get("is_clean") is False
+        assert "new_file.txt" in result.data.result.get("untracked", [])
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -62,17 +62,17 @@ class TestGitStatusTool(ToolTestBase):
         """Test status with modified files.
 
         Given: Repository with modified tracked files
-        When: GitStatus is called
+        When: Git status action is called
         Then: Reports modified files
         """
         # Modify tracked file
         (temp_git_repo / "README.md").write_text("Modified content")
 
-        result = await self.run_tool({"path": str(temp_git_repo)})
+        result = await self.run_tool({"action": "status", "path": str(temp_git_repo)})
 
         self.assert_success(result)
-        assert result.data.is_clean is False
-        assert len(result.data.modified) > 0
+        assert result.data.result.get("is_clean") is False
+        assert len(result.data.result.get("modified", [])) > 0
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -80,7 +80,7 @@ class TestGitStatusTool(ToolTestBase):
         """Test status with staged changes.
 
         Given: Repository with staged changes
-        When: GitStatus is called
+        When: Git status action is called
         Then: Reports staged files
         """
         # Modify and stage file
@@ -89,15 +89,15 @@ class TestGitStatusTool(ToolTestBase):
             ["git", "add", "README.md"], cwd=temp_git_repo, capture_output=True, check=True
         )
 
-        result = await self.run_tool({"path": str(temp_git_repo)})
+        result = await self.run_tool({"action": "status", "path": str(temp_git_repo)})
 
         self.assert_success(result)
-        assert result.data.is_clean is False
-        assert len(result.data.staged) > 0
+        assert result.data.result.get("is_clean") is False
+        assert len(result.data.result.get("staged", [])) > 0
 
 
-class TestGitLogTool(ToolTestBase):
-    """Test GitLog tool.
+class TestGitLog(ToolTestBase):
+    """Test Git log action.
 
     Coverage:
     - Basic log output
@@ -106,7 +106,7 @@ class TestGitLogTool(ToolTestBase):
     - Empty repository
     """
 
-    tool_name = "GitLog"
+    tool_name = "Git"
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -114,21 +114,23 @@ class TestGitLogTool(ToolTestBase):
         """Test basic log output.
 
         Given: Repository with commits
-        When: GitLog is called
+        When: Git log action is called
         Then: Returns list of commits
         """
-        result = await self.run_tool({"path": str(temp_git_repo), "max_count": 5})
+        result = await self.run_tool({"action": "log", "path": str(temp_git_repo), "max_count": 5})
 
         self.assert_success(result)
-        assert len(result.data.commits) >= 1
+        assert len(result.data.result.get("commits", [])) >= 1
 
         # Check commit structure
-        commit = result.data.commits[0]
-        assert commit.hash
-        assert commit.short_hash
-        assert commit.message
-        assert commit.author
-        assert commit.date
+        commits = result.data.result.get("commits", [])
+        if commits:
+            commit = commits[0]
+            assert commit.get("hash")
+            assert commit.get("short_hash")
+            assert commit.get("message")
+            assert commit.get("author")
+            assert commit.get("date")
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -136,7 +138,7 @@ class TestGitLogTool(ToolTestBase):
         """Test log with commit limit.
 
         Given: Repository with multiple commits
-        When: GitLog is called with max_count
+        When: Git log action is called with max_count
         Then: Returns at most max_count commits
         """
         # Add more commits
@@ -150,10 +152,10 @@ class TestGitLogTool(ToolTestBase):
                 check=True,
             )
 
-        result = await self.run_tool({"path": str(temp_git_repo), "max_count": 2})
+        result = await self.run_tool({"action": "log", "path": str(temp_git_repo), "max_count": 2})
 
         self.assert_success(result)
-        assert len(result.data.commits) <= 2
+        assert len(result.data.result.get("commits", [])) <= 2
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -161,7 +163,7 @@ class TestGitLogTool(ToolTestBase):
         """Test log filtered by file.
 
         Given: Repository with commits affecting different files
-        When: GitLog is called with file path
+        When: Git log action is called with file path
         Then: Returns only commits affecting that file
         """
         # Create commits with different files
@@ -175,16 +177,21 @@ class TestGitLogTool(ToolTestBase):
         )
 
         result = await self.run_tool(
-            {"path": str(temp_git_repo), "max_count": 10, "file_path": "tracked.txt"}
+            {
+                "action": "log",
+                "path": str(temp_git_repo),
+                "max_count": 10,
+                "file_path": "tracked.txt",
+            }
         )
 
         self.assert_success(result)
         # Should have at least the commit we just made
-        assert len(result.data.commits) >= 1
+        assert len(result.data.result.get("commits", [])) >= 1
 
 
-class TestGitDiffTool(ToolTestBase):
-    """Test GitDiff tool.
+class TestGitDiff(ToolTestBase):
+    """Test Git diff action.
 
     Coverage:
     - Diff with no changes
@@ -193,7 +200,7 @@ class TestGitDiffTool(ToolTestBase):
     - Cached/staged diff
     """
 
-    tool_name = "GitDiff"
+    tool_name = "Git"
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -201,10 +208,10 @@ class TestGitDiffTool(ToolTestBase):
         """Test diff with no changes.
 
         Given: Clean repository
-        When: GitDiff is called
+        When: Git diff action is called
         Then: Returns empty diff
         """
-        result = await self.run_tool({"path": str(temp_git_repo)})
+        result = await self.run_tool({"action": "diff", "path": str(temp_git_repo)})
 
         self.assert_success(result)
         # Diff might be empty or contain message
@@ -215,17 +222,17 @@ class TestGitDiffTool(ToolTestBase):
         """Test diff with uncommitted changes.
 
         Given: Repository with modified files
-        When: GitDiff is called
+        When: Git diff action is called
         Then: Returns diff showing changes
         """
         # Modify file
         (temp_git_repo / "README.md").write_text("Modified README content")
 
-        result = await self.run_tool({"path": str(temp_git_repo)})
+        result = await self.run_tool({"action": "diff", "path": str(temp_git_repo)})
 
         self.assert_success(result)
         # Should have diff or file_count > 0
-        assert result.data.diff or result.data.file_count > 0
+        assert result.data.result.get("diff") or result.data.result.get("file_count", 0) > 0
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -233,7 +240,7 @@ class TestGitDiffTool(ToolTestBase):
         """Test diff of staged changes.
 
         Given: Repository with staged changes
-        When: GitDiff is called with cached=True
+        When: Git diff action is called with cached=True
         Then: Returns diff of staged changes
         """
         # Modify and stage
@@ -242,15 +249,15 @@ class TestGitDiffTool(ToolTestBase):
             ["git", "add", "README.md"], cwd=temp_git_repo, capture_output=True, check=True
         )
 
-        result = await self.run_tool({"path": str(temp_git_repo), "cached": True})
+        result = await self.run_tool({"action": "diff", "path": str(temp_git_repo), "cached": True})
 
         self.assert_success(result)
         # Cached diff may return empty diff but should not error
         # The tool implementation may vary in how it reports staged changes
 
 
-class TestGitBranchTool(ToolTestBase):
-    """Test GitBranch tool.
+class TestGitBranch(ToolTestBase):
+    """Test Git branch action.
 
     Coverage:
     - List branches
@@ -259,7 +266,7 @@ class TestGitBranchTool(ToolTestBase):
     - Delete branch
     """
 
-    tool_name = "GitBranch"
+    tool_name = "Git"
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -267,14 +274,16 @@ class TestGitBranchTool(ToolTestBase):
         """Test listing branches.
 
         Given: Repository with branches
-        When: GitBranch list action is called
+        When: Git branch list action is called
         Then: Returns list of branches with current marked
         """
-        result = await self.run_tool({"path": str(temp_git_repo), "action": "list"})
+        result = await self.run_tool(
+            {"action": "branch", "path": str(temp_git_repo), "branch_action": "list"}
+        )
 
         self.assert_success(result)
-        assert len(result.data.branches) >= 1
-        assert result.data.current in result.data.branches
+        assert len(result.data.result.get("branches", [])) >= 1
+        assert result.data.result.get("current") in result.data.result.get("branches", [])
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -282,18 +291,25 @@ class TestGitBranchTool(ToolTestBase):
         """Test creating a new branch.
 
         Given: Repository on main branch
-        When: GitBranch create action is called
+        When: Git branch create action is called
         Then: New branch is created
         """
         result = await self.run_tool(
-            {"path": str(temp_git_repo), "action": "create", "branch_name": "feature-branch"}
+            {
+                "action": "branch",
+                "path": str(temp_git_repo),
+                "branch_action": "create",
+                "branch_name": "feature-branch",
+            }
         )
 
         self.assert_success(result)
 
         # Verify branch exists
-        result2 = await self.run_tool({"path": str(temp_git_repo), "action": "list"})
-        assert "feature-branch" in result2.data.branches
+        result2 = await self.run_tool(
+            {"action": "branch", "path": str(temp_git_repo), "branch_action": "list"}
+        )
+        assert "feature-branch" in result2.data.result.get("branches", [])
 
     @CategoryMarkers.UNIT
     @pytest.mark.asyncio
@@ -301,7 +317,7 @@ class TestGitBranchTool(ToolTestBase):
         """Test switching branches.
 
         Given: Repository with multiple branches
-        When: GitBranch switch action is called
+        When: Git branch switch action is called
         Then: Current branch changes
         """
         # Get current branch name (master or main)
@@ -326,7 +342,12 @@ class TestGitBranchTool(ToolTestBase):
 
         # Switch back to original branch
         result = await self.run_tool(
-            {"path": str(temp_git_repo), "action": "switch", "branch_name": original_branch}
+            {
+                "action": "branch",
+                "path": str(temp_git_repo),
+                "branch_action": "switch",
+                "branch_name": original_branch,
+            }
         )
 
         self.assert_success(result)
@@ -357,41 +378,54 @@ class TestGitWorkflow:
         7. View log
         """
         from pilotcode.tools.git_tools import (
-            git_status_call,
-            GitStatusInput,
-            git_diff_call,
-            GitDiffInput,
-            git_branch_call,
-            GitBranchInput,
+            git_call,
+            GitInput,
         )
 
         async def allow_callback(*args, **kwargs):
             return {"behavior": "allow"}
 
         # Step 1: Check initial status
-        result = await git_status_call(
-            GitStatusInput(path=str(temp_git_repo)), None, allow_callback, None, lambda x: None
+        result = await git_call(
+            GitInput(action="status", path=str(temp_git_repo)),
+            None,
+            allow_callback,
+            None,
+            lambda x: None,
         )
-        assert result.data.is_clean
+        assert result.data.result.get("is_clean")
 
         # Step 2: Modify file
         (temp_git_repo / "README.md").write_text("Updated content")
 
         # Step 3: Check status again
-        result = await git_status_call(
-            GitStatusInput(path=str(temp_git_repo)), None, allow_callback, None, lambda x: None
+        result = await git_call(
+            GitInput(action="status", path=str(temp_git_repo)),
+            None,
+            allow_callback,
+            None,
+            lambda x: None,
         )
-        assert not result.data.is_clean
+        assert not result.data.result.get("is_clean")
 
         # Step 4: View diff
-        result = await git_diff_call(
-            GitDiffInput(path=str(temp_git_repo)), None, allow_callback, None, lambda x: None
+        result = await git_call(
+            GitInput(action="diff", path=str(temp_git_repo)),
+            None,
+            allow_callback,
+            None,
+            lambda x: None,
         )
-        assert result.data.file_count > 0
+        assert result.data.result.get("file_count", 0) > 0
 
         # Step 5: Create branch
-        result = await git_branch_call(
-            GitBranchInput(path=str(temp_git_repo), action="create", branch_name="feature"),
+        result = await git_call(
+            GitInput(
+                action="branch",
+                path=str(temp_git_repo),
+                branch_action="create",
+                branch_name="feature",
+            ),
             None,
             allow_callback,
             None,
@@ -399,6 +433,7 @@ class TestGitWorkflow:
         )
         # Verify success by checking no error and message indicates success
         assert not result.is_error
-        assert "created" in result.data.message.lower() or "success" in result.data.message.lower()
+        msg = (result.data.result.get("message") or "").lower()
+        assert "created" in msg or "success" in msg
 
         # Step 6 & 7 would require commit capability

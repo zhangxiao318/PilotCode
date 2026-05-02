@@ -7,19 +7,19 @@ import pytest
 from tests.conftest import run_tool_test
 
 
-class TestGitStatusTool:
-    """Tests for GitStatus tool."""
+class TestGitStatus:
+    """Tests for Git status action."""
 
     @pytest.mark.asyncio
     async def test_status_clean_repo(self, temp_git_repo, allow_callback):
         """Test status in clean repository."""
         result = await run_tool_test(
-            "GitStatus", {"path": str(temp_git_repo)}, None, allow_callback
+            "Git", {"action": "status", "path": str(temp_git_repo)}, None, allow_callback
         )
 
         assert not result.is_error
-        assert result.data.branch in ["master", "main"]
-        assert result.data.is_clean is True
+        assert result.data.result.get("branch") in ["master", "main"]
+        assert result.data.result.get("is_clean") is True
 
     @pytest.mark.asyncio
     async def test_status_with_untracked(self, temp_git_repo, allow_callback):
@@ -28,12 +28,12 @@ class TestGitStatusTool:
         (temp_git_repo / "new_file.txt").write_text("new content")
 
         result = await run_tool_test(
-            "GitStatus", {"path": str(temp_git_repo)}, None, allow_callback
+            "Git", {"action": "status", "path": str(temp_git_repo)}, None, allow_callback
         )
 
         assert not result.is_error
-        assert result.data.is_clean is False
-        assert "new_file.txt" in result.data.untracked
+        assert result.data.result.get("is_clean") is False
+        assert "new_file.txt" in result.data.result.get("untracked", [])
 
     @pytest.mark.asyncio
     async def test_status_with_modified(self, temp_git_repo, allow_callback):
@@ -42,32 +42,35 @@ class TestGitStatusTool:
         (temp_git_repo / "README.md").write_text("Modified content")
 
         result = await run_tool_test(
-            "GitStatus", {"path": str(temp_git_repo)}, None, allow_callback
+            "Git", {"action": "status", "path": str(temp_git_repo)}, None, allow_callback
         )
 
         assert not result.is_error
-        assert result.data.is_clean is False
-        assert len(result.data.modified) > 0
+        assert result.data.result.get("is_clean") is False
+        assert len(result.data.result.get("modified", [])) > 0
 
 
-class TestGitLogTool:
-    """Tests for GitLog tool."""
+class TestGitLog:
+    """Tests for Git log action."""
 
     @pytest.mark.asyncio
     async def test_log_basic(self, temp_git_repo, allow_callback):
         """Test basic log output."""
         result = await run_tool_test(
-            "GitLog", {"path": str(temp_git_repo), "max_count": 5}, None, allow_callback
+            "Git",
+            {"action": "log", "path": str(temp_git_repo), "max_count": 5},
+            None,
+            allow_callback,
         )
 
         assert not result.is_error
-        assert len(result.data.commits) >= 1
+        assert len(result.data.result.get("commits", [])) >= 1
 
         # Check commit structure
-        first_commit = result.data.commits[0]
-        assert first_commit.hash
-        assert first_commit.message
-        assert first_commit.author
+        first_commit = result.data.result.get("commits", [])[0]
+        assert first_commit.get("hash")
+        assert first_commit.get("message")
+        assert first_commit.get("author")
 
     @pytest.mark.asyncio
     async def test_log_limit(self, temp_git_repo, allow_callback):
@@ -84,20 +87,25 @@ class TestGitLogTool:
             )
 
         result = await run_tool_test(
-            "GitLog", {"path": str(temp_git_repo), "max_count": 2}, None, allow_callback
+            "Git",
+            {"action": "log", "path": str(temp_git_repo), "max_count": 2},
+            None,
+            allow_callback,
         )
 
         assert not result.is_error
-        assert len(result.data.commits) <= 2
+        assert len(result.data.result.get("commits", [])) <= 2
 
 
-class TestGitDiffTool:
-    """Tests for GitDiff tool."""
+class TestGitDiff:
+    """Tests for Git diff action."""
 
     @pytest.mark.asyncio
     async def test_diff_no_changes(self, temp_git_repo, allow_callback):
         """Test diff with no changes."""
-        result = await run_tool_test("GitDiff", {"path": str(temp_git_repo)}, None, allow_callback)
+        result = await run_tool_test(
+            "Git", {"action": "diff", "path": str(temp_git_repo)}, None, allow_callback
+        )
 
         assert not result.is_error
         # May be empty or show no changes
@@ -108,32 +116,42 @@ class TestGitDiffTool:
         # Modify file
         (temp_git_repo / "README.md").write_text("Modified README")
 
-        result = await run_tool_test("GitDiff", {"path": str(temp_git_repo)}, None, allow_callback)
+        result = await run_tool_test(
+            "Git", {"action": "diff", "path": str(temp_git_repo)}, None, allow_callback
+        )
 
         assert not result.is_error
-        assert result.data.diff or result.data.file_count > 0
+        assert result.data.result.get("diff") or result.data.result.get("file_count", 0) > 0
 
 
-class TestGitBranchTool:
-    """Tests for GitBranch tool."""
+class TestGitBranch:
+    """Tests for Git branch action."""
 
     @pytest.mark.asyncio
     async def test_branch_list(self, temp_git_repo, allow_callback):
         """Test listing branches."""
         result = await run_tool_test(
-            "GitBranch", {"path": str(temp_git_repo), "action": "list"}, None, allow_callback
+            "Git",
+            {"action": "branch", "path": str(temp_git_repo), "branch_action": "list"},
+            None,
+            allow_callback,
         )
 
         assert not result.is_error
-        assert len(result.data.branches) >= 1
-        assert result.data.current in result.data.branches
+        assert len(result.data.result.get("branches", [])) >= 1
+        assert result.data.result.get("current") in result.data.result.get("branches", [])
 
     @pytest.mark.asyncio
     async def test_branch_create(self, temp_git_repo, allow_callback):
         """Test creating a branch."""
         result = await run_tool_test(
-            "GitBranch",
-            {"path": str(temp_git_repo), "action": "create", "branch_name": "test-branch"},
+            "Git",
+            {
+                "action": "branch",
+                "path": str(temp_git_repo),
+                "branch_action": "create",
+                "branch_name": "test-branch",
+            },
             None,
             allow_callback,
         )
@@ -142,9 +160,12 @@ class TestGitBranchTool:
 
         # Verify branch was created
         result2 = await run_tool_test(
-            "GitBranch", {"path": str(temp_git_repo), "action": "list"}, None, allow_callback
+            "Git",
+            {"action": "branch", "path": str(temp_git_repo), "branch_action": "list"},
+            None,
+            allow_callback,
         )
-        assert "test-branch" in result2.data.branches
+        assert "test-branch" in result2.data.result.get("branches", [])
 
 
 if __name__ == "__main__":

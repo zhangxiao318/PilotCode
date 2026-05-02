@@ -306,7 +306,123 @@ async def git_branch_call(
         )
 
 
-# Register Git tools
+# ------------------------------------------------------------------
+# Unified Git tool (replaces GitStatus/GitDiff/GitLog/GitBranch)
+# ------------------------------------------------------------------
+
+
+class GitInput(BaseModel):
+    """Input for unified Git tool."""
+
+    action: str = Field(description="Action: status, diff, log, branch")
+    path: str = Field(default=".", description="Repository path")
+    file: str | None = Field(default=None, description="For diff/log: specific file")
+    staged: bool = Field(default=False, description="For diff: show staged changes")
+    max_count: int = Field(default=10, description="For log: max commits")
+    branch_name: str | None = Field(default=None, description="For branch: branch name")
+    branch_action: str = Field(default="list", description="For branch: list, create, switch")
+
+
+class GitOutputUnified(BaseModel):
+    """Unified output for Git tool."""
+
+    result: dict[str, Any] = Field(default_factory=dict)
+    message: str = Field(default="")
+
+
+async def git_call(
+    input_data: GitInput,
+    context: ToolUseContext,
+    can_use_tool: Any,
+    parent_message: Any,
+    on_progress: Any,
+) -> ToolResult[GitOutputUnified]:
+    """Unified git handler."""
+    action = input_data.action
+
+    if action == "status":
+        result = await git_status_call(
+            GitStatusInput(path=input_data.path), context, can_use_tool, parent_message, on_progress
+        )
+        return ToolResult(
+            data=GitOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Git status"
+            ),
+            error=result.error,
+        )
+
+    elif action == "diff":
+        result = await git_diff_call(
+            GitDiffInput(path=input_data.path, file=input_data.file, staged=input_data.staged),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=GitOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Git diff"
+            ),
+            error=result.error,
+        )
+
+    elif action == "log":
+        result = await git_log_call(
+            GitLogInput(path=input_data.path, max_count=input_data.max_count, file=input_data.file),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=GitOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Git log"
+            ),
+            error=result.error,
+        )
+
+    elif action == "branch":
+        result = await git_branch_call(
+            GitBranchInput(
+                path=input_data.path,
+                action=input_data.branch_action,
+                branch_name=input_data.branch_name,
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=GitOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Git branch"
+            ),
+            error=result.error,
+        )
+
+    else:
+        return ToolResult(data=GitOutputUnified(), error=f"Unknown action: {action}")
+
+
+GitTool = build_tool(
+    name="Git",
+    description=lambda x, o: f"Git {x.action}",
+    input_schema=GitInput,
+    output_schema=GitOutputUnified,
+    call=git_call,
+    aliases=["git"],
+    is_read_only=lambda x: (
+        x.action in ("status", "diff", "log", "branch")
+        and getattr(x, "branch_action", "list") == "list"
+        if x
+        else True
+    ),
+    is_concurrency_safe=lambda x: True,
+)
+
+register_tool(GitTool)
+
+# Old fine-grained tools kept for direct import compatibility only.
 GitStatusTool = build_tool(
     name="GitStatus",
     description=lambda x, o: f"Git status for {x.path}",
@@ -351,7 +467,7 @@ GitBranchTool = build_tool(
     is_concurrency_safe=lambda x: x.action == "list" if x else True,
 )
 
-register_tool(GitStatusTool)
-register_tool(GitDiffTool)
-register_tool(GitLogTool)
-register_tool(GitBranchTool)
+# register_tool(GitStatusTool)  # Merged into Git
+# register_tool(GitDiffTool)
+# register_tool(GitLogTool)
+# register_tool(GitBranchTool)

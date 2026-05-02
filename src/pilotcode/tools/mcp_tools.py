@@ -135,7 +135,114 @@ async def mcp_call_tool_call(
         )
 
 
-# Register MCP tools
+# ------------------------------------------------------------------
+# Unified MCP tool (replaces ListMcpResources/ReadMcpResource/MCP)
+# ------------------------------------------------------------------
+
+
+class MCPInput(BaseModel):
+    """Input for unified MCP tool."""
+
+    action: str = Field(description="Action: list_resources, read_resource, call_tool")
+    server_name: str = Field(description="MCP server name")
+    resource_uri: str | None = Field(default=None, description="For read_resource: resource URI")
+    tool_name: str | None = Field(default=None, description="For call_tool: tool name")
+    arguments: dict = Field(default_factory=dict, description="For call_tool: tool arguments")
+
+
+class MCPOutputUnified(BaseModel):
+    """Unified output for MCP tool."""
+
+    result: dict[str, Any] = Field(default_factory=dict)
+    message: str = Field(default="")
+
+
+async def mcp_call(
+    input_data: MCPInput,
+    context: ToolUseContext,
+    can_use_tool: Any,
+    parent_message: Any,
+    on_progress: Any,
+) -> ToolResult[MCPOutputUnified]:
+    """Unified MCP handler."""
+    action = input_data.action
+
+    if action == "list_resources":
+        result = await mcp_list_resources_call(
+            MCPListResourcesInput(server_name=input_data.server_name),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=MCPOutputUnified(
+                result=result.data.model_dump() if result.data else {},
+                message="MCP resources listed",
+            ),
+            error=result.error,
+        )
+
+    elif action == "read_resource":
+        if not input_data.resource_uri:
+            return ToolResult(
+                data=MCPOutputUnified(), error="resource_uri required for read_resource"
+            )
+        result = await mcp_read_resource_call(
+            MCPReadResourceInput(
+                server_name=input_data.server_name, resource_uri=input_data.resource_uri
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=MCPOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="MCP resource read"
+            ),
+            error=result.error,
+        )
+
+    elif action == "call_tool":
+        if not input_data.tool_name:
+            return ToolResult(data=MCPOutputUnified(), error="tool_name required for call_tool")
+        result = await mcp_call_tool_call(
+            MCPCallToolInput(
+                server_name=input_data.server_name,
+                tool_name=input_data.tool_name,
+                arguments=input_data.arguments,
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=MCPOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="MCP tool called"
+            ),
+            error=result.error,
+        )
+
+    else:
+        return ToolResult(data=MCPOutputUnified(), error=f"Unknown action: {action}")
+
+
+MCPUnifiedTool = build_tool(
+    name="MCP",
+    description=lambda x, o: f"MCP {x.action}",
+    input_schema=MCPInput,
+    output_schema=MCPOutputUnified,
+    call=mcp_call,
+    aliases=["mcp"],
+    is_read_only=lambda x: x.action in ("list_resources", "read_resource") if x else True,
+    is_concurrency_safe=lambda x: x.action in ("list_resources", "read_resource") if x else True,
+)
+
+register_tool(MCPUnifiedTool)
+
+# Old fine-grained tools kept for direct import compatibility only.
 ListMcpResourcesTool = build_tool(
     name="ListMcpResources",
     description=lambda x, o: f"List MCP resources from {x.server_name}",
@@ -169,6 +276,6 @@ MCPTool = build_tool(
     is_concurrency_safe=lambda _: False,
 )
 
-register_tool(ListMcpResourcesTool)
-register_tool(ReadMcpResourceTool)
-register_tool(MCPTool)
+# register_tool(ListMcpResourcesTool)  # Merged into MCP
+# register_tool(ReadMcpResourceTool)
+# register_tool(MCPTool)

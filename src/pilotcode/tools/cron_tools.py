@@ -249,7 +249,133 @@ async def cron_update_call(
     )
 
 
-# Register cron tools
+# ------------------------------------------------------------------
+# Unified Cron tool (replaces CronCreate/CronDelete/CronList/CronUpdate)
+# ------------------------------------------------------------------
+
+
+class CronInput(BaseModel):
+    """Input for unified Cron tool."""
+
+    action: str = Field(description="Action: create, delete, list, update")
+    name: str | None = Field(default=None, description="For create: job name")
+    command: str | None = Field(default=None, description="For create: command")
+    schedule: str | None = Field(default=None, description="For create/update: schedule")
+    description: str | None = Field(default=None, description="For create: job description")
+    job_id: str | None = Field(default=None, description="For delete/update: job ID")
+    enabled: bool | None = Field(default=None, description="For update: enable/disable")
+    enabled_only: bool = Field(default=False, description="For list: show only enabled")
+
+
+class CronOutputUnified(BaseModel):
+    """Unified output for Cron tool."""
+
+    result: dict[str, Any] = Field(default_factory=dict)
+    message: str = Field(default="")
+
+
+async def cron_call(
+    input_data: CronInput,
+    context: ToolUseContext,
+    can_use_tool: Any,
+    parent_message: Any,
+    on_progress: Any,
+) -> ToolResult[CronOutputUnified]:
+    """Unified cron handler."""
+    action = input_data.action
+
+    if action == "create":
+        result = await cron_create_call(
+            CronCreateInput(
+                name=input_data.name or "",
+                command=input_data.command or "",
+                schedule=input_data.schedule or "",
+                description=input_data.description,
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=CronOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Cron job created"
+            ),
+            error=result.error,
+        )
+
+    elif action == "delete":
+        if not input_data.job_id:
+            return ToolResult(data=CronOutputUnified(), error="job_id required for delete")
+        result = await cron_delete_call(
+            CronDeleteInput(job_id=input_data.job_id),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=CronOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Cron job deleted"
+            ),
+            error=result.error,
+        )
+
+    elif action == "list":
+        result = await cron_list_call(
+            CronListInput(enabled_only=input_data.enabled_only),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=CronOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Cron jobs listed"
+            ),
+            error=result.error,
+        )
+
+    elif action == "update":
+        if not input_data.job_id:
+            return ToolResult(data=CronOutputUnified(), error="job_id required for update")
+        result = await cron_update_call(
+            CronUpdateInput(
+                job_id=input_data.job_id,
+                enabled=input_data.enabled,
+                schedule=input_data.schedule,
+                command=input_data.command,
+            ),
+            context,
+            can_use_tool,
+            parent_message,
+            on_progress,
+        )
+        return ToolResult(
+            data=CronOutputUnified(
+                result=result.data.model_dump() if result.data else {}, message="Cron job updated"
+            ),
+            error=result.error,
+        )
+
+    else:
+        return ToolResult(data=CronOutputUnified(), error=f"Unknown action: {action}")
+
+
+CronTool = build_tool(
+    name="Cron",
+    description=lambda x, o: f"Cron {x.action}",
+    input_schema=CronInput,
+    output_schema=CronOutputUnified,
+    call=cron_call,
+    aliases=["cron"],
+    is_read_only=lambda x: x.action == "list" if x else True,
+    is_concurrency_safe=lambda x: x.action == "list" if x else True,
+)
+
+register_tool(CronTool)
+
+# Old fine-grained tools kept for direct import compatibility only.
 CronCreateTool = build_tool(
     name="CronCreate",
     description=lambda x, o: f"Create cron job: {x.name}",
@@ -294,7 +420,7 @@ CronUpdateTool = build_tool(
     is_concurrency_safe=lambda _: True,
 )
 
-register_tool(CronCreateTool)
-register_tool(CronDeleteTool)
-register_tool(CronListTool)
-register_tool(CronUpdateTool)
+# register_tool(CronCreateTool)  # Merged into Cron
+# register_tool(CronDeleteTool)
+# register_tool(CronListTool)
+# register_tool(CronUpdateTool)

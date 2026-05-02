@@ -212,16 +212,16 @@ class TestGitTools:
     @pytest.mark.asyncio
     async def test_git_status_in_repo(self):
         # This test runs in PilotCode which is a git repo
-        result = await call_tool("GitStatus", {"repo_path": "."})
+        result = await call_tool("Git", {"action": "status", "path": "."})
         assert not result.is_error
         # Should contain branch info or file status
-        assert result.data.branch is not None or "branch" in result.data.status.lower()
+        assert result.data.result.get("branch") is not None
 
     @pytest.mark.asyncio
     async def test_git_branch(self):
-        result = await call_tool("GitBranch", {"repo_path": "."})
+        result = await call_tool("Git", {"action": "branch", "path": ".", "branch_action": "list"})
         assert not result.is_error
-        assert len(result.data.branches) > 0
+        assert len(result.data.result.get("branches", [])) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +272,7 @@ class TestMiscTools:
 class TestRegistry:
     def test_all_tools_loadable(self):
         tools = get_all_tools()
-        assert len(tools) >= 40
+        assert len(tools) >= 37
         for tool in tools:
             assert tool.name
             assert tool.input_schema is not None
