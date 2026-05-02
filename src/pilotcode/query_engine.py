@@ -971,8 +971,8 @@ When editing code files, you MUST follow these rules to avoid syntax errors and 
             ratio = tokens_before / self._usable_context
 
             if ratio < 0.5:
-                # Plenty of room: allow up to 20 % of usable context
-                max_tool_tokens = int(self._usable_context * 0.20)
+                # Plenty of room: allow up to 10 % of usable context
+                max_tool_tokens = int(self._usable_context * 0.10)
             elif ratio < 0.85:
                 # Getting tight: allow half of remaining space
                 max_tool_tokens = max(2_000, int((self._usable_context - tokens_before) * 0.5))
