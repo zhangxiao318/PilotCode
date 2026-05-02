@@ -14,7 +14,6 @@ from .adapter import MissionAdapter
 from .project_memory import ProjectMemory, FileSnapshot, FailedAttempt
 from .context_strategy import ContextStrategy, ContextStrategySelector, MissionPlanAdjuster
 from .decomposer import TaskDecomposer, DecompositionStrategy, DecompositionResult, Subtask
-from .coordinator import AgentCoordinator, TaskExecutor, CoordinatorResult
 from .report import (
     format_plan,
     format_progress,
@@ -59,9 +58,6 @@ __all__ = [
     "DecompositionStrategy",
     "DecompositionResult",
     "Subtask",
-    "AgentCoordinator",
-    "TaskExecutor",
-    "CoordinatorResult",
     "format_plan",
     "format_progress",
     "format_completion",

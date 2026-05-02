@@ -1,6 +1,8 @@
 """Real-world usage example of task orchestration.
 
 Shows how to use the orchestration system in actual development workflows.
+Uses MissionAdapter (the production entry point) instead of the removed
+AgentCoordinator stub.
 """
 
 import asyncio
@@ -61,9 +63,13 @@ async def example_1_feature_implementation():
     print("  Example 1: Feature Implementation Workflow")
     print("=" * 70)
 
-    from pilotcode.orchestration import AgentCoordinator
+    from pilotcode.orchestration import MissionAdapter, TaskDecomposer
 
-    coordinator = AgentCoordinator(agent_factory)
+    # In production, use MissionAdapter for full P-EVR orchestration:
+    #   adapter = MissionAdapter()
+    #   result = await adapter.run(user_request=task)
+
+    decomposer = TaskDecomposer()
 
     # Complex feature request
     task = """Implement a user profile management feature with:
@@ -74,34 +80,18 @@ async def example_1_feature_implementation():
     - Unit tests for all components"""
 
     print(f"\n📝 Task: {task[:80]}...")
-    print("\n🔄 Starting automatic decomposition and execution...\n")
 
-    # Execute with progress tracking
-    progress_log = []
+    # Use TaskDecomposer to preview the decomposition plan
+    result = decomposer.auto_decompose(task)
 
-    def on_progress(event, data):
-        progress_log.append((datetime.now(), event, data))
-        if event == "task_starting":
-            print(f"  ▶️  Starting: {data.get('task_id', 'unknown')}")
-        elif event == "task_completed":
-            print(f"  ✅ Completed: {data.get('task_id', 'unknown')}")
+    print(f"\n📊 Decomposition Preview:")
+    print(f"  Strategy: {result.strategy.name}")
+    print(f"  Confidence: {result.confidence:.0%}")
+    print(f"  Subtask count: {len(result.subtasks)}")
+    for i, st in enumerate(result.subtasks, 1):
+        print(f"  {i}. [{st.role}] {st.description}")
 
-    coordinator.on_progress(on_progress)
-
-    # Execute
-    result = await coordinator.execute(task=task, auto_decompose=True)
-
-    # Print results
-    print(f"\n📊 Execution Summary:")
-    print(f"  Status: {result.status}")
-    print(f"  Duration: {result.duration_seconds:.2f}s")
-    print(f"  Decomposed: {result.metadata.get('decomposed', False)}")
-
-    if result.metadata.get("subtask_count"):
-        print(f"  Subtasks: {result.metadata['subtask_count']}")
-        print(f"  Successful: {result.metadata.get('success_count', 0)}")
-
-    print(f"\n📄 Summary:\n{result.summary[:300]}...")
+    print(f"\n💡 To execute: use MissionAdapter().run(user_request=task)")
 
 
 async def example_2_bug_fix_workflow():
@@ -178,7 +168,7 @@ async def example_3_code_review_automation():
         for i, st in enumerate(result.subtasks, 1):
             print(f"  {i}. {st.role}: {st.description}")
 
-        print(f"\n⏱️  Estimated Duration: {result.estimated_duration}s")
+        print(f"\n⏱️  Estimated Duration: {result.subtasks[0].estimated_duration_seconds}s")
 
 
 async def example_4_refactoring_project():
@@ -224,9 +214,9 @@ async def example_5_performance_optimization():
     print("  Example 5: Performance Optimization")
     print("=" * 70)
 
-    from pilotcode.orchestration import AgentCoordinator
+    from pilotcode.orchestration import TaskDecomposer
 
-    coordinator = AgentCoordinator(agent_factory)
+    decomposer = TaskDecomposer()
 
     optimization_task = """Optimize database query performance:
     - Identify slow queries from logs
@@ -237,18 +227,18 @@ async def example_5_performance_optimization():
 
     print(f"\n⚡ Task: {optimization_task[:80]}...")
 
-    # Execute with forced parallel strategy
-    result = await coordinator.execute(
-        task=optimization_task, strategy="parallel", auto_decompose=True  # Force parallel execution
-    )
+    # Decompose with parallel strategy
+    result = decomposer.auto_decompose(optimization_task)
 
     print(f"\n📊 Results:")
-    print(f"  Strategy Used: {result.metadata.get('strategy', 'unknown')}")
-    print(f"  Duration: {result.duration_seconds:.2f}s")
+    print(f"  Strategy: {result.strategy.name}")
+    print(f"  Subtasks: {len(result.subtasks)}")
+    
+    for i, st in enumerate(result.subtasks, 1):
+        deps = f" (depends on: {', '.join(st.dependencies)})" if st.dependencies else ""
+        print(f"  {i}. [{st.role}] {st.description}{deps}")
 
-    if result.metadata.get("decomposed"):
-        print(f"  Subtasks: {result.metadata['subtask_count']}")
-        print(f"  Parallel Efficiency: ~{result.metadata['subtask_count'] * 0.7:.1f}x faster")
+    print(f"\n💡 To execute: use MissionAdapter().run(user_request=task)")
 
 
 async def example_6_configuring_automation():
@@ -257,45 +247,40 @@ async def example_6_configuring_automation():
     print("  Example 6: Configuring Auto-Decomposition")
     print("=" * 70)
 
-    from pilotcode.orchestration.auto_config import (
-        configure_auto_decomposition,
-        get_auto_config,
-        enable_auto_decomposition,
-        disable_auto_decomposition,
-    )
+    from pilotcode.orchestration.auto_config import AutoDecompositionConfig
 
-    print("\n⚙️  Current Configuration:")
-    config = get_auto_config()
+    print("\n⚙️  Configuration:")
+    config = AutoDecompositionConfig()
     print(f"  Enabled: {config.enabled}")
-    print(f"  Min Confidence: {config.min_confidence}")
+    print(f"  Simple Task Threshold: {config.simple_task_threshold}")
     print(f"  Require Confirmation: {config.require_confirmation}")
 
-    print("\n📝 Configuration Options:")
+    print("\n📝 Configuration Presets:")
 
     # Example 1: Conservative mode
-    print("\n  1. Conservative Mode (only decompose high-confidence tasks):")
-    print("     configure_auto_decomposition(")
-    print("         enabled=True,")
-    print("         min_confidence=0.9,")
-    print("         require_confirmation=True")
-    print("     )")
+    print("\n  1. Conservative Mode:")
+    conservative = AutoDecompositionConfig(
+        enabled=True,
+        simple_task_threshold=5,
+        require_confirmation=True,
+    )
+    print(f"     enabled={conservative.enabled}, threshold={conservative.simple_task_threshold}")
 
     # Example 2: Aggressive mode
-    print("\n  2. Aggressive Mode (decompose most tasks):")
-    print("     configure_auto_decomposition(")
-    print("         enabled=True,")
-    print("         min_confidence=0.5,")
-    print("         require_confirmation=False")
-    print("     )")
+    print("\n  2. Aggressive Mode:")
+    aggressive = AutoDecompositionConfig(
+        enabled=True,
+        simple_task_threshold=1,
+        require_confirmation=False,
+    )
+    print(f"     enabled={aggressive.enabled}, threshold={aggressive.simple_task_threshold}")
 
-    # Example 3: Disable
-    print("\n  3. Disable Auto-Decomposition:")
-    print("     disable_auto_decomposition()")
-    print("     # or: configure_auto_decomposition(enabled=False)")
+    # Example 3: Disabled
+    print("\n  3. Disabled:")
+    disabled = AutoDecompositionConfig(enabled=False)
+    print(f"     enabled={disabled.enabled}")
 
-    # Example 4: Re-enable
-    print("\n  4. Re-enable Auto-Decomposition:")
-    print("     enable_auto_decomposition()")
+    print("\n💡 Pass config instances to consumers via constructor injection.")
 
 
 async def main():
@@ -315,9 +300,9 @@ async def main():
     print("  Examples Complete!")
     print("=" * 70)
     print("\n💡 For actual usage:")
-    print("  from pilotcode.orchestration import AgentCoordinator")
-    print("  coordinator = AgentCoordinator(agent_factory)")
-    print("  result = await coordinator.execute(task, auto_decompose=True)")
+    print("  from pilotcode.orchestration import MissionAdapter")
+    print("  adapter = MissionAdapter()")
+    print("  result = await adapter.run(\"Your task description\")")
     print("\n" + "=" * 70 + "\n")
 
 

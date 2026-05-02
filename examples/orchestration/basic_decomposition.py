@@ -7,8 +7,6 @@ import asyncio
 from pilotcode.orchestration import (
     TaskDecomposer,
     DecompositionStrategy,
-    TaskExecutor,
-    AgentCoordinator,
 )
 
 
