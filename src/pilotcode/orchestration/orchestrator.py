@@ -795,24 +795,30 @@ class Orchestrator:
                     f"{v_result.feedback}\n"
                     f"You MUST fix these issues before completing the task."
                 )
-
         adjusted_node = DagNode(task_id=task_id, task=adjusted_task)
-        adjusted_node.state = TaskState.PENDING
+        adjusted_node.state = TaskState.IN_PROGRESS
         adjusted_node.depth = node.depth
         adjusted_node.artifacts = dict(node.artifacts)
 
         # Replace node in DAG
         dag.nodes[task_id] = adjusted_node
 
-        # Reset state machine to PENDING so the main loop's _enqueue_ready
-        # will re-schedule this task on the next iteration.
-        # Do NOT synchronously await _execute_task here — that bypasses the
-        # main event loop and causes a deadlock when the task fails again
-        # (NEEDS_REWORK is not PENDING, so _enqueue_ready skips it, leaving
-        # active_workers empty with no one to wake the event).
+        # Use the proper state machine Transition (RESUME) instead of
+        # bypassing the Transition table with sm.state = PENDING.
+        # RESUME moves NEEDS_REWORK → IN_PROGRESS, which _enqueue_ready
+        # and _execute_task both accept.
         sm = self.tracker.get_state_machine(mission_id, task_id)
         if sm:
-            sm.state = TaskState.PENDING
+            try:
+                sm.transition(
+                    Transition.RESUME,
+                    reason=f"Rework attempt {rework_count}",
+                    actor="orchestrator",
+                )
+            except InvalidTransitionError:
+                # Fallback: if RESUME is not valid (state changed externally),
+                # don't force the retry.
+                return
 
         # Wake the main loop so it re-evaluates ready tasks immediately.
         self._task_completed_event.set()
