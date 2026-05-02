@@ -29,7 +29,7 @@ from pilotcode.permissions.permission_manager import (
 from pilotcode.types.message import ToolUseMessage, AssistantMessage
 from pilotcode.services.cleanup import SessionCleanup
 
-from .task_spec import Mission, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion
+from .task_spec import Mission, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion, CODE_FILE_EXTENSIONS
 from .orchestrator import Orchestrator, OrchestratorConfig
 from .results import ExecutionResult
 from .verifier.base import VerificationResult
@@ -189,22 +189,7 @@ class MissionAdapter:
                 code_files = [
                     f
                     for f in changed_files
-                    if f.endswith(
-                        (
-                            ".py",
-                            ".c",
-                            ".cpp",
-                            ".cc",
-                            ".cxx",
-                            ".h",
-                            ".hpp",
-                            ".rs",
-                            ".go",
-                            ".js",
-                            ".ts",
-                            ".java",
-                        )
-                    )
+                    if f.endswith(CODE_FILE_EXTENSIONS)
                 ]
                 if code_files and not any(
                     ac.verification_method in ("test", "pytest") for ac in task.acceptance_criteria
@@ -1086,22 +1071,7 @@ class MissionAdapter:
             code_files = [
                 f
                 for f in changed
-                if f.endswith(
-                    (
-                        ".py",
-                        ".c",
-                        ".cpp",
-                        ".cc",
-                        ".cxx",
-                        ".h",
-                        ".hpp",
-                        ".rs",
-                        ".go",
-                        ".js",
-                        ".ts",
-                        ".java",
-                    )
-                )
+                if f.endswith(CODE_FILE_EXTENSIONS)
             ]
             if code_files:
                 temp_exec = ExecutionResult(

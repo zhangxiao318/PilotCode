@@ -6,6 +6,23 @@ from dataclasses import dataclass, field
 from typing import Any
 from enum import Enum
 
+# Recognized source-code file extensions used by verifiers and workers
+# to determine when to run compile checks, test runners, etc.
+CODE_FILE_EXTENSIONS: tuple[str, ...] = (
+    ".py",
+    ".c",
+    ".cpp",
+    ".cc",
+    ".cxx",
+    ".h",
+    ".hpp",
+    ".rs",
+    ".go",
+    ".js",
+    ".ts",
+    ".java",
+)
+
 
 class ComplexityLevel(Enum):
     """Task complexity levels."""

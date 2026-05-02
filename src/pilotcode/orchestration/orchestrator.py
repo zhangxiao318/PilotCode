@@ -20,6 +20,7 @@ from .state_machine import TaskState, StateMachine, Transition, InvalidTransitio
 from .dag import DagExecutor, DagNode
 from .tracker import get_tracker
 from .results import ExecutionResult
+from .shared import CODE_FILE_EXTENSIONS
 from .verifier.base import VerificationResult, Verdict
 
 
@@ -486,22 +487,8 @@ class Orchestrator:
 
         # L2: Tests — skip when no code files were changed (e.g. analysis tasks)
         l2: VerificationResult | None = None
-        _code_exts = (
-            ".py",
-            ".c",
-            ".cpp",
-            ".cc",
-            ".cxx",
-            ".h",
-            ".hpp",
-            ".rs",
-            ".go",
-            ".js",
-            ".ts",
-            ".java",
-        )
         changed_files = exec_result.artifacts.get("changed_files", []) or []
-        has_code_changes = any(f.endswith(_code_exts) for f in changed_files)
+        has_code_changes = any(f.endswith(CODE_FILE_EXTENSIONS) for f in changed_files)
         if self.config.enable_l2_verification and not is_auto_simple and has_code_changes:
             l2 = await self._run_verifier(2, task, exec_result)
             if not l2.passed:
