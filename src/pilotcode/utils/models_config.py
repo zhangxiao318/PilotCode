@@ -381,7 +381,10 @@ def get_model_limits(model_name: str | None = None) -> dict[str, int]:
     base_url = config.base_url or ""
     is_local = is_local_url(base_url)
 
-    result = {"context_window": 128_000, "max_tokens": 4096}
+    # Sentinel 0 = "not yet determined".  Fallback values (128K / 4K) are only
+    # applied at the very end so they don't masquerade as real data and block
+    # later priorities.
+    result: dict[str, int] = {"context_window": 0, "max_tokens": 0}
 
     # Priority 1: Probe backend for actual limits (especially critical for local)
     probed: dict[str, int] | None = None
@@ -399,34 +402,38 @@ def get_model_limits(model_name: str | None = None) -> dict[str, int]:
             if "context_window" in probed:
                 probed_context = True
 
-    # Priority 2: User's explicit config (but cap at probed value if probed is smaller)
+    # Priority 2: User's explicit config (settings.json / env).
+    # When the backend was *actually probed* and reported a smaller window,
+    # cap at that real value; otherwise the user's setting wins outright.
     user_ctx = getattr(config, "context_window", 0)
     if isinstance(user_ctx, int) and user_ctx > 0:
-        if "context_window" in result and result["context_window"] > 0:
-            # Trust the smaller value: backend reality wins over user config
+        if probed_context and result.get("context_window", 0) > 0:
+            # Backend reality caps the user's ambition
             result["context_window"] = min(user_ctx, result["context_window"])
         else:
             result["context_window"] = user_ctx
 
-    # Priority 3: Static model config (remote models only)
-    if not is_local:
-        if model_name is None:
-            model_name = config.default_model
-        info = get_model_info(model_name)
-        if info:
-            if info.context_window > 0 and result.get("context_window", 0) <= 0:
-                result["context_window"] = info.context_window
-            if info.max_tokens > 0 and result.get("max_tokens", 0) <= 0:
-                result["max_tokens"] = info.max_tokens
+    # Priority 3: Static model config (models.json) — remote and local alike.
+    # Only fills in values that are still at the sentinel (0).
+    if model_name is None:
+        model_name = config.default_model
+    info = get_model_info(model_name)
+    if info:
+        if info.context_window > 0 and result["context_window"] <= 0:
+            result["context_window"] = info.context_window
+        if info.max_tokens > 0 and result["max_tokens"] <= 0:
+            result["max_tokens"] = info.max_tokens
 
-    # Ensure we have sensible fallbacks
-    if result.get("context_window", 0) <= 0:
+    # Priority 4: Safe fallbacks for anything still unresolved.
+    if result["context_window"] <= 0:
         result["context_window"] = 128_000
+    if result["max_tokens"] <= 0:
+        result["max_tokens"] = 4_096
 
     # If backend was probed but didn't report max_tokens, compute a conservative
     # default based on the actual context window so usable space stays reasonable.
-    if result.get("max_tokens", 0) <= 0 or (probed_context and "max_tokens" not in (probed or {})):
-        ctx = result.get("context_window", 128_000)
+    if probed_context and "max_tokens" not in (probed or {}):
+        ctx = result["context_window"]
         result["max_tokens"] = min(8_192, max(1_024, ctx // 4))
 
     return result
