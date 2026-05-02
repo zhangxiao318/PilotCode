@@ -25,6 +25,7 @@ class FileSnapshot:
     summary: str = ""  # Brief description of what this file contains
     mtime: float = 0.0
     read_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    written_at: str | None = None  # Last time the LLM modified this file
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -34,6 +35,7 @@ class FileSnapshot:
             "summary": self.summary,
             "mtime": self.mtime,
             "read_at": self.read_at,
+            "written_at": self.written_at,
         }
 
     @classmethod
@@ -45,6 +47,7 @@ class FileSnapshot:
             summary=data.get("summary", ""),
             mtime=data.get("mtime", 0.0),
             read_at=data.get("read_at", ""),
+            written_at=data.get("written_at", None),
         )
 
 
@@ -209,6 +212,49 @@ class ProjectMemory:
     def has_read_file(self, path: str) -> bool:
         """Check if a file has been read before."""
         return path in self.file_index
+
+    def record_file_written(self, path: str) -> None:
+        """Record that the LLM just modified this file, so it knows the current state."""
+        snap = self.file_index.get(path)
+        now = datetime.now(timezone.utc).isoformat()
+        if snap is not None:
+            snap.written_at = now
+            snap.read_at = now  # writing implies knowing the content
+        else:
+            self.file_index[path] = FileSnapshot(
+                path=path,
+                content_hash="",
+                line_count=0,
+                written_at=now,
+                read_at=now,
+            )
+        self.updated_at = now
+        self._persist()
+
+    def needs_re_read(self, path: str, turns_since_write: int = 3) -> bool:
+        """Check whether a file should be re-read before editing.
+
+        Returns False (skip re-read) if:
+        - The LLM wrote the file within the last 'turns_since_write' turns
+        - The file was read recently and hasn't been externally modified
+
+        Returns True if the file state is unknown/stale.
+        """
+        snap = self.file_index.get(path)
+        if snap is None:
+            return True
+        # If LLM just wrote this file, it knows the exact content
+        if snap.written_at is not None:
+            return False
+        # If read recently (< 2 min ago), assume content is still fresh
+        try:
+            read_dt = datetime.fromisoformat(snap.read_at)
+            age = (datetime.now(timezone.utc) - read_dt).total_seconds()
+            if age < 120:
+                return False
+        except (ValueError, TypeError):
+            pass
+        return True
 
     # ------------------------------------------------------------------
     # Convention tracking

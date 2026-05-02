@@ -1046,13 +1046,33 @@ class MissionAdapter:
         # --- Detect repeated FileEdit failures and suggest alternatives ---
         fileedit_errors = [e for e in errors if "FileEdit" in e or "String not found" in e]
         if len(fileedit_errors) >= 2 and self.compensation.config.enable_smart_edit_planner:
-            parts.append(
+            # Check which files actually need re-reading (skip recently touched files)
+            stale_paths = [
+                f for f in changed
+                if self.project_memory.needs_re_read(f)
+            ]
+            hint_lines = [
                 "\n[FRAMEWORK HINT] You have had multiple FileEdit failures in a row.\n"
                 "1. Use SmartEditPlanner to get the exact checklist of all locations.\n"
-                "2. Re-read the target file before editing to get the exact text.\n"
-                "3. Pay attention to indentation (spaces vs tabs) — copy the exact whitespace.\n"
-                "4. If FileEdit keeps failing, consider using FileWrite for small files ONLY."
-            )
+            ]
+            if stale_paths:
+                hint_lines.append(
+                    f"2. Re-read these files before editing (state unknown/stale): "
+                    f"{', '.join(stale_paths[:3])}\n"
+                )
+                hint_lines.append(
+                    "3. Pay attention to indentation (spaces vs tabs) — copy the exact whitespace.\n"
+                )
+                hint_lines.append(
+                    "4. If FileEdit keeps failing, consider using FileWrite for small files ONLY."
+                )
+            else:
+                hint_lines.append(
+                    "2. You recently read or wrote these files — skip FileRead.\n"
+                    "3. Pay attention to indentation — copy the exact whitespace from your last edit.\n"
+                    "4. If FileEdit keeps failing, switch to FileWrite for small files ONLY."
+                )
+            parts.append("".join(hint_lines))
 
         # --- Auto-verification for weak execution models ---
         if recent_edits and self.compensation.config.enable_auto_verify:
@@ -1187,6 +1207,7 @@ class MissionAdapter:
             )
             if path:
                 self.project_memory.record_changes([path])
+                self.project_memory.record_file_written(path)
 
         elif name in ("BashTool", "Bash", "bash"):
             cmd = tu.input.get("command", "")
