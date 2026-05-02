@@ -644,25 +644,34 @@ def _extract_target_path(prompt: str) -> str | None:
 
     # Windows absolute paths: e.g. E:\\test2, D:\\Source\\...
     # Use findall + strict character class to avoid swallowing CJK punctuation
-    win_paths = re.findall(r"[A-Za-z]:[\\/][\w.\\/-]+", prompt)
+    win_paths = re.findall(r"[A-Za-z]:[\\/][\w.\\/-]+", prompt, re.ASCII)
     for path in win_paths:
         path = path.replace("/", "\\")
         # Prefer existing directories, but accept any plausible path
         if os.path.isdir(path) or os.path.isabs(path):
             return path
 
-    # Unix absolute paths: e.g. /home/user/project, /tmp/foo
-    unix_paths = re.findall(r"/[\w./-]+", prompt)
+    # Unix absolute paths: e.g. /home/user/project, /tmp/foo, ~/project
+    # Also handle ~ (home directory) — expand it before returning.
+    # Also accept dot-relative paths like .., ../src, ../../foo.
+    unix_paths = re.findall(r"~?[\w./-]+", prompt, re.ASCII)
     for path in unix_paths:
+        if path.startswith("~"):
+            path = os.path.expanduser(path)
+        # Accept absolute paths or dot-relative paths (.., ../foo)
+        if not (os.path.isabs(path) or path.startswith(".")):
+            continue
         # Strip trailing slash for cleaner path, but preserve if it's just "/"
         cleaned = path.rstrip("/") or "/"
-        # Accept any absolute path the user explicitly mentioned
-        if os.path.isdir(path) or os.path.isabs(cleaned):
+        # Accept any absolute or dot-relative path the user explicitly mentioned
+        if os.path.isdir(path) or os.path.isabs(cleaned) or cleaned.startswith("."):
             return cleaned
 
     # Relative paths with common directory indicators
     rel_paths = re.findall(
-        r"(?:目录|文件夹|folder|directory|path|dir)\s*[:：]?\s*([\w./\\-]+)", prompt, re.IGNORECASE
+        r"(?:目录|文件夹|folder|directory|path|dir)\s*[:：]?\s*([\w./\\-]+)",
+        prompt,
+        re.IGNORECASE | re.ASCII,
     )
     for path in rel_paths:
         if os.path.isdir(path):
@@ -860,32 +869,50 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
     """Classify whether the task needs planning mode (PLAN) or direct mode (DIRECT).
 
     Strategy:
-      1. Fast heuristic rules for obvious cases (no LLM call).
-      2. For ambiguous cases, use a lightweight LLM call as tie-breaker.
-      3. Never let project size alone force PLAN — only the *task content* should.
+      1. Trivial non-dev cases (greetings, very short prompts) → DIRECT (no LLM).
+      2. Bug-fixing signals → PLAN (safe shortcut with strong signal).
+      3. Everything else → lightweight LLM classifier for accuracy.
 
     Returns:
         "PLAN"  -> multi-step, multi-file, or complex logic.
         "DIRECT"-> simple Q&A, greeting, explanation, or single edit.
     """
     effective_cwd = cwd if cwd else str(os.getcwd())
-
-    # Try to detect a target directory/path mentioned in the prompt
-    # and assess complexity of that path instead of the current cwd
     target_path = _extract_target_path(prompt) or effective_cwd
     project_stats = assess_project_complexity(target_path)
-    composite_score = _compute_task_complexity(prompt, project_stats)
 
-    # ---- Rule 1: Explicit non-dev tasks → DIRECT (no LLM) ----
-    if composite_score <= -3.0:
+    prompt_lower = prompt.lower()
+
+    # ---- Rule 1: Trivial non-dev tasks → DIRECT (no LLM) ----
+    # Only the most obvious signals: greetings, pure Q&A, thanks/goodbye
+    trivial_signals = [
+        "hello",
+        "hi ",
+        "hey",
+        "你好",
+        "您好",
+        "哈喽",
+        "在吗",
+        "在么",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "谢谢",
+        "感谢",
+        "再见",
+        "拜拜",
+    ]
+    if any(s in prompt_lower for s in trivial_signals):
         return "DIRECT"
 
-    # ---- Rule 3: Clear dev complexity → PLAN (no LLM) ----
-    if composite_score >= 2.5:
-        return "PLAN"
+    # ---- Rule 2: Very short prompt with no code symbols → DIRECT ----
+    prompt_stripped = prompt.strip()
+    if len(prompt_stripped) < 20 and not any(
+        c in prompt_stripped for c in "._/=(){}[];:#$%&@!^*+-"
+    ):
+        return "DIRECT"
 
-    # ---- Rule 3b: Bug-fixing tasks (e.g. SWE-bench) always need planning ----
-    prompt_lower = prompt.lower()
+    # ---- Rule 3: Bug-fixing signals → PLAN (strong signal, safe shortcut) ----
     bug_signals = [
         "bug report",
         "bug fix",
@@ -905,14 +932,7 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
     if any(s in prompt_lower for s in bug_signals):
         return "PLAN"
 
-    # ---- Rule 2: Very short, no code signals → DIRECT ----
-    prompt_stripped = prompt.strip()
-    if len(prompt_stripped) < 20 and not any(
-        c in prompt_stripped for c in "._/=(){}[];:#$%&@!^*+-"
-    ):
-        return "DIRECT"
-
-    # ---- Rule 4: Ambiguous middle ground → lightweight LLM ----
+    # ---- Rule 4: Default — let the LLM classify intelligently ----
     classifier_prompt = (
         "You are a strict task router. Decide if this user request requires "
         "multi-step planning across multiple files (PLAN) or can be answered "
@@ -939,7 +959,6 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
     ]
 
     try:
-        # client.chat_completion is an async generator; always iterate with async for
         chunks = []
         async for chunk in client.chat_completion(
             messages=messages,

@@ -211,9 +211,10 @@ class TestRunnerVerifier(BaseVerifier):
 
         results: list[dict[str, Any]] = []
 
-        # Step 1: Project-level build check (only when NOT in write phase)
+        # Step 1: Project-level build check (only when code files were changed)
         build_system = self._detect_build_system(cwd)
-        if build_system and not skip_project_build:
+        has_code_files = any(langs.values())
+        if build_system and not skip_project_build and has_code_files:
             build_res = await self._verify_project_build(build_system, cwd)
             results.append(build_res)
             issues.extend(build_res.get("issues", []))
@@ -602,8 +603,40 @@ class TestRunnerVerifier(BaseVerifier):
                         "command_missing": False,
                     }
 
-            ok = False
             err = (result["stderr"] or result["stdout"])[:800]
+            err_lower = err.lower()
+
+            # "make: *** No targets specified and no makefile found" etc.
+            # means the build system exists but has no applicable targets.
+            # Treat as a non-blocking warning rather than a hard error.
+            _no_target_patterns = [
+                "no targets specified",
+                "no rule to make target",
+                "nothing to be done",
+                "没有指明目标",
+                "找不到 makefile",
+                "没有规则可以创建目标",
+            ]
+            is_no_target = any(p in err_lower for p in _no_target_patterns)
+
+            if is_no_target:
+                return {
+                    "lang": build_system["name"],
+                    "ok": True,
+                    "issues": [
+                        {
+                            "severity": "warning",
+                            "category": "build_no_target",
+                            "message": f"{build_system['name']}: {err[:200]}",
+                            "blocking": False,
+                        }
+                    ],
+                    "score_penalty": 0.0,
+                    "feedback": f"{build_system['name']} has no applicable targets; skipped ({err[:200]})",
+                    "command_missing": True,
+                }
+
+            ok = False
             penalty += 30.0
             issues.append(
                 {

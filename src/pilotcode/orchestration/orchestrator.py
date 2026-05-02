@@ -484,9 +484,25 @@ class Orchestrator:
             and task.estimated_complexity == ComplexityLevel.VERY_SIMPLE
         )
 
-        # L2: Tests
+        # L2: Tests — skip when no code files were changed (e.g. analysis tasks)
         l2: VerificationResult | None = None
-        if self.config.enable_l2_verification and not is_auto_simple:
+        _code_exts = (
+            ".py",
+            ".c",
+            ".cpp",
+            ".cc",
+            ".cxx",
+            ".h",
+            ".hpp",
+            ".rs",
+            ".go",
+            ".js",
+            ".ts",
+            ".java",
+        )
+        changed_files = exec_result.artifacts.get("changed_files", []) or []
+        has_code_changes = any(f.endswith(_code_exts) for f in changed_files)
+        if self.config.enable_l2_verification and not is_auto_simple and has_code_changes:
             l2 = await self._run_verifier(2, task, exec_result)
             if not l2.passed:
                 self._handle_verification_failure(mission_id, task, sm, l2)
