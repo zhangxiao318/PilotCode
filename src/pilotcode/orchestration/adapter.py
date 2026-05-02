@@ -71,6 +71,66 @@ class MissionAdapter:
         ComplexityLevel.VERY_COMPLEX: 25,
     }
 
+    # Tiered JSON schema prompts: strong models don't need inline schemas
+    _PLAN_SCHEMA_STRONG = (
+        "Output valid JSON: {title, phases[{phase_id, title, description, "
+        "tasks[{id, title, objective, inputs, outputs, dependencies, "
+        "estimated_complexity, acceptance_criteria[{description, verification_method}], "
+        "constraints{max_lines, must_use, must_not_use, patterns}, worker_type}]}]}"
+    )
+
+    _PLAN_SCHEMA_MEDIUM = (
+        'Output ONLY a JSON object. Schema: {\n'
+        '  "title": str, "phases": [{\n'
+        '    "phase_id": str, "title": str, "description": str,\n'
+        '    "tasks": [{\n'
+        '      "id": str, "title": str, "objective": str,\n'
+        '      "inputs": [str], "outputs": [str], "dependencies": [str],\n'
+        '      "estimated_complexity": int (1-5),\n'
+        '      "acceptance_criteria": [{"description": str, "verification_method": str}],\n'
+        '      "constraints": {"max_lines": int|null, "must_use": [str], "must_not_use": [str], "patterns": [str]},\n'
+        '      "worker_type": "auto"|"simple"|"standard"|"complex"\n'
+        '    }]\n'
+        '  }]\n'
+        '}'
+    )
+
+    _PLAN_SCHEMA_WEAK = (
+        'Output ONLY a JSON object with no markdown formatting. '
+        "The JSON must match this schema:\n\n"
+        "{\n"
+        '  "title": "Short mission title",\n'
+        '  "phases": [\n'
+        "    {\n"
+        '      "phase_id": "phase_1",\n'
+        '      "title": "Phase title",\n'
+        '      "description": "What this phase accomplishes",\n'
+        '      "tasks": [\n'
+        "        {\n"
+        '          "id": "task_1",\n'
+        '          "title": "Task title",\n'
+        '          "objective": "Detailed description of what to implement",\n'
+        '          "inputs": ["input files or context"],\n'
+        '          "outputs": ["expected output files"],\n'
+        '          "dependencies": [],\n'
+        '          "estimated_complexity": 3,\n'
+        '          "acceptance_criteria": [\n'
+        '            {"description": "Criterion 1", "verification_method": "test"}\n'
+        "          ],\n"
+        '          "constraints": {\n'
+        '            "max_lines": null,\n'
+        '            "must_use": [],\n'
+        '            "must_not_use": [],\n'
+        '            "patterns": []\n'
+        "          },\n"
+        '          "worker_type": "auto"\n'
+        "        }\n"
+        "      ]\n"
+        "    }\n"
+        "  ]\n"
+        "}"
+    )
+
     def __init__(
         self,
         cancel_event: asyncio.Event | None = None,
@@ -222,6 +282,17 @@ class MissionAdapter:
     # Planning
     # ------------------------------------------------------------------
 
+
+    def _get_plan_schema(self) -> str:
+        """Return JSON schema prompt appropriate for model capability."""
+        p = self.capability.planning.score
+        j = self.capability.json_formatting.score
+        if p >= 0.70 and j >= 0.70:
+            return self._PLAN_SCHEMA_STRONG
+        elif p >= 0.40:
+            return self._PLAN_SCHEMA_MEDIUM
+        return self._PLAN_SCHEMA_WEAK
+
     async def _plan_mission(
         self, user_request: str, exploration: dict[str, Any] | None = None
     ) -> Mission:
@@ -238,39 +309,7 @@ class MissionAdapter:
         base_prompt = (
             "You are a mission planner for a software development AI system.\n"
             "Given a user's request, decompose it into a structured plan with phases and tasks.\n"
-            "Output ONLY a JSON object with no markdown formatting. The JSON must match this schema:\n"
-            "\n"
-            "{\n"
-            '  "title": "Short mission title",\n'
-            '  "phases": [\n'
-            "    {\n"
-            '      "phase_id": "phase_1",\n'
-            '      "title": "Phase title",\n'
-            '      "description": "What this phase accomplishes",\n'
-            '      "tasks": [\n'
-            "        {\n"
-            '          "id": "task_1",\n'
-            '          "title": "Task title",\n'
-            '          "objective": "Detailed description of what to implement",\n'
-            '          "inputs": ["input files or context"],\n'
-            '          "outputs": ["expected output files"],\n'
-            '          "dependencies": [],\n'
-            '          "estimated_complexity": 3,\n'
-            '          "acceptance_criteria": [\n'
-            '            {"description": "Criterion 1", "verification_method": "test"}\n'
-            "          ],\n"
-            '          "constraints": {\n'
-            '            "max_lines": null,\n'
-            '            "must_use": [],\n'
-            '            "must_not_use": [],\n'
-            '            "patterns": []\n'
-            "          },\n"
-            '          "worker_type": "auto"\n'
-            "        }\n"
-            "      ]\n"
-            "    }\n"
-            "  ]\n"
-            "}\n"
+            + self._get_plan_schema() + "\n"
             "\n"
             "CRITICAL RULES:\n"
             "- complexity: 1 (very simple) to 5 (very complex)\n"
@@ -279,7 +318,7 @@ class MissionAdapter:
             "- Include at least one phase, but no more than 5 phases for typical requests\n"
             "- ONLY reference files that actually exist in the codebase (see exploration data below)\n"
             "- If the user asks to ANALYZE, REVIEW, UNDERSTAND, or EXPLAIN existing code,\n"
-            "  generate READ-ONLY analysis tasks ONLY (e.g. 'Examine...', 'Analyze...', 'Summarize...').\n"
+            "  generate READ-ONLY analysis tasks ONLY (e.g. \'Examine...\', \'Analyze...\', \'Summarize...\').\n"
             "  Do NOT generate tasks that write new code, create new files, or modify existing code.\n"
             "- ONLY generate implementation/coding tasks when the user explicitly asks to\n"
             "  CREATE, IMPLEMENT, BUILD, or ADD something.\n"
