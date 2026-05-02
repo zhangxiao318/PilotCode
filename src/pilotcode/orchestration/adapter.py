@@ -33,7 +33,7 @@ from .task_spec import Mission, TaskSpec, ComplexityLevel, Constraints, Acceptan
 from .orchestrator import Orchestrator, OrchestratorConfig
 from .results import ExecutionResult
 from .verifier.base import VerificationResult
-from .verifiers.adapter_verifiers import (
+from .verifier.adapter_verifiers import (
     l1_simple_verifier,
     l3_code_review_verifier,
 )
@@ -170,11 +170,10 @@ class MissionAdapter:
         if self.adaptive_config.verifier_strategy == VerifierStrategy.FULL_L3:
             self._orchestrator.register_verifier(3, l3_code_review_verifier)
         elif self.adaptive_config.verifier_strategy == VerifierStrategy.SIMPLIFIED_L3:
-            from .verifiers.adaptive_verifiers import simplified_l3_verifier
-
+            from .verifier.adaptive_verifiers import simplified_l3_verifier
             self._orchestrator.register_verifier(3, simplified_l3_verifier)
         elif self.adaptive_config.verifier_strategy == VerifierStrategy.STATIC_ONLY:
-            from .verifiers.adaptive_verifiers import static_analysis_l3_verifier
+            from .verifier.adaptive_verifiers import static_analysis_l3_verifier
 
             self._orchestrator.register_verifier(3, static_analysis_l3_verifier)
 

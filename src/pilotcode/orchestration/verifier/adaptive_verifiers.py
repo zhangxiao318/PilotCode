@@ -15,7 +15,7 @@ from pilotcode.utils.model_client import get_model_client, Message
 
 from ..results import ExecutionResult
 from ..task_spec import TaskSpec
-from ..verifier.base import VerificationResult, Verdict
+from .base import VerificationResult, Verdict
 
 
 async def simplified_l3_verifier(
