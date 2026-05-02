@@ -994,6 +994,10 @@ class MissionAdapter:
 
     async def _build_continue_prompt(self, engine: QueryEngine, task: TaskSpec) -> str:
         """Build a contextual continue prompt instead of bare 'Please continue.'."""
+        # Strong models don't need detailed progress summaries — a short
+        # continuation nudge is sufficient and saves ~700 tokens per turn.
+        if self.capability.planning.score >= 0.70:
+            return "Continue."
         logger = logging.getLogger(__name__)
         # Summarize what has happened so far
         actions: list[str] = []
