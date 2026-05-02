@@ -20,7 +20,7 @@ from .state_machine import TaskState, StateMachine, Transition, InvalidTransitio
 from .dag import DagExecutor, DagNode
 from .tracker import MissionTracker
 from .results import ExecutionResult
-from .shared import CODE_FILE_EXTENSIONS
+from .shared import CODE_FILE_EXTENSIONS, select_worker_type
 from .verifier.base import VerificationResult, Verdict
 
 
@@ -441,15 +441,7 @@ class Orchestrator:
 
     def _select_worker_type(self, task: TaskSpec) -> str:
         """Auto-select worker type based on task complexity."""
-        complexity = task.estimated_complexity
-        if complexity == ComplexityLevel.VERY_SIMPLE:
-            return "simple"
-        elif complexity in (ComplexityLevel.SIMPLE, ComplexityLevel.MODERATE):
-            return "standard"
-        elif complexity == ComplexityLevel.COMPLEX:
-            return "complex"
-        else:
-            return "complex"
+        return select_worker_type(task)
 
     # ------------------------------------------------------------------
     # Verify
