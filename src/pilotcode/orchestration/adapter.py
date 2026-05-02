@@ -137,6 +137,7 @@ class MissionAdapter:
 
         # Apply strategy to orchestrator config
         orch_config = OrchestratorConfig()
+        orch_config.cancel_event = self._cancel_event
         self.plan_adjuster.apply_to_orchestrator_config(orch_config)
         orch_config.default_task_timeout = self.adaptive_config.stagnation_threshold_seconds
         self._orchestrator = Orchestrator(config=orch_config)

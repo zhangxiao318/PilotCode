@@ -35,6 +35,8 @@ class OrchestratorConfig:
     enable_l3_verification: bool = True
     max_rework_attempts: int = 3
     db_path: str | None = None
+    cancel_event: asyncio.Event | None = None  # External cancellation signal
+    default_task_timeout: float = 300.0
 
 
 class Orchestrator:
@@ -168,6 +170,18 @@ class Orchestrator:
 
         # Main event-driven execution loop
         while not self.tracker.all_done(mid):
+            # --- Check for external cancellation ---
+            if (
+                self.config.cancel_event is not None
+                and self.config.cancel_event.is_set()
+            ):
+                self.cancel_mission(mid)
+                return {
+                    "mission_id": mid,
+                    "success": False,
+                    "error": "Cancelled by user",
+                }
+
             # --- Periodic health check ---
             now = asyncio.get_event_loop().time()
             if now - last_health_check > HEALTH_CHECK_INTERVAL:
