@@ -1055,12 +1055,15 @@ class QueryEngine:
         if self._last_api_usage:
             api_total = self._last_api_usage.total_tokens
             if current_hash == self._last_api_usage_hash:
-                # Conversation unchanged since last API call → ground truth.
                 return api_total
-            # New messages arrived (streaming, tool results, etc.).
-            # Estimate only the delta with heuristics rather than re-tokenizing
-            # the entire conversation.
-            return max(api_total, self._heuristic_count_tokens())
+            # New messages since last API call.
+            # Use api_total as baseline + heuristic estimate for new messages only.
+            # Claude Code: msg estimate with 4/3 padding to be conservative.
+            heuristic_total = self._heuristic_count_tokens()
+            # Heuristic is the full estimate. If it exceeds api_total, the delta
+            # is correctly captured. Otherwise clamp to api_total + 10% margin.
+            estimated = max(heuristic_total, int(api_total * 1.1))
+            return estimated
 
         # Priority 2: Try precise tokenizer, but rate-limit to avoid
         # hammering the backend with /tokenize requests.
