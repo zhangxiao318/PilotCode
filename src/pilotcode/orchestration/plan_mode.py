@@ -74,9 +74,9 @@ _MULTI_FILE_INDICATORS = [
 ]
 
 _DIRECT_EXECUTE_PATTERNS = [
-    r"^(read|show|display|list|cat|head|tail|find|locate)\s",
+    r"^(read|show|display|list|cat|head|tail|locate)\s",
     r"^(fix typo|fix the typo|correct typo)\s",
-    r"^(what|how|where|who|when|which|why)\s",
+    r"^(how|where|who|when|which|why)\s",
     r"^(查看|显示|列出|读取|找到|搜索|什么是|怎么)\s",
     r"^(debug|fix)\s+(this|the)\s+(bug|error|issue|problem)\b",
     r"^change\s+(\w+\s+){0,3}(to|from|in)\s",
@@ -84,6 +84,7 @@ _DIRECT_EXECUTE_PATTERNS = [
     r"^rename\s+",
     r"^delete\s+",
     r"^remove\s+",
+    r"^find\s+(the\s+)?(\w+\s+){0,3}(file|function|method|class|variable|definition)\b",
 ]
 
 _SINGLE_FILE_CHANGE = re.compile(
@@ -93,7 +94,14 @@ _SINGLE_FILE_CHANGE = re.compile(
 )
 
 _AMBIGUOUS_ARCHITECTURE = re.compile(
-    r"\b(versus|vs|or|alternative|option|tradeoff|pros? and cons?|compare)\b",
+    r"\b(versus|vs\.?|tradeoffs?|pros? and cons?|compare)\b"
+    r"|\b(or\s+(should|would|could|will|might|may|do|does|did|is|are|was|were))\b"
+    r"|\b(\w+\s+or\s+\w+)\b",  # "WebSocket or SSE", "Redis or PostgreSQL"
+    re.IGNORECASE,
+)
+
+_FULL_SCOPE_INDICATORS = re.compile(
+    r"\b(full|complete|entire|comprehensive|end.to.end)\s+\w+" r"|\w*(完整|全部|整个|全面)\w*",
     re.IGNORECASE,
 )
 
@@ -141,65 +149,74 @@ def should_plan(
     text = user_request.strip()
 
     # ------------------------------------------------------------------
-    # Rule 1: User explicitly wants planning
+    # Rule 1: User explicitly wants planning (force, plan keyword, plan verb)
     # ------------------------------------------------------------------
     if force_plan:
         return "plan"
-
-    # Check for explicit plan keywords
     if _has_any(text, _PLAN_KEYWORDS):
         return "plan"
-
-    # Check for explicit plan commands
     if re.match(r"^(plan|design|architect)\b", text, re.IGNORECASE):
         return "plan"
 
     # ------------------------------------------------------------------
-    # Rule 2: Obvious read-only / analysis tasks → direct
+    # Rule 2: Obvious read-only operations → direct
     # ------------------------------------------------------------------
     if re.match(r"^(read|show|display|list|cat|head|tail)\s", text, re.IGNORECASE):
         return "direct"
-
     for pat in _DIRECT_EXECUTE_PATTERNS:
         if re.match(pat, text, re.IGNORECASE):
             return "direct"
 
     # ------------------------------------------------------------------
-    # Rule 3: Pure analysis / investigation → analyze (no plan, no exec)
+    # Rule 3: Pure analysis / investigation → analyze
     # ------------------------------------------------------------------
     if _has_any(text, _ANALYSIS_KEYWORDS):
-        # Check if it also requires implementation
         if not _has_any(text, _IMPLEMENT_KEYWORDS):
             return "analyze"
-        # Mixed: analyze first, then implement → plan
+        # Mixed: analyze + implement → plan
         return "plan"
 
     # ------------------------------------------------------------------
-    # Rule 4: Very short requests → direct
-    # ------------------------------------------------------------------
-    if len(text) < 80:
-        return "direct"
-
-    # ------------------------------------------------------------------
-    # Rule 5: Single-file change → direct
-    # ------------------------------------------------------------------
-    if _SINGLE_FILE_CHANGE.match(text):
-        return "direct"
-
-    # ------------------------------------------------------------------
-    # Rule 6: Multi-file indicators → plan
+    # Rule 4: Multi-file / broad scope indicators → plan
     # ------------------------------------------------------------------
     if _has_any_re(text, _MULTI_FILE_INDICATORS):
         return "plan"
 
     # ------------------------------------------------------------------
-    # Rule 7: Ambiguous / architectural decisions → plan
+    # Rule 5: Full-scope indicators (complete auth system, etc.) → plan
+    # ------------------------------------------------------------------
+    if _FULL_SCOPE_INDICATORS.search(text):
+        return "plan"
+
+    # ------------------------------------------------------------------
+    # Rule 6: Ambiguous / architectural decisions → plan
     # ------------------------------------------------------------------
     if _AMBIGUOUS_ARCHITECTURE.search(text):
         return "plan"
 
     # ------------------------------------------------------------------
-    # Rule 8: Project size heuristic
+    # Rule 7: Implementation keywords → plan (unless very short/simple)
+    # ------------------------------------------------------------------
+    if _has_any(text, _IMPLEMENT_KEYWORDS):
+        # Very short implement requests are simple enough to do directly
+        if len(text) < 40:
+            return "direct"
+        return "plan"
+
+    # ------------------------------------------------------------------
+    # Rule 8: Very short requests → direct
+    # ------------------------------------------------------------------
+    if len(text) < 80:
+        return "direct"
+
+    # ------------------------------------------------------------------
+    # Rule 9: Single-file change → direct
+    # ------------------------------------------------------------------
+    if _SINGLE_FILE_CHANGE.match(text):
+        return "direct"
+
+    # ------------------------------------------------------------------
+    # Rule 10: Project size heuristic → plan for large projects
     # ------------------------------------------------------------------
     file_count = get_project_file_count(project_root)
     if file_count > 500:

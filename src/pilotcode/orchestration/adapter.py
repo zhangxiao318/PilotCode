@@ -1447,8 +1447,44 @@ class MissionAdapter:
                     user_request, self.project_memory, cwd=self._cwd
                 )
 
-            # Phase 1: Plan mission
-            mission = await self._plan_mission(user_request, exploration)
+            # Phase 0: Check if this is an analysis-only request
+            is_analyze = self._should_analyze_only(user_request)
+
+            # Phase 1: Plan mission (skip for analyze-only and direct execution)
+            if is_analyze:
+                # Analysis-only: create a minimal single-task mission
+                from .task_spec import Mission as MissionClass
+
+                mission = MissionClass(
+                    title=user_request[:80],
+                    requirement=user_request,
+                    mission_id=f"analysis_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+                )
+                from .task_spec import TaskSpec, ComplexityLevel
+
+                mission.add_phase(
+                    phase_id="analysis",
+                    title="Analysis",
+                    tasks=[
+                        TaskSpec(
+                            id="analyze",
+                            title="Code Analysis",
+                            objective=user_request,
+                            worker_type="explorer",
+                            estimated_complexity=ComplexityLevel.SIMPLE,
+                        )
+                    ],
+                )
+                _invoke_progress(
+                    "mission:planned",
+                    {
+                        "mission_id": mission.mission_id,
+                        "title": mission.title,
+                        "type": "analyze",
+                    },
+                )
+            else:
+                mission = await self._plan_mission(user_request, exploration)
 
             _invoke_progress(
                 "mission:planned",
