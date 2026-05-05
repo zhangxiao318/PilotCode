@@ -323,3 +323,10 @@ class MissionTracker:
         return dag.all_done() if dag else False
 
 
+def reset_tracker() -> None:
+    """Reset the module-level tracker singleton (for test cleanup)."""
+    global _global_tracker
+    _global_tracker = None
+
+
+_global_tracker: MissionTracker | None = None

@@ -379,6 +379,15 @@ class REPL:
                         "Tool execution denied by user",
                         is_error=True,
                     )
+                    # Feed error results for any remaining tools in this batch
+                    # to prevent orphaned ToolUseMessages that break the API
+                    # tool_calls/tool_results pairing invariant.
+                    for remaining_msg in pending_tools[tool_idx:]:
+                        self.query_engine.add_tool_result(
+                            remaining_msg.tool_use_id,
+                            "Tool execution skipped (previous tool denied)",
+                            is_error=True,
+                        )
                     self._render_system("permission_denied")
                     permission_denied = True
                     break
@@ -666,6 +675,12 @@ def _extract_target_path(prompt: str) -> str | None:
         # Accept absolute paths or dot-relative paths (.., ../foo)
         if not (os.path.isabs(path) or path.startswith(".")):
             continue
+        # Filter out false positives: dot-starting strings that are NOT paths
+        # (e.g. "....E.E.E.E.E" from test output, "..." text ellipsis).
+        if path.startswith(".") and not os.path.isabs(path):
+            # Must have at least one "/" to be a real relative path (e.g. ./foo, ../src)
+            if "/" not in path:
+                continue
         # Strip trailing slash for cleaner path, but preserve if it's just "/"
         cleaned = path.rstrip("/") or "/"
         # Accept any absolute or dot-relative path the user explicitly mentioned

@@ -11,6 +11,7 @@ import os
 import sys
 
 from pilotcode.utils.model_client import get_model_client, Message
+from pilotcode.services import prompts as prompt_service
 
 from ..results import ExecutionResult
 from ..task_spec import TaskSpec
@@ -28,7 +29,34 @@ async def l1_simple_verifier(task: TaskSpec, exec_result: ExecutionResult) -> Ve
             feedback=exec_result.error or "Execution failed without details",
             verdict=Verdict.REJECT,
         )
-    if not exec_result.output and not exec_result.artifacts.get("changed_files"):
+
+    has_output = bool(exec_result.output and exec_result.output.strip())
+    has_changes = bool(exec_result.artifacts.get("changed_files"))
+    has_final_response = bool(exec_result.artifacts.get("final_response"))
+
+    if not has_output and not has_changes:
+        # Analysis / read-only tasks legitimately produce no file changes.
+        # If there was tool activity (conversation turns > 1), treat as passed.
+        conv_len = exec_result.artifacts.get("conversation_length", 0)
+        if isinstance(conv_len, (int, float)) and conv_len > 2:
+            return VerificationResult(
+                task_id=task.id,
+                level=1,
+                passed=True,
+                score=80.0,
+                feedback="Analysis task — no file changes but tool interactions observed",
+                verdict=Verdict.APPROVE,
+            )
+        # Check the final_response artifact for analysis output
+        if has_final_response:
+            return VerificationResult(
+                task_id=task.id,
+                level=1,
+                passed=True,
+                score=80.0,
+                feedback="Analysis task — response recorded but no file changes",
+                verdict=Verdict.APPROVE,
+            )
         return VerificationResult(
             task_id=task.id,
             level=1,
@@ -37,6 +65,7 @@ async def l1_simple_verifier(task: TaskSpec, exec_result: ExecutionResult) -> Ve
             feedback="Execution succeeded but produced no output or file changes",
             verdict=Verdict.NEEDS_REWORK,
         )
+
     return VerificationResult(
         task_id=task.id,
         level=1,

@@ -171,10 +171,7 @@ class Orchestrator:
         # Main event-driven execution loop
         while not self.tracker.all_done(mid):
             # --- Check for external cancellation ---
-            if (
-                self.config.cancel_event is not None
-                and self.config.cancel_event.is_set()
-            ):
+            if self.config.cancel_event is not None and self.config.cancel_event.is_set():
                 self.cancel_mission(mid)
                 return {
                     "mission_id": mid,

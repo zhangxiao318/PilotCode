@@ -212,7 +212,7 @@ def _resolve_ref(ref: str, defs: dict[str, Any]) -> dict[str, Any] | None:
     """Resolve a ``$ref`` (e.g. ``#/$defs/Foo``) against a $defs dictionary."""
     if not ref.startswith("#/$defs/"):
         return None
-    name = ref[len("#/$defs/"):]
+    name = ref[len("#/$defs/") :]
     return defs.get(name)
 
 
@@ -340,9 +340,7 @@ def _slim_property(
     return slim
 
 
-def _slim_json_schema(
-    schema: dict[str, Any], strip_descriptions: bool = False
-) -> dict[str, Any]:
+def _slim_json_schema(schema: dict[str, Any], strip_descriptions: bool = False) -> dict[str, Any]:
     """Strip bloat from Pydantic JSON Schema.
 
     * Resolves ``$defs`` / ``$ref`` inline so the LLM never sees references.

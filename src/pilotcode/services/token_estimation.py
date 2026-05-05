@@ -103,7 +103,7 @@ class TokenEstimator:
                     if isinstance(block, dict):
                         text = block.get("text", "")
                         total += self.estimate(text)
-            total += 4
+            total += 8  # message format overhead (role markers, etc.)
         return total
 
     def _heuristic_estimate(self, text: str, is_code: bool = False, provider: str = "") -> int:

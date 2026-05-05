@@ -28,6 +28,7 @@ from pilotcode.permissions.permission_manager import (
 )
 from pilotcode.types.message import ToolUseMessage, AssistantMessage
 from pilotcode.services.cleanup import SessionCleanup
+from pilotcode.services import prompts as prompt_service
 
 from .task_spec import Mission, TaskSpec, ComplexityLevel, Constraints, AcceptanceCriterion
 from .shared import CODE_FILE_EXTENSIONS
@@ -80,7 +81,7 @@ class MissionAdapter:
     )
 
     _PLAN_SCHEMA_MEDIUM = (
-        'Output ONLY a JSON object. Schema: {\n'
+        "Output ONLY a JSON object. Schema: {\n"
         '  "title": str, "phases": [{\n'
         '    "phase_id": str, "title": str, "description": str,\n'
         '    "tasks": [{\n'
@@ -90,13 +91,13 @@ class MissionAdapter:
         '      "acceptance_criteria": [{"description": str, "verification_method": str}],\n'
         '      "constraints": {"max_lines": int|null, "must_use": [str], "must_not_use": [str], "patterns": [str]},\n'
         '      "worker_type": "auto"|"simple"|"standard"|"complex"\n'
-        '    }]\n'
-        '  }]\n'
-        '}'
+        "    }]\n"
+        "  }]\n"
+        "}"
     )
 
     _PLAN_SCHEMA_WEAK = (
-        'Output ONLY a JSON object with no markdown formatting. '
+        "Output ONLY a JSON object with no markdown formatting. "
         "The JSON must match this schema:\n\n"
         "{\n"
         '  "title": "Short mission title",\n'
@@ -236,6 +237,7 @@ class MissionAdapter:
             self._orchestrator.register_verifier(3, l3_code_review_verifier)
         elif self.adaptive_config.verifier_strategy == VerifierStrategy.SIMPLIFIED_L3:
             from .verifier.adaptive_verifiers import simplified_l3_verifier
+
             self._orchestrator.register_verifier(3, simplified_l3_verifier)
         elif self.adaptive_config.verifier_strategy == VerifierStrategy.STATIC_ONLY:
             from .verifier.adaptive_verifiers import static_analysis_l3_verifier
@@ -250,11 +252,7 @@ class MissionAdapter:
             # Optionally inject test criterion for weak models (only if code was produced)
             if self.adaptive_config.enforce_test_before_mark_complete:
                 changed_files = exec_result.artifacts.get("changed_files", []) or []
-                code_files = [
-                    f
-                    for f in changed_files
-                    if f.endswith(CODE_FILE_EXTENSIONS)
-                ]
+                code_files = [f for f in changed_files if f.endswith(CODE_FILE_EXTENSIONS)]
                 if code_files and not any(
                     ac.verification_method in ("test", "pytest") for ac in task.acceptance_criteria
                 ):
@@ -282,7 +280,6 @@ class MissionAdapter:
     # Planning
     # ------------------------------------------------------------------
 
-
     def _get_plan_schema(self) -> str:
         """Return JSON schema prompt appropriate for model capability."""
         p = self.capability.planning.score
@@ -305,27 +302,25 @@ class MissionAdapter:
 
         client = get_model_client()
 
-        # Build base prompt + strategy-specific guidance
-        base_prompt = (
-            "You are a mission planner for a software development AI system.\n"
-            "Given a user's request, decompose it into a structured plan with phases and tasks.\n"
-            + self._get_plan_schema() + "\n"
-            "\n"
-            "CRITICAL RULES:\n"
-            "- complexity: 1 (very simple) to 5 (very complex)\n"
-            "- dependencies: list of task ids that must complete before this task\n"
-            "- Use snake_case for all IDs\n"
-            "- Include at least one phase, but no more than 5 phases for typical requests\n"
-            "- ONLY reference files that actually exist in the codebase (see exploration data below)\n"
-            "- If the user asks to ANALYZE, REVIEW, UNDERSTAND, or EXPLAIN existing code,\n"
-            "  generate READ-ONLY analysis tasks ONLY (e.g. \'Examine...\', \'Analyze...\', \'Summarize...\').\n"
-            "  Do NOT generate tasks that write new code, create new files, or modify existing code.\n"
+        # Use unified prompts module for planner
+        planning_capability = self.capability.planning.score
+        json_capability = self.capability.json_formatting.score >= 0.5
+        base_prompt = prompt_service.get_planner_prompt(
+            complexity=planning_capability,
+            json_capable=json_capability,
+        )
+
+        # Add task-type guidance
+        base_prompt += (
+            "\n\n"
+            "## Task Type Guidance\n"
             "- ONLY generate implementation/coding tasks when the user explicitly asks to\n"
             "  CREATE, IMPLEMENT, BUILD, or ADD something.\n"
             "- Match the user's intent: analysis → analysis tasks, implementation → coding tasks.\n"
             "- ALL task titles, descriptions, and objectives MUST be in the SAME LANGUAGE as the\n"
             "  user's request. If the user wrote in Chinese, every task must be in Chinese.\n"
         )
+
         strategy_suffix = self.plan_adjuster.get_plan_prompt_suffix()
         system_prompt = base_prompt + strategy_suffix
 
@@ -1051,10 +1046,7 @@ class MissionAdapter:
         fileedit_errors = [e for e in errors if "FileEdit" in e or "String not found" in e]
         if len(fileedit_errors) >= 2 and self.compensation.config.enable_smart_edit_planner:
             # Check which files actually need re-reading (skip recently touched files)
-            stale_paths = [
-                f for f in changed
-                if self.project_memory.needs_re_read(f)
-            ]
+            stale_paths = [f for f in changed if self.project_memory.needs_re_read(f)]
             hint_lines = [
                 "\n[FRAMEWORK HINT] You have had multiple FileEdit failures in a row.\n"
                 "1. Use SmartEditPlanner to get the exact checklist of all locations.\n"
@@ -1141,8 +1133,7 @@ class MissionAdapter:
             code_files = [
                 f
                 for f in changed
-                if f.endswith(CODE_FILE_EXTENSIONS)
-                and f not in self._verified_files_this_task
+                if f.endswith(CODE_FILE_EXTENSIONS) and f not in self._verified_files_this_task
             ]
             if code_files:
                 temp_exec = ExecutionResult(

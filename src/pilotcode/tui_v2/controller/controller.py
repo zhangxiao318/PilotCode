@@ -606,10 +606,26 @@ class TUIController:
             # Persist the conversation into the main query_engine so follow-up
             # questions have context.  This runs even if report generation fails.
             if self.query_engine:
-                from pilotcode.types.message import UserMessage, AssistantMessage
+                from pilotcode.types.message import UserMessage, AssistantMessage, SystemMessage
 
                 self.query_engine.messages.append(UserMessage(content=text))
                 self.query_engine.messages.append(AssistantMessage(content=full_report))
+
+                # Also preserve per-task outputs so follow-up questions retain
+                # the analysis results from each completed task.
+                task_outputs = result.get("task_outputs", {}) if result else {}
+                if task_outputs:
+                    context_parts = ["[Plan Mode Task Outputs]"]
+                    for tid, tdata in task_outputs.items():
+                        title = tdata.get("title", tid)
+                        output_text = tdata.get("output") or tdata.get("output", "")
+                        if output_text and not isinstance(output_text, dict):
+                            snippet = str(output_text)[:800]
+                            context_parts.append(f"Task '{title}': {snippet}")
+                    if len(context_parts) > 1:
+                        self.query_engine.messages.append(
+                            SystemMessage(content="\n".join(context_parts))
+                        )
             # Sync any cwd detected by MissionAdapter back into the session
             # so follow-up messages target the correct project.
             if adapter._cwd != cwd:
@@ -872,6 +888,9 @@ class TUIController:
         This normalizes them to the canonical tool name.
         """
         from pilotcode.tools.registry import get_all_tools
+
+        if not isinstance(name, str):
+            name = str(name) if name is not None else ""
 
         # Direct match
         for tool in get_all_tools():

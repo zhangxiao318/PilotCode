@@ -233,7 +233,7 @@ async def example_5_performance_optimization():
     print(f"\n📊 Results:")
     print(f"  Strategy: {result.strategy.name}")
     print(f"  Subtasks: {len(result.subtasks)}")
-    
+
     for i, st in enumerate(result.subtasks, 1):
         deps = f" (depends on: {', '.join(st.dependencies)})" if st.dependencies else ""
         print(f"  {i}. [{st.role}] {st.description}{deps}")
@@ -302,7 +302,7 @@ async def main():
     print("\n💡 For actual usage:")
     print("  from pilotcode.orchestration import MissionAdapter")
     print("  adapter = MissionAdapter()")
-    print("  result = await adapter.run(\"Your task description\")")
+    print('  result = await adapter.run("Your task description")')
     print("\n" + "=" * 70 + "\n")
 
 

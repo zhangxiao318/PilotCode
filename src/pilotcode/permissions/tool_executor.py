@@ -241,6 +241,10 @@ class ToolExecutor:
     ) -> ToolExecutionResult:
         """Execute a tool by name with permission checking."""
         all_tools = get_all_tools()
+        # Defensive: ensure tool_name is a string (LLM may return unexpected types)
+        if not isinstance(tool_name, str):
+            tool_name = str(tool_name) if tool_name is not None else ""
+
         tool = None
         for t in all_tools:
             if t.name == tool_name or tool_name in t.aliases:
