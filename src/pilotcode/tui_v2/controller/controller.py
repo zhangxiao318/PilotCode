@@ -235,7 +235,13 @@ class TUIController:
             self._pending_notifications.append(("system", {"text": warning}))
             # Inject into LLM context so it knows the directory change failed
             if getattr(self, "query_engine", None) is not None:
-                self.query_engine.messages.append(SystemMessage(content=warning))
+                instr = (
+                    f"[SYSTEM] The directory {new_cwd} does not exist.\n"
+                    f"The current directory remains {old_cwd}.\n"
+                    f"Do NOT attempt to 'cd' to {new_cwd} - the directory does not exist.\n"
+                    f"Use Bash to list the parent directory to see what's available."
+                )
+                self.query_engine.messages.append(SystemMessage(content=instr))
             return False
         # Only update state if chdir succeeded
         self.session_options["cwd"] = new_cwd
