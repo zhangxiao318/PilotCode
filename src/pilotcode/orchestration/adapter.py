@@ -1487,20 +1487,23 @@ class MissionAdapter:
                     requirement=user_request,
                     mission_id=f"analysis_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
                 )
-                from .task_spec import TaskSpec, ComplexityLevel
+                from .task_spec import TaskSpec, ComplexityLevel, Phase
 
-                mission.add_phase(
-                    phase_id="analysis",
-                    title="Analysis",
-                    tasks=[
-                        TaskSpec(
-                            id="analyze",
-                            title="Code Analysis",
-                            objective=user_request,
-                            worker_type="explorer",
-                            estimated_complexity=ComplexityLevel.SIMPLE,
-                        )
-                    ],
+                mission.phases.append(
+                    Phase(
+                        phase_id="analysis",
+                        title="Analysis",
+                        description="Code analysis",
+                        tasks=[
+                            TaskSpec(
+                                id="analyze",
+                                title="Code Analysis",
+                                objective=user_request,
+                                worker_type="explorer",
+                                estimated_complexity=ComplexityLevel.SIMPLE,
+                            )
+                        ],
+                    )
                 )
                 _invoke_progress(
                     "mission:planned",
