@@ -352,6 +352,13 @@ class ResponseNormalizer:
                 usage = msg.get("usage", {})
                 if usage:
                     accumulated_usage["prompt_tokens"] = usage.get("input_tokens", 0)
+                    # Anthropic cache fields
+                    cache_read = usage.get("cache_read_input_tokens", 0)
+                    cache_create = usage.get("cache_creation_input_tokens", 0)
+                    if cache_read:
+                        accumulated_usage["prompt_tokens_details.cached_tokens"] = cache_read
+                    if cache_create:
+                        accumulated_usage["cache_creation_input_tokens"] = cache_create
                 yield {"choices": [{"delta": {"role": "assistant"}, "finish_reason": None}]}
                 continue
 
@@ -441,11 +448,22 @@ class ResponseNormalizer:
                     accumulated_usage["completion_tokens"] = usage.get("output_tokens", 0)
                 chunk: dict[str, Any] = {"choices": [{"delta": {}, "finish_reason": finish}]}
                 if accumulated_usage:
-                    chunk["usage"] = {
+                    usage_chunk: dict[str, Any] = {
                         "prompt_tokens": accumulated_usage.get("prompt_tokens", 0),
                         "completion_tokens": accumulated_usage.get("completion_tokens", 0),
-                        "total_tokens": sum(accumulated_usage.values()),
+                        "total_tokens": sum(
+                            v
+                            for k, v in accumulated_usage.items()
+                            if k in ("prompt_tokens", "completion_tokens")
+                        ),
                     }
+                    cache_read = accumulated_usage.get("prompt_tokens_details.cached_tokens", 0)
+                    cache_create = accumulated_usage.get("cache_creation_input_tokens", 0)
+                    if cache_read:
+                        usage_chunk["prompt_tokens_details"] = {"cached_tokens": cache_read}
+                    if cache_create:
+                        usage_chunk["cache_creation_input_tokens"] = cache_create
+                    chunk["usage"] = usage_chunk
                 yield chunk
                 continue
 
@@ -499,10 +517,19 @@ class ResponseNormalizer:
 
         usage = data.get("usage", {})
         if usage:
+            prompt_tok = usage.get("input_tokens", 0)
+            comp_tok = usage.get("output_tokens", 0)
             chunk["usage"] = {
-                "prompt_tokens": usage.get("input_tokens", 0),
-                "completion_tokens": usage.get("output_tokens", 0),
-                "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
+                "prompt_tokens": prompt_tok,
+                "completion_tokens": comp_tok,
+                "total_tokens": prompt_tok + comp_tok,
             }
+            # Anthropic cache fields
+            cache_read = usage.get("cache_read_input_tokens", 0)
+            cache_create = usage.get("cache_creation_input_tokens", 0)
+            if cache_read:
+                chunk["usage"]["prompt_tokens_details"] = {"cached_tokens": cache_read}
+            if cache_create:
+                chunk["usage"]["cache_creation_input_tokens"] = cache_create
 
         return chunk
