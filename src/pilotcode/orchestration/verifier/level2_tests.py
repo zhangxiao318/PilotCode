@@ -168,6 +168,18 @@ class TestRunnerVerifier(BaseVerifier):
 
     def __init__(self, test_command: str | None = None):
         self.test_command = test_command
+        # Auto-detect test command from environment if not explicitly provided
+        if test_command is None:
+            from ...services.environment_detector import get_environment_profile
+
+            env = get_environment_profile()
+            for lang in ("python", "rust", "go", "javascript", "typescript", "java", "c", "cpp"):
+                cmd = env.suggest_test_command(lang)
+                if cmd:
+                    self._auto_test_commands: dict[str, str] = getattr(
+                        self, "_auto_test_commands", {}
+                    )
+                    self._auto_test_commands[lang] = cmd
 
     # ------------------------------------------------------------------
     # Public API

@@ -244,45 +244,14 @@ class QueryEngine:
         return None
 
     def _get_runtime_context(self) -> str:
-        """Get runtime context (OS, cwd, etc.) for system prompt."""
-        import os
-        import sys
-        import platform
+        """Get runtime context (OS, cwd, etc.) for system prompt.
 
-        context_lines = ["## Runtime Environment"]
+        Uses the centralized environment detector for consistency.
+        """
+        from .services.environment_detector import get_environment_profile
 
-        # OS information
-        os_name = platform.system()
-        os_version = platform.release()
-        context_lines.append(f"- **OS**: {os_name} {os_version}")
-        context_lines.append(f"- **Platform**: {sys.platform}")
-
-        # Current working directory
-        cwd = self.config.cwd or os.getcwd()
-        context_lines.append(f"- **Current Directory**: {cwd}")
-
-        # Shell information
-        if sys.platform == "win32":
-            shell = os.environ.get("COMSPEC", "cmd.exe")
-            context_lines.append(f"- **Default Shell**: {shell}")
-            context_lines.append(
-                "- **Command Notes**: Use Windows commands (e.g., `dir`, `cd`, `type`)"
-            )
-            context_lines.append(
-                "- **IMPORTANT**: Each Bash/PowerShell call runs in a separate subprocess. "
-                "`cd` changes ARE tracked across calls, including compound commands like "
-                "`cd .. && cd test`. The current directory shown above is persistent."
-            )
-        else:
-            shell = os.environ.get("SHELL", "/bin/bash")
-            context_lines.append(f"- **Default Shell**: {shell}")
-            context_lines.append("- **Command Notes**: Use Unix commands (e.g., `ls`, `cd`, `cat`)")
-            context_lines.append(
-                "- **IMPORTANT**: Each Bash call runs in a separate subprocess. "
-                "`cd` changes ARE tracked across calls. The current directory shown above is persistent."
-            )
-
-        return "\n".join(context_lines)
+        env = get_environment_profile(self.config.cwd)
+        return env.to_prompt_section()
 
     def _get_default_system_prompt(self) -> str:
         """Get default system prompt for programming assistant.
