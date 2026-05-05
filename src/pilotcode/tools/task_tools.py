@@ -46,7 +46,10 @@ class TaskCreateInput(BaseModel):
     """Input for TaskCreate tool."""
 
     description: str = Field(description="Task description")
-    command: str | None = Field(default=None, description="Command to execute")
+    command: str | None = Field(
+        default=None,
+        description="[DEPRECATED] Use Bash tool instead. This field is for documentation only.",
+    )
     file_path: str | None = Field(default=None, description="File to execute")
 
 

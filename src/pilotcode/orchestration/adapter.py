@@ -651,7 +651,9 @@ class MissionAdapter:
                 "3. Use the available tools to read, write, and edit files as needed.",
                 "4. Check PROJECT MEMORY before reading files — avoid re-reading known files.",
                 "5. After making changes, verify they meet the acceptance criteria.",
-                "6. Return a concise summary of what you did and any new files discovered.",
+                "6. Run compiler checks and tests using Bash, NOT TaskCreate. "
+                "TaskCreate is for tracking progress of independent work, not for compilation.",
+                "7. Return a concise summary of what you did and any new files discovered.",
             ]
         )
 
@@ -659,6 +661,19 @@ class MissionAdapter:
         compensation_guidance = self.compensation.get_worker_prompt_suffix()
         if compensation_guidance:
             parts.append(compensation_guidance)
+
+        # Inject language-specific verification hints (compile/test commands)
+        from .language_guide import get_compile_hints_for_files
+
+        allowed_files = context.get("allowed_files", []) or task.inputs or []
+        lang_hints = get_compile_hints_for_files(allowed_files + list(task.objective or ""))
+        if not lang_hints:
+            # Fallback: detect from objective text
+            from .language_guide import build_verification_section
+
+            lang_hints = build_verification_section(allowed_files, task.objective)
+        if lang_hints and lang_hints.strip():
+            parts.append(lang_hints)
 
         return "\n".join(parts)
 
