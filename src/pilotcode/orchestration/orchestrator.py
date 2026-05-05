@@ -28,14 +28,14 @@ from .verifier.base import VerificationResult, Verdict
 class OrchestratorConfig:
     """Configuration for the orchestrator."""
 
-    max_concurrent_workers: int = 3
-    auto_approve_simple: bool = True  # Auto-approve complexity=1 tasks
+    max_concurrent_workers: int = 0  # 0 = auto-detect from tool_concurrency_limit
+    auto_approve_simple: bool = True
     enable_l1_verification: bool = True
     enable_l2_verification: bool = True
     enable_l3_verification: bool = True
     max_rework_attempts: int = 3
     db_path: str | None = None
-    cancel_event: asyncio.Event | None = None  # External cancellation signal
+    cancel_event: asyncio.Event | None = None
     default_task_timeout: float = 300.0
 
 
@@ -58,8 +58,24 @@ class Orchestrator:
             int, Callable[[TaskSpec, ExecutionResult], Awaitable[VerificationResult]]
         ] = {}
         self._progress_callbacks: list[Callable[[str, dict], None]] = []
-        self._semaphore = asyncio.Semaphore(self.config.max_concurrent_workers)
+        # Auto-detect max concurrency from global config
+        max_workers = self.config.max_concurrent_workers
+        if max_workers <= 0:
+            from ..utils.config import get_global_config
+
+            cfg = get_global_config()
+            # tool_concurrency_limit defaults: 2 for local models, 5 for remote
+            tool_limit = cfg.tool_concurrency_limit
+            if tool_limit <= 0:
+                tool_limit = 5  # remote default
+            max_workers = max(1, tool_limit - 1)  # leave 1 slot for tool-level parallelism
+        self._max_workers = max_workers
+        self._semaphore = asyncio.Semaphore(self._max_workers)
         self._task_completed_event = asyncio.Event()
+
+        # Dynamic concurrency tracking
+        self._pending_queue: list[asyncio.Task] = []
+        self._completion_times: list[float] = []
 
     # ------------------------------------------------------------------
     # Registration
@@ -200,6 +216,7 @@ class Orchestrator:
                 last_health_check = now
 
             # --- Fill worker slots ---
+            self._adjust_concurrency()
             self._enqueue_ready(mid, active_workers)
 
             if not active_workers:
@@ -218,9 +235,11 @@ class Orchestrator:
 
             for task in done:
                 node = active_workers.pop(task)
+                t0 = time.time()
                 try:
                     await task
                 except Exception as exc:
+                    self._completion_times.append(time.time() - t0)
                     self._notify(
                         "task:exception",
                         {"mission_id": mid, "task_id": node.task_id, "error": str(exc)},
@@ -274,13 +293,46 @@ class Orchestrator:
             "metrics": metrics,
         }
 
+    def _adjust_concurrency(self) -> None:
+        """Dynamically adjust max_workers based on queue depth and completion rate.
+
+        Strategy:
+        - If queue is building up (3+ ready tasks) and avg completion < 30s,
+          increase concurrency by 1 (up to tool_concurrency_limit).
+        - If tasks are timing out frequently, decrease concurrency by 1.
+        - Otherwise keep current level.
+        """
+        from ..utils.config import get_global_config
+
+        cfg = get_global_config()
+        tool_limit = cfg.tool_concurrency_limit
+        if tool_limit <= 0:
+            tool_limit = 5
+        upper = min(tool_limit, 8)  # hard cap
+        lower = 1
+
+        # Check completion rate
+        recent = (
+            self._completion_times[-5:]
+            if len(self._completion_times) >= 5
+            else self._completion_times
+        )
+        avg_time = sum(recent) / len(recent) if recent else 0
+
+        # Check pending queue depth
+        pending_count = len([t for t in self._pending_queue if not t.done()])
+
+        if pending_count >= 3 and avg_time < 30 and self._max_workers < upper:
+            self._max_workers = min(self._max_workers + 1, upper)
+        elif pending_count == 0 and avg_time > 60 and self._max_workers > lower:
+            self._max_workers = max(self._max_workers - 1, lower)
+
     def _enqueue_ready(self, mission_id: str, active_workers: dict[asyncio.Task, DagNode]) -> None:
         """Launch ready tasks until concurrency limit is reached."""
-        while len(active_workers) < self.config.max_concurrent_workers:
-            ready = self.tracker.get_ready_tasks(mission_id)
-            launched = False
-            for node in ready:
-                if len(active_workers) >= self.config.max_concurrent_workers:
+        while len(active_workers) < self._max_workers:
+            ready = dag.get_ready_tasks()
+            for task_node in ready:
+                if len(active_workers) >= self._max_workers:
                     break
                 if self._has_failed_dependency(mission_id, node):
                     self._cancel_downstream_tasks(mission_id, node.task_id)
