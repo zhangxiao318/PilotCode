@@ -989,13 +989,17 @@ class QueryEngine:
             return None
 
     def _heuristic_count_tokens(self) -> int:
-        """Pure heuristic token count (fallback when API usage is unavailable)."""
+        """Pure heuristic token count (fallback when API usage is unavailable).
+
+        Calibrated against actual API usage for Qwen3-Coder-30B.
+        Typical overhead: ~12 tokens per message (chat template), not 8.
+        """
         total = 0
 
         # Count system prompt (always sent on first message, or prepended)
         system_msg = self._build_system_message()
         total += self._token_estimator.estimate(system_msg.content)
-        total += 8  # system message format overhead (role + content markers)
+        total += 12  # system message format overhead (role + content + template markers)
 
         # Count conversation messages
         for m in self.messages:
@@ -1007,22 +1011,25 @@ class QueryEngine:
                 content = str(m)
 
             total += self._token_estimator.estimate(content)
-            total += 8  # message format overhead (role, content, tool_call_id etc.)
+            total += 12  # message format overhead (role, content, tool_call_id, template)
 
         # Count tool definitions (sent with every request if tools enabled)
         tools = self.config.tools if self.config.tools else []
         if tools:
-            total += 8  # tools array wrapper overhead
+            total += 12  # tools array wrapper overhead + type hints
             for tool in tools:
                 try:
                     import json
 
                     schema = json.dumps(tool, ensure_ascii=False)
                     total += self._token_estimator.estimate(schema)
-                    total += 2  # per-tool struct overhead
+                    total += 4  # per-tool struct overhead (name, description wrapper)
                 except Exception:
                     total += 500  # fallback estimate per tool
 
+        # Apply calibration factor based on chat template overhead.
+        # Qwen3 chat template adds ~10% overhead for role/metadata.
+        total = int(total * 1.08)
         return total
 
     def count_tokens(self) -> int:

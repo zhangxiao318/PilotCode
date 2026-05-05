@@ -46,7 +46,7 @@ class TokenEstimator:
         "openai": 1.5,
         "anthropic": 1.3,
         "deepseek": 1.8,
-        "qwen": 1.5,
+        "qwen": 1.8,
         "zhipu": 1.5,
         "moonshot": 1.5,
         "baichuan": 1.5,
@@ -64,6 +64,10 @@ class TokenEstimator:
         """
         if not text:
             return 0
+
+        # Auto-detect provider from model name if not explicitly given
+        if not provider and self._model_name:
+            provider = self._detect_provider(self._model_name)
 
         # Try precise tokenizer first
         precise = self._get_precise()
@@ -116,7 +120,7 @@ class TokenEstimator:
         cjk_ratio = cjk_chars / len(text) if text else 0
 
         if cjk_ratio > 0.3:
-            base_ratio = self.PROVIDER_CJK_RATIOS.get(provider.lower(), 1.5)
+            base_ratio = self.PROVIDER_CJK_RATIOS.get(provider, 1.5)
             chars_per_token = base_ratio if not is_code else base_ratio + 0.5
         else:
             chars_per_token = self.CODE_CHARS_PER_TOKEN if is_code else self.CHARS_PER_TOKEN
@@ -137,6 +141,26 @@ class TokenEstimator:
             self._cache[cache_key] = estimate
 
         return estimate
+
+    @staticmethod
+    def _detect_provider(model_name: str) -> str:
+        """Extract provider name from model name."""
+        name = model_name.lower()
+        for provider in (
+            "qwen",
+            "deepseek",
+            "anthropic",
+            "openai",
+            "gemini",
+            "grok",
+            "zhipu",
+            "moonshot",
+            "baichuan",
+            "doubao",
+        ):
+            if provider in name:
+                return provider
+        return ""
 
     def get_budget_status(
         self, current_tokens: int, max_tokens: int, warning_threshold: float = 0.8
