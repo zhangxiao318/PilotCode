@@ -194,6 +194,21 @@ class IntelligentContextCompactor:
             self.estimate_tokens(str(getattr(m, "content", ""))) for m in messages
         )
 
+        # --- Archive old context before compacting ---
+        summary = self.generate_structured_summary(messages)
+        retained_tokens = 0
+        try:
+            from .context_archive import ContextArchive
+
+            archive = ContextArchive()
+            # Estimate tokens saved: old messages that will be cleared
+            for m in messages:
+                retained_tokens += self.estimate_tokens(str(getattr(m, "content", "")))
+            tokens_saved = max(0, original_tokens - retained_tokens)
+            archive.archive_compaction(messages, summary, token_saved=tokens_saved)
+        except Exception:
+            pass
+
         result_messages = []
         tool_results_cleared = 0
         summaries_generated = 0

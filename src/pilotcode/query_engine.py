@@ -214,6 +214,17 @@ class QueryEngine:
         if context:
             content = context + "\n\n" + content
 
+        # Inject archived session memory for continuity across compactions
+        try:
+            from .services.context_archive import ContextArchive
+
+            archive = ContextArchive()
+            session_mem = archive.get_session_memory_prompt()
+            if session_mem:
+                content = session_mem + "\n\n" + content
+        except Exception:
+            pass
+
         # Lightweight persistence: if this session has observed persistent
         # FileEdit weakness, inject a常驻 reminder into the system prompt.
         persistent_hint = self._get_persistent_fileedit_hint()
