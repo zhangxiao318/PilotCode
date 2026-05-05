@@ -53,6 +53,8 @@ from ..model_capability import (
     RuntimeTracker,
     VerifierStrategy,
 )
+from .plan_mode import should_plan
+from .plan_files import write_plan, read_plan, recover_plan_from_messages
 
 
 class MissionAdapter:
@@ -422,6 +424,12 @@ class MissionAdapter:
         if not raw_mission.created_at:
             raw_mission.created_at = datetime.now(timezone.utc).isoformat()
 
+        # Write plan to disk for persistence (Phase 2: plan file)
+        try:
+            write_plan(plan_data)
+        except Exception:
+            pass  # Non-fatal: plan persistence is advisory
+
         # Tag with context budget and strategy
         raw_mission.context_budget = self.context_budget
         raw_mission.context_strategy = self.strategy.value
@@ -566,7 +574,12 @@ class MissionAdapter:
     # ------------------------------------------------------------------
 
     def _build_worker_prompt(self, task: TaskSpec, context: dict[str, Any]) -> str:
-        """Build execution prompt for a single task."""
+        """Build execution prompt for a single task.
+
+        Injects project memory, agent memory, and plan context.
+        """
+        from ..agent.agent_memory import load_agent_memory_prompt
+
         parts = []
 
         # Inject project root so the worker knows where it is operating
@@ -578,6 +591,14 @@ class MissionAdapter:
             mem_section = self.project_memory.to_prompt_section()
             if mem_section:
                 parts.append(mem_section)
+                parts.append("")
+
+        # Inject agent memory if available (Phase 3: agent memory integration)
+        worker_type = context.get("worker_type", task.worker_type or "auto")
+        if worker_type and worker_type != "auto":
+            agent_memory = load_agent_memory_prompt(worker_type, scope="project")
+            if agent_memory:
+                parts.append(agent_memory)
                 parts.append("")
 
         parts.extend(
@@ -657,16 +678,88 @@ class MissionAdapter:
                 candidates.append(val)
         return candidates
 
+    async def _run_agent_for_task(
+        self,
+        task: TaskSpec,
+        context: dict[str, Any],
+        agent_type: str = "explorer",
+        max_turns: int = 8,
+    ) -> ExecutionResult:
+        """Execute a task by spawning a specialized Agent.
+
+        Phase 3: Uses agent_manager.create_agent() + orchestrator to run
+        dedicated agents (explorer, verifier) for appropriate task types.
+        """
+        from ..agent import get_agent_manager, save_agent_memory
+
+        manager = get_agent_manager()
+        agent = manager.create_agent(
+            agent_type=agent_type,
+            name=f"{agent_type}-{task.id}",
+            is_background=False,
+        )
+
+        prompt = self._build_worker_prompt(task, context)
+        agent.max_turns = max_turns
+
+        try:
+            from .agent_orchestrator import get_orchestrator as get_agent_orch
+
+            orch = get_agent_orch()
+            result = await orch._run_agent_task(agent, prompt)
+
+            # Save execution knowledge to agent memory
+            try:
+                knowledge = f"## Task: {task.title}\n- Objective: {task.objective}\n- Result: {result[:500]}\n"
+                save_agent_memory(agent_type, knowledge, scope="project", append=True)
+            except Exception:
+                pass
+
+            return ExecutionResult(
+                task_id=task.id,
+                success=True,
+                output=result,
+                artifacts={
+                    "changed_files": [],
+                    "agent_id": agent.agent_id,
+                    "agent_type": agent_type,
+                },
+            )
+        except Exception as e:
+            return ExecutionResult(
+                task_id=task.id,
+                success=False,
+                error=f"Agent {agent_type} failed: {e}",
+            )
+
     async def _llm_worker(self, task: TaskSpec, context: dict[str, Any]) -> ExecutionResult:
         """Execute a task using QueryEngine with tool access.
 
         Updates project_memory with discovered files, conventions, and failures.
+
+        Phase 3 integration:
+        - Routes analysis tasks to explorer Agent
+        - Routes verification tasks to verifier Agent
+        - Supports worktree isolation for implementation tasks
+        - Saves execution knowledge to agent memory on completion
         """
         if self._cancel_event.is_set():
             return ExecutionResult(
                 task_id=task.id,
                 success=False,
                 error="Cancelled by user",
+            )
+
+        # Phase 3: Route analysis-only tasks to explorer agent
+        worker_type = context.get("worker_type", task.worker_type or "auto")
+        use_explorer = worker_type in ("explorer", "simple") or task.is_read_only()
+        use_verifier = worker_type == "verifier" or task.verification_method == "test"
+
+        if use_explorer:
+            return await self._run_agent_for_task(task, context, agent_type="explorer", max_turns=8)
+        if use_verifier:
+            return await self._run_agent_for_task(
+                task, context, agent_type="verifier", max_turns=15
             )
 
         prompt = self._build_worker_prompt(task, context)
@@ -889,6 +982,25 @@ class MissionAdapter:
                 # Record success conventions from worker output
                 if final_content:
                     self._extract_conventions_from_output(final_content)
+
+                # Phase 3: Save execution knowledge to agent memory
+                try:
+                    from ..agent.agent_memory import save_agent_memory
+
+                    memory_text = (
+                        f"## Task: {task.title}\n"
+                        f"- Objective: {task.objective}\n"
+                        f"- Files: {artifacts.get('changed_files', [])}\n"
+                        f"- Result: {final_content[:300]}\n"
+                    )
+                    save_agent_memory(
+                        task.worker_type or "coder",
+                        memory_text,
+                        scope="project",
+                        append=True,
+                    )
+                except Exception:
+                    pass
 
                 return ExecutionResult(
                     task_id=task.id,
@@ -1256,38 +1368,23 @@ class MissionAdapter:
 
     @staticmethod
     def _should_explore_and_plan(user_request: str) -> bool:
-        """Heuristically decide if a request needs codebase exploration + LLM planning.
+        """Heuristically decide if a request needs exploration + LLM planning.
 
-        Short/simple requests skip directly to single-task execution without the
-        overhead of P-EVR planning.  This replaces the former SmartCoordinator
-        pass-through layer with inline auto-detection.
+        Delegates to the unified plan_mode module which provides
+        Claude Code-style decision logic (plan vs analyze vs direct).
 
         Returns:
             True if full exploration + plan is needed, False to skip straight to execute.
         """
-        from .auto_config import AutoDecompositionConfig
+        decision = should_plan(user_request)
+        return decision in ("plan", "auto")
 
-        config = AutoDecompositionConfig()
-        if not config.enabled:
-            # Auto-decomposition disabled — always do full planning
-            return True
+    @staticmethod
+    def _should_analyze_only(user_request: str) -> bool:
+        """Check if this is a pure analysis task (no execution needed)."""
+        from .plan_mode import should_plan
 
-        # Very short tasks likely don't need decomposition
-        if len(user_request) < config.max_simple_task_length:
-            return False
-
-        # Simple pattern heuristic: queries, typos, read-only operations
-        simple_patterns = (
-            r"^(read|show|display|list|cat|head|tail|find|locate)\s",
-            r"^(fix typo|fix the typo|correct typo)\s",
-            r"^(what|how|where|who|when|which)\s",
-            r"^(查看|显示|列出|读取|找到|搜索)\s",
-        )
-        for pat in simple_patterns:
-            if re.match(pat, user_request, re.IGNORECASE):
-                return False
-
-        return True
+        return should_plan(user_request) == "analyze"
 
     async def run(
         self,
