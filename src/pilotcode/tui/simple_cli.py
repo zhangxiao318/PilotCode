@@ -56,11 +56,13 @@ class SimpleCLI:
         auto_allow: bool = False,
         max_iterations: int = 50,
         cwd: str | None = None,
+        no_verify: bool = False,
     ):
         self.config = get_global_config()
         self.query_engine: Optional[QueryEngine] = None
         self.auto_allow = auto_allow
         self.max_iterations = max_iterations
+        self.no_verify = no_verify
         self.session_file: Optional[str] = None
         self._cwd = cwd or str(Path.cwd())
 
@@ -403,6 +405,69 @@ class SimpleCLI:
 
         return False
 
+    async def _execute_tools_sequential(self, tool_messages: list) -> None:
+        """Execute tools one at a time (safe mode)."""
+        from pilotcode.tools.base import ToolUseContext
+
+        for tool_msg in tool_messages:
+            tool_name = tool_msg.name
+            params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
+
+            if not self.ask_permission(tool_name, params):
+                denied_msg = "Tool execution denied by user."
+                self.query_engine.add_tool_result(tool_msg.tool_use_id, denied_msg, is_error=True)
+                for remaining in tool_messages[tool_messages.index(tool_msg) + 1 :]:
+                    self.query_engine.add_tool_result(
+                        remaining.tool_use_id, "Skipped due to previous denial", is_error=True
+                    )
+                break
+
+            await self._execute_single_tool(tool_msg, tool_name, params)
+
+    async def _execute_tools_batch(self, tool_messages: list) -> None:
+        """Execute all tools in parallel when auto_allow=True.
+
+        Uses asyncio.gather for concurrent execution.
+        FileRead tools can run in parallel with FileWrite/Bash.
+        """
+        from pilotcode.tools.base import ToolUseContext
+
+        async def _exec_one(tool_msg) -> tuple[str, dict, bool]:
+            tool_name = tool_msg.name
+            params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
+            try:
+                ctx = ToolUseContext(
+                    get_app_state=self.store.get_state,
+                    set_app_state=lambda f: self.store.set_state(f),
+                    cwd=getattr(self.store.get_state(), "cwd", ""),
+                )
+                result = await self.tool_executor.execute_tool_by_name(tool_name, params, ctx)
+                output = result.result or f"{tool_name} executed successfully"
+                return tool_msg.tool_use_id, output, False
+            except Exception as e:
+                return tool_msg.tool_use_id, str(e), True
+
+        # Run all tools in parallel, preserving order
+        results = await asyncio.gather(*[_exec_one(tm) for tm in tool_messages])
+        for tool_use_id, output, is_error in results:
+            self.query_engine.add_tool_result(tool_use_id, output, is_error=is_error)
+
+    async def _execute_single_tool(self, tool_msg, tool_name: str, params: dict) -> None:
+        """Execute a single tool and add its result."""
+        from pilotcode.tools.base import ToolUseContext
+
+        try:
+            ctx = ToolUseContext(
+                get_app_state=self.store.get_state,
+                set_app_state=lambda f: self.store.set_state(f),
+                cwd=getattr(self.store.get_state(), "cwd", ""),
+            )
+            result = await self.tool_executor.execute_tool_by_name(tool_name, params, ctx)
+            output = result.result or f"{tool_name} executed successfully"
+            self.query_engine.add_tool_result(tool_msg.tool_use_id, output, is_error=False)
+        except Exception as e:
+            self.query_engine.add_tool_result(tool_msg.tool_use_id, str(e), is_error=True)
+
     def ask_permission(self, tool_name: str, params: dict) -> bool:
         """Ask user for permission to execute a tool."""
         if self.auto_allow:
@@ -641,7 +706,7 @@ class SimpleCLI:
                 if not pending_tools:
                     break
 
-                # Execute all pending tools
+                # Execute all pending tools sequentially
                 for tool_msg in pending_tools:
                     tool_name = tool_msg.name
                     params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
@@ -680,15 +745,9 @@ class SimpleCLI:
 
                         # Extract output from result
                         if result.success and result.result:
-                            # Tool result has data attribute with actual output
-                            if hasattr(result.result, "data"):
-                                tool_data = result.result.data
-                                if hasattr(tool_data, "stdout"):
-                                    output = tool_data.stdout
-                                else:
-                                    output = str(tool_data)
-                            else:
-                                output = str(result.result)
+                            output = result.result or "Tool executed successfully"
+                        elif result.success:
+                            output = f"{tool_name} executed successfully"
                         else:
                             output = result.message or "Tool execution failed"
 
@@ -709,7 +768,6 @@ class SimpleCLI:
                         self._apply_compensation_if_needed(tool_name, False, err_text)
 
                 # --- Compiler / syntax verification for changed code files ---
-                # Skip if LLM already ran a compile command this turn — avoid redundant checks
                 has_compile_command = any(
                     tool_msg.name in ("Bash", "bash", "PowerShell", "powershell")
                     and any(

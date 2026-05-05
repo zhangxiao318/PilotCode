@@ -789,6 +789,14 @@ class MissionAdapter:
             "ask",
             "question",
             "PlanMode",
+            "Sleep",
+            "sleep",
+            "TaskCreate",
+            "TaskGet",
+            "TaskList",
+            "TaskUpdate",
+            "TaskStop",
+            "Cron",
         }
         autonomous_tools = [t for t in get_core_tools(self._cwd) if t.name not in excluded_tools]
 
@@ -1282,6 +1290,23 @@ class MissionAdapter:
                         )
                 except Exception as exc:
                     logger.debug("Compiler check skipped due to internal error: %s", exc)
+
+        # --- Detect repeated identical commands (hang prevention) ---
+        recent_bash_cmds: list[str] = []
+        for msg in reversed(engine.messages):
+            if isinstance(msg, ToolUseMessage) and msg.name in ("Bash", "bash", "BashTool"):
+                cmd = msg.input.get("command", "")[:100]
+                if cmd:
+                    recent_bash_cmds.append(cmd)
+            if len(recent_bash_cmds) >= 3:
+                break
+
+        if len(recent_bash_cmds) >= 3 and len(set(recent_bash_cmds)) == 1:
+            parts.append(
+                "\n[FRAMEWORK HINT] You have run the same command 3+ times without progress. "
+                "Stop repeating it. Read error output carefully and fix the underlying issue, "
+                "or try a different approach. Do NOT sleep or wait."
+            )
 
         parts.append(f"\nTask objective: {task.objective}")
         parts.append("Continue where you left off. Do not repeat completed actions.")

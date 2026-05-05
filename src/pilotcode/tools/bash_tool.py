@@ -818,6 +818,7 @@ async def execute_bash(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
             cwd=cwd,
             env=process_env,
             startupinfo=startupinfo,

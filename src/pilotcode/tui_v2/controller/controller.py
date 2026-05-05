@@ -506,6 +506,28 @@ class TUIController:
                         )
                         worker_buffer = ""
                         worker_streaming = False
+                elif event_type == "worker:text_delta":
+                    # Show LLM thinking in real-time
+                    content = data.get("content", "")
+                    if content:
+                        worker_buffer += content
+                        worker_streaming = True
+                        yield UIMessage(
+                            type=UIMessageType.ASSISTANT,
+                            content=content,
+                            is_streaming=True,
+                            is_complete=False,
+                        )
+                elif event_type == "worker:turn_complete":
+                    if worker_streaming and worker_buffer:
+                        yield UIMessage(
+                            type=UIMessageType.ASSISTANT,
+                            content=worker_buffer,
+                            is_streaming=False,
+                            is_complete=True,
+                        )
+                        worker_buffer = ""
+                        worker_streaming = False
                 elif event_type == "worker:tool_start":
                     # Pause streaming to show tool call (same style as normal mode)
                     if worker_streaming and worker_buffer:

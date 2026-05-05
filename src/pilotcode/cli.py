@@ -723,7 +723,7 @@ def main(
         # Launch Simple CLI (non-TUI)
         from .tui.simple_cli import SimpleCLI
 
-        cli = SimpleCLI(auto_allow=auto_allow, max_iterations=max_iterations)
+        cli = SimpleCLI(auto_allow=auto_allow, max_iterations=max_iterations, no_verify=no_verify)
         try:
             asyncio.run(cli.run())
         except KeyboardInterrupt:
