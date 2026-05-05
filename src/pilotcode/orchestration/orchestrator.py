@@ -11,6 +11,7 @@ Drives the full lifecycle:
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Awaitable
 from datetime import datetime, timezone
@@ -297,41 +298,40 @@ class Orchestrator:
         }
 
     def _adjust_concurrency(self) -> None:
-        """Dynamically adjust max_workers based on queue depth and completion rate.
+        """Dynamically adjust max_workers based on queue depth and completion rate."""
+        if not hasattr(self, "_completion_times") or not hasattr(self, "_pending_queue"):
+            return
+        try:
+            from ..utils.config import get_global_config
 
-        Strategy:
-        - If queue is building up (3+ ready tasks) and avg completion < 30s,
-          increase concurrency by 1 (up to tool_concurrency_limit).
-        - If tasks are timing out frequently, decrease concurrency by 1.
-        - Otherwise keep current level.
-        """
-        from ..utils.config import get_global_config
+            cfg = get_global_config()
+            tool_limit = cfg.tool_concurrency_limit
+            if tool_limit <= 0:
+                tool_limit = 5
+            upper = min(tool_limit, 8)
+            lower = 1
 
-        cfg = get_global_config()
-        tool_limit = cfg.tool_concurrency_limit
-        if tool_limit <= 0:
-            tool_limit = 5
-        upper = min(tool_limit, 8)  # hard cap
-        lower = 1
+            recent = (
+                self._completion_times[-5:]
+                if len(self._completion_times) >= 5
+                else self._completion_times
+            )
+            avg_time = sum(recent) / len(recent) if recent else 0
+            pending_count = len([t for t in self._pending_queue if not t.done()])
 
-        # Check completion rate
-        recent = (
-            self._completion_times[-5:]
-            if len(self._completion_times) >= 5
-            else self._completion_times
-        )
-        avg_time = sum(recent) / len(recent) if recent else 0
-
-        # Check pending queue depth
-        pending_count = len([t for t in self._pending_queue if not t.done()])
-
-        if pending_count >= 3 and avg_time < 30 and self._max_workers < upper:
-            self._max_workers = min(self._max_workers + 1, upper)
-        elif pending_count == 0 and avg_time > 60 and self._max_workers > lower:
-            self._max_workers = max(self._max_workers - 1, lower)
+            if pending_count >= 3 and avg_time < 30 and self._max_workers < upper:
+                self._max_workers = min(self._max_workers + 1, upper)
+            elif pending_count == 0 and avg_time > 60 and self._max_workers > lower:
+                self._max_workers = max(self._max_workers - 1, lower)
+        except Exception:
+            pass
 
     def _enqueue_ready(self, mission_id: str, active_workers: dict[asyncio.Task, DagNode]) -> None:
         """Launch ready tasks until concurrency limit is reached."""
+        dag = self.tracker.get_dag(mission_id)
+        if not dag:
+            return
+
         # Adjust per-task context budget when running concurrent tasks:
         # total_budget / active_workers = per_task_budget (prevents OOM)
         mission = self.tracker.get_mission(mission_id)
@@ -341,8 +341,9 @@ class Orchestrator:
             per_task_budget = None
 
         while len(active_workers) < self._max_workers:
+            launched = False
             ready = dag.get_ready_tasks()
-            for task_node in ready:
+            for node in ready:
                 if len(active_workers) >= self._max_workers:
                     break
                 if self._has_failed_dependency(mission_id, node):
@@ -361,6 +362,7 @@ class Orchestrator:
                     node.task.context_budget = per_task_budget
                 task = asyncio.create_task(self._execute_task(mission_id, node))
                 active_workers[task] = node
+                dag._ready_cache = None  # Invalidate cache: task state will change asynchronously
                 launched = True
             if not launched:
                 break
