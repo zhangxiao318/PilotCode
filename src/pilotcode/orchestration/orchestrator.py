@@ -64,11 +64,14 @@ class Orchestrator:
             from ..utils.config import get_global_config
 
             cfg = get_global_config()
-            # tool_concurrency_limit defaults: 2 for local models, 5 for remote
+            # tool_concurrency_limit defaults: 2 for local models, 5 for remote.
+            # Local models can handle 2-3 concurrent requests (Ollama queues them).
+            # Remote APIs handle their own rate limiting; this just prevents
+            # overwhelming the connection pool.
             tool_limit = cfg.tool_concurrency_limit
             if tool_limit <= 0:
-                tool_limit = 5  # remote default
-            max_workers = max(1, tool_limit - 1)  # leave 1 slot for tool-level parallelism
+                tool_limit = 5
+            max_workers = max(1, tool_limit)
         self._max_workers = max_workers
         self._semaphore = asyncio.Semaphore(self._max_workers)
         self._task_completed_event = asyncio.Event()
@@ -329,6 +332,14 @@ class Orchestrator:
 
     def _enqueue_ready(self, mission_id: str, active_workers: dict[asyncio.Task, DagNode]) -> None:
         """Launch ready tasks until concurrency limit is reached."""
+        # Adjust per-task context budget when running concurrent tasks:
+        # total_budget / active_workers = per_task_budget (prevents OOM)
+        mission = self.tracker.get_mission(mission_id)
+        if mission and len(active_workers) > 0:
+            per_task_budget = mission.context_budget // max(1, len(active_workers) + 1)
+        else:
+            per_task_budget = None
+
         while len(active_workers) < self._max_workers:
             ready = dag.get_ready_tasks()
             for task_node in ready:
@@ -345,6 +356,9 @@ class Orchestrator:
                 sm = self.tracker.get_state_machine(mission_id, node.task_id)
                 if sm and sm.state not in (TaskState.PENDING, TaskState.IN_PROGRESS):
                     continue
+                # Adjust per-task context budget when running concurrent tasks
+                if per_task_budget and per_task_budget < node.task.context_budget:
+                    node.task.context_budget = per_task_budget
                 task = asyncio.create_task(self._execute_task(mission_id, node))
                 active_workers[task] = node
                 launched = True
