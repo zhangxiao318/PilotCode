@@ -924,7 +924,16 @@ class WebSocketManager:
         session_ctx["_fileedit_tracker"].reset()
 
         # Handle slash commands (same as TUI/Simple CLI)
-        if query.startswith("/"):
+        # Special-case /plan <description> to route into the normal orchestration
+        # pipeline (P-EVR mission mode) rather than the manual plan manager.
+        _plan_manual_actions = {"start", "add", "next", "complete", "cancel"}
+        _is_plan_mission = False
+        if query.startswith("/plan "):
+            plan_args = query[6:].strip().split()
+            if plan_args and plan_args[0] not in _plan_manual_actions:
+                _is_plan_mission = True
+
+        if query.startswith("/") and not _is_plan_mission:
             from pilotcode.commands.base import process_user_input, CommandContext
 
             ctx = CommandContext(
@@ -940,8 +949,15 @@ class WebSocketManager:
                     )
                     return
                 content = result if isinstance(result, str) else str(result)
+                # Follow the streaming protocol so the web UI resets its loading state
                 await self.send_to_client(
-                    websocket, {"type": "system", "stream_id": stream_id, "content": content}
+                    websocket, {"type": "streaming_start", "stream_id": stream_id, "message": query}
+                )
+                await self.send_to_client(
+                    websocket, {"type": "streaming_chunk", "stream_id": stream_id, "chunk": content}
+                )
+                await self.send_to_client(
+                    websocket, {"type": "streaming_end", "stream_id": stream_id}
                 )
                 return
 

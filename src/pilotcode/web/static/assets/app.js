@@ -214,6 +214,28 @@ function handleMessage(data) {
             const versionEl = document.getElementById('brandVersion');
             if (versionEl && data.version) versionEl.textContent = 'v' + data.version;
             break;
+        case 'system':
+            // System notifications (e.g. slash-command results, loop-guard msgs)
+            if (data.stream_id && data.content) {
+                const contentDiv = document.getElementById(`content-${data.stream_id}`);
+                if (contentDiv) {
+                    let sysDiv = contentDiv.querySelector('.system-message');
+                    if (!sysDiv) {
+                        sysDiv = document.createElement('div');
+                        sysDiv.className = 'system-message';
+                        sysDiv.style.cssText = 'margin: 8px 0; padding: 8px 12px; background: #f3f4f6; border-left: 3px solid #6b7280; border-radius: 4px; color: #374151; font-size: 13px;';
+                        const finalDiv = contentDiv.querySelector('.final-response');
+                        if (finalDiv) {
+                            contentDiv.insertBefore(sysDiv, finalDiv);
+                        } else {
+                            contentDiv.appendChild(sysDiv);
+                        }
+                    }
+                    sysDiv.textContent = data.content;
+                    scrollToBottom();
+                }
+            }
+            break;
         case 'session_error':
             showToast(data.error || 'Session error', 'error');
             break;
