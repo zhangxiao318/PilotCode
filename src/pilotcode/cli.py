@@ -535,7 +535,9 @@ def _show_configuration_prompt(skip_static_check: bool = False) -> bool:
 def main(
     ctx: typer.Context,
     version: bool = typer.Option(False, "--version", "-v", help="Show version"),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable verbose mode"),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Enable verbose logging to file and stderr"
+    ),
     model: str = typer.Option("default", "--model", "-m", help="Model to use"),
     cwd: str = typer.Option(".", "--cwd", help="Working directory"),
     auto_allow: bool = typer.Option(
@@ -584,6 +586,11 @@ def main(
 
     if ctx.invoked_subcommand is not None:
         return
+
+    # Initialize logging before anything else
+    from .services.log import configure_logging
+
+    configure_logging(verbose=verbose)
 
     if daemon:
         # Run in daemon mode for VS Code (skip config check)
