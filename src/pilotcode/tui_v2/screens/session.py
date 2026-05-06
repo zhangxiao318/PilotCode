@@ -238,8 +238,16 @@ class SessionScreen(Screen):
     async def on_prompt_with_mode_submitted(self, event: PromptWithMode.Submitted):
         """Handle input submission."""
         text = event.text.strip()
+        display_text = getattr(event, "display_text", text).strip()
         if not text:
             return
+
+        # Show user message in conversation (use display_text for paste placeholders)
+        if self.message_list:
+            user_msg = UIMessage(
+                type=UIMessageType.USER, content=display_text or text, is_complete=True
+            )
+            self.message_list.add_message(user_msg)
 
         # Check for commands
         if text.startswith("/"):

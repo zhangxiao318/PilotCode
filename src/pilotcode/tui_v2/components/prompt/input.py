@@ -98,15 +98,17 @@ class PromptInput(TextArea):
     def _detect_paste(self, old_text: str, new_text: str) -> str | None:
         """Detect if new_text contains a large paste and return a placeholder.
 
-        When a large block (>2 lines) is detected, stores the original
-        text in _paste_buffers and returns a shortened display placeholder.
+        When a large block (>2 lines or >200 chars) is detected, stores the
+        original text in _paste_buffers and returns a shortened display placeholder.
         Returns None if no paste detected.
         """
-        if not new_text or not old_text:
+        if not new_text:
             return None
 
-        # Find what was added
-        if new_text.startswith(old_text):
+        # Find what was added — could be paste into empty input or append to existing
+        if not old_text:
+            added = new_text
+        elif new_text.startswith(old_text):
             added = new_text[len(old_text) :]
         elif new_text.endswith(old_text):
             added = new_text[: -len(old_text)]
@@ -122,9 +124,9 @@ class PromptInput(TextArea):
         self._paste_buffers[pid] = added
 
         # Build full text: old_text + placeholder
-        # Use a prefix that is extremely unlikely to collide with user input.
+        # ⟨...⟩ is extremely unlikely to collide with user input.
         placeholder = f"⟨PASTE#{pid}+{added_lines}L⟩"
-        return old_text + placeholder
+        return (old_text or "") + placeholder
 
     def _get_submit_text(self) -> str:
         """Get the full text for submission, restoring any paste buffers."""
@@ -161,36 +163,28 @@ class PromptInput(TextArea):
 
     def _submit(self) -> None:
         """Submit the current input."""
-        # Restore paste buffer text if any
-        # Prefer _pending_submit_text (set during paste detection) as the
-        # authoritative original; fall back to restoring placeholders inline.
-        if self._pending_submit_text is not None:
-            text = self._pending_submit_text.strip()
-            self._paste_buffers.clear()
-            self._pending_submit_text = None
-        elif self._paste_buffers:
-            final_text = self.text
+        display_text = self.text.strip()
+
+        # Restore paste buffer text for LLM
+        if self._paste_buffers:
+            final_text = display_text
             for pid, original in sorted(self._paste_buffers.items()):
                 lines = original.count("\n") + 1
                 placeholder = f"⟨PASTE#{pid}+{lines}L⟩"
                 final_text = final_text.replace(placeholder, original)
-            text = final_text.strip()
+            text = final_text
             self._paste_buffers.clear()
-            self._pending_submit_text = None
         else:
-            text = self.text.strip()
-            self._pending_submit_text = None
+            text = display_text
 
         if not text:
             return
 
-        # Add to history
-        if not self._input_history or self._input_history[-1] != text:
-            self._input_history.append(text)
-        self._input_history_index = -1
+        # Reset paste numbering for next round
+        self._next_paste_id = 1
 
-        # Emit submit event
-        self.post_message(self.Submitted(text))
+        # Use display_text (with placeholders) for conversation history
+        self.post_message(self.Submitted(text=text, display_text=display_text))
 
         # Clear input
         self.text = ""
@@ -336,9 +330,10 @@ class PromptWithMode(Vertical):
     class Submitted(Message):
         """Message sent when input is submitted."""
 
-        def __init__(self, text: str):
-            self.text = text
-            super().__init__()
+    def __init__(self, text: str, display_text: str | None = None):
+        self.text = text
+        self.display_text = display_text or text
+        super().__init__()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -359,12 +354,10 @@ class PromptWithMode(Vertical):
 
     def on_prompt_input_submitted(self, event: PromptInput.Submitted):
         """Forward input submission to parent."""
-        # Clear syntax status on submit
         if self._syntax_status:
             self._syntax_status.update("")
             self._syntax_status.remove_class("has-refs")
-        # Forward the event
-        self.post_message(self.Submitted(event.text))
+        self.post_message(self.Submitted(text=event.text, display_text=event.display_text))
 
     def on_input_changed(self, event) -> None:
         """Handle input changes from child TextArea."""
