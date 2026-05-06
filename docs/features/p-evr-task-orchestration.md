@@ -196,11 +196,18 @@ class DagExecutor:
          │ ┌────────┐ ┌──────────┐ │REJECT │
          └─┤  DONE  │ │NEEDS_REWORK├─┘      │
            └───┬────┘ └─────┬────┘         │
-               │ COMPLETE   │ RETRY        │
+               │ COMPLETE   │ RESUME       │
                ▼            └──────────────┘
           ┌─────────┐
           │VERIFIED │
           └─────────┘
+
+         CANCEL（从任何状态可触发）
+               │
+               ▼
+          ┌───────────┐
+          │ CANCELLED │
+          └───────────┘
 ```
 
 **实现文件**：`src/pilotcode/orchestration/state_machine.py`
@@ -210,6 +217,8 @@ class DagExecutor:
 - `on_state_change` 回调实现事件驱动：状态变化 → 触发调度器重新评估就绪任务
 - 非法转换抛出 `InvalidTransitionError`，防止编排逻辑错误
 - StateMachine 构造时绑定 DagNode，setter 自动同步 DAG 节点状态
+- **CANCEL 转换**：从 `PENDING`、`ASSIGNED`、`IN_PROGRESS`、`REJECTED`、`NEEDS_REWORK`、`BLOCKED` 均可转换到 `CANCELLED`，用于用户中断 mission
+- **RESUME 转换**：`NEEDS_REWORK → IN_PROGRESS`，由 `_smart_retry()` 触发，是 rework 重新调度的合法入口
 
 ### 4.2 事件驱动调度器
 
@@ -223,17 +232,34 @@ async def run(self, mission: Mission) -> dict[str, Any]:
     active_workers: dict[asyncio.Task, DagNode] = {}
     
     while not self.tracker.all_done(mid):
+        # --- 检查外部取消 ---
+        if self.config.cancel_event and self.config.cancel_event.is_set():
+            self.cancel_mission(mid)
+            return {"mission_id": mid, "success": False, "error": "Cancelled by user"}
+        
         # 健康检查（每30秒）
         if now - last_health_check > 30.0:
             health = reflector.check(mid, self.tracker)
             ...
         
+        # 动态调整并发上限
+        self._adjust_concurrency()
+        
         # 填充就绪任务
         self._enqueue_ready(mid, active_workers)
         
         if not active_workers:
-            # 无任务时阻塞等待事件
-            await task_event.wait()
+            # 无任务时阻塞等待事件（带取消检查）
+            if self.config.cancel_event:
+                try:
+                    await asyncio.wait_for(task_event.wait(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    pass
+                if self.config.cancel_event.is_set():
+                    self.cancel_mission(mid)
+                    return {"mission_id": mid, "success": False, "error": "Cancelled by user"}
+            else:
+                await task_event.wait()
             task_event.clear()
             continue
         
@@ -251,6 +277,8 @@ async def run(self, mission: Mission) -> dict[str, Any]:
 - 无任务时完全阻塞，不消耗 CPU
 - 任务完成立即触发下一轮调度，延迟 < 1ms
 - 支持 `asyncio.Event` 的外部触发（如用户取消、状态变化）
+- **动态并发**：根据队列深度和平均完成时间自动调整 `_max_workers`
+- **取消感知**：空 workers 等待期间每 0.5s 检查一次 `cancel_event`，防止用户取消后无限阻塞
 
 ### 4.3 任务执行管道
 
@@ -266,6 +294,8 @@ ASSIGN → START → [Worker执行(带超时)] → SUBMIT → L1验证 → L2验
 - 使用 `asyncio.wait_for()` 实现超时控制，默认 300 秒
 - 超时后自动级联取消下游任务，防止无效计算
 - 超时任务转为 `REJECTED`，记录 `_exec_result` 供分析
+- **取消检查**：Worker 每轮循环前检查 `cancel_event.is_set()`，若已取消立即返回 `ExecutionResult(success=False, error="Cancelled by user")`
+- **验证短路**：`_verify_task()` 入口检查 `cancel_event`，若 mission 已取消直接返回，避免浪费资源执行 L1/L2/L3
 
 **Worker 实现**：
 
@@ -333,8 +363,8 @@ Level 3: Code Review (LLM / 静态分析)
 ```
 
 **实现文件**：
-- `src/pilotcode/orchestration/verifiers/adapter_verifiers.py` — L1/L2/L3 实现
-- `src/pilotcode/orchestration/verifiers/adaptive_verifiers.py` — 降级验证器
+- `src/pilotcode/orchestration/verifier/adapter_verifiers.py` — L1/L2/L3 实现
+- `src/pilotcode/orchestration/verifier/adaptive_verifiers.py` — 降级验证器
 
 **验证执行流程**：
 
@@ -507,19 +537,94 @@ Worker 重试 t5 → 修正代码 → SUBMIT → L2 通过 → APPROVE
 
 ---
 
-## 九、性能与扩展性
+## 九、动态并发与上下文预算控制
+
+### 9.1 动态并发调整
+
+Orchestrator 根据实时负载自动调整并发 worker 数量，而非使用固定上限：
+
+```python
+def _adjust_concurrency(self) -> None:
+    recent = self._completion_times[-5:]  # 最近 5 次完成时间
+    avg_time = sum(recent) / len(recent) if recent else 0
+    pending_count = len([t for t in self._pending_queue if not t.done()])
+    
+    if pending_count >= 3 and avg_time < 30 and self._max_workers < upper:
+        self._max_workers = min(self._max_workers + 1, upper)  # 加速
+    elif pending_count == 0 and avg_time > 60 and self._max_workers > lower:
+        self._max_workers = max(self._max_workers - 1, lower)  # 减速
+```
+
+| 条件 | 动作 | 目的 |
+|------|------|------|
+| 队列积压 ≥3 且平均完成 <30s | `max_workers + 1` | 利用模型吞吐量余量 |
+| 队列为空且平均完成 >60s | `max_workers - 1` | 避免慢模型被压垮 |
+| 默认范围 | `lower=1` ~ `upper=min(tool_limit, 8)` | 本地模型 1-2，远程 API 3-5 |
+
+### 9.2 上下文预算拆分
+
+当 N 个任务并发执行时，每个任务自动分配 `mission.context_budget // N` 的 token 上限：
+
+```python
+per_task_budget = mission.context_budget // len(active_workers)
+if per_task_budget < node.task.context_budget:
+    node.task.context_budget = per_task_budget
+```
+
+**目的**：
+- **本地模型**：防止 GPU OOM（并发请求共享显存）
+- **远程 API**：避免单任务占用过多上下文，导致其他任务被截断
+
+---
+
+## 十、任务级取消机制
+
+用户可通过 TUI `Ctrl+C` / `Escape` 或调用 `cancel_mission()` 主动中断运行中的 mission。
+
+### 取消信号传播
+
+```python
+# Orchestrator.run() 主循环顶部检查
+if self.config.cancel_event and self.config.cancel_event.is_set():
+    self.cancel_mission(mid)
+    return {"success": False, "error": "Cancelled by user"}
+
+# cancel_mission() 处理逻辑
+for task_id, node in dag.nodes.items():
+    sm = tracker.get_state_machine(mission_id, task_id)
+    if sm.state in {PENDING, ASSIGNED}:
+        sm.transition(CANCEL)  # 直接取消未开始任务
+    elif sm.state == IN_PROGRESS:
+        config.cancel_event.set()  # 信号通知运行中的 Worker
+        sm.transition(CANCEL)      # 状态机同步到 CANCELLED
+```
+
+### 各层响应
+
+| 层级 | 取消响应 |
+|------|---------|
+| **Orchestrator 主循环** | 检测到 `cancel_event` → `cancel_mission()` → 返回取消结果 |
+| **空 workers 等待** | `asyncio.wait_for(task_event.wait(), 0.5)` 超时后检查 cancel_event，避免永久阻塞 |
+| **Worker 执行** | 每轮循环前检查 `cancel_event.is_set()`，立即返回取消结果 |
+| **验证流程** | `_verify_task()` 入口短路，不再执行 L1/L2/L3 |
+| **TUI 前端** | `finally` 块清理 `_current_mission`，防止重复取消；显示中断消息和部分进度 |
+
+---
+
+## 十一、性能与扩展性
 
 | 指标 | 数值 | 说明 |
 |---|---|---|
 | 调度延迟 | < 1ms | 事件驱动，无轮询开销 |
-| 并发上限 | 可配置（默认 3） | `OrchestratorConfig.max_concurrent_workers` |
+| 并发上限 | 动态调整（默认 1-5，上限 8） | `OrchestratorConfig.max_concurrent_workers`，自动根据队列深度和完成时间调整 |
+| 上下文预算拆分 | 并发任务均分总预算 | `mission.context_budget // N`，防止本地模型 OOM 和远程 API 上下文爆炸 |
 | DAG 查询 | O(V·avg_in_degree) | 反向邻接表 + 就绪缓存 |
 | 状态持久化 | ~5ms/次 | SQLite WAL 模式，异步友好 |
 | 健康检查 | 30s 间隔 | 不阻塞主循环 |
 
 ---
 
-## 十、与 LLM 规划能力的互补
+## 十二、与 LLM 规划能力的互补
 
 ### 10.1 分工边界
 
@@ -556,7 +661,7 @@ Worker 重试 t5 → 修正代码 → SUBMIT → L2 通过 → APPROVE
 
 ---
 
-## 十一、上下文自适应策略（Context Strategy）
+## 十三、上下文自适应策略（Context Strategy）
 
 P-EVR 框架可以根据后端 LLM 的**上下文窗口大小**动态调整策略，实现框架与 LLM 的最优分工。
 
@@ -584,7 +689,7 @@ adapter = MissionAdapter(context_budget=65536)
 
 ---
 
-## 十二、与其他模块的关系
+## 十四、与其他模块的关系
 
 | 模块 | 交互方式 |
 |---|---|
@@ -592,13 +697,13 @@ adapter = MissionAdapter(context_budget=65536)
 | `tools/registry.py` | Worker 排除交互式工具（AskUser），只使用自治工具 |
 | `project_memory.py` | Worker 读取历史发现，记录新的文件/规范/失败 |
 | `state_machine.py` | Orchestrator 驱动状态转换，Tracker 订阅变化 |
-| `verifiers/*.py` | L1/L2/L3 验证器注册到 Orchestrator，按序执行 |
+| `verifier/*.py` | L1/L2/L3 验证器注册到 Orchestrator，按序执行 |
 | `telemetry.py` | Orchestrator.run() 返回 metrics（耗时、token、任务计数）|
 | `model_capability/` | 根据模型能力动态调整规划策略、验证器、任务粒度 |
 
 ---
 
-## 十三、使用示例
+## 十五、使用示例
 
 ### 简单任务（自动跳过 Plan）
 
@@ -635,7 +740,7 @@ print(report.summary())
 
 ---
 
-## 十四、参考
+## 十六、参考
 
 - **模型能力自适应文档**: `docs/features/weak-model-compensation.md`
 - **P-EVR 架构设计文档**: `~/tmp/P-EVR-Architecture.md`

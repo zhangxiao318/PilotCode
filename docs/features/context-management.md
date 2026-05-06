@@ -266,6 +266,10 @@ Context compacted:
 | `/model` | 查看当前模型能力和所有可用模型 |
 | `/config get auto_compact` | 查看自动压缩开关 |
 | `/config set auto_compact false` | 关闭自动压缩 |
+| `/context list` | 列出所有归档的上下文摘要 |
+| `/context search <keyword>` | 按关键词检索历史归档 |
+| `/context recall <id>` | 召回特定归档到当前会话 |
+| `/memory` | 查看和编辑 Session Memory |
 
 ---
 
@@ -274,6 +278,96 @@ Context compacted:
 - [模型系统](./model-system.md) — 如何修改 `config/models.json`
 - [上下文管理](./context-management.md) — 压缩算法与 MemPO 记忆管理
 - [会话管理](./session-management.md) — 保存和恢复会话
+
+---
+
+## 三层上下文管理（ContextArchive）
+
+5月6日新增的三层上下文管理架构参考 Claude Code 的 `compact/` 和 `sessionMemoryCompact.ts` 设计，将上下文压缩从单一功能扩展为完整的持久化-检索体系。
+
+### 架构概览
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     三层上下文管理架构                        │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 1: Microcompact                                      │
+│  └── compact_tool_result() — 清除旧的 Tool 结果，即时释放    │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 2: Session Memory                                    │
+│  └── ContextArchive.session_memory — 结构化摘要持久化       │
+│      └── 存储路径: ~/.pilotcode/context/session_memory.json │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 3: Full Compact                                      │
+│  └── IntelligentContextCompactor — 深度压缩并归档历史消息   │
+│      └── 存储路径: ~/.pilotcode/context/compact_*.json      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 核心组件
+
+**ContextArchive** (`src/pilotcode/services/context_archive.py`):
+- 持久化存储压缩后的上下文到 `~/.pilotcode/context/`
+- `SessionMemory` 结构化摘要：原始请求、关键技术概念、查看/修改过的文件、遇到的错误、待办任务、已做出的决策
+- 归档文件索引：`compact_{hash}.json`，包含时间戳、摘要、条目列表
+
+**ContextCommands** (`src/pilotcode/services/context_commands.py`):
+- `/context list` — 列出所有归档条目
+- `/context search <keyword>` — 按关键词检索归档内容
+- `/context recall <id>` — 召回特定归档到当前会话
+- `/memory` — 查看和编辑 Session Memory
+
+### 压缩时归档
+
+`IntelligentContextCompactor.compact_messages()` 现在**在压缩前自动归档**旧上下文：
+
+```python
+# 压缩前：将旧消息结构化摘要保存到磁盘
+archive.archive_compaction(
+    messages=old_messages,
+    summary={
+        "primary_request": "实现 OAuth2 登录",
+        "key_technical_concepts": ["JWT", "refresh token"],
+        "files_examined": ["src/auth.py", "src/models.py"],
+        "files_modified": ["src/auth.py"],
+        "errors_encountered": ["过期时间验证缺失"],
+        "pending_tasks": ["添加单元测试"],
+        "decisions_made": ["使用 PyJWT 库"],
+    },
+    token_saved=47000,
+)
+
+# 压缩后：旧消息被替换为摘要
+```
+
+### Session Memory 注入
+
+`query_engine._build_system_message()` 自动将 Session Memory 注入 system prompt，使 LLM 在压缩后仍能保留跨会话上下文：
+
+```
+## Session Context (archived)
+
+### Original Request
+实现 OAuth2 登录...
+
+### Key Concepts
+- JWT
+- refresh token
+
+### Files Examined
+- src/auth.py
+- src/models.py
+```
+
+### 数据持久化
+
+| 文件 | 内容 | 生命周期 |
+|------|------|----------|
+| `~/.pilotcode/context/session_memory.json` | 结构化会话摘要 | 跨会话持久 |
+| `~/.pilotcode/context/compact_*.json` | 每次压缩的归档 | 可按时间清理 |
+
+---
+
 ## 智能上下文压缩
 
 PilotCode 的智能上下文压缩系统通过自动精简历史消息，解决长会话中的 Token 限制问题。

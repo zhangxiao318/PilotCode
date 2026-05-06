@@ -223,6 +223,8 @@ source ~/.zshrc
 /doctor              # 运行诊断检查
 /status              # 查看系统状态
 /config --verify     # 验证配置
+/config --test layer1  # 测试 API 连通性
+/config --test layer2  # 测试模型能力
 ```
 
 ---
@@ -251,6 +253,34 @@ source ~/.zshrc
 ```
 
 ---
+
+## API Key 与后端探测
+
+PilotCode 启动和 `config --list` 时会自动探测后端能力（上下文窗口、模型列表等）。探测请求会自动携带配置中的 `api_key`：
+
+```
+GET /v1/models          Authorization: Bearer {api_key}
+GET /props              Authorization: Bearer {api_key}
+```
+
+**需要 API Key 的后端**：
+- **LiteLLM Proxy** — 所有端点（包括 `/v1/models`）都要求认证
+- **Cloud API** — OpenAI、Anthropic、DeepSeek 等
+- **带认证的本地服务** — 部分部署的 vLLM / TGI
+
+**无需 API Key 的后端**：
+- **Ollama** — 本地服务，默认无认证
+- **裸 llama-server** — 本地服务，默认无认证
+
+如果探测返回 401，请确认 `api_key` 已正确配置：
+
+```bash
+# 检查当前 key
+/config get api_key
+
+# 重新设置
+/config --set api_key --value "sk-xxx"
+```
 
 ## 故障排除
 
@@ -332,7 +362,10 @@ Error: Request timeout
 | 查看配置 | `/config --list` |
 | 设置 API 密钥 | `/config --set api_key --value "xxx"` |
 | 设置模型 | `/config --set default_model --value "gpt-4"` |
+| 设置协议 | `/config set api_protocol openai` 或 `anthropic` |
 | 验证配置 | `/config --verify` |
+| 测试连通性 | `/config --test layer1` |
+| 测试能力 | `/config --test layer2` |
 | 查看状态 | `/status` |
 | 运行诊断 | `/doctor` |
 

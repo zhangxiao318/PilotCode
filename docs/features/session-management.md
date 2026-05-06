@@ -237,6 +237,7 @@ pilotcode
 3. **进程重启后首次保存**：从 index 恢复 `last_saved_count`，继续增量，不会误触发 rollover。
 4. **session ID 复用**：`/session save` 使用当前 session ID，不会创建新 ID。
 5. **加载后 cwd 同步**：恢复时会将 session 的 `project_path` 同步到当前工作目录。
+6. **ContextArchive 协作**：session 恢复后，`ContextArchive` 中的 `SessionMemory`（`~/.pilotcode/context/session_memory.json`）会自动加载，将跨会话的归档上下文注入 system prompt，使 LLM 能回忆起之前会话中的技术决策和文件修改历史。
 
 ---
 

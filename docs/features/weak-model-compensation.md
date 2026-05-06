@@ -337,19 +337,23 @@ Orchestrator.run():
   - Worker: 限制为 5 turns（防止弱模型无限循环）
   
 任务 t1 失败（Worker 输出非法 JSON）
-  → RuntimeCalibrator 记录:
-    json_formatting.valid_json_rate: 0.50 -> 0.45 (-0.05)
+  → RuntimeTracker 记录:
+    json_formatting: failure += 1
   
 任务 t2 成功
-  → RuntimeCalibrator 记录:
-    task_completion.code_correctness: 0.60 -> 0.61 (+0.01)
+  → RuntimeTracker 记录:
+    task_completion: success += 1
 
 Step 5: 能力评分更新
 ─────────────────────
-Runtime calibration updated:
+Runtime calibration updated (sliding window):
   overall: 0.42 -> 0.39 (success_rate=33.3%)
 
-如果继续恶化（success_rate < 50% 且 2+ 维度 <-0.15）：
+> **注意**：5月2日重构后，运行时校准从"基准分数驱动"切换为"运行时成功率驱动"。
+> 系统初始使用乐观默认值（FULL_DAG、COARSE 粒度等），仅对实际运行时失败的任务类型收紧策略，
+> 避免预先假设模型能力较弱而导致的过度干预。
+
+如果继续恶化（success_rate < 50% 且 2+ 维度失败率上升）：
   should_escalate_to_stronger_model() → True
   系统建议用户切换回更强的模型
 ```
@@ -583,9 +587,9 @@ orchestration:
 | `src/pilotcode/model_capability/benchmark.py` | 13 个基准测试 |
 | `src/pilotcode/model_capability/evaluator.py` | 评分聚合引擎 |
 | `src/pilotcode/model_capability/adaptive_config.py` | 能力→配置映射（含补偿字段） |
-| `src/pilotcode/model_capability/runtime_calibrator.py` | 运行时校准器 |
+| `src/pilotcode/orchestration/runtime_tracker.py` | 运行时成功率追踪器（滑动窗口） |
 | `src/pilotcode/orchestration/adaptive_edit.py` | **补偿引擎 + 编辑验证器** |
-| `src/pilotcode/orchestration/verifiers/adaptive_verifiers.py` | 降级验证器实现 |
+| `src/pilotcode/orchestration/verifier/adaptive_verifiers.py` | 降级验证器实现 |
 | `src/pilotcode/orchestration/adapter.py` | MissionAdapter 集成点（补偿注入） |
 | `src/pilotcode/tools/smart_edit_planner.py` | **智能编辑规划器工具** |
 | `src/pilotcode/tools/file_edit_tool.py` | 增强版 FileEdit（诊断对比 + 回滚） |
