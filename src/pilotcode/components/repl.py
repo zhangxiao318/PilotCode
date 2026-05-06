@@ -672,10 +672,11 @@ def _extract_target_path(prompt: str) -> str | None:
     unix_paths = re.findall(r"~?[\w./-]+", prompt, re.ASCII)
     for path in unix_paths:
         # Skip URLs — they look like absolute paths but are not directories
-        if "//" in path or (
-            path.count("/") >= 2
-            and any(ext in path.lower() for ext in (".com", ".org", ".net", ".io", ".ai"))
-        ):
+        # Only filter by // (protocol separator like http://).
+        # TLD-based filtering (e.g. .com/.io) is deliberately avoided because
+        # legitimate local paths like /var/log/nginx.io/access.log or
+        # /www/example.com/public would be incorrectly rejected.
+        if "//" in path:
             continue
         if path.startswith("~"):
             path = os.path.expanduser(path)

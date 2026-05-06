@@ -238,7 +238,12 @@ class Orchestrator:
                     except asyncio.TimeoutError:
                         pass
                     if cancel.is_set():
-                        break
+                        self.cancel_mission(mid)
+                        return {
+                            "mission_id": mid,
+                            "success": False,
+                            "error": "Cancelled by user",
+                        }
                 else:
                     await self._task_completed_event.wait()
                 continue

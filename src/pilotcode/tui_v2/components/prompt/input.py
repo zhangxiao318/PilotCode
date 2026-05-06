@@ -62,6 +62,8 @@ class PromptInput(TextArea):
         self._paste_buffers: dict[int, str] = {}  # id -> original text
         self._next_paste_id: int = 1
         self._pending_submit_text: str | None = None  # Original text if input is shortened
+        # Guard to prevent recursive Changed events when we set text programmatically
+        self._ignore_text_change: bool = False
 
     def on_mount(self):
         """Called when widget is mounted."""
@@ -120,7 +122,8 @@ class PromptInput(TextArea):
         self._paste_buffers[pid] = added
 
         # Build full text: old_text + placeholder
-        placeholder = f"[Pasted text #{pid} +{added_lines} lines]"
+        # Use a prefix that is extremely unlikely to collide with user input.
+        placeholder = f"⟨PASTE#{pid}+{added_lines}L⟩"
         return old_text + placeholder
 
     def _get_submit_text(self) -> str:
@@ -131,6 +134,8 @@ class PromptInput(TextArea):
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         """Detect and shorten large pastes."""
+        if getattr(self, "_ignore_text_change", False):
+            return
         if not hasattr(self, "_paste_buffers"):  # During __init__
             return
 
@@ -145,8 +150,11 @@ class PromptInput(TextArea):
         shortened = self._detect_paste(old_val, new_val)
         if shortened is not None:
             self._prev_text = shortened
+            self._pending_submit_text = new_val  # save original for _get_submit_text
             # Update display without triggering another changed event
+            self._ignore_text_change = True
             self.text = shortened
+            self._ignore_text_change = False
             self.cursor_position = len(shortened)
         else:
             self._prev_text = new_val
@@ -154,10 +162,17 @@ class PromptInput(TextArea):
     def _submit(self) -> None:
         """Submit the current input."""
         # Restore paste buffer text if any
-        if self._paste_buffers:
+        # Prefer _pending_submit_text (set during paste detection) as the
+        # authoritative original; fall back to restoring placeholders inline.
+        if self._pending_submit_text is not None:
+            text = self._pending_submit_text.strip()
+            self._paste_buffers.clear()
+            self._pending_submit_text = None
+        elif self._paste_buffers:
             final_text = self.text
             for pid, original in sorted(self._paste_buffers.items()):
-                placeholder = f"[Pasted text #{pid} +" + str(original.count("\n") + 1) + " lines]"
+                lines = original.count("\n") + 1
+                placeholder = f"⟨PASTE#{pid}+{lines}L⟩"
                 final_text = final_text.replace(placeholder, original)
             text = final_text.strip()
             self._paste_buffers.clear()
