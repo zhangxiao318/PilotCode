@@ -226,7 +226,7 @@ class MissionAdapter:
 
     def _register_workers(self) -> None:
         """Register the LLM-based worker for all task types."""
-        for worker_type in ("simple", "standard", "complex", "auto"):
+        for worker_type in ("simple", "standard", "complex", "auto", "explorer", "verifier"):
             self._orchestrator.register_worker(worker_type, self._llm_worker)
 
     def _register_verifiers(self) -> None:
@@ -397,6 +397,11 @@ class MissionAdapter:
                     success=False,
                 )
                 raise
+
+        # Some models wrap the mission in a {"mission": {...}} envelope.
+        # Unwrap it if present.
+        if "mission" in plan_data and isinstance(plan_data["mission"], dict):
+            plan_data = plan_data["mission"]
 
         # Ensure required keys exist before from_dict (LLM may omit fields)
         if "mission_id" not in plan_data:
@@ -707,10 +712,16 @@ class MissionAdapter:
         agent.max_turns = max_turns
 
         try:
-            from .agent_orchestrator import get_orchestrator as get_agent_orch
+            from ..agent.agent_orchestrator import get_orchestrator as get_agent_orch
 
             orch = get_agent_orch()
-            result = await orch._run_agent_task(agent, prompt)
+
+            # Forward real-time tool-use events so the TUI can show agent activity
+            def _agent_progress(msg: str) -> None:
+                if self._progress_callback:
+                    self._progress_callback("worker:tool_start", {"tool_name": msg, "params": {}})
+
+            result = await orch._run_agent_task(agent, prompt, progress_callback=_agent_progress)
 
             # Save execution knowledge to agent memory
             try:
@@ -727,6 +738,8 @@ class MissionAdapter:
                     "changed_files": [],
                     "agent_id": agent.agent_id,
                     "agent_type": agent_type,
+                    "conversation_length": agent.turns,
+                    "final_response": result,
                 },
             )
         except Exception as e:
@@ -756,8 +769,13 @@ class MissionAdapter:
 
         # Phase 3: Route analysis-only tasks to explorer agent
         worker_type = context.get("worker_type", task.worker_type or "auto")
-        use_explorer = worker_type in ("explorer", "simple") or task.is_read_only()
-        use_verifier = worker_type == "verifier" or task.verification_method == "test"
+        # A task is read-only if it has no output files declared.
+        is_read_only = not task.outputs
+        use_explorer = worker_type in ("explorer", "simple") or is_read_only
+        has_test_criterion = any(
+            ac.verification_method in ("test", "pytest") for ac in task.acceptance_criteria
+        )
+        use_verifier = worker_type == "verifier" or has_test_criterion
 
         if use_explorer:
             return await self._run_agent_for_task(task, context, agent_type="explorer", max_turns=8)
@@ -1473,47 +1491,8 @@ class MissionAdapter:
                     user_request, self.project_memory, cwd=self._cwd
                 )
 
-            # Phase 0: Check if this is an analysis-only request
-            is_analyze = self._should_analyze_only(user_request)
-
-            # Phase 1: Plan mission (skip for analyze-only and direct execution)
-            if is_analyze:
-                # Analysis-only: create a minimal single-task mission
-                from .task_spec import Mission as MissionClass
-
-                mission = MissionClass(
-                    title=user_request[:80],
-                    requirement=user_request,
-                    mission_id=f"analysis_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
-                )
-                from .task_spec import TaskSpec, ComplexityLevel, Phase
-
-                mission.phases.append(
-                    Phase(
-                        phase_id="analysis",
-                        title="Analysis",
-                        description="Code analysis",
-                        tasks=[
-                            TaskSpec(
-                                id="analyze",
-                                title="Code Analysis",
-                                objective=user_request,
-                                worker_type="explorer",
-                                estimated_complexity=ComplexityLevel.SIMPLE,
-                            )
-                        ],
-                    )
-                )
-                _invoke_progress(
-                    "mission:planned",
-                    {
-                        "mission_id": mission.mission_id,
-                        "title": mission.title,
-                        "type": "analyze",
-                    },
-                )
-            else:
-                mission = await self._plan_mission(user_request, exploration)
+            # Phase 1: Plan mission
+            mission = await self._plan_mission(user_request, exploration)
 
             _invoke_progress(
                 "mission:planned",
@@ -1541,7 +1520,12 @@ class MissionAdapter:
 
             result = await self._orchestrator.run(mission)
             result["mission"] = mission.to_dict()
-            result["success"] = result.get("snapshot", {}).get("status") == "completed"
+            snapshot = result.get("snapshot", {})
+            result["success"] = snapshot.get("status") == "completed"
+            if not result["success"] and not result.get("error"):
+                failed = snapshot.get("failed_tasks", 0)
+                total = snapshot.get("total_tasks", 0)
+                result["error"] = f"{failed}/{total} task(s) failed or were rejected"
 
             # Collect non-blocking verification warnings from all tasks
             warnings: list[dict[str, Any]] = []
