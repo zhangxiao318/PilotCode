@@ -189,6 +189,8 @@ class MissionAdapter:
 
         # Tool concurrency limit from user config (local models default 2, remote 5)
         self._tool_concurrency_limit = get_global_config().tool_concurrency_limit
+        # Instance-level semaphore (NOT recreated per loop iteration)
+        self._tool_semaphore = asyncio.Semaphore(self._tool_concurrency_limit)
 
         # Context strategy (legacy) + adaptive override
         self.strategy = ContextStrategySelector.select(context_budget, capability=self.capability)
@@ -910,14 +912,11 @@ class MissionAdapter:
                             error="Cancelled by user",
                         )
 
-                    # Limit concurrent tool execution to avoid overwhelming local
-                    # models (Ollama/vLLM typically handle 1-2 concurrent reqs)
-                    # or external APIs. Value is configurable via settings.json.
-                    _tool_semaphore = asyncio.Semaphore(self._tool_concurrency_limit)
-
+                    # Limit concurrent tool execution using instance semaphore
+                    # (created in __init__, NOT recreated per loop iteration).
                     async def _exec_one(tu: ToolUseMessage) -> tuple[str, bool]:
                         """Execute a single tool and return (result_text, success)."""
-                        async with _tool_semaphore:
+                        async with self._tool_semaphore:
                             er = await executor.execute_tool_by_name(tu.name, tu.input, tool_ctx)
                         if er.success and er.result is not None:
                             text = str(er.result.data) if er.result.data else "Success"

@@ -136,8 +136,8 @@ class ContextArchive:
             try:
                 data = json.loads(path.read_text())
                 self.session_memory = SessionMemory.from_dict(data)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to load session memory: %s", exc)
 
     def save_session_memory(self) -> None:
         """Save session memory to disk."""
@@ -145,8 +145,8 @@ class ContextArchive:
         path = self.base_dir / "session_memory.json"
         try:
             path.write_text(json.dumps(self.session_memory.to_dict(), indent=2, ensure_ascii=False))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to save session memory: %s", exc)
 
     def update_session_memory(self, summary: dict[str, Any]) -> None:
         """Update session memory with a structured summary from compaction."""
@@ -228,8 +228,8 @@ class ContextArchive:
         archive_path = self.base_dir / f"compact_{entry_id}.json"
         try:
             archive_path.write_text(json.dumps(archive, indent=2, ensure_ascii=False))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to write context archive %s: %s", entry_id, exc)
 
         # Update session memory
         self.update_session_memory(summary)

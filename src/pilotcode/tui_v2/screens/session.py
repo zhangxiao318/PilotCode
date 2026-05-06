@@ -71,7 +71,7 @@ class SessionScreen(Screen):
 
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
-        ("ctrl+c", "copy", "Copy Last Reply"),
+        ("ctrl+c", "copy", "Copy / Cancel Mission"),
         ("ctrl+s", "save", "Save Session"),
         ("ctrl+l", "clear", "Clear"),
         ("f1", "help", "Help"),
@@ -443,7 +443,9 @@ class SessionScreen(Screen):
         if self.controller and self.controller.current_mission:
             result = self.controller.cancel_mission()
             if result:
-                self._add_system_message("⏸  Mission interrupted. Type a message to continue, or ask to adjust the plan.")
+                self._add_system_message(
+                    "⏸  Mission interrupted. Type a message to continue, or ask to adjust the plan."
+                )
             return
 
         # Otherwise copy last assistant reply

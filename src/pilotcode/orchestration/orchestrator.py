@@ -227,8 +227,20 @@ class Orchestrator:
                 # Nothing running and nothing ready — wait for completion event
                 if self.tracker.all_done(mid):
                     break
-                self._task_completed_event.clear()
-                await self._task_completed_event.wait()
+                # Also wake on cancel so users aren't stuck waiting
+                cancel = self.config.cancel_event
+                if cancel is not None:
+                    try:
+                        await asyncio.wait_for(
+                            self._task_completed_event.wait(),
+                            timeout=0.5,
+                        )
+                    except asyncio.TimeoutError:
+                        pass
+                    if cancel.is_set():
+                        break
+                else:
+                    await self._task_completed_event.wait()
                 continue
 
             # --- Wait for at least one worker to finish ---
@@ -534,6 +546,10 @@ class Orchestrator:
         sm: StateMachine,
     ) -> None:
         """Run verification pipeline for a task."""
+        # Short-circuit if mission was cancelled
+        if self.config.cancel_event and self.config.cancel_event.is_set():
+            return
+
         task_id = task.id
 
         # Begin review
@@ -918,13 +934,27 @@ class Orchestrator:
 
         for task_id, node in dag.nodes.items():
             sm = self.tracker.get_state_machine(mission_id, task_id)
-            if sm and sm.state in {TaskState.PENDING, TaskState.ASSIGNED}:
+            if sm is None:
+                continue
+            if sm.state in {TaskState.PENDING, TaskState.ASSIGNED}:
+                try:
+                    sm.transition(Transition.CANCEL, actor="user")
+                except InvalidTransitionError:
+                    pass
+            elif sm.state == TaskState.IN_PROGRESS:
+                # Signal cancellation — the running task will check
+                # config.cancel_event at the next opportunity.
+                if self.config.cancel_event and not self.config.cancel_event.is_set():
+                    self.config.cancel_event.set()
+                # Still transition to CANCELLED so all_done() sees a terminal state.
                 try:
                     sm.transition(Transition.CANCEL, actor="user")
                 except InvalidTransitionError:
                     pass
 
         self._notify("mission:cancelled", {"mission_id": mission_id})
+        # Wake the main loop so it processes the cancellation immediately.
+        self._task_completed_event.set()
 
     # ------------------------------------------------------------------
     # Query
