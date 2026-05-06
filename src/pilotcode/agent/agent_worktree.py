@@ -9,7 +9,6 @@ safely modify files without affecting the main working tree.
 import os
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone, timedelta

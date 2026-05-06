@@ -1,8 +1,7 @@
 """Tests for context archive and session memory."""
 
 import tempfile
-from pathlib import Path
-from pilotcode.services.context_archive import ContextArchive, SessionMemory, ContextEntry
+from pilotcode.services.context_archive import ContextArchive, SessionMemory
 
 
 class TestSessionMemory:

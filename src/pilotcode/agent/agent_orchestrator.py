@@ -1,5 +1,6 @@
 """Agent orchestrator for multi-agent workflows."""
 
+import asyncio
 import os
 from enum import Enum
 from typing import Any, Callable
@@ -12,7 +13,7 @@ from .agent_manager import (
     AgentStatus,
 )
 from ..utils.model_client import get_model_client
-from ..tools.base import ToolUseContext, _slim_json_schema
+from ..tools.base import ToolUseContext
 
 
 class WorkflowType(Enum):
@@ -541,7 +542,7 @@ Previous discussion:
                                 files_read.append(m.group(1))
                     elif tname in ("Grep", "CodeSearch"):
                         # Count matches roughly
-                        lines = [l for l in tcontent.splitlines() if l.strip()]
+                        lines = [line for line in tcontent.splitlines() if line.strip()]
                         searches_done.append(f"{tname} ({len(lines)} matches)")
                     elif tname == "Bash":
                         # Keep command brief

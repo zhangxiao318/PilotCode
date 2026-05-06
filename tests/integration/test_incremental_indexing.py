@@ -1,13 +1,11 @@
 """Tests for incremental indexing bug fixes and optimizations."""
 
 import asyncio
-import time
 from pathlib import Path
 
 import pytest
 
 from pilotcode.services.codebase_indexer import CodebaseIndexer
-from pilotcode.services.code_index import CodeIndexer
 
 
 class TestIncrementalIndexingFixes:

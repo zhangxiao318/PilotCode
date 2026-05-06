@@ -393,11 +393,10 @@ def get_model_limits(model_name: str | None = None) -> dict[str, int]:
     Returns:
         Dict with ``context_window`` and ``max_tokens`` keys.
     """
-    from .config import get_global_config, is_local_url
+    from .config import get_global_config
 
     config = get_global_config()
     base_url = config.base_url or ""
-    is_local = is_local_url(base_url)
 
     # Sentinel 0 = "not yet determined".  Fallback values (128K / 4K) are only
     # applied at the very end so they don't masquerade as real data and block

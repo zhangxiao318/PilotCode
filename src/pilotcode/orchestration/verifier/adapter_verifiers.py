@@ -11,7 +11,6 @@ import os
 import sys
 
 from pilotcode.utils.model_client import get_model_client, Message
-from pilotcode.services import prompts as prompt_service
 
 from ..results import ExecutionResult
 from ..task_spec import TaskSpec

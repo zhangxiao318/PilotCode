@@ -2,7 +2,6 @@
 
 import json
 import time
-from pathlib import Path
 
 import pytest
 
@@ -78,7 +77,7 @@ class TestProjectMemoryKB:
         assert "python" in entries[0].tags
 
     def test_add_bug(self, kb):
-        eid = kb.add_bug(
+        kb.add_bug(
             symptom="Crash on startup",
             root_cause="Null pointer",
             fix="Add null check",
@@ -93,7 +92,7 @@ class TestProjectMemoryKB:
         assert entries[0].metadata["files_involved"] == ["main.py"]
 
     def test_add_decision(self, kb):
-        eid = kb.add_decision(
+        kb.add_decision(
             content="Use PostgreSQL over MySQL",
             context="Database selection",
             options_considered=["MySQL", "SQLite", "PostgreSQL"],
@@ -105,7 +104,7 @@ class TestProjectMemoryKB:
         assert entries[0].metadata["options_considered"] == ["MySQL", "SQLite", "PostgreSQL"]
 
     def test_add_qa(self, kb):
-        eid = kb.add_qa(
+        kb.add_qa(
             question="How to run tests?",
             answer="pytest tests/",
             related_files=["README.md"],

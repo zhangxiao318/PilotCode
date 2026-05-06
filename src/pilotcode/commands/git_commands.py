@@ -23,7 +23,6 @@ from rich.panel import Panel
 
 from pilotcode.types.command import CommandContext
 from pilotcode.utils.git import git_exec, get_current_branch, get_repo_info
-from pilotcode.commands.base import CommandHandler, register_command
 from pilotcode.services.github_service import (
     GitHubService,
     CreatePullRequestRequest,

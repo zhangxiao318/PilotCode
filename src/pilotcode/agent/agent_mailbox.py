@@ -9,7 +9,6 @@ Messages are written using file locking for safe concurrent access.
 import json
 import logging
 import os
-import time
 from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone
@@ -19,11 +18,9 @@ logger = logging.getLogger(__name__)
 # Cross-platform file locking: fcntl (Unix) or msvcrt (Windows)
 _lock_impl = None
 if os.name == "posix":
-    import fcntl
 
     _lock_impl = "fcntl"
 elif os.name == "nt":
-    import msvcrt
 
     _lock_impl = "msvcrt"
 

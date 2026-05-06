@@ -13,8 +13,6 @@ Supports:
 import uuid
 import json
 import asyncio
-import os
-import shutil
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
@@ -694,9 +692,9 @@ class AgentManager:
 
         # Inherit parent context
         inherit_fields = ["cwd", "team_name"]
-        for field in inherit_fields:
-            if field in parent.metadata:
-                child.metadata[field] = parent.metadata[field]
+        for fld in inherit_fields:
+            if fld in parent.metadata:
+                child.metadata[fld] = parent.metadata[fld]
 
         child.metadata["fork_directive"] = directive
         child.metadata["parent_type"] = parent.definition.name

@@ -22,7 +22,7 @@ def print_single_report(data: dict):
     mode = data.get("mode", "unknown")
     run_id = data.get("run_id", "unknown")
 
-    print(f"# PilotCode E2E Test Report\n")
+    print("# PilotCode E2E Test Report\n")
     print(f"- **Run ID**: `{run_id}`")
     print(f"- **Mode**: `{mode}`")
     print(f"- **Total Tasks**: {len(results)}")
@@ -84,10 +84,10 @@ def print_single_report(data: dict):
             if r.get("error"):
                 print(f"**Error:** `{r['error']}`")
             if not r.get("compile_ok"):
-                print(f"**Compile Error:**")
+                print("**Compile Error:**")
                 print(f"```\n{r.get('compile_output', 'N/A')[:500]}\n```")
             if not r.get("run_ok"):
-                print(f"**Run Output:**")
+                print("**Run Output:**")
                 print(f"```\n{r.get('run_output', 'N/A')[:500]}\n```")
             print()
     else:
@@ -100,12 +100,12 @@ def print_comparison(data_cli: dict, data_ws: dict):
     ws_results = {r["task_id"]: r for r in data_ws.get("results", [])}
     all_tasks = sorted(set(cli_results) | set(ws_results))
 
-    print(f"# PilotCode E2E: CLI vs WebSocket Comparison\n")
+    print("# PilotCode E2E: CLI vs WebSocket Comparison\n")
     print(
-        f"| Task | CLI Compile | CLI Run | CLI Time | CLI Lines | WS Compile | WS Run | WS Time | WS Lines |"
+        "| Task | CLI Compile | CLI Run | CLI Time | CLI Lines | WS Compile | WS Run | WS Time | WS Lines |"
     )
     print(
-        f"|------|-------------|---------|----------|-----------|------------|--------|---------|----------|"
+        "|------|-------------|---------|----------|-----------|------------|--------|---------|----------|"
     )
 
     cli_total_time = 0

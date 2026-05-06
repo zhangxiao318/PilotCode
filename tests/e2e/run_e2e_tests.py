@@ -16,9 +16,8 @@ import subprocess
 import sys
 import time
 import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 try:
     import yaml
@@ -327,9 +326,6 @@ def run_task_cli(task: TaskDef, task_dir: Path, log_file: Path, timeout: int = 3
         proc_stderr += f"\n[LOG WRITE ERROR] {log_exc}"
 
     files_found = _collect_files(task_dir, log_file)
-
-    # Check expected files
-    expected_found = all(any(ff["path"] == ef for ff in files_found) for ef in task.expected_files)
 
     compile_ok, compile_output, run_ok, run_output = _compile_and_run(task_dir, task, files_found)
 

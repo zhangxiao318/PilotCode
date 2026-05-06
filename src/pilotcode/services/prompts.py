@@ -24,7 +24,7 @@ Architecture principles:
 4. Dynamic/static separation for caching via PROMPT_DYNAMIC_BOUNDARY
 """
 
-from typing import Any, Callable
+from typing import Callable
 
 # Boundary marker separating static (cacheable) from dynamic content.
 # Everything BEFORE this is static and can use global prompt caching.

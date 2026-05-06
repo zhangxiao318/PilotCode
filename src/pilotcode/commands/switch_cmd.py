@@ -1,7 +1,7 @@
 """Switch command implementation."""
 
 import subprocess
-from .base import CommandHandler, register_command, CommandContext
+from .base import CommandContext
 
 
 async def switch_command(args: list[str], context: CommandContext) -> str:

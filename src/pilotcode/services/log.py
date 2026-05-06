@@ -21,11 +21,9 @@ Log files are written to:
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
-from typing import Any
 
 # =============================================================================
 # Log level rules

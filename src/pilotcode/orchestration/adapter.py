@@ -9,8 +9,6 @@ import asyncio
 import json
 import logging
 import re
-
-logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -56,7 +54,9 @@ from ..model_capability import (
     VerifierStrategy,
 )
 from .plan_mode import should_plan
-from .plan_files import write_plan, read_plan, recover_plan_from_messages
+from .plan_files import write_plan
+
+logger = logging.getLogger(__name__)
 
 
 class MissionAdapter:

@@ -1,7 +1,7 @@
 """Tests for quest command."""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from pilotcode.commands.quest_cmd import (
     quest_command,
@@ -12,7 +12,6 @@ from pilotcode.commands.quest_cmd import (
     QuestState,
     QuestPhase,
     _quests,
-    _next_quest_id,
 )
 from pilotcode.commands.base import CommandContext
 

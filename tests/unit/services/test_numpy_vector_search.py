@@ -1,12 +1,9 @@
 """Tests for numpy-optimized vector search in VectorStore."""
 
-import math
-
 import pytest
 
 from pilotcode.services.embedding_service import (
     EmbeddingVector,
-    SearchResult,
     VectorStore,
     HAS_NUMPY,
 )
@@ -189,7 +186,6 @@ class TestMatrixRebuild:
             pytest.skip("numpy not available")
         store = VectorStore(persist=False)
         store.add(EmbeddingVector(id="v1", text="a", vector=[1.0, 0.0]))
-        old_matrix = store._matrix
 
         store.add(EmbeddingVector(id="v1", text="a2", vector=[0.5, 0.5]))
         # Matrix should be updated in-place for replacement

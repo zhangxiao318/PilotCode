@@ -1,6 +1,5 @@
 """Tests for unified prompts module."""
 
-import pytest
 from pilotcode.services.prompts import (
     get_system_prompt,
     get_tool_prompt,

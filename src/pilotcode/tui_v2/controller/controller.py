@@ -30,7 +30,6 @@ except ImportError:
 
 from pilotcode.permissions import get_tool_executor
 from pilotcode.state.app_state import AppState
-from pilotcode.components.repl import classify_task_complexity
 from pilotcode.orchestration.adapter import MissionAdapter
 from pilotcode.orchestration.report import (
     format_failure,

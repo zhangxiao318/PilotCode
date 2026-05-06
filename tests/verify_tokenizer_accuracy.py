@@ -364,7 +364,7 @@ def analyze():
     all_heu_errs = [abs(r["heuristic_err%"]) for r in all_results]
     avg_abs_err = sum(all_heu_errs) / len(all_heu_errs)
     max_abs_err = max(all_heu_errs)
-    print(f"\n  📊 Absolute error stats:")
+    print("\n  📊 Absolute error stats:")
     print(f"     Average: {avg_abs_err:.1f}%")
     print(f"     Maximum: {max_abs_err:.1f}%")
     print(
@@ -387,9 +387,9 @@ def analyze():
 
     # Specific findings
     if cjk_results and abs(cjk_avg_err) > 15:
-        print(f"\n  🔧 Recommendation: Adjust PROVIDER_CJK_RATIOS.")
+        print("\n  🔧 Recommendation: Adjust PROVIDER_CJK_RATIOS.")
         print(f"     Current ratios: {TokenEstimator.PROVIDER_CJK_RATIOS}")
-        print(f"     Suggested: measure actual ratios and update.")
+        print("     Suggested: measure actual ratios and update.")
 
     return all_results
 

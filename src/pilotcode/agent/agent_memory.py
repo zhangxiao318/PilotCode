@@ -8,8 +8,6 @@ Supports three scopes:
 - local: Project-local but not shared (.pilotcode/agent-memory-local/)
 """
 
-import os
-import json
 from pathlib import Path
 from typing import Callable
 from datetime import datetime, timezone

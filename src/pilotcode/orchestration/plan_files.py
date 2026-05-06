@@ -10,9 +10,8 @@ allowing plan state to survive session restarts and subagent forks.
 from __future__ import annotations
 
 import json
-import os
 import random
-import string
+import re
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any

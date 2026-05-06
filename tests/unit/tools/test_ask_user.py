@@ -1,10 +1,8 @@
 """Tests for AskUser tool async callback integration."""
 
-import asyncio
 import pytest
 from pilotcode.tools.ask_user_tool import (
     AskUserInput,
-    AskUserOutput,
     ask_user_call,
 )
 from pilotcode.tools.base import ToolUseContext

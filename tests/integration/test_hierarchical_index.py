@@ -1,8 +1,5 @@
 """Tests for hierarchical index builder."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from pilotcode.services.hierarchical_index import (

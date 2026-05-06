@@ -5,9 +5,7 @@ Provides the LLM with precise commands to compile/test code in each language.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any
 
 # Language detection by file extension
 _LANG_BY_EXT: dict[str, str] = {
@@ -25,7 +23,6 @@ _LANG_BY_EXT: dict[str, str] = {
     ".tsx": "typescript",
     ".java": "java",
     ".sh": "shell",
-    ".rs": "rust",
     ".kt": "kotlin",
     ".swift": "swift",
     ".rb": "ruby",

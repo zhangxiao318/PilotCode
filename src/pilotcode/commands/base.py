@@ -32,7 +32,6 @@ class CommandRegistry:
         self._load_user_aliases()
 
     def _aliases_path(self):
-        from pathlib import Path
         from ..utils.paths import get_config_dir
 
         return get_config_dir() / "aliases.json"

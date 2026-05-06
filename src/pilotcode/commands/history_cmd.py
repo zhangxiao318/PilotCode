@@ -7,7 +7,7 @@ from pathlib import Path
 
 from platformdirs import user_data_dir
 
-from .base import CommandHandler, register_command, CommandContext
+from .base import CommandContext
 
 HISTORY_FILE = Path(user_data_dir("pilotcode", "pilotcode")) / "history.json"
 

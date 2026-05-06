@@ -407,7 +407,6 @@ class SimpleCLI:
 
     async def _execute_tools_sequential(self, tool_messages: list) -> None:
         """Execute tools one at a time (safe mode)."""
-        from pilotcode.tools.base import ToolUseContext
 
         for tool_msg in tool_messages:
             tool_name = tool_msg.name

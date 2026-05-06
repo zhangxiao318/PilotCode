@@ -4,7 +4,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .base import ToolResult, ToolUseContext, build_tool
-from .registry import register_tool
 from .task_tools import _tasks
 
 
