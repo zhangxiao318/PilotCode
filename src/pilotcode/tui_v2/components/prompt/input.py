@@ -63,6 +63,8 @@ class PromptInput(TextArea):
         self._paste_buffers: dict[int, str] = {}  # id -> original text
         self._next_paste_id: int = 1
         self._pending_submit_text: str | None = None  # Original text if input is shortened
+        # Track previous text value for paste detection
+        self._prev_text: str = ""
         # Guard to prevent recursive Changed events when we set text programmatically
         self._ignore_text_change: bool = False
 
@@ -126,7 +128,7 @@ class PromptInput(TextArea):
 
         # Build full text: old_text + placeholder
         # ⟨...⟩ is extremely unlikely to collide with user input.
-        placeholder = f"⟨PASTE#{pid}+{added_lines}L⟩"
+        placeholder = f"[Pasted text #{pid} +{added_lines} lines]"
         return (old_text or "") + placeholder
 
     def _get_submit_text(self) -> str:
@@ -135,18 +137,16 @@ class PromptInput(TextArea):
             return self._pending_submit_text
         return self.text
 
-    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+    def on_changed(self, event: TextArea.Changed) -> None:
         """Detect and shorten large pastes."""
         if getattr(self, "_ignore_text_change", False):
             return
         if not hasattr(self, "_paste_buffers"):  # During __init__
             return
 
-        old_text = self.text  # Already changed, but we track the previous
-        if not hasattr(self, "_prev_text"):
-            self._prev_text = ""
-            return
-
+        # TextArea.Changed fires AFTER text has been updated, so self.text
+        # is already the new value. We compare against _prev_text to find
+        # what was added (the paste).
         old_val = self._prev_text
         new_val = self.text
 
@@ -181,7 +181,7 @@ class PromptInput(TextArea):
             final_text = display_text
             for pid, original in sorted(self._paste_buffers.items()):
                 lines = original.count("\n") + 1
-                placeholder = f"⟨PASTE#{pid}+{lines}L⟩"
+                placeholder = f"[Pasted text #{pid} +{lines} lines]"
                 final_text = final_text.replace(placeholder, original)
             text = final_text
         else:
@@ -371,8 +371,8 @@ class PromptWithMode(Vertical):
             self._syntax_status.remove_class("has-refs")
         self.post_message(self.Submitted(text=event.text, display_text=event.display_text))
 
-    def on_input_changed(self, event) -> None:
-        """Handle input changes from child TextArea."""
+    def on_changed(self, event: TextArea.Changed) -> None:
+        """Handle input changes from child PromptInput."""
         # Update syntax status
         self._update_syntax_status(self.input.text)
 

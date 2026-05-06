@@ -45,7 +45,7 @@ When users ask about current time/date (e.g., '现在几点了', 'what time is i
 Do NOT rely on any time information in the system prompt as it may be outdated.
 
 ## Operating Mode
-You operate in DIRECT mode by default — use tools proactively to complete tasks immediately. For complex multi-step tasks requiring careful planning, users may explicitly trigger plan mode with the `/plan` command."""
+You operate in DIRECT mode by default — for coding and system tasks, use tools proactively (write files, run commands, verify). For simple chat (greetings, echo), answer directly without tools. For complex multi-step tasks requiring careful planning, users may explicitly trigger plan mode with the `/plan` command."""
 
 
 def get_capabilities_prompt() -> str:
@@ -65,14 +65,15 @@ def get_output_style_prompt() -> str:
 - Be concise and direct. Get to the point quickly.
 - When referencing code, include file_path:line_number for navigation.
 - Use complete sentences in flowing prose. Avoid excessive headers or bullet lists.
-- Only use emojis if the user explicitly requests it."""
+- Only use emojis if the user explicitly requests it.
+- **Language**: ALWAYS respond in the SAME LANGUAGE as the user's request. If the user wrote in Chinese, respond in Chinese. If the user wrote in English, respond in English."""
 
 
 def get_core_instructions_prompt() -> str:
     """Get critical instructions that should always be present."""
     return """## CRITICAL INSTRUCTIONS
 
-1. **Use tools proactively** - Actually write files and run commands, don't just describe them
+1. **Use tools for coding/system tasks** - When the task involves files, code, commands, or verification: use tools proactively. Don't just describe — actually do it. For simple chat (greetings, echo), answer directly without tools.
 2. **Read before writing** - Check existing files before modifying them
 3. **TEST YOUR CODE** - Run the actual code/tests, don't just describe. Python: `python filename.py` or `python -m pytest`
 4. **Be specific** - Make precise, targeted file changes
@@ -392,7 +393,9 @@ def get_explorer_prompt() -> str:
 - Share file paths (absolute) relevant to the task
 - Include code snippets only when the exact text is load-bearing
 - Avoid emojis
-- Use `complete` when you have found the relevant information"""
+- After using tools, ALWAYS return a summary of what you found
+- Your final response must contain concrete findings, not just tool calls
+- DO NOT stop early — verify you have covered all aspects of the task before finishing"""
 
 
 def get_verifier_agent_prompt() -> str:

@@ -923,21 +923,20 @@ async def execute_bash(
         return BashOutput(stdout="", stderr=str(e), exit_code=-1, command=command)
 
 
-def _update_cwd_from_cd(command: str, current_cwd: str | None, set_app_state) -> None:
-    """Parse cd/Set-Location/chdir and update app_state.cwd if valid.
+def _resolve_cd_target(command: str, current_cwd: str | None) -> tuple[str | None, bool]:
+    """Parse cd/Set-Location/chdir from a command and resolve the target directory.
 
-    Handles compound commands separated by &&, ;, or ||.
+    Returns:
+        (resolved_path, changed) - resolved_path is None if no cd command found.
     """
     cmd = command.strip()
     if not cmd:
-        return
+        return None, False
 
     base = current_cwd or os.getcwd()
     new_cwd = base
     changed = False
 
-    # Split compound commands: cd .. && cd test  ->  ["cd ..", "cd test"]
-    # Also handles: cd ..; cd test; ls
     subcommands = [s.strip() for s in re.split(r"&&|;|\|\|", cmd)]
 
     for sub in subcommands:
@@ -945,10 +944,8 @@ def _update_cwd_from_cd(command: str, current_cwd: str | None, set_app_state) ->
             continue
         lower = sub.lower()
 
-        # Match cd / chdir / Set-Location with optional /d flag (Windows)
         m = re.match(r'^(?:cd|chdir|set-location)(?:\s+/d)?\s+["\']?(.+?)["\']?\s*$', lower)
         if not m:
-            # "cd" alone (no args) -> home directory
             if re.match(r"^(?:cd|chdir|set-location)\s*$", lower):
                 target = os.path.expanduser("~")
             else:
@@ -962,7 +959,16 @@ def _update_cwd_from_cd(command: str, current_cwd: str | None, set_app_state) ->
             new_cwd = os.path.normpath(os.path.join(new_cwd, target))
         changed = True
 
-    if changed and os.path.isdir(new_cwd):
+    return (new_cwd if changed else None), changed
+
+
+def _update_cwd_from_cd(command: str, current_cwd: str | None, set_app_state) -> None:
+    """Parse cd/Set-Location/chdir and update app_state.cwd if valid.
+
+    Handles compound commands separated by &&, ;, or ||.
+    """
+    new_cwd, changed = _resolve_cd_target(command, current_cwd)
+    if changed and new_cwd and os.path.isdir(new_cwd):
         set_app_state(lambda s: replace(s, cwd=new_cwd))
 
 
@@ -974,6 +980,26 @@ async def bash_call(
     on_progress: Any,
 ) -> ToolResult[BashOutput]:
     """Execute bash command."""
+    # Pre-check: if command contains cd to a non-existent directory, fail early
+    # without bothering the user with a permission dialog for a doomed command.
+    cwd = input_data.working_dir
+    if cwd is None:
+        if context.get_app_state:
+            app_state = context.get_app_state()
+            cwd = getattr(app_state, "cwd", None)
+        if not cwd:
+            cwd = resolve_cwd(context)
+    cd_target, has_cd = _resolve_cd_target(input_data.command, cwd)
+    if has_cd and cd_target and not os.path.isdir(cd_target):
+        return ToolResult(
+            data=BashOutput(
+                stdout="",
+                stderr=f"bash: cd: {cd_target}: No such file or directory",
+                exit_code=1,
+                command=input_data.command,
+            ),
+        )
+
     # Check for dangerous commands (unless force flag is set)
     if not input_data.force:
         danger_warning = check_dangerous_command(input_data.command)

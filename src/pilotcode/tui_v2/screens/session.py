@@ -250,7 +250,7 @@ class SessionScreen(Screen):
             return
 
         # Show user message in conversation exactly once.
-        # display_text shows paste placeholders (e.g. ⟨PASTE#1+22L⟩);
+        # display_text shows paste placeholders (e.g. Pasted text #1 +22 lines);
         # text (sent to the LLM) retains the full original content.
         if self.message_list:
             user_msg = UIMessage(

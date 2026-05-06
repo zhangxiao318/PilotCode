@@ -1421,7 +1421,7 @@ class MissionAdapter:
             True if full exploration + plan is needed, False to skip straight to execute.
         """
         decision = should_plan(user_request)
-        return decision in ("plan", "auto")
+        return decision in ("plan", "analyze", "auto")
 
     @staticmethod
     def _should_analyze_only(user_request: str) -> bool:

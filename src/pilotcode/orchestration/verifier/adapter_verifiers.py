@@ -17,9 +17,53 @@ from ..results import ExecutionResult
 from ..task_spec import TaskSpec
 from .base import VerificationResult, Verdict
 
+# Agent types that only read/explore — success = executed tools, not file changes
+_READ_ONLY_AGENT_TYPES = {"explorer", "verifier", "explainer", "planner"}
+
+
+def _l1_readonly_verifier(
+    task: TaskSpec, exec_result: ExecutionResult
+) -> VerificationResult | None:
+    """Validate read-only agents: success if tools were executed."""
+    has_output = bool(exec_result.output and exec_result.output.strip())
+    conv_len = exec_result.artifacts.get("conversation_length", 0)
+    had_tool_activity = isinstance(conv_len, (int, float)) and conv_len >= 2
+
+    if has_output or had_tool_activity:
+        return VerificationResult(
+            task_id=task.id,
+            level=1,
+            passed=True,
+            score=90.0 if has_output else 80.0,
+            feedback="Analysis/exploration task completed",
+            verdict=Verdict.APPROVE,
+        )
+    return None  # fall through to generic failure
+
+
+def _l1_coder_verifier(task: TaskSpec, exec_result: ExecutionResult) -> VerificationResult | None:
+    """Validate code-writing agents: success if output or file changes exist."""
+    has_output = bool(exec_result.output and exec_result.output.strip())
+    has_changes = bool(exec_result.artifacts.get("changed_files"))
+
+    if has_output or has_changes:
+        return VerificationResult(
+            task_id=task.id,
+            level=1,
+            passed=True,
+            score=100.0,
+            verdict=Verdict.APPROVE,
+        )
+    return None  # fall through to generic failure
+
 
 async def l1_simple_verifier(task: TaskSpec, exec_result: ExecutionResult) -> VerificationResult:
-    """L1: Basic verifier — execution must succeed and produce output."""
+    """L1: Basic verifier — execution must succeed and produce output.
+
+    Different agent types have different success criteria:
+    - explorer/verifier/explainer/planner: tool execution is enough
+    - coder/tester/debugger: need output or file changes
+    """
     if not exec_result.success:
         return VerificationResult(
             task_id=task.id,
@@ -30,48 +74,35 @@ async def l1_simple_verifier(task: TaskSpec, exec_result: ExecutionResult) -> Ve
             verdict=Verdict.REJECT,
         )
 
-    has_output = bool(exec_result.output and exec_result.output.strip())
-    has_changes = bool(exec_result.artifacts.get("changed_files"))
-    has_final_response = bool(exec_result.artifacts.get("final_response"))
+    agent_type = exec_result.artifacts.get("agent_type", "")
+    if agent_type in _READ_ONLY_AGENT_TYPES:
+        result = _l1_readonly_verifier(task, exec_result)
+        if result is not None:
+            return result
+    else:
+        result = _l1_coder_verifier(task, exec_result)
+        if result is not None:
+            return result
 
-    if not has_output and not has_changes:
-        # Analysis / read-only tasks legitimately produce no file changes.
-        # If there was tool activity (conversation turns > 1), treat as passed.
-        conv_len = exec_result.artifacts.get("conversation_length", 0)
-        if isinstance(conv_len, (int, float)) and conv_len > 2:
-            return VerificationResult(
-                task_id=task.id,
-                level=1,
-                passed=True,
-                score=80.0,
-                feedback="Analysis task — no file changes but tool interactions observed",
-                verdict=Verdict.APPROVE,
-            )
-        # Check the final_response artifact for analysis output
-        if has_final_response:
-            return VerificationResult(
-                task_id=task.id,
-                level=1,
-                passed=True,
-                score=80.0,
-                feedback="Analysis task — response recorded but no file changes",
-                verdict=Verdict.APPROVE,
-            )
+    # Generic fallback for unknown agent types or unmet criteria
+    has_final_response = bool(exec_result.artifacts.get("final_response"))
+    if has_final_response:
         return VerificationResult(
             task_id=task.id,
             level=1,
-            passed=False,
-            score=30.0,
-            feedback="Execution succeeded but produced no output or file changes",
-            verdict=Verdict.NEEDS_REWORK,
+            passed=True,
+            score=80.0,
+            feedback="Task completed — response recorded",
+            verdict=Verdict.APPROVE,
         )
 
     return VerificationResult(
         task_id=task.id,
         level=1,
-        passed=True,
-        score=100.0,
-        verdict=Verdict.APPROVE,
+        passed=False,
+        score=30.0,
+        feedback="Execution succeeded but produced no output or file changes",
+        verdict=Verdict.NEEDS_REWORK,
     )
 
 

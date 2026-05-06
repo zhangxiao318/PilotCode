@@ -266,6 +266,7 @@ def _probe_backend_limits(
     # 1. OpenAI-compatible -> GET /v1/models (most universal)
     # ------------------------------------------------------------------
     v1_models_works = False
+    v1_from_meta = False  # True if context_window came from meta.n_ctx_train
     try:
         with httpx.Client(timeout=3.0, follow_redirects=True) as client:
             headers = {}
@@ -283,15 +284,24 @@ def _probe_backend_limits(
                         if val is not None:
                             cap["context_window"] = int(val)
                             break
+                    # llama.cpp returns context size in meta.n_ctx_train
+                    if "context_window" not in cap:
+                        meta = model_data.get("meta", {})
+                        n_ctx = meta.get("n_ctx_train")
+                        if n_ctx is not None:
+                            cap["context_window"] = int(n_ctx)
+                            v1_from_meta = True
                     max_out = model_data.get("max_output_tokens")
                     if max_out is not None:
                         cap["max_tokens"] = int(max_out)
     except Exception as exc:
         logger.debug("Backend probe /v1/models failed: %s", exc)
 
-    # If we already got what we need, stop here — don't bother llama-specific
-    # or Ollama-specific endpoints for generic OpenAI-compatible servers.
-    if cap:
+    # If we got real limits from a standard OpenAI-compatible server, stop here.
+    # But if the only clue was meta.n_ctx_train (llama.cpp style), keep going
+    # and try /props — meta.n_ctx_train is the *training* length, not the
+    # actual runtime n_ctx which may be smaller due to deployment config.
+    if cap and not v1_from_meta:
         _backend_limits_cache[base_url] = cap
         logger.debug("Probed backend limits via /v1/models for %s: %s", base_url, cap)
         return cap
@@ -299,7 +309,7 @@ def _probe_backend_limits(
     # If /v1/models returned a valid model list but without limit fields,
     # this is a standard OpenAI-compatible server (vLLM, TGI, etc.).
     # Don't spam /props — it's llama-server-specific and causes ERROR logs.
-    if v1_models_works:
+    if v1_models_works and not v1_from_meta:
         _backend_limits_cache[base_url] = {}
         return None
 

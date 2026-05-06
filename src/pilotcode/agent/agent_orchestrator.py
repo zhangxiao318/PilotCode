@@ -357,14 +357,79 @@ Previous discussion:
                 if not response:
                     break
 
-                choice = response.get("choices", [{}])[0]
-                delta = choice.get("delta", {})
+                # Handle both streaming (choices/delta) and non-streaming formats
+                if "choices" in response:
+                    choice = response.get("choices", [{}])[0]
+                    delta = choice.get("delta", {})
+                    content = delta.get("content") or ""
+                    tool_calls_raw = delta.get("tool_calls")
+                else:
+                    content = response.get("content") or ""
+                    tool_calls_raw = response.get("tool_calls")
 
-                content = delta.get("content") or ""
-                tool_calls_raw = delta.get("tool_calls")
+                # Fallback: parse XML/pseudo-XML tool calls embedded in content
+                # (some local models output tool calls as text instead of native tool_calls)
+                if content and not tool_calls_raw:
+                    import re
+
+                    parsed_tools: list[dict[str, Any]] = []
+                    # Pattern 1: <tool_call>...<function=Name>...<parameter=key>value</parameter>...</function>...</tool_call>
+                    pattern = r"<tool_call>\s*<function=(\w+)>\s*(.*?)\s*</function>\s*</tool_call>"
+                    for match in re.finditer(pattern, content, re.DOTALL):
+                        tool_name = match.group(1)
+                        params_block = match.group(2)
+                        arguments: dict[str, Any] = {}
+                        param_pattern = r"<parameter=(\w+)>(.*?)</parameter>"
+                        for pmatch in re.finditer(param_pattern, params_block, re.DOTALL):
+                            arguments[pmatch.group(1)] = pmatch.group(2).strip()
+                        if tool_name:
+                            parsed_tools.append(
+                                {
+                                    "id": f"call_{len(parsed_tools)}",
+                                    "function": {
+                                        "name": tool_name,
+                                        "arguments": json.dumps(arguments),
+                                    },
+                                }
+                            )
+                    # Pattern 3: <function=Name>...<parameter=key>value</parameter>...</function>
+                    if not parsed_tools:
+                        pattern3 = r"<function=(\w+)>\s*(.*?)\s*</function>"
+                        for match in re.finditer(pattern3, content, re.DOTALL):
+                            tool_name = match.group(1)
+                            params_block = match.group(2)
+                            arguments: dict[str, Any] = {}
+                            param_pattern = r"<parameter=(\w+)>(.*?)</parameter>"
+                            for pmatch in re.finditer(param_pattern, params_block, re.DOTALL):
+                                arguments[pmatch.group(1)] = pmatch.group(2).strip()
+                            if tool_name:
+                                parsed_tools.append(
+                                    {
+                                        "id": f"call_{len(parsed_tools)}",
+                                        "function": {
+                                            "name": tool_name,
+                                            "arguments": json.dumps(arguments),
+                                        },
+                                    }
+                                )
+                    if parsed_tools:
+                        tool_calls_raw = parsed_tools
+                        # Remove XML tool call blocks from content so it doesn't appear in output
+                        content = re.sub(
+                            r"<tool_call>\s*<function=\w+>\s*.*?\s*</function>\s*</tool_call>",
+                            "",
+                            content,
+                            flags=re.DOTALL,
+                        )
+                        content = re.sub(
+                            r"<function=\w+>\s*.*?\s*</function>", "", content, flags=re.DOTALL
+                        )
+                        content = content.strip()
 
                 # Build assistant message with content and/or tool_calls
-                assistant_msg = MCMessage(role="assistant", content=content or None)
+                # Always include content (even empty string) so local backends
+                # like llama.cpp don't choke on missing field.
+                assistant_msg = MCMessage(role="assistant", content=content or "")
                 if tool_calls_raw:
                     assistant_msg.tool_calls = []
                     for tc in tool_calls_raw:
@@ -434,15 +499,26 @@ Previous discussion:
                 # No content and no tool calls
                 break
 
+            # Fallback: if agent executed tools but never produced a final
+            # text summary, synthesize one from the last tool result so the
+            # caller (and the user) can see what was discovered.
+            if not agent.output and agent.turns > 1:
+                # Find the most recent tool result in messages
+                for msg in reversed(messages):
+                    if getattr(msg, "role", None) == "tool" and getattr(msg, "content", None):
+                        agent.output = f"[Tool result: {msg.name}]\n{msg.content[:1500]}"
+                        break
+
             agent.status = AgentStatus.COMPLETED
             return agent.output or ""
         except Exception as e:
             import traceback
 
+            tb = traceback.format_exc()
             traceback.print_exc()
             agent.status = AgentStatus.FAILED
-            agent.error = str(e)
-            return f"[Agent {agent.agent_id} failed: {e}]"
+            agent.error = f"{e}\n{tb}"
+            return f"[Agent {agent.agent_id} failed: {e}]\n{tb}"
 
 
 # Global orchestrator

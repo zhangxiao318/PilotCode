@@ -223,6 +223,7 @@ class TUIController:
         - app_state (for tool resolve_cwd)
 
         Returns True if the directory was successfully changed.
+        The caller should verify the directory exists before calling this.
         """
         # Expand ~ and resolve to absolute path
         new_cwd = os.path.expanduser(new_cwd)
@@ -234,18 +235,7 @@ class TUIController:
         # (e.g. git, file dialogs) operate in the correct path.
         try:
             os.chdir(new_cwd)
-        except OSError as e:
-            warning = f"Warning: could not change directory to {new_cwd}: {e}"
-            self._pending_notifications.append(("system", {"text": warning}))
-            # Inject into LLM context so it knows the directory change failed
-            if getattr(self, "query_engine", None) is not None:
-                instr = (
-                    f"[SYSTEM] The directory {new_cwd} does not exist.\n"
-                    f"The current directory remains {old_cwd}.\n"
-                    f"Do NOT attempt to 'cd' to {new_cwd} - the directory does not exist.\n"
-                    f"Use Bash to list the parent directory to see what's available."
-                )
-                self.query_engine.messages.append(SystemMessage(content=instr))
+        except OSError:
             return False
         # Only update state if chdir succeeded
         self.session_options["cwd"] = new_cwd
@@ -660,21 +650,36 @@ class TUIController:
                 error = result.get("error", "Unknown error") if result else "Mission failed"
                 report_parts.append(format_failure(result or {}, error))
 
+            # Show task outputs (agent analysis results)
+            task_outputs = result.get("task_outputs", {})
+            if task_outputs:
+                lines = ["📊 Analysis Results:"]
+                for tid, tdata in task_outputs.items():
+                    title = tdata.get("title", tid)
+                    output_text = tdata.get("output", "")
+                    if output_text:
+                        if hasattr(output_text, "output"):
+                            output_text = getattr(output_text, "output", "")
+                        snippet = str(output_text)[:600].strip()
+                        if snippet:
+                            lines.append(f"\n**{title}**")
+                            lines.append(snippet)
+                if len(lines) > 1:
+                    report_parts.append("\n".join(lines))
+
             # Show mission plan with final task states
             mission_dict = result.get("mission", {}) if result else {}
             phases = mission_dict.get("phases", [])
+            task_states = snapshot.get("task_states", {})
             if phases:
                 lines = ["📋 Mission Plan Executed:"]
                 for p in phases:
                     lines.append(f"  • Phase: {p.get('title', 'Untitled')}")
                     for t in p.get("tasks", []):
                         task_id = t.get("id", "")
-                        state = t.get("state", "unknown")
+                        state = task_states.get(task_id, "unknown")
                         emoji = _STATE_EMOJI.get(state, "❓")
                         lines.append(f"    {emoji} {t.get('title', task_id)}")
-                # Append two trailing spaces to each line so Markdown
-                # renders them as hard line breaks instead of collapsing
-                # single \n into a space.
                 report_parts.append("\n".join(line + "  " for line in lines))
 
             full_report = "\n\n".join(report_parts)
@@ -763,11 +768,23 @@ class TUIController:
         from pilotcode.components.repl import _extract_target_path
 
         detected_cwd = _extract_target_path(text)
-        if detected_cwd and detected_cwd != self.session_options.get("cwd", str(Path.cwd())):
-            if self._update_session_cwd(detected_cwd):
-                yield UIMessage(
-                    type=UIMessageType.SYSTEM,
-                    content=f"📁 Working directory updated to: {detected_cwd}",
+        current_cwd = self.session_options.get("cwd", str(Path.cwd()))
+        if detected_cwd and detected_cwd != current_cwd:
+            if os.path.isdir(detected_cwd):
+                if self._update_session_cwd(detected_cwd):
+                    yield UIMessage(
+                        type=UIMessageType.SYSTEM,
+                        content=f"📁 Working directory updated to: {detected_cwd}",
+                    )
+            else:
+                # Directory does not exist — don't abort the flow.
+                # Instead, let the LLM know via context so it can respond
+                # naturally to the user (e.g., "That directory doesn't exist,
+                # the current directory is ...").
+                text = (
+                    f"[Context: The user mentioned directory '{detected_cwd}' "
+                    f"but it does not exist. Current directory: {current_cwd}]\n\n"
+                    f"{text}"
                 )
 
         # New user input = fresh context: reset FileEdit failure tracking
