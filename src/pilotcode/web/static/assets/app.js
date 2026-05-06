@@ -9,6 +9,7 @@ let sessions = [];
 let expandedGroups = new Set();
 let archivedExpanded = false;
 let contextMenuSessionId = null;
+let isSending = false;
 
 // DOM elements
 const chatArea = document.getElementById('chatArea');
@@ -721,9 +722,11 @@ function setupEventListeners() {
 
 // Send user message
 function sendUserMessage() {
+    if (isSending) return;
     const content = messageInput.value.trim();
     if (!content || !isConnected) return;
     
+    isSending = true;
     setInputState(true);
     
     const msgId = ++messageId;
@@ -753,6 +756,7 @@ function setInputState(loading) {
         messageInput.focus();
         sendBtn.classList.remove('hidden');
         stopBtn.classList.add('hidden');
+        isSending = false;
     }
     // Update send button disabled state based on input
     sendBtn.disabled = messageInput.value.trim().length === 0 || !isConnected;
@@ -772,49 +776,80 @@ function scrollToBottom() {
 // Render markdown (simple version)
 function renderMarkdown(text) {
     if (!text) return '';
-    
-    // Escape HTML
-    text = escapeHtml(text);
-    
-    // Code blocks - process first to preserve newlines
+
+    // Extract code blocks first
     const codeBlocks = [];
     text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
         const id = codeBlocks.length;
-        // Store code with original newlines preserved
         codeBlocks.push({ lang: lang || 'text', code: code.trim() });
         return `__CODE_BLOCK_${id}__`;
     });
-    
+
+    // Escape HTML
+    text = escapeHtml(text);
+
+    // Headings
+    text = text.replace(/^###### (.*?)$/gm, '<h6>$1</h6>');
+    text = text.replace(/^##### (.*?)$/gm, '<h5>$1</h5>');
+    text = text.replace(/^#### (.*?)$/gm, '<h4>$1</h4>');
+    text = text.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+    text = text.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+    text = text.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+
     // Inline code
     text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-    
+
     // Bold
     text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    
+
     // Italic
     text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    
+
     // Links
     text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-    
-    // Lists
-    text = text.replace(/^(\s*)-\s+(.+)$/gm, (match, indent, item) => {
-        return `<li style="margin-left: ${indent.length * 8}px">${item}</li>`;
-    });
-    
-    // Collapse excessive consecutive newlines before rendering
-    text = text.replace(/\n{2,}/g, '\n');
-    
-    // Line breaks (outside code blocks)
-    text = text.replace(/\n/g, '<br>');
 
-    // Remove <br> between adjacent list items to prevent double spacing
-    text = text.replace(/<\/li><br><li>/g, '</li><li>');
-    text = text.replace(/<\/li><br>/g, '</li>');
+    // Lists: wrap consecutive items in <ul>
+    const lines = text.split('\n');
+    const processed = [];
+    let inList = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const m = line.match(/^(\s*)-\s+(.+)$/);
+        if (m) {
+            if (!inList) {
+                processed.push('<ul>');
+                inList = true;
+            }
+            processed.push(`<li style="margin-left: ${m[1].length * 8}px">${m[2]}</li>`);
+        } else {
+            if (inList) {
+                processed.push('</ul>');
+                inList = false;
+            }
+            processed.push(line);
+        }
+    }
+    if (inList) processed.push('</ul>');
+    text = processed.join('\n');
+
+    // Paragraphs: split by blank lines
+    const paragraphs = text.split(/\n\n+/);
+    const result = [];
+    for (const para of paragraphs) {
+        const trimmed = para.trim();
+        if (!trimmed) continue;
+        // Skip block-level elements (headings, lists, code block placeholders)
+        if (/^<(h[1-6]|ul|ol|blockquote|pre|div)\b/.test(trimmed)) {
+            result.push(trimmed);
+        } else {
+            const content = trimmed.replace(/\n/g, '<br>');
+            result.push(`<p>${content}</p>`);
+        }
+    }
+    text = result.join('\n');
 
     // Restore code blocks
     codeBlocks.forEach((block, id) => {
-        // Escape HTML in code, but preserve newlines as actual newlines for <pre>
         const escapedCode = block.code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
         text = text.replace(`__CODE_BLOCK_${id}__`, `<div class="code-block">
             <div class="code-header">
@@ -824,7 +859,7 @@ function renderMarkdown(text) {
             <pre><code>${escapedCode}</code></pre>
         </div>`);
     });
-    
+
     return text;
 }
 
