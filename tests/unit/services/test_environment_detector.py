@@ -34,10 +34,14 @@ class TestPlatformDetection:
             assert "name" in shell
 
     def test_detect_shell_windows(self):
-        with patch("pilotcode.services.environment_detector.sys.platform", "win32"):
+        with (
+            patch("pilotcode.services.environment_detector.sys.platform", "win32"),
+            patch("pilotcode.services.environment_detector.shutil.which", return_value=None),
+        ):
             shell = detect_shell()
             assert shell["is_windows"]
             assert not shell["is_posix"]
+            assert shell["name"] == "cmd"
 
 
 class TestCompilerDetection:
