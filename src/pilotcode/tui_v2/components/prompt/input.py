@@ -181,8 +181,9 @@ class PromptInput(TextArea):
         if not text:
             return
 
-        # Reset paste numbering for next round
+        # Reset paste state for next round
         self._next_paste_id = 1
+        self._pending_submit_text = None
 
         # Use display_text (with placeholders) for conversation history
         self.post_message(self.Submitted(text=text, display_text=display_text))
@@ -331,10 +332,10 @@ class PromptWithMode(Vertical):
     class Submitted(Message):
         """Message sent when input is submitted."""
 
-    def __init__(self, text: str, display_text: str | None = None):
-        self.text = text
-        self.display_text = display_text or text
-        super().__init__()
+        def __init__(self, text: str, display_text: str | None = None):
+            self.text = text
+            self.display_text = display_text or text
+            super().__init__()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

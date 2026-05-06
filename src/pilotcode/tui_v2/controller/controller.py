@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Callable
 from dataclasses import dataclass, replace
 from enum import Enum, auto
@@ -282,7 +283,6 @@ class TUIController:
 
     def _init_session(self) -> None:
         """Create a new session or restore an existing one."""
-        from datetime import datetime
         from pilotcode.services.session_persistence import (
             get_session_persistence,
             load_session,
