@@ -124,7 +124,11 @@ class DagExecutor:
     def get_ready_tasks(self) -> list[DagNode]:
         """Get all tasks whose dependencies are satisfied.
 
-        Returns tasks that are in PENDING state and all dependencies are VERIFIED.
+        Returns tasks that are in PENDING or IN_PROGRESS (retry) state
+        and all dependencies are VERIFIED or DONE.
+
+        IN_PROGRESS tasks are returned so rework retries can be re-scheduled.
+        _enqueue_ready filters out tasks already running in active_workers.
         """
         if not self._built:
             self.build()
@@ -134,7 +138,7 @@ class DagExecutor:
 
         ready = []
         for node in self.nodes.values():
-            if node.state != TaskState.PENDING:
+            if node.state not in (TaskState.PENDING, TaskState.IN_PROGRESS):
                 continue
 
             # Check all dependencies (VERIFIED or DONE counts as satisfied)
