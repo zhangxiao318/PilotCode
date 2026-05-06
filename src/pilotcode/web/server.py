@@ -436,7 +436,14 @@ class WebSocketManager:
     async def send_to_client(self, websocket, message: dict):
         """Send message to specific client."""
         try:
-            await websocket.send(json.dumps(message))
+            # Defensive: Windows websockets.send can hang in edge cases;
+            # wrap with timeout so cancel/interrupt always works.
+            await asyncio.wait_for(
+                websocket.send(json.dumps(message)),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            print("[WebSocket] Send timed out (10s), client may be unresponsive")
         except websockets.exceptions.ConnectionClosed:
             # Client disconnected, ignore
             pass
