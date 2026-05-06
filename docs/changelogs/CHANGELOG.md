@@ -4,6 +4,51 @@
 
 ---
 
+## 2026-05-06
+
+### P-EVR 编排器稳定性（核心修复）
+- **死锁修复**：`_enqueue_ready` 中 `launched` 标志未重置 + `_ready_cache` 未失效导致无限循环。
+- **动态并发**：根据队列深度和平均完成时间自动调整 `_max_workers`（上限 8）。
+- **上下文预算拆分**：并发任务自动均分 `mission.context_budget`，防止 OOM/上下文爆炸。
+- **Rework Retry 调度**：`get_ready_tasks()` 返回 `IN_PROGRESS` 任务，确保 retry 后能被重新调度（此前空等死锁）。
+- **取消机制完善**：`cancel_mission()` 处理 `IN_PROGRESS`；TUI `Ctrl+C` / `Escape` 中断 mission；验证流程取消短路。
+
+### Token 计算与三层上下文管理
+- 新增 `ContextArchive` + `/context list|search|recall` + `/memory` 命令，支持结构化摘要持久化。
+- Token 估算：以 `api_total` 为基准 + 10% 安全边距，自动检测 CJK 比例。
+- Anthropic cache token 归一化。
+
+### 认证与探测
+- `_probe_backend_limits` 携带 `Authorization: Bearer {api_key}`，修复 LiteLLM Proxy 401。
+
+### 代码审查修复
+- Orchestrator 空 workers 取消路径返回明确的取消状态。
+- Adapter `_tool_semaphore` 提升为实例变量。
+- ContextArchive IO 异常改为 `logger.warning`。
+- TUI paste 占位符 + 自动还原。
+
+---
+
+## 2026-05-05
+
+### 统一 Prompt 架构
+- 新增 `prompts.py` 服务模块，统一 planner / worker / verifier prompt。
+- 按模型能力和任务类型动态选择模板。
+
+### 三阶段 Agent 架构升级
+- 拆分为 explorer / coder / verifier 三种 Agent，独立 system prompt、tool 集合和记忆空间。
+- MissionAdapter 自动路由，新增 `agent_memory.py` 持久化经验。
+
+### 环境检测器
+- 自动检测项目类型（Python、Node.js、Rust、Go、Java、C/C++）。
+- 动态注入编译/构建指导；`TestRunnerVerifier` 支持 C/C++ 编译检查。
+
+### Plan 模式决策鲁棒性
+- 修复 `classify_task_complexity` 过度触发 PLAN 模式的问题。
+- 更严格的复杂度评分阈值 + 元特征检测。
+
+---
+
 ## 2026-05-02
 
 ### 模型配置与向导更新
@@ -21,6 +66,11 @@
 ### CLI 与测试修复
 - 修复 `main()` 内冗余局部 `import asyncio` 导致的 `UnboundLocalError`。
 - 远程模型测试补充 mock `_probe_backend_limits`，测试耗时从 55 秒降至 0.33 秒。
+
+### 性能微调
+- 按任务缓存编译器检查结果，默认 worker turn limits 减半。
+- 工具结果截断阈值从 20% 降至 10%（可用上下文）。
+- 按模型能力分级 plan prompt；条件性 FileRead-before-FileEdit 提示；强模型短路继续提示。
 
 ---
 
