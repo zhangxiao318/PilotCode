@@ -185,9 +185,9 @@ class ContextArchive:
         Returns:
             Archive entry ID.
         """
-        from hashlib import md5
+        import uuid
 
-        entry_id = md5(str(datetime.now().timestamp()).encode()).hexdigest()[:12]
+        entry_id = uuid.uuid4().hex[:12]
         timestamp = datetime.now(tz=timezone.utc).isoformat()
 
         # Build archive entry
@@ -241,21 +241,25 @@ class ContextArchive:
     def list_archives(self) -> list[dict[str, Any]]:
         """List all archive entries with metadata."""
         archives = []
-        for path in sorted(self.base_dir.glob("compact_*.json")):
+        for path in self.base_dir.glob("compact_*.json"):
             try:
                 data = json.loads(path.read_text())
                 archives.append(
-                    {
-                        "archive_id": data.get("archive_id"),
-                        "timestamp": data.get("timestamp"),
-                        "entry_count": data.get("entry_count", 0),
-                        "token_saved": data.get("token_saved", 0),
-                        "summary": data.get("summary", {}).get("primary_request", "")[:100],
-                    }
+                    (
+                        {
+                            "archive_id": data.get("archive_id"),
+                            "timestamp": data.get("timestamp"),
+                            "entry_count": data.get("entry_count", 0),
+                            "token_saved": data.get("token_saved", 0),
+                            "summary": data.get("summary", {}).get("primary_request", "")[:100],
+                        },
+                        path.stat().st_mtime,
+                    )
                 )
             except Exception:
                 continue
-        return sorted(archives, key=lambda a: a.get("timestamp", ""), reverse=True)
+        archives.sort(key=lambda x: (x[0].get("timestamp", ""), x[1]), reverse=True)
+        return [a[0] for a in archives]
 
     def get_archive(self, archive_id: str) -> dict[str, Any] | None:
         """Get a specific archive by ID."""
