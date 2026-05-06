@@ -386,6 +386,31 @@ class TUIController:
         """
         self._permission_callback = callback
 
+    @property
+    def current_mission(self) -> dict | None:
+        """Get current mission tracking info, or None if no mission running."""
+        return getattr(self, "_current_mission", None)
+
+    def cancel_mission(self) -> dict | None:
+        """Cancel the currently running mission and return partial status.
+
+        Returns:
+            Dict with partial results if a mission was running, or None.
+        """
+        mission = getattr(self, "_current_mission", None)
+        if mission is None:
+            return None
+
+        cancel_event = mission.get("cancel_event")
+        if cancel_event and not cancel_event.is_set():
+            cancel_event.set()
+            mission["cancelled"] = True
+
+        return {
+            "cancelled": True,
+            "partial_tasks": mission.get("partial_tasks", []),
+        }
+
     async def _run_pevr_mode(self, text: str) -> AsyncIterator[UIMessage]:
         """Run a complex task in P-EVR orchestration mode.
 
@@ -396,6 +421,13 @@ class TUIController:
         import asyncio
 
         cancel_event = asyncio.Event()
+        self._current_mission = {
+            "cancel_event": cancel_event,
+            "mission_task": None,
+            "partial_tasks": [],
+            "cancelled": False,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
         # Pass actual context window so strategy selector doesn't fall back
         # to the default 16K budget (which triggers BALANCED → 300-line limit).
         ctx_window = self.query_engine.config.context_window if self.query_engine else 128_000
@@ -424,6 +456,7 @@ class TUIController:
         mission_task = asyncio.create_task(
             adapter.run(text, progress_callback=progress_cb, cwd=cwd)
         )
+        self._current_mission["mission_task"] = mission_task
 
         yield UIMessage(
             type=UIMessageType.SYSTEM,
@@ -433,6 +466,29 @@ class TUIController:
         # Poll for progress events while mission runs
         result: dict | None = None
         while not mission_task.done():
+            # Check for cancellation signal
+            if self._current_mission.get("cancelled"):
+                mission_task.cancel()
+                try:
+                    await mission_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                yield UIMessage(
+                    type=UIMessageType.SYSTEM,
+                    content="⏸  Mission interrupted by user.",
+                )
+                # Report partial progress
+                partial_tasks = self._current_mission.get("partial_tasks", [])
+                if partial_tasks:
+                    done = sum(1 for t in partial_tasks if t.get("done"))
+                    failed = sum(1 for t in partial_tasks if t.get("failed"))
+                    yield UIMessage(
+                        type=UIMessageType.SYSTEM,
+                        content=f"Partial progress: {done} completed, {failed} failed, "
+                        f"{len(partial_tasks) - done - failed} pending.",
+                    )
+                break
+
             # Drain event buffer
             while self._pevr_events:
                 event_type, data = self._pevr_events.pop(0)

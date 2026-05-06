@@ -79,6 +79,7 @@ class SessionScreen(Screen):
         ("ctrl+y", "copy_last_assistant", "Copy Assistant"),
         ("ctrl+o", "copy_last_code", "Copy Code Block"),
         ("ctrl+f", "toggle_search", "Search"),
+        ("escape", "interrupt_mission", "Interrupt"),
     ]
 
     sidebar_visible: reactive[bool] = reactive(False)
@@ -434,8 +435,18 @@ class SessionScreen(Screen):
         self.app.exit()
 
     def action_copy(self):
-        """Copy last assistant message to clipboard (prevents Ctrl+C from exiting)."""
-        # Find last assistant message
+        """Copy last assistant message to clipboard.
+
+        If a mission is currently executing, triggers interrupt instead.
+        """
+        # If a mission is running, interrupt it
+        if self.controller and self.controller.current_mission:
+            result = self.controller.cancel_mission()
+            if result:
+                self._add_system_message("⏸  Mission interrupted. Type a message to continue, or ask to adjust the plan.")
+            return
+
+        # Otherwise copy last assistant reply
         if not self.message_list:
             return
 
@@ -549,7 +560,16 @@ class SessionScreen(Screen):
     def action_toggle_search(self):
         """Toggle search bar."""
         if self.search_bar:
-            self.search_bar.toggle()
+            self.search_bar.visible = not self.search_bar.visible
+
+    def action_interrupt_mission(self):
+        """Interrupt the currently running mission (Escape key)."""
+        if self.controller and self.controller.current_mission:
+            result = self.controller.cancel_mission()
+            if result:
+                self._add_system_message(
+                    "⏸  Mission interrupted. You can now type a new message to adjust the plan or continue."
+                )
 
     def action_next_match(self):
         """Go to next search match."""
