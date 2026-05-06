@@ -13,7 +13,7 @@ from ..agent import get_agent_manager, AgentStatus, ENHANCED_AGENT_DEFINITIONS
 def _capture(renderable) -> str:
     """Capture Rich output as a plain string for TUI display."""
     buf = io.StringIO()
-    console = Console(file=buf, force_terminal=True, width=120)
+    console = Console(file=buf, force_terminal=False, width=120)
     console.print(renderable)
     return buf.getvalue()
 
@@ -42,7 +42,7 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
 
         table = Table(
             title="Agent Status" + (" (all)" if show_all else " (persistent + active)"),
-            box=box.ROUNDED,
+            box=box.ASCII,
             show_header=True,
             header_style="bold magenta",
         )
@@ -119,7 +119,7 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
 
         definition = agent.definition
 
-        table = Table(box=box.ROUNDED)
+        table = Table(box=box.ASCII)
         table.add_column("Property", style="cyan")
         table.add_column("Value", style="white")
 
@@ -180,7 +180,7 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
         """List available agent types."""
         table = Table(
             title="Available Agent Types",
-            box=box.ROUNDED,
+            box=box.ASCII,
         )
 
         table.add_column("Type", style="cyan")
