@@ -39,8 +39,3 @@ async def clean_command(args: list[str], context: CommandContext) -> str:
 
     except Exception as e:
         return f"Error: {e}"
-
-
-register_command(
-    CommandHandler(name="clean", description="Clean untracked files", handler=clean_command)
-)

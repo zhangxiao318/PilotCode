@@ -1436,6 +1436,7 @@ Use the subgraph names below to drill down with `subgraph="<name>"` if you need 
                 "total_files": self._stats.total_files,
                 "total_symbols": self._stats.total_symbols,
                 "last_indexed": self._stats.last_indexed,
+                "languages": self._stats.languages,
             },
             "indexed_files": list(self._indexed_files),
             "file_hashes": self._file_hashes,
@@ -1461,6 +1462,7 @@ Use the subgraph names below to drill down with `subgraph="<name>"` if you need 
         self._stats.total_files = stats.get("total_files", 0)
         self._stats.total_symbols = stats.get("total_symbols", 0)
         self._stats.last_indexed = stats.get("last_indexed", 0)
+        self._stats.languages = stats.get("languages", {})
 
         # Also import symbol index
         symbol_cache_path = str(Path(input_path).with_suffix(".symbols.json"))

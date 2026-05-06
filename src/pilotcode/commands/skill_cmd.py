@@ -97,4 +97,6 @@ async def skills_command(args: list[str], context: CommandContext) -> str:
         return f"Unknown action: {action}. Use: create, info, delete"
 
 
-register_command(CommandHandler(name="skills", description="Manage skills", handler=skills_command))
+register_command(
+    CommandHandler(name="skills", hidden=True, description="Manage skills", handler=skills_command)
+)

@@ -222,6 +222,14 @@ _EVENT_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "task:state_changed": lambda d: (
         f"📊 {d.get('task_id', '')}: {d.get('from', '')} → {d.get('to', '')}"
     ),
+    "task:exception": lambda d: (
+        f"💥 Exception in {d.get('task_id', '')}: {d.get('error', 'unknown error')[:120]}"
+    ),
+    "task:timeout": lambda d: (f"⏱️ Timeout: {d.get('task_id', '')} exceeded time limit"),
+    "task:max_rework_exceeded": lambda d: (f"🚫 Max retries exceeded: {d.get('task_id', '')}"),
+    "task:cancelled_dependency_failure": lambda d: (
+        f"⛓️ Cancelled: {d.get('task_id', '')} (dependency failed)"
+    ),
 }
 
 

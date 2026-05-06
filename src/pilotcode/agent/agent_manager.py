@@ -102,6 +102,10 @@ class SubAgent:
     worktree_path: str | None = None
     worktree_branch: str | None = None
 
+    # Lifecycle: ephemeral agents are single-use PLAN-mode workers.
+    # They are deleted immediately after task completion and skipped on restart.
+    is_ephemeral: bool = False
+
     # Memory paths (transcript, state file)
     transcript_path: str | None = None
     state_path: str | None = None
@@ -131,6 +135,7 @@ class SubAgent:
             "is_background": self.is_background,
             "worktree_path": self.worktree_path,
             "worktree_branch": self.worktree_branch,
+            "is_ephemeral": self.is_ephemeral,
             "transcript_path": self.transcript_path,
         }
 
@@ -158,6 +163,7 @@ class SubAgent:
             is_background=data.get("is_background", False),
             worktree_path=data.get("worktree_path"),
             worktree_branch=data.get("worktree_branch"),
+            is_ephemeral=data.get("is_ephemeral", False),
             transcript_path=data.get("transcript_path"),
         )
         return agent
@@ -338,16 +344,66 @@ class AgentManager:
                 f.write(json.dumps(asdict(msg), default=str) + "\n")
 
     def _load_all(self):
-        """Load all persisted agents."""
+        """Load persisted agents with lifecycle-aware cleanup.
+
+        Rules:
+        - Ephemeral (PLAN-mode worker) agents: auto-delete if completed/failed,
+          regardless of age. They are single-use and should never survive restart.
+        - Persistent (user-created / background) agents: keep for 30 days,
+          then delete if completed/failed.
+        """
+        # Always start from clean memory state so restarts don't accumulate
+        self.agents.clear()
+        self.workflows.clear()
+        self.teams.clear()
+
         if not self.storage_dir.exists():
             return
 
-        for path in sorted(self.storage_dir.glob("*.json")):
+        from datetime import datetime, timezone, timedelta
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
+        for path in self.storage_dir.glob("*.json"):
             if path.name.startswith("workflow_"):
                 continue
             try:
                 data = json.loads(path.read_text())
                 agent = SubAgent.from_dict(data)
+                status = getattr(agent, "status", None)
+                is_ephemeral = getattr(agent, "is_ephemeral", None)
+
+                # Rule 1: ephemeral / legacy single-use workers.
+                # Legacy agents (pre-is_ephemeral) default to cleanup.
+                if is_ephemeral is not False:
+                    # Completed/failed/cancelled → delete immediately
+                    if status in (
+                        AgentStatus.COMPLETED,
+                        AgentStatus.FAILED,
+                        AgentStatus.CANCELLED,
+                    ):
+                        path.unlink(missing_ok=True)
+                        continue
+                    # Pending but file untouched for >1h → dead worker from crash
+                    if status == AgentStatus.PENDING:
+                        try:
+                            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                            if mtime < datetime.now(timezone.utc) - timedelta(hours=1):
+                                path.unlink(missing_ok=True)
+                                continue
+                        except Exception:
+                            pass
+
+                # Rule 2: persistent agents get a 30-day grace period.
+                if status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.CANCELLED):
+                    try:
+                        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                        if mtime < cutoff:
+                            path.unlink(missing_ok=True)
+                            continue
+                    except Exception:
+                        pass
+
                 self.agents[agent.agent_id] = agent
             except Exception:
                 pass
@@ -395,6 +451,7 @@ class AgentManager:
         parent_id: str | None = None,
         is_background: bool = False,
         team_name: str | None = None,
+        is_ephemeral: bool = False,
     ) -> SubAgent:
         """Create a new sub-agent.
 
@@ -404,6 +461,8 @@ class AgentManager:
             parent_id: Parent agent ID for tree tracking
             is_background: Whether this agent runs in background
             team_name: Team name for group execution
+            is_ephemeral: If True, agent is a single-use worker and will be
+                auto-deleted after completion. PLAN-mode agents set this.
 
         Returns:
             Created SubAgent
@@ -425,6 +484,7 @@ class AgentManager:
             max_turns=definition.max_turns,
             parent_id=parent_id,
             is_background=is_background or definition.background,
+            is_ephemeral=is_ephemeral,
             team_name=team_name,
             state_path=str(self._agent_path(agent_id)),
             transcript_path=str(self._transcript_path(agent_id)),

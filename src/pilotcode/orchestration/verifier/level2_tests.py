@@ -574,8 +574,10 @@ class TestRunnerVerifier(BaseVerifier):
                     build_system = dict(build_system)
                     build_system["cmd"] = ["npm", "test"]
                     build_system.pop("fallback_cmd", None)
-            except Exception:
-                pass
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).debug("Build system detection failed: %s", exc)
 
         # Check primary command exists
         binary = build_system["cmd"][0]

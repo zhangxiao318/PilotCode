@@ -19,6 +19,7 @@ _CORE_TOOL_NAMES: set[str] = {
     "ApplyPatch",
     "Glob",
     "Grep",
+    "CodeSearch",
     "AskUser",
 }
 
@@ -36,7 +37,7 @@ _CONTEXT_TOOL_GROUPS: dict[str, set[str]] = {
     "worktree": {"Worktree"},
     "message": {"SendMessage", "ReceiveMessage"},
     "lsp": {"LSP"},
-    "code_index": {"CodeIndex", "CodeSearch", "CodeContext"},
+    "code_index": {"CodeIndex", "CodeContext"},
     "repl": {"REPL"},
     "skill": {"Skill"},
     "sleep": {"Sleep"},

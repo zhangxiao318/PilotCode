@@ -34,6 +34,3 @@ async def reset_command(args: list[str], context: CommandContext) -> str:
 
     except Exception as e:
         return f"Error: {e}"
-
-
-register_command(CommandHandler(name="reset", description="Reset git state", handler=reset_command))

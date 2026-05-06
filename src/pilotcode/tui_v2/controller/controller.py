@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from collections import deque
 from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Callable
 from dataclasses import dataclass, replace
@@ -447,13 +448,14 @@ class TUIController:
         worker_buffer = ""
         worker_streaming = False
         current_task_id = ""
+        tool_use_counter = 0
 
         def progress_cb(event_type: str, data: dict) -> None:
-            nonlocal mission_displayed, last_progress
+            nonlocal mission_displayed, last_progress, tool_use_counter
             # Buffer events; actual yielding happens in the generator below
             self._pevr_events.append((event_type, data))
 
-        self._pevr_events: list[tuple[str, dict]] = []
+        self._pevr_events: deque[tuple[str, dict]] = deque()
 
         # Start mission execution in background
         mission_task = asyncio.create_task(
@@ -494,7 +496,7 @@ class TUIController:
 
             # Drain event buffer
             while self._pevr_events:
-                event_type, data = self._pevr_events.pop(0)
+                event_type, data = self._pevr_events.popleft()
 
                 if event_type == "mission:planned" and not mission_displayed:
                     mission_displayed = True
@@ -522,55 +524,31 @@ class TUIController:
                     "task:rejected",
                     "task:needs_rework",
                 ):
-                    # Finish any ongoing worker stream before showing task status
-                    if worker_streaming:
-                        yield UIMessage(
-                            type=UIMessageType.ASSISTANT,
-                            content=worker_buffer,
-                            is_streaming=False,
-                            is_complete=True,
-                        )
-                        worker_buffer = ""
-                        worker_streaming = False
+                    # Discard any accumulated worker text; we no longer stream
+                    # agent thinking in PLAN mode.
+                    worker_buffer = ""
+                    worker_streaming = False
                     msg = format_task_event(event_type, data)
                     yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
                     current_task_id = data.get("task_id", "")
                 elif event_type == "task:verified":
-                    # Finish any ongoing worker stream before showing verified status
-                    if worker_streaming:
-                        yield UIMessage(
-                            type=UIMessageType.ASSISTANT,
-                            content=worker_buffer,
-                            is_streaming=False,
-                            is_complete=True,
-                        )
-                        worker_buffer = ""
-                        worker_streaming = False
+                    # Discard any accumulated worker text.
+                    worker_buffer = ""
+                    worker_streaming = False
                     msg = format_task_event(event_type, data)
                     yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
                 elif event_type == "worker:text_delta":
-                    # Real-time assistant streaming (like normal chat mode)
+                    # PLAN mode: do NOT stream agent thinking in real-time.
+                    # Multiple concurrent workers would interleave confusingly.
+                    # The final report already contains per-task output summaries.
                     chunk = data.get("content", "")
                     if chunk:
                         worker_buffer += chunk
                         worker_streaming = True
-                        yield UIMessage(
-                            type=UIMessageType.ASSISTANT,
-                            content=chunk,
-                            is_streaming=True,
-                            is_complete=False,
-                        )
                 elif event_type == "worker:turn_complete":
-                    # Turn finished: just mark the current stream as complete
-                    if worker_streaming and worker_buffer:
-                        yield UIMessage(
-                            type=UIMessageType.ASSISTANT,
-                            content=worker_buffer,
-                            is_streaming=False,
-                            is_complete=True,
-                        )
-                        worker_buffer = ""
-                        worker_streaming = False
+                    # Discard the turn buffer; final report has the summary.
+                    worker_buffer = ""
+                    worker_streaming = False
                 elif event_type == "worker:tool_start":
                     # Pause streaming to show tool call (same style as normal mode)
                     if worker_streaming and worker_buffer:
@@ -584,13 +562,14 @@ class TUIController:
                         worker_streaming = False
                     tool_name = data.get("tool_name", "tool")
                     params = data.get("params", {})
+                    tool_use_counter += 1
                     yield UIMessage(
                         type=UIMessageType.TOOL_USE,
                         content=tool_name,
                         metadata={
                             "tool_name": tool_name,
                             "tool_input": params,
-                            "tool_use_id": f"{current_task_id}_{tool_name}",
+                            "tool_use_id": f"{current_task_id}_{tool_name}_{tool_use_counter}",
                         },
                         is_complete=False,
                     )
@@ -601,6 +580,9 @@ class TUIController:
                     # Single-line: collapse newlines so display.py's first-line
                     # truncation works exactly like normal chat mode.
                     summary_oneline = summary.replace("\n", " ").replace("\r", "")
+                    # Cap length to avoid flooding the UI with long tool output.
+                    if len(summary_oneline) > 200:
+                        summary_oneline = summary_oneline[:197] + "..."
                     yield UIMessage(
                         type=UIMessageType.TOOL_RESULT,
                         content=summary_oneline,
@@ -612,6 +594,14 @@ class TUIController:
                 elif event_type == "mission:blocked":
                     msg = format_task_event(event_type, data)
                     yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
+                elif event_type in (
+                    "task:exception",
+                    "task:timeout",
+                    "task:max_rework_exceeded",
+                    "task:cancelled_dependency_failure",
+                ):
+                    msg = format_task_event(event_type, data)
+                    yield UIMessage(type=UIMessageType.ERROR, content=msg)
 
             await asyncio.sleep(0.2)
 
@@ -660,7 +650,9 @@ class TUIController:
                     if output_text:
                         if hasattr(output_text, "output"):
                             output_text = getattr(output_text, "output", "")
-                        snippet = str(output_text)[:600].strip()
+                        snippet = str(output_text)[:3000].strip()
+                        # Collapse excessive blank lines for cleaner display
+                        snippet = __import__("re").sub(r"\n{3,}", "\n\n", snippet)
                         if snippet:
                             lines.append(f"\n**{title}**")
                             lines.append(snippet)
@@ -672,15 +664,16 @@ class TUIController:
             phases = mission_dict.get("phases", [])
             task_states = snapshot.get("task_states", {})
             if phases:
-                lines = ["📋 Mission Plan Executed:"]
+                lines = ["📋 Mission Plan Executed:", ""]
                 for p in phases:
-                    lines.append(f"  • Phase: {p.get('title', 'Untitled')}")
+                    lines.append(f"- **Phase:** {p.get('title', 'Untitled')}")
                     for t in p.get("tasks", []):
                         task_id = t.get("id", "")
                         state = task_states.get(task_id, "unknown")
                         emoji = _STATE_EMOJI.get(state, "❓")
-                        lines.append(f"    {emoji} {t.get('title', task_id)}")
-                report_parts.append("\n".join(line + "  " for line in lines))
+                        lines.append(f"  - {emoji} {t.get('title', task_id)}")
+                    lines.append("")
+                report_parts.append("\n".join(lines))
 
             full_report = "\n\n".join(report_parts)
 
@@ -708,12 +701,13 @@ class TUIController:
 
                 # Also preserve per-task outputs so follow-up questions retain
                 # the analysis results from each completed task.
+                # Cap at 5 tasks × 800 chars to avoid blowing the context window.
                 task_outputs = result.get("task_outputs", {}) if result else {}
                 if task_outputs:
                     context_parts = ["[Plan Mode Task Outputs]"]
-                    for tid, tdata in task_outputs.items():
+                    for tid, tdata in list(task_outputs.items())[:5]:
                         title = tdata.get("title", tid)
-                        output_text = tdata.get("output") or tdata.get("output", "")
+                        output_text = tdata.get("output") or ""
                         if output_text and not isinstance(output_text, dict):
                             snippet = str(output_text)[:800]
                             context_parts.append(f"Task '{title}': {snippet}")
@@ -721,6 +715,15 @@ class TUIController:
                         self.query_engine.messages.append(
                             SystemMessage(content="\n".join(context_parts))
                         )
+
+                # Auto-compact if we are close to the context limit.
+                try:
+                    if self.query_engine.count_tokens() > int(
+                        self.query_engine._usable_context * 0.85
+                    ):
+                        await self.query_engine.auto_compact_if_needed()
+                except Exception:
+                    pass
             # Sync any cwd detected by MissionAdapter back into the session
             # so follow-up messages target the correct project.
             if adapter._cwd != cwd:

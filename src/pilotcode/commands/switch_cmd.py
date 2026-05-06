@@ -51,8 +51,3 @@ async def switch_command(args: list[str], context: CommandContext) -> str:
 
         except Exception as e:
             return f"Error: {e}"
-
-
-register_command(
-    CommandHandler(name="switch", description="Switch branch (modern git)", handler=switch_command)
-)

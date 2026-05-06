@@ -348,10 +348,15 @@ Previous discussion:
         max_iterations = agent.definition.max_turns
 
         try:
-            for _ in range(max_iterations):
+            for iteration in range(max_iterations):
                 agent.turns += 1
                 response = None
-                async for chunk in client.chat_completion(messages, tools=all_tools, stream=False):
+                # Force text-only on the last turn so the agent cannot keep
+                # calling tools forever — it MUST produce a summary.
+                tools_for_turn = all_tools if iteration < max_iterations - 1 else None
+                async for chunk in client.chat_completion(
+                    messages, tools=tools_for_turn, stream=False
+                ):
                     response = chunk
 
                 if not response:
@@ -451,6 +456,11 @@ Previous discussion:
                     # Plain text response (no tool calls) — agent is done
                     agent.status = AgentStatus.COMPLETED
                     agent.output = content
+                    # Persist state so crash recovery knows this agent finished
+                    try:
+                        get_agent_manager()._save_agent(agent)
+                    except Exception:
+                        pass
                     return content
 
                 if tool_calls_raw:
@@ -476,7 +486,7 @@ Previous discussion:
 
                             result = await tool.call(parsed, ctx, _allow, None, lambda x: None)
                             result_text = (
-                                str(result.data)
+                                result.get_text_for_assistant()
                                 if result.data and not result.is_error
                                 else (result.error or "Error")
                             )
@@ -494,30 +504,96 @@ Previous discussion:
                                 name=tool_name,
                             )
                         )
+                    # Nudge the agent to summarize when we are near the turn limit.
+                    if iteration >= max_iterations - 3:
+                        messages.append(
+                            MCMessage(
+                                role="user",
+                                content="You have gathered enough information. Based on the tool results above, provide a concise summary of your findings. Do NOT call any more tools.",
+                            )
+                        )
                     continue
 
                 # No content and no tool calls
                 break
 
             # Fallback: if agent executed tools but never produced a final
-            # text summary, synthesize one from the last tool result so the
-            # caller (and the user) can see what was discovered.
+            # text summary, synthesize a basic report from the tool results
+            # instead of flooding the UI with raw JSON/repr.
             if not agent.output and agent.turns > 1:
-                # Find the most recent tool result in messages
-                for msg in reversed(messages):
-                    if getattr(msg, "role", None) == "tool" and getattr(msg, "content", None):
-                        agent.output = f"[Tool result: {msg.name}]\n{msg.content[:1500]}"
-                        break
+                summary_parts: list[str] = []
+                files_read: list[str] = []
+                searches_done: list[str] = []
+                commands_run: list[str] = []
+                for msg in messages:
+                    if getattr(msg, "role", None) != "tool":
+                        continue
+                    tname = getattr(msg, "name", "tool")
+                    tcontent = str(getattr(msg, "content", "") or "")
+                    if tname in ("FileRead", "read"):
+                        # Extract file path from the first line or JSON
+                        m = __import__("re").search(r'"file_path"\s*:\s*"([^"]+)"', tcontent)
+                        if m:
+                            files_read.append(m.group(1))
+                        else:
+                            m = __import__("re").search(r"file_path='([^']+)'", tcontent)
+                            if m:
+                                files_read.append(m.group(1))
+                    elif tname in ("Grep", "CodeSearch"):
+                        # Count matches roughly
+                        lines = [l for l in tcontent.splitlines() if l.strip()]
+                        searches_done.append(f"{tname} ({len(lines)} matches)")
+                    elif tname == "Bash":
+                        # Keep command brief
+                        first = tcontent.splitlines()[0] if tcontent else ""
+                        if len(first) > 80:
+                            first = first[:77] + "..."
+                        commands_run.append(first)
+                if files_read:
+                    summary_parts.append("Files examined: " + ", ".join(files_read[-5:]))
+                if searches_done:
+                    summary_parts.append("Searches: " + "; ".join(searches_done[-3:]))
+                if commands_run:
+                    summary_parts.append("Commands: " + "; ".join(commands_run[-3:]))
+                if summary_parts:
+                    agent.output = "\n".join(summary_parts)
+                else:
+                    tools_used = [
+                        getattr(msg, "name", "tool")
+                        for msg in messages
+                        if getattr(msg, "role", None) == "tool"
+                    ]
+                    agent.output = (
+                        f"[Agent completed {agent.turns} turn(s) using "
+                        f"{', '.join(tools_used[-3:]) or 'tools'} but did not return a summary.]"
+                    )
 
             agent.status = AgentStatus.COMPLETED
+            # Persist final state for crash-recovery cleanup
+            try:
+                get_agent_manager()._save_agent(agent)
+            except Exception:
+                pass
             return agent.output or ""
+        except asyncio.CancelledError:
+            agent.status = AgentStatus.FAILED
+            # Persist state so restart cleanup can identify this dead worker
+            try:
+                get_agent_manager()._save_agent(agent)
+            except Exception:
+                pass
+            raise
         except Exception as e:
             import traceback
 
             tb = traceback.format_exc()
-            traceback.print_exc()
             agent.status = AgentStatus.FAILED
             agent.error = f"{e}\n{tb}"
+            # Persist state so restart cleanup can identify this dead worker
+            try:
+                get_agent_manager()._save_agent(agent)
+            except Exception:
+                pass
             return f"[Agent {agent.agent_id} failed: {e}]\n{tb}"
 
 

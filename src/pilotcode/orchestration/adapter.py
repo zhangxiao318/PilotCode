@@ -9,6 +9,8 @@ import asyncio
 import json
 import logging
 import re
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -434,8 +436,8 @@ class MissionAdapter:
         # Write plan to disk for persistence (Phase 2: plan file)
         try:
             write_plan(plan_data)
-        except Exception:
-            pass  # Non-fatal: plan persistence is advisory
+        except Exception as exc:
+            logger.warning("Failed to write plan file: %s", exc, exc_info=True)
 
         # Tag with context budget and strategy
         raw_mission.context_budget = self.context_budget
@@ -706,6 +708,7 @@ class MissionAdapter:
             agent_type=agent_type,
             name=f"{agent_type}-{task.id}",
             is_background=False,
+            is_ephemeral=True,
         )
 
         prompt = self._build_worker_prompt(task, context)
@@ -723,12 +726,33 @@ class MissionAdapter:
 
             result = await orch._run_agent_task(agent, prompt, progress_callback=_agent_progress)
 
+            # Detect agent internal failure (agent_orchestrator returns error string
+            # instead of raising when it catches an exception).
+            agent_failed = (
+                isinstance(result, str) and result.startswith("[Agent") and "failed:" in result
+            )
+
             # Save execution knowledge to agent memory
-            try:
-                knowledge = f"## Task: {task.title}\n- Objective: {task.objective}\n- Result: {result[:500]}\n"
-                save_agent_memory(agent_type, knowledge, scope="project", append=True)
-            except Exception:
-                pass
+            if not agent_failed:
+                try:
+                    result_snippet = str(result)[:500] if result is not None else ""
+                    knowledge = f"## Task: {task.title}\n- Objective: {task.objective}\n- Result: {result_snippet}\n"
+                    save_agent_memory(agent_type, knowledge, scope="project", append=True)
+                except Exception as exc:
+                    logger.warning("Failed to save agent memory: %s", exc, exc_info=True)
+
+            if agent_failed:
+                return ExecutionResult(
+                    task_id=task.id,
+                    success=False,
+                    error=result,
+                    artifacts={
+                        "changed_files": [],
+                        "agent_id": agent.agent_id,
+                        "agent_type": agent_type,
+                        "conversation_length": agent.turns,
+                    },
+                )
 
             return ExecutionResult(
                 task_id=task.id,
@@ -748,6 +772,13 @@ class MissionAdapter:
                 success=False,
                 error=f"Agent {agent_type} failed: {e}",
             )
+        finally:
+            # Clean up the temporary agent so it doesn't accumulate in memory
+            # and on disk across repeated PLAN mode runs.
+            try:
+                manager.delete_agent(agent.agent_id)
+            except Exception:
+                pass
 
     async def _llm_worker(self, task: TaskSpec, context: dict[str, Any]) -> ExecutionResult:
         """Execute a task using QueryEngine with tool access.
@@ -937,7 +968,9 @@ class MissionAdapter:
                         async with self._tool_semaphore:
                             er = await executor.execute_tool_by_name(tu.name, tu.input, tool_ctx)
                         if er.success and er.result is not None:
-                            text = str(er.result.data) if er.result.data else "Success"
+                            text = (
+                                er.result.get_text_for_assistant() if er.result.data else "Success"
+                            )
                         else:
                             text = er.message or "Tool execution failed"
                         return text, er.success
@@ -1026,8 +1059,8 @@ class MissionAdapter:
                         scope="project",
                         append=True,
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Failed to save agent memory: %s", exc, exc_info=True)
 
                 return ExecutionResult(
                     task_id=task.id,

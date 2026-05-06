@@ -74,4 +74,6 @@ async def mcp_command(args: list[str], context: CommandContext) -> str:
         return f"Unknown action: {action}. Use: add, remove, tools"
 
 
-register_command(CommandHandler(name="mcp", description="Manage MCP servers", handler=mcp_command))
+register_command(
+    CommandHandler(name="mcp", hidden=True, description="Manage MCP servers", handler=mcp_command)
+)

@@ -1014,7 +1014,7 @@ class SimpleCLI:
                 if user_input.startswith("/"):
                     # First try built-in commands
                     should_continue = await self.handle_command(user_input)
-                    if not should_continue:
+                    if should_continue is False:
                         break
                     # If not handled by built-in, try process_user_input
                     if should_continue is not None:

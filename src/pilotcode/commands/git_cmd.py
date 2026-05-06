@@ -1,123 +1,162 @@
-"""Git command implementation."""
+"""Git command router - all git operations under /git."""
 
 import subprocess
+
 from .base import CommandHandler, register_command, CommandContext
+
+# Import all git sub-command handlers (modules no longer self-register)
+from .branch_cmd import branch_command
+from .commit_cmd import commit_command
+from .diff_cmd import diff_command
+from .switch_cmd import switch_command
+from .blame_cmd import blame_command
+from .cherrypick_cmd import cherrypick_command
+from .bisect_cmd import bisect_command
+from .revert_cmd import revert_command
+from .reset_cmd import reset_command
+from .clean_cmd import clean_command
+from .history_cmd import history_command
+from .git_commands import (
+    merge_command,
+    rebase_command,
+    stash_command,
+    tag_command,
+    pr_command,
+    issue_command,
+    fetch_command,
+    pull_command,
+    push_command,
+)
+from .remote_cmd import remote_command
 
 
 async def git_command(args: list[str], context: CommandContext) -> str:
-    """Handle /git command."""
+    """Handle /git <subcommand> [...].
+
+    Examples:
+      /git                → git status
+      /git branch         → list branches
+      /git branch feat    → create branch
+      /git commit "msg"   → commit
+      /git diff           → show diff
+      /git stash list     → list stashes
+      /git pr list        → list pull requests
+    """
     if not args:
-        # Show git status
-        try:
-            result = subprocess.run(
-                ["git", "status", "-sb"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=context.cwd,
-            )
-            if result.returncode == 0:
-                return f"Git status:\n{result.stdout}"
-            else:
-                return f"Not a git repository or error: {result.stderr}"
-        except Exception as e:
-            return f"Error: {e}"
+        return await _git_status(context)
 
-    action = args[0]
+    sub = args[0]
+    sub_args = args[1:]
 
-    if action == "commit":
-        if len(args) < 2:
-            return "Usage: /git commit <message>"
+    if sub in ("help", "-h", "--help"):
+        return _git_help()
 
-        message = " ".join(args[1:])
+    handlers = {
+        "status": _git_status,
+        "st": _git_status,
+        "branch": branch_command,
+        "br": branch_command,
+        "commit": commit_command,
+        "ci": commit_command,
+        "diff": diff_command,
+        "switch": switch_command,
+        "sw": switch_command,
+        "merge": merge_command,
+        "rebase": rebase_command,
+        "stash": stash_command,
+        "tag": tag_command,
+        "remote": remote_command,
+        "blame": blame_command,
+        "cherrypick": cherrypick_command,
+        "cherry-pick": cherrypick_command,
+        "bisect": bisect_command,
+        "revert": revert_command,
+        "reset": reset_command,
+        "clean": clean_command,
+        "history": history_command,
+        "hist": history_command,
+        "log": history_command,
+        "pr": pr_command,
+        "issue": issue_command,
+        "fetch": fetch_command,
+        "pull": pull_command,
+        "push": push_command,
+    }
 
-        # Stage all and commit
-        try:
-            subprocess.run(
-                ["git", "add", "-A"],
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=context.cwd,
-            )
-            result = subprocess.run(
-                ["git", "commit", "-m", message],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=context.cwd,
-            )
-            if result.returncode == 0:
-                return f"Committed: {result.stdout}"
-            else:
-                return f"Commit failed: {result.stderr}"
-        except Exception as e:
-            return f"Error: {e}"
+    handler = handlers.get(sub)
+    if handler:
+        return await handler(sub_args, context)
 
-    elif action == "diff":
-        try:
-            result = subprocess.run(
-                ["git", "diff"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=context.cwd,
-            )
-            if result.returncode == 0:
-                if result.stdout:
-                    # Limit output
-                    diff = result.stdout[:2000]
-                    if len(result.stdout) > 2000:
-                        diff += "\n... (truncated)"
-                    return f"```diff\n{diff}\n```"
-                else:
-                    return "No changes"
-            else:
-                return f"Error: {result.stderr}"
-        except Exception as e:
-            return f"Error: {e}"
+    # Fallback: run as raw git command
+    try:
+        result = subprocess.run(
+            ["git", sub] + sub_args,
+            capture_output=True,
+            text=True,
+            cwd=context.cwd,
+        )
+        if result.returncode == 0:
+            return result.stdout or f"git {sub} completed."
+        return f"git {sub} failed: {result.stderr}"
+    except Exception as e:
+        return f"Error running git {sub}: {e}"
 
-    elif action == "log":
-        try:
-            result = subprocess.run(
-                ["git", "log", "--oneline", "-10"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=context.cwd,
-            )
-            if result.returncode == 0:
-                return f"Recent commits:\n{result.stdout}"
-            else:
-                return f"Error: {result.stderr}"
-        except Exception as e:
-            return f"Error: {e}"
 
-    elif action == "branch":
-        try:
-            result = subprocess.run(
-                ["git", "branch"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                cwd=context.cwd,
-            )
-            if result.returncode == 0:
-                return f"Branches:\n{result.stdout}"
-            else:
-                return f"Error: {result.stderr}"
-        except Exception as e:
-            return f"Error: {e}"
+async def _git_status(context: CommandContext) -> str:
+    """Show git status."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "-sb"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=context.cwd,
+        )
+        if result.returncode == 0:
+            return f"Git status:\n{result.stdout}"
+        return f"Not a git repository or error: {result.stderr}"
+    except Exception as e:
+        return f"Error: {e}"
 
-    else:
-        return f"Unknown action: {action}. Use: commit, diff, log, branch"
+
+def _git_help() -> str:
+    """Return help text for /git subcommands."""
+    return """Git operations - available subcommands:
+
+  status (st)      - Show working tree status
+  branch (br)      - List or create branches
+  commit (ci)      - Commit changes
+  diff             - Show changes
+  switch (sw)      - Switch branches
+  merge            - Merge a branch
+  rebase           - Rebase current branch
+  stash            - Stash changes
+  tag              - Manage tags
+  remote           - Manage remotes
+  blame            - Show line annotations
+  cherrypick       - Apply commits
+  bisect           - Binary search for bugs
+  revert           - Revert commits
+  reset            - Reset state
+  clean            - Remove untracked files
+  history (hist)   - Show commit history
+  log              - Alias for history
+  pr               - Pull request operations
+  issue            - Issue operations
+  fetch            - Download from remote
+  pull             - Fetch and merge
+  push             - Upload to remote
+
+Usage: /git <subcommand> [options]
+Example: /git branch -a"""
 
 
 register_command(
-    CommandHandler(name="git", description="Git operations", handler=git_command, aliases=["g"])
+    CommandHandler(
+        name="git",
+        description="Git operations",
+        handler=git_command,
+        aliases=["g"],
+    )
 )

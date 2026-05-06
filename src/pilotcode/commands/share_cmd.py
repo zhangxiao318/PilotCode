@@ -28,4 +28,6 @@ async def share_command(args: list[str], context: CommandContext) -> str:
         return f"Failed to create share: {e}"
 
 
-register_command(CommandHandler(name="share", description="Share session", handler=share_command))
+register_command(
+    CommandHandler(name="share", hidden=True, description="Share session", handler=share_command)
+)

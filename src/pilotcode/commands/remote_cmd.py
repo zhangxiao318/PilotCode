@@ -155,8 +155,3 @@ async def remote_command(args: list[str], context: CommandContext) -> str:
 
     else:
         return f"Unknown action: {action}. Use: add, remove, fetch, pull, push"
-
-
-register_command(
-    CommandHandler(name="remote", description="Git remote operations", handler=remote_command)
-)

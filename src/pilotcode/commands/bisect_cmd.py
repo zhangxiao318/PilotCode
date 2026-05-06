@@ -87,8 +87,3 @@ async def bisect_command(args: list[str], context: CommandContext) -> str:
 
     else:
         return f"Unknown action: {action}. Use: start, good, bad, reset, log"
-
-
-register_command(
-    CommandHandler(name="bisect", description="Git bisect operations", handler=bisect_command)
-)

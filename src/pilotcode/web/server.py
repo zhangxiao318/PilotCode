@@ -916,6 +916,28 @@ class WebSocketManager:
         # New user input = fresh context: reset FileEdit failure tracking
         session_ctx["_fileedit_tracker"].reset()
 
+        # Handle slash commands (same as TUI/Simple CLI)
+        if query.startswith("/"):
+            from pilotcode.commands.base import process_user_input, CommandContext
+
+            ctx = CommandContext(
+                cwd=str(Path.cwd()),
+                query_engine=query_engine,
+                session_id=session_id,
+            )
+            is_command, result = await process_user_input(query, ctx)
+            if is_command:
+                if isinstance(result, str) and result == "__EXIT_TUI__":
+                    await self.send_to_client(
+                        websocket, {"type": "system", "stream_id": stream_id, "content": "Goodbye!"}
+                    )
+                    return
+                content = result if isinstance(result, str) else str(result)
+                await self.send_to_client(
+                    websocket, {"type": "system", "stream_id": stream_id, "content": content}
+                )
+                return
+
         try:
             from pilotcode.tools.base import ToolUseContext, ToolResult
             from pilotcode.permissions import get_tool_executor

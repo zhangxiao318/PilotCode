@@ -112,6 +112,10 @@ Use Bash for:
 - Git operations
 - System operations
 
+DO NOT change the working directory (cd) unless the user explicitly asks you to.
+When checking files in other directories, use absolute paths (e.g. `ls /home/user/project`)
+instead of `cd /home/user/project && ls`.
+
 Prefer dedicated tools over Bash when available.""",
     "FileRead": """## FileRead Tool
 
@@ -144,7 +148,7 @@ Use Grep to:
 
 Use CodeSearch for:
 - Intelligent code search using symbols, semantics, or regex
-- FOR LARGE PROJECTS, USE THIS FIRST to narrow down relevant files
+- ALWAYS use CodeSearch FIRST when looking for code. Only fall back to Glob/Grep if CodeSearch returns nothing
 - Use search_type="symbol" for exact names, "semantic" for concepts
 - Fall back to Glob/Grep if CodeSearch returns nothing""",
     "CodeIndex": """## CodeIndex Tool
@@ -395,6 +399,7 @@ def get_explorer_prompt() -> str:
 - Avoid emojis
 - After using tools, ALWAYS return a summary of what you found
 - Your final response must contain concrete findings, not just tool calls
+- DO NOT copy raw tool output (file contents, grep results, command output) into your response — synthesize and summarize
 - DO NOT stop early — verify you have covered all aspects of the task before finishing"""
 
 

@@ -40,10 +40,3 @@ async def commit_command(args: list[str], context: CommandContext) -> str:
 
     except Exception as e:
         return f"Error: {e}"
-
-
-register_command(
-    CommandHandler(
-        name="commit", description="Git commit helper", handler=commit_command, aliases=["ci"]
-    )
-)

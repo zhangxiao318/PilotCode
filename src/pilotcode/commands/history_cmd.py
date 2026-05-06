@@ -87,13 +87,3 @@ def add_to_history(command: str):
     # Keep last 1000 commands
     history = history[-1000:]
     save_history(history)
-
-
-register_command(
-    CommandHandler(
-        name="history",
-        description="Show command history",
-        handler=history_command,
-        aliases=["hist"],
-    )
-)

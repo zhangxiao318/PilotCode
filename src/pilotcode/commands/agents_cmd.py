@@ -1,30 +1,47 @@
 """Enhanced agents command implementation."""
 
+import io
 from rich.table import Table
 from rich.tree import Tree
 from rich import box
+from rich.console import Console
 
 from .base import CommandHandler, register_command, CommandContext
 from ..agent import get_agent_manager, AgentStatus, ENHANCED_AGENT_DEFINITIONS
 
 
+def _capture(renderable) -> str:
+    """Capture Rich output as a plain string for TUI display."""
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=True, width=120)
+    console.print(renderable)
+    return buf.getvalue()
+
+
 async def agents_command(args: list[str], context: CommandContext) -> str:
     """Handle /agents command."""
-    from rich.console import Console
-
-    console = Console()
-
     manager = get_agent_manager()
 
-    if not args:
-        # List all agents
+    if not args or args[0] == "all":
+        # Default: show persistent agents + active ephemeral workers.
+        # 'all' shows everything including completed ephemeral PLAN workers.
+        show_all = bool(args and args[0] == "all")
+
         agents = manager.list_agents()
+        if not show_all and agents:
+            agents = [
+                a
+                for a in agents
+                if not getattr(a, "is_ephemeral", False)
+                or a.status in (AgentStatus.PENDING, AgentStatus.RUNNING, AgentStatus.PAUSED)
+            ]
 
         if not agents:
-            return "No agents found. Use '/agents create <type>' to create one."
+            hint = " Use '/agents all' to include completed PLAN workers." if not show_all else ""
+            return f"No agents found.{hint} Use '/agents create <type>' to create one."
 
         table = Table(
-            title="Agent Status",
+            title="Agent Status" + (" (all)" if show_all else " (persistent + active)"),
             box=box.ROUNDED,
             show_header=True,
             header_style="bold magenta",
@@ -35,7 +52,7 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
         table.add_column("Type", style="blue")
         table.add_column("Status", style="yellow")
         table.add_column("Turns", justify="right")
-        table.add_column("Parent", style="dim")
+        table.add_column("Kind", style="dim")
 
         for agent in agents:
             status_color = {
@@ -47,17 +64,24 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
                 AgentStatus.CANCELLED: "dim",
             }.get(agent.status, "white")
 
+            kind = "ephemeral" if getattr(agent, "is_ephemeral", False) else "persistent"
             table.add_row(
                 agent.agent_id,
                 agent.definition.name,
                 agent.definition.name,
                 f"[{status_color}]{agent.status.value}[/{status_color}]",
                 str(agent.turns),
-                agent.parent_id or "-",
+                kind,
             )
 
-        console.print(table)
-        return f"\nTotal: {len(agents)} agents"
+        total_all = len(manager.list_agents())
+        shown = len(agents)
+        suffix = (
+            f" (showing {shown}/{total_all}; use '/agents all' for full list)"
+            if shown < total_all
+            else ""
+        )
+        return _capture(table) + f"\nTotal: {shown} agents{suffix}"
 
     action = args[0]
 
@@ -116,13 +140,10 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
         if agent.completed_at:
             table.add_row("Completed", agent.completed_at)
 
-        console.print(table)
-
+        lines = [_capture(table)]
         if agent.output:
-            console.print("\n[bold]Output:[/bold]")
-            console.print(agent.output[:1000])
-
-        return ""
+            lines.append(f"Output:\n{agent.output[:1000]}")
+        return "\n".join(lines)
 
     elif action == "tree":
         if len(args) < 2:
@@ -153,8 +174,7 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
             return tree
 
         tree = build_tree(tree_data)
-        console.print(tree)
-        return ""
+        return _capture(tree)
 
     elif action == "types":
         """List available agent types."""
@@ -180,8 +200,7 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
                 tools_preview,
             )
 
-        console.print(table)
-        return ""
+        return _capture(table)
 
     elif action == "delete":
         if len(args) < 2:
@@ -206,6 +225,30 @@ async def agents_command(args: list[str], context: CommandContext) -> str:
 
         return f"Cleared {cleared} agents"
 
+    elif action == "purge":
+        """Purge ALL agents (including pending/running) from memory and disk."""
+        agents = manager.list_agents()
+        purged = 0
+        for agent in list(agents):
+            manager.delete_agent(agent.agent_id)
+            purged += 1
+        # Also wipe any orphaned JSON files on disk
+        storage = manager.storage_dir
+        if storage.exists():
+            for f in storage.glob("*.json"):
+                if f.name.startswith("workflow_"):
+                    continue
+                try:
+                    f.unlink(missing_ok=True)
+                    purged += 1
+                except Exception:
+                    pass
+        # Clear the in-memory dict as a safety net
+        manager.agents.clear()
+        manager.workflows.clear()
+        manager.teams.clear()
+        return f"Purged {purged} agents/workflows. All agent state cleared."
+
     else:
         return f"""Unknown action: {action}
 
@@ -216,7 +259,8 @@ Available actions:
   /agents tree <id>          - Show agent tree
   /agents types              - List available types
   /agents delete <id>        - Delete agent
-  /agents clear              - Clear completed agents"""
+  /agents clear              - Clear completed agents
+  /agents purge              - Purge ALL agents (force reset)"""
 
 
 register_command(

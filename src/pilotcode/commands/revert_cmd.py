@@ -53,6 +53,3 @@ async def revert_command(args: list[str], context: CommandContext) -> str:
 
         except Exception as e:
             return f"Error: {e}"
-
-
-register_command(CommandHandler(name="revert", description="Revert commit", handler=revert_command))

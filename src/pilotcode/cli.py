@@ -581,6 +581,9 @@ def main(
     session_id: str | None = typer.Option(
         None, "--session", "-s", help="Restore a specific session by ID"
     ),
+    no_verify: bool = typer.Option(
+        False, "--no-verify", help="Skip verification step in simple CLI"
+    ),
 ):
     """PilotCode - Python rewrite of Claude Code."""
 

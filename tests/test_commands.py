@@ -60,26 +60,29 @@ class TestBuiltInCommands:
     async def test_unknown_command(self):
         ctx = CommandContext(cwd=".")
         is_cmd, result = await process_user_input("/notreal", ctx)
-        assert is_cmd is True
-        assert "Unknown command" in result
+        # Unknown commands are treated as normal input (not commands)
+        assert is_cmd is False
+        assert result == "/notreal"
 
 
 class TestGitCommands:
     """Tests for git-related slash commands."""
 
     @pytest.mark.asyncio
-    async def test_branch_command(self):
+    async def test_git_command(self):
         ctx = CommandContext(cwd=".")
-        is_cmd, result = await process_user_input("/branch", ctx)
+        is_cmd, result = await process_user_input("/git", ctx)
         assert is_cmd is True
-        # Should list branches since we're in a git repo
-        assert "branch" in result.lower() or "*" in result
+        # Should show git status since we're in a git repo
+        assert "git" in result.lower() or "status" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_diff_command_no_args(self):
+    async def test_path_input_not_command(self):
+        """File paths starting with / should not be treated as commands."""
         ctx = CommandContext(cwd=".")
-        is_cmd, result = await process_user_input("/diff", ctx)
-        assert is_cmd is True
+        is_cmd, result = await process_user_input("/home/user/project", ctx)
+        assert is_cmd is False
+        assert result == "/home/user/project"
 
 
 class TestCommandRegistry:
@@ -87,7 +90,7 @@ class TestCommandRegistry:
 
     def test_commands_are_registered(self):
         registry = get_command_registry()
-        essential = ["help", "clear", "quit", "git", "branch", "config"]
+        essential = ["help", "clear", "quit", "git", "config"]
         for cmd in essential:
             assert registry.has_command(cmd), f"Command /{cmd} should be registered"
 

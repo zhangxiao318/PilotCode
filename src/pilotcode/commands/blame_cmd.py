@@ -34,6 +34,3 @@ async def blame_command(args: list[str], context: CommandContext) -> str:
 
     except Exception as e:
         return f"Error: {e}"
-
-
-register_command(CommandHandler(name="blame", description="Git blame file", handler=blame_command))

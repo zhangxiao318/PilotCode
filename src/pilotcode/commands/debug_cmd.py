@@ -86,4 +86,6 @@ async def debug_command(args: list[str], context: CommandContext) -> str:
         return f"Unknown action: {action}"
 
 
-register_command(CommandHandler(name="debug", description="Debug tools", handler=debug_command))
+register_command(
+    CommandHandler(name="debug", hidden=True, description="Debug tools", handler=debug_command)
+)

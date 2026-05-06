@@ -127,8 +127,10 @@ async def static_analysis_l3_verifier(
             score -= min(30, issue_count * 3)
     except (FileNotFoundError, asyncio.TimeoutError):
         pass  # ruff not installed
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).debug("ruff check failed: %s", exc)
 
     # Run mypy if available
     try:
@@ -148,8 +150,10 @@ async def static_analysis_l3_verifier(
             score -= min(30, issue_count * 5)
     except (FileNotFoundError, asyncio.TimeoutError):
         pass  # mypy not installed
-    except Exception:
-        pass
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).debug("mypy check failed: %s", exc)
 
     # Check for basic code quality heuristics
     for fpath in changed_files:
@@ -167,8 +171,10 @@ async def static_analysis_l3_verifier(
             if long_lines > 5:
                 issues.append(f"{fpath} has {long_lines} lines > 120 chars")
                 score -= min(10, long_lines)
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).debug("Code quality check failed for %s: %s", fpath, exc)
 
     passed = score >= 70.0
     return VerificationResult(

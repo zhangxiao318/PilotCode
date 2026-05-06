@@ -213,8 +213,19 @@ class DagExecutor:
         return [waves[d] for d in sorted(waves.keys())]
 
     def all_done(self) -> bool:
-        """Check if all tasks are in terminal states."""
-        terminal = {TaskState.DONE, TaskState.CANCELLED, TaskState.REJECTED}
+        """Check if all tasks are in terminal states.
+
+        VERIFIED is treated as terminal because it means all verifications
+        passed and the task is logically complete (COMPLETE transition is
+        cosmetic). Without this, a failed COMPLETE transition would deadlock
+        the orchestrator loop.
+        """
+        terminal = {
+            TaskState.DONE,
+            TaskState.VERIFIED,
+            TaskState.CANCELLED,
+            TaskState.REJECTED,
+        }
         return all(n.state in terminal for n in self.nodes.values())
 
     def all_verified(self) -> bool:

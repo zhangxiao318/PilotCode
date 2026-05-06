@@ -94,10 +94,3 @@ async def branch_command(args: list[str], context: CommandContext) -> str:
 
     else:
         return f"Unknown action: {action}. Use: create, switch, delete"
-
-
-register_command(
-    CommandHandler(
-        name="branch", description="Branch management", handler=branch_command, aliases=["br"]
-    )
-)

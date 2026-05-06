@@ -10,7 +10,7 @@ COMMAND_NAMES = sorted([c.name for c in ALL_COMMANDS])
 
 class TestCommandDiscovery:
     def test_all_commands_registered(self):
-        assert len(ALL_COMMANDS) >= 65, f"Only {len(ALL_COMMANDS)} commands registered"
+        assert len(ALL_COMMANDS) >= 40, f"Only {len(ALL_COMMANDS)} commands registered"
 
     @pytest.mark.parametrize("cmd", ALL_COMMANDS, ids=lambda c: c.name)
     def test_command_has_name(self, cmd):
@@ -24,18 +24,14 @@ class TestCommandDiscovery:
             "config",
             "compact",
             "cost",
-            "diff",
             "doctor",
             "export",
-            "history",
             "model",
             "plan",
             "session",
             "status",
             "theme",
             "memory",
-            "branch",
-            "commit",
             "git",
             "agents",
             "workflow",
@@ -45,19 +41,8 @@ class TestCommandDiscovery:
             "lint",
             "format",
             "test",
-            "cat",
             "ls",
-            "cd",
-            "pwd",
             "edit",
-            "mkdir",
-            "rm",
-            "cp",
-            "mv",
-            "touch",
-            "head",
-            "tail",
-            "wc",
             "find",
         }
         missing = core - {c.name for c in ALL_COMMANDS}

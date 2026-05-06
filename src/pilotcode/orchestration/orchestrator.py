@@ -237,6 +237,8 @@ class Orchestrator:
                         )
                     except asyncio.TimeoutError:
                         pass
+                    else:
+                        self._task_completed_event.clear()
                     if cancel.is_set():
                         self.cancel_mission(mid)
                         return {
@@ -246,6 +248,7 @@ class Orchestrator:
                         }
                 else:
                     await self._task_completed_event.wait()
+                    self._task_completed_event.clear()
                 continue
 
             # --- Wait for at least one worker to finish ---
@@ -259,6 +262,8 @@ class Orchestrator:
                 t0 = time.time()
                 try:
                     await task
+                except asyncio.CancelledError:
+                    raise
                 except Exception as exc:
                     self._completion_times.append(time.time() - t0)
                     self._notify(
@@ -341,7 +346,9 @@ class Orchestrator:
             elif pending_count == 0 and avg_time > 60 and self._max_workers > lower:
                 self._max_workers = max(self._max_workers - 1, lower)
         except Exception:
-            pass
+            import logging
+
+            logging.getLogger(__name__).exception("Concurrency adjustment failed")
 
     def _enqueue_ready(self, mission_id: str, active_workers: dict[asyncio.Task, DagNode]) -> None:
         """Launch ready tasks until concurrency limit is reached."""
@@ -374,9 +381,12 @@ class Orchestrator:
                 sm = self.tracker.get_state_machine(mission_id, node.task_id)
                 if sm and sm.state not in (TaskState.PENDING, TaskState.IN_PROGRESS):
                     continue
-                # Adjust per-task context budget when running concurrent tasks
+                # Adjust per-task context budget when running concurrent tasks.
+                # Only adjust once per task to avoid compounding division on rework.
                 if per_task_budget and per_task_budget < node.task.context_budget:
-                    node.task.context_budget = per_task_budget
+                    if "context_budget_adjusted" not in node.task.metadata:
+                        node.task.metadata["context_budget_adjusted"] = True
+                        node.task.context_budget = per_task_budget
                 task = asyncio.create_task(self._execute_task(mission_id, node))
                 active_workers[task] = node
                 dag._ready_cache = None  # Invalidate cache: task state will change asynchronously
@@ -503,6 +513,16 @@ class Orchestrator:
                 dag = self.tracker.get_dag(mission_id)
                 if dag:
                     dag.update_task_state(task_id, sm.state)
+                    # Ensure failed / timed-out tasks also have their result
+                    # recorded so they appear in task_outputs and the report.
+                    if dag.nodes[task_id].result is None:
+                        exec_res = dag.nodes[task_id].artifacts.get("_exec_result")
+                        if isinstance(exec_res, ExecutionResult):
+                            dag.update_task_result(
+                                task_id,
+                                exec_res.output or exec_res.error or "",
+                                exec_res.artifacts,
+                            )
 
     async def _run_worker(self, task: TaskSpec) -> ExecutionResult:
         """Run the appropriate worker for a task."""
@@ -528,6 +548,8 @@ class Orchestrator:
 
         try:
             return await handler(task, context)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             return ExecutionResult(
                 task_id=task.id,
@@ -563,10 +585,16 @@ class Orchestrator:
         except InvalidTransitionError:
             return
 
+        def _store_verification(level: int, vresult: VerificationResult) -> None:
+            dag = self.tracker.get_dag(mission_id)
+            if dag:
+                dag.nodes[task_id].artifacts[f"_verification_{level}"] = vresult
+
         # L1: Static analysis
         l1: VerificationResult | None = None
         if self.config.enable_l1_verification:
             l1 = await self._run_verifier(1, task, exec_result)
+            _store_verification(1, l1)
             if not l1.passed:
                 self._handle_verification_failure(mission_id, task, sm, l1)
                 return
@@ -583,6 +611,7 @@ class Orchestrator:
         has_code_changes = any(f.endswith(CODE_FILE_EXTENSIONS) for f in changed_files)
         if self.config.enable_l2_verification and not is_auto_simple and has_code_changes:
             l2 = await self._run_verifier(2, task, exec_result)
+            _store_verification(2, l2)
             if not l2.passed:
                 self._handle_verification_failure(mission_id, task, sm, l2)
                 return
@@ -595,6 +624,7 @@ class Orchestrator:
             and not is_auto_simple
         ):
             l3 = await self._run_verifier(3, task, exec_result)
+            _store_verification(3, l3)
             if not l3.passed:
                 self._handle_verification_failure(mission_id, task, sm, l3)
                 return
