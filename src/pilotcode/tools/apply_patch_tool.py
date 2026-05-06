@@ -1,5 +1,6 @@
 """ApplyPatch tool for applying unified diff patches to files."""
 
+import asyncio
 import os
 import subprocess
 from pathlib import Path
@@ -84,7 +85,8 @@ async def apply_patch_call(
         cwd = resolve_cwd(context)
         base_path = os.path.join(cwd, base_path)
 
-    result = _apply_patch_with_command(
+    result = await asyncio.to_thread(
+        _apply_patch_with_command,
         input_data.patch_text,
         base_path,
         input_data.strip,

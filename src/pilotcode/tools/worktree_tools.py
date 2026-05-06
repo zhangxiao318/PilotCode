@@ -1,5 +1,6 @@
 """Git worktree tools for managing multiple working directories."""
 
+import asyncio
 import subprocess
 import os
 from typing import Any
@@ -23,8 +24,8 @@ class EnterWorktreeOutput(BaseModel):
     message: str
 
 
-def run_git(args: list[str], cwd: str = ".") -> tuple[int, str, str]:
-    """Run git command."""
+def _run_git_sync(args: list[str], cwd: str = ".") -> tuple[int, str, str]:
+    """Run git command (synchronous helper)."""
     try:
         result = subprocess.run(
             ["git"] + args,
@@ -39,6 +40,11 @@ def run_git(args: list[str], cwd: str = ".") -> tuple[int, str, str]:
         return -1, "", str(e)
 
 
+async def run_git(args: list[str], cwd: str = ".") -> tuple[int, str, str]:
+    """Run git command without blocking the event loop."""
+    return await asyncio.to_thread(_run_git_sync, args, cwd)
+
+
 async def enter_worktree_call(
     input_data: EnterWorktreeInput,
     context: ToolUseContext,
@@ -50,7 +56,7 @@ async def enter_worktree_call(
     path = os.path.expanduser(input_data.path)
 
     # Check if it's a valid worktree
-    rc, stdout, stderr = run_git(["worktree", "list", "--porcelain"])
+    rc, stdout, stderr = await run_git(["worktree", "list", "--porcelain"])
 
     if rc != 0:
         return ToolResult(
@@ -173,7 +179,7 @@ async def list_worktrees_call(
     on_progress: Any,
 ) -> ToolResult[ListWorktreesOutput]:
     """List all git worktrees."""
-    rc, stdout, stderr = run_git(["worktree", "list", "--porcelain"])
+    rc, stdout, stderr = await run_git(["worktree", "list", "--porcelain"])
 
     if rc != 0:
         return ToolResult(

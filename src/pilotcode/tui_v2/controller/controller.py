@@ -92,6 +92,9 @@ class TUIController:
         self.query_engine: Optional[QueryEngine] = None
         self.tool_executor = get_tool_executor()
         self._permission_callback: Optional[Callable[[str, dict], asyncio.Future]] = None
+        self._ask_user_callback: Optional[
+            Callable[[str, list[str] | None], asyncio.Future[str]]
+        ] = None
 
         # Session-level permission cache: {tool_name: allowed}
         self._session_permissions: dict[str, bool] = {}
@@ -386,6 +389,16 @@ class TUIController:
         """
         self._permission_callback = callback
 
+    def set_ask_user_callback(
+        self, callback: Callable[[str, list[str] | None], asyncio.Future[str]]
+    ) -> None:
+        """Set callback for ask user input requests.
+
+        The callback receives (question, options) and should return a Future[str]
+        with the user's response. This replaces the blocking input() in TUI mode.
+        """
+        self._ask_user_callback = callback
+
     @property
     def current_mission(self) -> dict | None:
         """Get current mission tracking info, or None if no mission running."""
@@ -624,14 +637,25 @@ class TUIController:
         # so the final report only shows mission status + task list.
         try:
             report_parts: list[str] = []
+            snapshot = result.get("snapshot", {}) if result else {}
+            total = snapshot.get("total_tasks", 0)
+            completed = snapshot.get("completed_tasks", 0)
+            failed = snapshot.get("failed_tasks", 0)
+
+            # Detect empty mission (planner returned 0 tasks) so submit_message
+            # can fall back to normal direct-response mode.
+            self._last_pevr_empty = total == 0
+
             if result and result.get("success"):
-                snapshot = result.get("snapshot", {}) if result else {}
-                total = snapshot.get("total_tasks", 0)
-                completed = snapshot.get("completed_tasks", 0)
-                failed = snapshot.get("failed_tasks", 0)
-                report_parts.append(
-                    f"🏁 Mission Complete  |  {completed}/{total} tasks  |  {failed} failed"
-                )
+                if total == 0:
+                    report_parts.append(
+                        "⚠️  Planner produced no actionable tasks for this request. "
+                        "Switching to direct response mode."
+                    )
+                else:
+                    report_parts.append(
+                        f"🏁 Mission Complete  |  {completed}/{total} tasks  |  {failed} failed"
+                    )
             else:
                 error = result.get("error", "Unknown error") if result else "Mission failed"
                 report_parts.append(format_failure(result or {}, error))
@@ -664,6 +688,7 @@ class TUIController:
             error_msg = f"Mission report generation failed: {exc}"
             yield UIMessage(type=UIMessageType.ERROR, content=error_msg)
             full_report = error_msg
+            self._last_pevr_empty = False
         finally:
             # Clean up mission state so cancel can't fire twice
             if hasattr(self, "_current_mission"):
@@ -718,20 +743,19 @@ class TUIController:
             yield UIMessage(type=UIMessageType.ERROR, content="Query engine not initialized")
             return
 
-        # Trigger P-EVR mode when explicitly requested (/plan) or on first message
+        # Trigger P-EVR mode ONLY when explicitly requested via /plan.
+        # We do NOT auto-detect task complexity on the first message (or any
+        # message) because keyword/LLM heuristics are fragile and cause frequent
+        # false-positives.  This aligns with Claude Code & OpenCode: the user
+        # decides when structured planning is needed.
         if force_plan:
             async for msg in self._run_pevr_mode(text):
                 yield msg
-            return
-
-        # Auto-detect task complexity for the first user message
-        if len(self.query_engine.messages) == 0:
-            mode = await classify_task_complexity(
-                text, cwd=self.session_options.get("cwd", str(Path.cwd()))
-            )
-            if mode == "PLAN":
-                async for msg in self._run_pevr_mode(text):
-                    yield msg
+            # If planner produced no tasks, fall back to normal direct-response mode
+            if getattr(self, "_last_pevr_empty", False):
+                delattr(self, "_last_pevr_empty")
+                # Continue to normal mode below instead of returning
+            else:
                 return
 
         # DIRECT mode: detect if the user mentions a new workspace path
@@ -1040,6 +1064,7 @@ class TUIController:
                 get_app_state=self.get_app_state,
                 set_app_state=self.set_app_state,
                 cwd=self.session_options.get("cwd", str(Path.cwd())),
+                ask_user_callback=self._ask_user_callback,
             )
 
             # Permission already granted by TUI - set permission_manager callback

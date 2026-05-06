@@ -1,6 +1,6 @@
 """REPL tool for interactive programming environments."""
 
-import subprocess
+import asyncio
 from typing import Any
 from pydantic import BaseModel, Field
 
@@ -53,36 +53,45 @@ async def repl_call(
         )
 
     try:
-        # Run the code
+        # Run the code asynchronously to avoid blocking the event loop
         cmd = [config["command"]] + config["args"] + [input_data.code]
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=input_data.timeout,
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
 
-        return ToolResult(
-            data=REPLOutput(
-                language=input_data.language,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                exit_code=result.returncode,
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                process.communicate(), timeout=input_data.timeout
             )
-        )
+        except asyncio.TimeoutError:
+            try:
+                process.kill()
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except Exception:
+                pass
+            return ToolResult(
+                data=REPLOutput(
+                    language=input_data.language,
+                    stdout="",
+                    stderr=f"Timeout after {input_data.timeout} seconds",
+                    exit_code=-1,
+                ),
+                error=f"Timeout after {input_data.timeout} seconds",
+            )
 
-    except subprocess.TimeoutExpired:
+        stdout = stdout_bytes.decode("utf-8", errors="replace")
+        stderr = stderr_bytes.decode("utf-8", errors="replace")
+
         return ToolResult(
             data=REPLOutput(
                 language=input_data.language,
-                stdout="",
-                stderr=f"Timeout after {input_data.timeout} seconds",
-                exit_code=-1,
-            ),
-            error=f"Timeout after {input_data.timeout} seconds",
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=process.returncode or 0,
+            )
         )
 
     except Exception as e:

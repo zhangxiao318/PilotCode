@@ -1,5 +1,6 @@
 """Git tools for version control operations."""
 
+import asyncio
 import subprocess
 from typing import Any
 from pydantic import BaseModel, Field
@@ -26,8 +27,8 @@ class GitStatusOutput(BaseModel):
     behind: int = 0
 
 
-def run_git_command(args: list[str], cwd: str = ".") -> tuple[int, str, str]:
-    """Run a git command."""
+def _run_git_command_sync(args: list[str], cwd: str = ".") -> tuple[int, str, str]:
+    """Run a git command (synchronous helper)."""
     try:
         result = subprocess.run(["git"] + args, capture_output=True, cwd=cwd)
         # Try UTF-8 first, then fallback to system encoding (for Windows compatibility)
@@ -45,6 +46,11 @@ def run_git_command(args: list[str], cwd: str = ".") -> tuple[int, str, str]:
         return -1, "", str(e)
 
 
+async def run_git_command(args: list[str], cwd: str = ".") -> tuple[int, str, str]:
+    """Run a git command without blocking the event loop."""
+    return await asyncio.to_thread(_run_git_command_sync, args, cwd)
+
+
 async def git_status_call(
     input_data: GitStatusInput,
     context: ToolUseContext,
@@ -54,11 +60,11 @@ async def git_status_call(
 ) -> ToolResult[GitStatusOutput]:
     """Get git status."""
     # Get branch
-    rc, stdout, stderr = run_git_command(["branch", "--show-current"], input_data.path)
+    rc, stdout, stderr = await run_git_command(["branch", "--show-current"], input_data.path)
     branch = stdout.strip() if rc == 0 else "unknown"
 
     # Get status
-    rc, stdout, stderr = run_git_command(["status", "--porcelain"], input_data.path)
+    rc, stdout, stderr = await run_git_command(["status", "--porcelain"], input_data.path)
 
     modified = []
     staged = []
@@ -79,7 +85,7 @@ async def git_status_call(
                 untracked.append(filename)
 
     # Check ahead/behind
-    rc, stdout, stderr = run_git_command(
+    rc, stdout, stderr = await run_git_command(
         ["rev-list", "--left-right", "--count", f"HEAD...{branch}@{{u}}"], input_data.path
     )
     ahead = behind = 0
@@ -131,7 +137,7 @@ async def git_diff_call(
     if input_data.file:
         args.append(input_data.file)
 
-    rc, stdout, stderr = run_git_command(args, input_data.path)
+    rc, stdout, stderr = await run_git_command(args, input_data.path)
 
     if rc != 0:
         return ToolResult(data=GitDiffOutput(diff="", file_count=0), error=stderr)
@@ -191,7 +197,7 @@ async def git_log_call(
         args.append("--")
         args.append(input_data.file)
 
-    rc, stdout, stderr = run_git_command(args, input_data.path)
+    rc, stdout, stderr = await run_git_command(args, input_data.path)
 
     if rc != 0:
         return ToolResult(data=GitLogOutput(commits=[], total=0), error=stderr)
@@ -243,7 +249,7 @@ async def git_branch_call(
 ) -> ToolResult[GitBranchOutput]:
     """Manage git branches."""
     if input_data.action == "list":
-        rc, stdout, stderr = run_git_command(["branch", "-a"], input_data.path)
+        rc, stdout, stderr = await run_git_command(["branch", "-a"], input_data.path)
 
         if rc != 0:
             return ToolResult(data=GitBranchOutput(action="list", message=""), error=stderr)
@@ -275,7 +281,9 @@ async def git_branch_call(
                 data=GitBranchOutput(action="create", message=""), error="Branch name required"
             )
 
-        rc, stdout, stderr = run_git_command(["branch", input_data.branch_name], input_data.path)
+        rc, stdout, stderr = await run_git_command(
+            ["branch", input_data.branch_name], input_data.path
+        )
 
         return ToolResult(
             data=GitBranchOutput(
@@ -290,7 +298,9 @@ async def git_branch_call(
                 data=GitBranchOutput(action="switch", message=""), error="Branch name required"
             )
 
-        rc, stdout, stderr = run_git_command(["switch", input_data.branch_name], input_data.path)
+        rc, stdout, stderr = await run_git_command(
+            ["switch", input_data.branch_name], input_data.path
+        )
 
         return ToolResult(
             data=GitBranchOutput(
@@ -407,7 +417,7 @@ async def git_call(
             cmd.append(input_data.commit)
         if input_data.file:
             cmd.extend(["--", input_data.file])
-        rc, stdout, stderr = run_git_command(cmd, input_data.path)
+        rc, stdout, stderr = await run_git_command(cmd, input_data.path)
         if rc == 0:
             return ToolResult(
                 data=GitOutputUnified(result={"show": stdout[:10000]}, message="Git show")

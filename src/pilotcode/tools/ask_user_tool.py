@@ -30,15 +30,20 @@ async def ask_user_call(
     parent_message: Any,
     on_progress: Any,
 ) -> ToolResult[AskUserOutput]:
-    """Ask user a question."""
-    # This would normally interact with TUI
-    # For now, just return a placeholder
-    # In real implementation, this would show a prompt and wait for user input
+    """Ask user a question.
 
+    Uses context.ask_user_callback for async TUI input when available,
+    falling back to blocking input() for CLI/non-TUI modes.
+    """
+    # Prefer async callback (TUI v2) over blocking input()
+    if context.ask_user_callback is not None:
+        response = await context.ask_user_callback(input_data.question, input_data.options)
+        return ToolResult(data=AskUserOutput(response=response, question=input_data.question))
+
+    # Fallback: blocking input for CLI/non-TUI modes
     from rich.console import Console
 
     console = Console()
-
     console.print(f"\n[bold cyan]{input_data.question}[/bold cyan]")
 
     if input_data.options:
@@ -46,8 +51,6 @@ async def ask_user_call(
             console.print(f"  {i}. {option}")
         console.print("Enter your choice (number or text):")
 
-    # In actual implementation, this would use prompt_toolkit for async input
-    # For now, return a simulated response
     response = input("> ")
 
     return ToolResult(data=AskUserOutput(response=response, question=input_data.question))

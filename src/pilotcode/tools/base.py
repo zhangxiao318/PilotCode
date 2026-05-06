@@ -72,6 +72,7 @@ class ToolUseContext:
     get_app_state: Callable[[], "AppState"] | None = None
     set_app_state: Callable[[Callable[["AppState"], "AppState"]], None] | None = None
     cwd: str = ""
+    ask_user_callback: Callable[[str, list[str] | None], asyncio.Future[str]] | None = None
 
     def is_aborted(self) -> bool:
         return self.abort_controller.is_set()

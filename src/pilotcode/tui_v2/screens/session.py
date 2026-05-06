@@ -16,6 +16,10 @@ from pilotcode.tui_v2.components.permission_inline import (
     PermissionAction,
     PermissionResponded,
 )
+from pilotcode.tui_v2.components.ask_user_inline import (
+    InlineAskUserRequest,
+    AskUserResponded,
+)
 from pilotcode.tui_v2.components.search_bar import SearchBar, SearchMode, SearchNavigate
 from pilotcode.state.store import get_store
 from pilotcode.commands.base import process_user_input, parse_command
@@ -217,6 +221,9 @@ class SessionScreen(Screen):
         # Set permission callback
         self.controller.set_permission_callback(self._request_permission)
 
+        # Set ask user callback (replaces blocking input() in TUI)
+        self.controller.set_ask_user_callback(self._request_user_input)
+
     def _show_welcome(self):
         """Show welcome message in a boxed layout with two columns."""
         welcome_text = """┌────────────────────────────────────────────────────────┐
@@ -242,7 +249,9 @@ class SessionScreen(Screen):
         if not text:
             return
 
-        # Show user message in conversation (use display_text for paste placeholders)
+        # Show user message in conversation exactly once.
+        # display_text shows paste placeholders (e.g. ⟨PASTE#1+22L⟩);
+        # text (sent to the LLM) retains the full original content.
         if self.message_list:
             user_msg = UIMessage(
                 type=UIMessageType.USER, content=display_text or text, is_complete=True
@@ -259,22 +268,12 @@ class SessionScreen(Screen):
                 and args[0] not in ("start", "add", "next", "complete", "cancel")
             ):
                 description = " ".join(args)
-                if self.message_list:
-                    user_msg = UIMessage(
-                        type=UIMessageType.USER, content=f"/plan {description}", is_complete=True
-                    )
-                    self.message_list.add_message(user_msg)
                 self.run_worker(
                     self._process_message(description, force_plan=True), exit_on_error=False
                 )
                 return
             await self._handle_command(text)
             return
-
-        # Show user message immediately for feedback
-        if self.message_list:
-            user_msg = UIMessage(type=UIMessageType.USER, content=text, is_complete=True)
-            self.message_list.add_message(user_msg)
 
         # Process as normal message in background worker
         # This prevents blocking the UI event loop
@@ -332,11 +331,7 @@ class SessionScreen(Screen):
     async def _handle_command(self, text: str):
         """Handle slash commands using the command registry."""
         # Create command context
-
-        # Echo the user's command into the message list so it's visible
-        if self.message_list:
-            user_msg = UIMessage(type=UIMessageType.USER, content=text, is_complete=True)
-            self.message_list.add_message(user_msg)
+        # Note: user message is already displayed by on_prompt_with_mode_submitted
 
         get_store()
         ctx = CommandContext(
@@ -427,6 +422,36 @@ class SessionScreen(Screen):
 
     def on_permission_responded(self, event: PermissionResponded) -> None:
         """Handle permission response."""
+        # The inline component will update its own UI
+        pass
+
+    async def _request_user_input(self, question: str, options: list[str] | None = None) -> str:
+        """Request user input using inline component (async, non-blocking).
+
+        Replaces the blocking input() in ask_user_call for TUI v2.
+        """
+        if not self.message_list:
+            return ""
+
+        ask_widget = InlineAskUserRequest(question, options)
+
+        # Mount and display
+        await self.message_list.mount(ask_widget)
+
+        # Focus the input widget after DOM update
+        def set_focus():
+            if ask_widget._input:
+                ask_widget._input.focus()
+
+        self.app.call_after_refresh(set_focus)
+        self.message_list.scroll_end(animate=False)
+
+        # Wait for user response (yields control back to event loop)
+        result = await ask_widget.wait_for_response()
+        return result
+
+    def on_ask_user_responded(self, event: AskUserResponded) -> None:
+        """Handle ask user response."""
         # The inline component will update its own UI
         pass
 

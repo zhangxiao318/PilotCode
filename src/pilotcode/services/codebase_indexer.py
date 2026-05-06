@@ -514,16 +514,41 @@ class CodebaseIndexer:
             rel_path = path.relative_to(self.root_path)
             rel_str = str(rel_path)
         except ValueError:
+            rel_path = None
             rel_str = path_str
 
         # Check ignore directories (in full path for safety, and relative)
+        # Fix for false matches: check directory components, not just substrings
         for ignore_dir in self.IGNORE_DIRS:
-            if ignore_dir in path_str:
-                return True
+            # Handle glob patterns like "*.ext" and directory names
+            if ignore_dir.startswith("*.") and ignore_dir != "*.egg-info":
+                # Handle file extensions like "*.o", "*.so", etc.
+                if path.suffix.lower() == ignore_dir[1:].lower():
+                    return True
+            elif ignore_dir == "*.egg-info":
+                # Handle egg-info specifically
+                if path.name == "*.egg-info" or path_str.endswith(".egg-info"):
+                    return True
+            elif ignore_dir.endswith("*"):
+                # Handle patterns like "build*" but this is less common
+                if path_str.startswith(ignore_dir[:-1]):
+                    return True
+            else:
+                # Check if the path contains the directory name as a component
+                # This prevents false matches like "bin" in "/some/path/bin/..."
+                rel_parts = rel_path.parts if rel_path is not None else Path(rel_str).parts
+                if ignore_dir in rel_parts:
+                    return True
+                # Also check if the path contains the ignore_dir as a directory component
+                # This prevents false positives like "bin" in "/some/path/bin/..."
+                # but avoids false negatives for files in directories named like ignore_dir
+                path_parts = path_str.split("/")
+                if ignore_dir in path_parts:
+                    return True
 
         # Check hidden files/directories (only in relative path, not full path)
         # This avoids ignoring files in paths like /home/user/.local/...
-        rel_parts = rel_path.parts if isinstance(rel_path, Path) else Path(rel_str).parts
+        rel_parts = rel_path.parts if rel_path is not None else Path(rel_str).parts
         for part in rel_parts:
             if part.startswith(".") and part not in (".", ".."):
                 return True

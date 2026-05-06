@@ -896,26 +896,24 @@ def _compute_task_complexity(prompt: str, project_stats: dict[str, Any]) -> floa
 async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
     """Classify whether the task needs planning mode (PLAN) or direct mode (DIRECT).
 
-    Strategy:
-      1. Trivial non-dev cases (greetings, very short prompts) → DIRECT (no LLM).
-      2. Bug-fixing signals → PLAN (safe shortcut with strong signal).
-      3. Everything else → lightweight LLM classifier for accuracy.
+    Design philosophy (aligned with Claude Code & OpenCode):
+    - NEVER auto-detect task complexity for arbitrary user input.
+    - Only greetings / thanks are short-circuited to DIRECT.
+    - PLAN mode is ONLY triggered when the user explicitly requests it
+      (e.g. via /plan command) — never by keyword heuristics or LLM classifiers.
+    - The LLM in DIRECT mode can still decide on its own to use multi-step
+      tools or suggest /plan when it sees fit.
 
     Returns:
-        "PLAN"  -> multi-step, multi-file, or complex logic.
-        "DIRECT"-> simple Q&A, greeting, explanation, or single edit.
+        "PLAN"  -> only when user explicitly triggers plan mode.
+        "DIRECT"-> everything else (default).
     """
-    effective_cwd = cwd if cwd else str(os.getcwd())
-    target_path = _extract_target_path(prompt) or effective_cwd
-    project_stats = assess_project_complexity(target_path)
+    prompt_lower = prompt.lower().strip()
 
-    prompt_lower = prompt.lower()
-
-    # ---- Rule 1: Trivial non-dev tasks → DIRECT (no LLM) ----
-    # Only the most obvious signals: greetings, pure Q&A, thanks/goodbye
-    trivial_signals = [
+    # ---- Rule 1: Greetings / social → DIRECT ----
+    greeting_signals = [
         "hello",
-        "hi ",
+        "hi",
         "hey",
         "你好",
         "您好",
@@ -930,92 +928,13 @@ async def classify_task_complexity(prompt: str, cwd: str | None = None) -> str:
         "再见",
         "拜拜",
     ]
-    if any(s in prompt_lower for s in trivial_signals):
+    if any(prompt_lower.startswith(s) for s in greeting_signals):
         return "DIRECT"
 
-    # ---- Rule 2: Very short prompt with no code symbols → DIRECT ----
-    prompt_stripped = prompt.strip()
-    if len(prompt_stripped) < 20 and not any(
-        c in prompt_stripped for c in "._/=(){}[];:#$%&@!^*+-"
-    ):
-        return "DIRECT"
-
-    # ---- Rule 3: Bug-fixing signals → PLAN (strong signal, safe shortcut) ----
-    bug_signals = [
-        "bug report",
-        "bug fix",
-        "fix the bug",
-        "fix a bug",
-        "resolve the issue",
-        "github.com",
-        "issue #",
-        "pr #",
-        "failing test",
-        "test failure",
-        "regression",
-        "broken",
-        "does not work",
-        "not working",
-    ]
-    if any(s in prompt_lower for s in bug_signals):
-        return "PLAN"
-
-    # ---- Rule 4: Default — let the LLM classify intelligently ----
-    classifier_prompt = (
-        "You are a strict task router. Decide if this user request requires "
-        "multi-step planning across multiple files (PLAN) or can be answered "
-        "directly in a single turn (DIRECT).\n\n"
-        f"Project size: {project_stats.get('file_count', 0)} source files.\n"
-        f"User request ({len(prompt)} chars):\n{prompt}\n\n"
-        "Rules:\n"
-        "- DIRECT for: greetings, general Q&A, explanations, asking for help, "
-        "single-file edits, reading a single file, simple formatting.\n"
-        "- PLAN for: implementing features, refactoring, bug fixing across files, "
-        "adding tests to multiple modules, architecture changes, "
-        "analyzing or exploring large directories / projects, "
-        "cross-file dependency analysis, codebase-wide searches.\n\n"
-        "Answer with EXACTLY one word: PLAN or DIRECT. No punctuation."
-    )
-
-    client = get_model_client()
-    messages = [
-        Message(
-            role="system",
-            content="You classify coding tasks. Reply with exactly one word: PLAN or DIRECT.",
-        ),
-        Message(role="user", content=classifier_prompt),
-    ]
-
-    try:
-        chunks = []
-        async for chunk in client.chat_completion(
-            messages=messages,
-            tools=None,
-            temperature=0.0,
-            stream=False,
-        ):
-            chunks.append(chunk)
-
-        if not chunks:
-            return "PLAN"
-
-        content = ""
-        response = chunks[0]
-        if isinstance(response, dict):
-            choices = response.get("choices", [{}])
-            if choices:
-                delta = choices[0].get("delta", {})
-                if delta:
-                    content = delta.get("content", "")
-                else:
-                    content = choices[0].get("message", {}).get("content", "")
-        content = content.strip().upper()
-
-        if "DIRECT" in content:
-            return "DIRECT"
-        return "PLAN"
-    except Exception:
-        return "PLAN"
+    # ---- Default: everything else → DIRECT ----
+    # Complexity detection is intentionally removed.  If the user wants
+    # structured multi-step execution they use /plan explicitly.
+    return "DIRECT"
 
 
 async def _generate_structured_output(
