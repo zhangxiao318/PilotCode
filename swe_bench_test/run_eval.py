@@ -4,6 +4,10 @@
 import sys
 import os
 
+# Set proxy for requests library (swebench downloads requirements from GitHub)
+os.environ.setdefault("HTTP_PROXY", "http://10.68.168.9:7892")
+os.environ.setdefault("HTTPS_PROXY", "http://10.68.168.9:7892")
+
 sys.stdout.reconfigure(line_buffering=True)
 
 print("[DEBUG] Importing...", flush=True)
@@ -22,7 +26,7 @@ print(f"[DEBUG] Dataset loaded: {len(dataset)} instances", flush=True)
 
 print("[DEBUG] Loading predictions...", flush=True)
 predictions = get_predictions_from_file(
-    "/home/zx/mycc/PilotCode/swe_bench_test/predictions_merged.jsonl",
+    "/home/zx/mycc/PilotCode/swe_bench_test/predictions_all.jsonl",
     "/home/zx/.cache/swe-bench-lite.json",
     "test",
 )
@@ -37,7 +41,7 @@ main(
     dataset_name="/home/zx/.cache/swe-bench-lite.json",
     split="test",
     instance_ids=instance_ids,
-    predictions_path="/home/zx/mycc/PilotCode/swe_bench_test/predictions_merged.jsonl",
+    predictions_path="/home/zx/mycc/PilotCode/swe_bench_test/predictions_all.jsonl",
     max_workers=4,
     force_rebuild=False,
     cache_level="env",

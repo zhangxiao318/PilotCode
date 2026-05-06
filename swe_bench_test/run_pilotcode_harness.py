@@ -217,6 +217,7 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
     if not os.path.exists(cache_dir):
         os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
         repo_url = f"https://github.com/{repo}.git"
+<<<<<<< Updated upstream
         # Use system proxy settings (git config --global http.proxy should be set)
         rc, _, stderr = run_cmd(
             f"git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}",
@@ -225,6 +226,16 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
         if rc != 0:
             print(f"[WARN] Shallow clone failed: {stderr}")
             rc, _, stderr = run_cmd(f"git clone {repo_url} {cache_dir}", timeout=600)
+=======
+        # Clone with longer timeout since proxy is available
+        rc, _, stderr = run_cmd(
+            f"git clone --depth 1 --filter=blob:none {repo_url} {cache_dir}",
+            timeout=120,
+        )
+        if rc != 0:
+            print(f"[WARN] Shallow clone failed: {stderr}")
+            rc, _, stderr = run_cmd(f"git clone {repo_url} {cache_dir}", timeout=300)
+>>>>>>> Stashed changes
             if rc != 0:
                 print(f"[WARN] Full clone failed: {stderr}")
                 # Fallback: try to reuse any existing repo for the same project
@@ -239,10 +250,17 @@ def clone_and_checkout(repo: str, commit: str, work_dir: str) -> bool:
             print(f"[ERROR] Cache dir {cache_dir} is not a git repo")
             return False
         # Fetch/checkout target commit
+<<<<<<< Updated upstream
         rc, _, stderr = run_cmd(f"git fetch --depth 1 origin {commit}", cwd=cache_dir, timeout=300)
         if rc != 0:
             rc, _, stderr = run_cmd(f"git fetch origin {commit}", cwd=cache_dir, timeout=300)
         rc, _, stderr = run_cmd(f"git checkout {commit}", cwd=cache_dir, timeout=60)
+=======
+        rc, _, stderr = run_cmd(f"git fetch --depth 1 origin {commit}", cwd=cache_dir, timeout=60)
+        if rc != 0:
+            rc, _, stderr = run_cmd(f"git fetch origin {commit}", cwd=cache_dir, timeout=120)
+        rc, _, stderr = run_cmd(f"git checkout {commit}", cwd=cache_dir, timeout=30)
+>>>>>>> Stashed changes
         if rc != 0:
             print(f"[WARN] Failed to checkout {commit}: {stderr}")
             rc2, _, _ = run_cmd(f"git cat-file -t {commit}", cwd=cache_dir, timeout=10)
@@ -889,7 +907,7 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
 
     # --- Syntax check + test-feedback redesign loop ---
     if patch:
-        for redesign in range(2):
+        for redesign in range(5):
             # 1) Syntax check first (lightweight, no environment needed)
             syntax_ok, syntax_errors = check_patch_syntax(work_dir, patch)
             if not syntax_ok:
@@ -919,8 +937,8 @@ def solve_instance(instance: dict, model_name: str = "pilotcode") -> dict:
                     print(f"[ERROR] Syntax redesign timed out for {instance_id}: {e}")
                     break
 
-            # 2) Run tests (skip for astropy — local env always broken)
-            if repo == "astropy/astropy":
+            # 2) Run tests (enable for astropy when possible)
+            if repo == "astropy/astropy" and not os.environ.get("FORCE_ASTROPY_TESTS"):
                 print(
                     "[SKIP] Local tests disabled for astropy instances — running static review instead."
                 )

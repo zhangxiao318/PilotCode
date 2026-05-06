@@ -7,11 +7,25 @@ Messages are written using file locking for safe concurrent access.
 """
 
 import json
+import logging
+import os
 import time
-import fcntl
 from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
+
+# Cross-platform file locking: fcntl (Unix) or msvcrt (Windows)
+_lock_impl = None
+if os.name == "posix":
+    import fcntl
+
+    _lock_impl = "fcntl"
+elif os.name == "nt":
+    import msvcrt
+
+    _lock_impl = "msvcrt"
 
 # Structured message types
 MSG_TYPES = {
@@ -46,13 +60,29 @@ def _lock_file(fd: int, exclusive: bool = True):
     Raises:
         BlockingIOError if lock cannot be acquired within timeout
     """
-    lock_type = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
-    fcntl.flock(fd, lock_type | fcntl.LOCK_NB)
+    if _lock_impl == "fcntl":
+        import fcntl
+
+        lock_type = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        fcntl.flock(fd, lock_type | fcntl.LOCK_NB)
+    elif _lock_impl == "msvcrt":
+        import msvcrt
+
+        if exclusive:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        # Shared locks not supported on Windows via msvcrt; skip
 
 
 def _unlock_file(fd: int):
     """Release a file lock."""
-    fcntl.flock(fd, fcntl.LOCK_UN)
+    if _lock_impl == "fcntl":
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    elif _lock_impl == "msvcrt":
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
 
 
 def write_to_mailbox(
