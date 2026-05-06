@@ -223,7 +223,9 @@ def get_domestic_models() -> dict[str, ModelInfo]:
 _backend_limits_cache: dict[str, dict[str, int]] = {}
 
 
-def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[str, int] | None:
+def _probe_backend_limits(
+    base_url: str, api_protocol: str = "openai", api_key: str = ""
+) -> dict[str, int] | None:
     """Synchronously probe the backend for actual model limits.
 
     Queries llama-server /props, Ollama /api/show, and OpenAI-compatible
@@ -266,7 +268,10 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
     v1_models_works = False
     try:
         with httpx.Client(timeout=3.0, follow_redirects=True) as client:
-            resp = client.get(f"{root_url}/v1/models")
+            headers = {}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            resp = client.get(f"{root_url}/v1/models", headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
                 models = data.get("data", [])
@@ -314,7 +319,10 @@ def _probe_backend_limits(base_url: str, api_protocol: str = "openai") -> dict[s
     if not looks_like_ollama:
         try:
             with httpx.Client(timeout=3.0, follow_redirects=True) as client:
-                resp = client.get(f"{root_url}/props")
+                props_headers = {}
+                if api_key:
+                    props_headers["Authorization"] = f"Bearer {api_key}"
+                resp = client.get(f"{root_url}/props", headers=props_headers)
                 if resp.status_code == 200:
                     data = resp.json()
                     dgs = data.get("default_generation_settings", {})
@@ -396,7 +404,7 @@ def get_model_limits(model_name: str | None = None) -> dict[str, int]:
             config.get_model_config(model_name or config.default_model),
             get_model_info(model_name or config.default_model),
         )
-        probed = _probe_backend_limits(base_url, protocol)
+        probed = _probe_backend_limits(base_url, protocol, api_key=config.api_key or "")
         if probed:
             result.update(probed)
             if "context_window" in probed:
