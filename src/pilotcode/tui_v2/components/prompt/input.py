@@ -163,18 +163,27 @@ class PromptInput(TextArea):
             self._prev_text = new_val
 
     def _submit(self) -> None:
-        """Submit the current input."""
+        """Submit the current input.
+
+        Restoration strategy (most accurate first):
+        1. _pending_submit_text — authoritative original captured at paste time,
+           immune to user accidentally editing the placeholder.
+        2. str.replace() — fallback when user typed more after the paste.
+        """
         display_text = self.text.strip()
 
-        # Restore paste buffer text for LLM
-        if self._paste_buffers:
+        text: str
+        if self._pending_submit_text is not None:
+            # Authoritative original (captured at paste detection time)
+            text = self._pending_submit_text.strip()
+        elif self._paste_buffers:
+            # Fallback: inline placeholder replacement
             final_text = display_text
             for pid, original in sorted(self._paste_buffers.items()):
                 lines = original.count("\n") + 1
                 placeholder = f"⟨PASTE#{pid}+{lines}L⟩"
                 final_text = final_text.replace(placeholder, original)
             text = final_text
-            self._paste_buffers.clear()
         else:
             text = display_text
 
@@ -184,6 +193,7 @@ class PromptInput(TextArea):
         # Reset paste state for next round
         self._next_paste_id = 1
         self._pending_submit_text = None
+        self._paste_buffers.clear()
 
         # Use display_text (with placeholders) for conversation history
         self.post_message(self.Submitted(text=text, display_text=display_text))
