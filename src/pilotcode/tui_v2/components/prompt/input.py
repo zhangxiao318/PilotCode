@@ -44,8 +44,9 @@ class PromptInput(TextArea):
     class Submitted(Message):
         """Message sent when input is submitted."""
 
-        def __init__(self, text: str):
+        def __init__(self, text: str, display_text: str | None = None):
             self.text = text
+            self.display_text = display_text or text
             super().__init__()
 
     def __init__(self, **kwargs):
