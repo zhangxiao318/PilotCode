@@ -94,8 +94,8 @@ class TestGetModelMaxTokens:
             with patch("pilotcode.utils.models_config._probe_backend_limits", return_value=None):
                 result = get_model_max_tokens()
 
-        # openai in models.json has max_tokens=4096
-        assert result == 4096
+        # openai in models.json has max_tokens=16384
+        assert result == 16384
 
 
 class TestGetModelInfo:

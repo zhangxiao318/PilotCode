@@ -668,8 +668,15 @@ def _extract_target_path(prompt: str) -> str | None:
     # Unix absolute paths: e.g. /home/user/project, /tmp/foo, ~/project
     # Also handle ~ (home directory) — expand it before returning.
     # Also accept dot-relative paths like .., ../src, ../../foo.
+    # WARNING: Filter out URLs that look like paths (e.g. /api.openai.com/v1).
     unix_paths = re.findall(r"~?[\w./-]+", prompt, re.ASCII)
     for path in unix_paths:
+        # Skip URLs — they look like absolute paths but are not directories
+        if "//" in path or (
+            path.count("/") >= 2
+            and any(ext in path.lower() for ext in (".com", ".org", ".net", ".io", ".ai"))
+        ):
+            continue
         if path.startswith("~"):
             path = os.path.expanduser(path)
         # Accept absolute paths or dot-relative paths (.., ../foo)

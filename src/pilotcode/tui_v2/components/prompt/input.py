@@ -58,6 +58,10 @@ class PromptInput(TextArea):
         self._input_history: list[str] = []
         self._input_history_index = -1
         self._current_input = ""
+        # Paste buffer: stores original text for large pastes
+        self._paste_buffers: dict[int, str] = {}  # id -> original text
+        self._next_paste_id: int = 1
+        self._pending_submit_text: str | None = None  # Original text if input is shortened
 
     def on_mount(self):
         """Called when widget is mounted."""
@@ -89,9 +93,79 @@ class PromptInput(TextArea):
             self._submit()
             return
 
+    def _detect_paste(self, old_text: str, new_text: str) -> str | None:
+        """Detect if new_text contains a large paste and return a placeholder.
+
+        When a large block (>2 lines) is detected, stores the original
+        text in _paste_buffers and returns a shortened display placeholder.
+        Returns None if no paste detected.
+        """
+        if not new_text or not old_text:
+            return None
+
+        # Find what was added
+        if new_text.startswith(old_text):
+            added = new_text[len(old_text) :]
+        elif new_text.endswith(old_text):
+            added = new_text[: -len(old_text)]
+        else:
+            return None
+
+        added_lines = added.count("\n") + 1
+        if added_lines < 3 and len(added) < 200:
+            return None  # Not large enough to shorten
+
+        pid = self._next_paste_id
+        self._next_paste_id += 1
+        self._paste_buffers[pid] = added
+
+        # Build full text: old_text + placeholder
+        placeholder = f"[Pasted text #{pid} +{added_lines} lines]"
+        return old_text + placeholder
+
+    def _get_submit_text(self) -> str:
+        """Get the full text for submission, restoring any paste buffers."""
+        if self._pending_submit_text is not None:
+            return self._pending_submit_text
+        return self.text
+
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        """Detect and shorten large pastes."""
+        if not hasattr(self, "_paste_buffers"):  # During __init__
+            return
+
+        old_text = self.text  # Already changed, but we track the previous
+        if not hasattr(self, "_prev_text"):
+            self._prev_text = ""
+            return
+
+        old_val = self._prev_text
+        new_val = self.text
+
+        shortened = self._detect_paste(old_val, new_val)
+        if shortened is not None:
+            self._prev_text = shortened
+            # Update display without triggering another changed event
+            self.text = shortened
+            self.cursor_position = len(shortened)
+        else:
+            self._prev_text = new_val
+
     def _submit(self) -> None:
         """Submit the current input."""
-        text = self.text.strip()
+        # Restore paste buffer text if any
+        if self._paste_buffers:
+            final_text = self.text
+            for pid, original in sorted(self._paste_buffers.items()):
+                placeholder = f"[Pasted text #{pid} +" + str(original.count("\n") + 1) + " lines]"
+                final_text = final_text.replace(placeholder, original)
+            text = final_text.strip()
+            self._paste_buffers.clear()
+            self._pending_submit_text = None
+        else:
+            text = self.text.strip()
+            self._pending_submit_text = None
+
         if not text:
             return
 
@@ -105,6 +179,7 @@ class PromptInput(TextArea):
 
         # Clear input
         self.text = ""
+        self._prev_text = ""
         self._current_input = ""
 
     def _show_previous_history(self) -> None:
