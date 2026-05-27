@@ -299,7 +299,7 @@ class PluginVerifier:
         for path in manifest_paths:
             if path.exists():
                 try:
-                    with open(path, "r") as f:
+                    with open(path, "r", encoding="utf-8") as f:
                         return json.load(f)
                 except (json.JSONDecodeError, IOError):
                     pass

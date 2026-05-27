@@ -25,6 +25,15 @@ from .model_router import (
     simple_classify,
     quick_summarize,
 )
+from .token_utils import (
+    count_tokens,
+    count_messages_tokens,
+    estimate_context_window,
+    estimate_max_tokens,
+    safe_token_count,
+    get_context_token_usage,
+    get_model_specific_tokenizer,
+)
 
 __all__ = [
     # Config
@@ -49,4 +58,12 @@ __all__ = [
     "binary_decision",
     "simple_classify",
     "quick_summarize",
+    # Token utilities
+    "count_tokens",
+    "count_messages_tokens",
+    "estimate_context_window",
+    "estimate_max_tokens",
+    "safe_token_count",
+    "get_context_token_usage",
+    "get_model_specific_tokenizer",
 ]

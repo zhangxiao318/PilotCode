@@ -113,7 +113,7 @@ class AuditLogger:
         if not self._buffer:
             return
 
-        with open(self.log_path, "a") as f:
+        with open(self.log_path, "a", encoding="utf-8") as f:
             for event in self._buffer:
                 f.write(json.dumps(event.to_dict()) + "\n")
 
@@ -131,7 +131,7 @@ class AuditLogger:
         if not self.log_path.exists():
             return events
 
-        with open(self.log_path, "r") as f:
+        with open(self.log_path, "r", encoding="utf-8") as f:
             for line in reversed(f.readlines()):
                 line = line.strip()
                 if not line:

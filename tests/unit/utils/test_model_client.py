@@ -373,7 +373,9 @@ class TestAnthropicNormalization:
         payload = client._build_anthropic_payload(messages, None, 0.7, 1024, True)
 
         assert payload["model"] == "claude-3"
-        assert payload["system"] == "Be helpful"
+        assert payload["system"] == [
+            {"type": "text", "text": "Be helpful", "cache_control": {"type": "ephemeral"}}
+        ]
         assert all(m["role"] != "system" for m in payload["messages"])
         assert payload["messages"][0]["role"] == "user"
 

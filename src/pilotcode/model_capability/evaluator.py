@@ -135,55 +135,101 @@ def format_evaluation_report(results: list[BenchmarkResult], cap: ModelCapabilit
     Returns:
         Markdown-formatted report string.
     """
+    # Separate property tests from scored benchmarks
+    property_results = [r for r in results if r.dimension == "properties"]
+    scored_results = [r for r in results if r.dimension != "properties"]
+
     lines = [
         f"# Model Capability Evaluation: {cap.model_name}",
         "",
         f"**Overall Score:** {cap.overall_score:.1%}",
         f"**Evaluated At:** {cap.evaluated_at}",
         "",
-        "## Dimension Scores",
-        "",
-        "| Dimension | Score |",
-        "|-----------|-------|",
-        f"| Planning | {cap.planning.score:.1%} |",
-        f"| Task Completion | {cap.task_completion.score:.1%} |",
-        f"| JSON Formatting | {cap.json_formatting.score:.1%} |",
-        f"| Chain of Thought | {cap.chain_of_thought.score:.1%} |",
-        f"| Code Review | {cap.code_review.score:.1%} |",
-        "",
-        "## Sub-dimension Breakdown",
-        "",
-        "### Planning",
-        f"- DAG Correctness: {cap.planning.dag_correctness:.1%}",
-        f"- Task Granularity: {cap.planning.task_granularity_appropriateness:.1%}",
-        f"- Dependency Accuracy: {cap.planning.dependency_accuracy:.1%}",
-        "",
-        "### Task Completion",
-        f"- Code Correctness: {cap.task_completion.code_correctness:.1%}",
-        f"- Test Pass Rate: {cap.task_completion.test_pass_rate:.1%}",
-        "",
-        "### JSON Formatting",
-        f"- Valid JSON Rate: {cap.json_formatting.valid_json_rate:.1%}",
-        f"- Schema Compliance: {cap.json_formatting.schema_compliance:.1%}",
-        f"- Self Correction: {cap.json_formatting.self_correction:.1%}",
-        "",
-        "### Chain of Thought",
-        f"- Reasoning Depth: {cap.chain_of_thought.reasoning_depth:.1%}",
-        f"- Error Diagnosis: {cap.chain_of_thought.error_diagnosis:.1%}",
-        f"- Debugging Skill: {cap.chain_of_thought.debugging_skill:.1%}",
-        "",
-        "### Code Review",
-        f"- Bug Detection: {cap.code_review.bug_detection:.1%}",
-        f"- Structured Output: {cap.code_review.structured_output:.1%}",
-        f"- Style Consistency: {cap.code_review.style_consistency:.1%}",
-        "",
-        "## Individual Test Results",
-        "",
-        "| Test | Dimension | Score | Notes |",
-        "|------|-----------|-------|-------|",
     ]
 
-    for r in results:
+    # Model Properties section (informational, no scoring)
+    if property_results:
+        lines.extend(
+            [
+                "## Model Properties",
+                "",
+            ]
+        )
+        for r in property_results:
+            meta = r.metadata or {}
+            if r.test_name == "reasoning_support":
+                if meta.get("supported"):
+                    lines.append(
+                        f"- **Reasoning:** ✅ Supported  "
+                        f"(preview: {meta.get('reasoning_preview', '')[:80]}...)"
+                    )
+                else:
+                    tag_info = (
+                        " (inline <think> tags detected)"
+                        if meta.get("inline_thinking_tags")
+                        else ""
+                    )
+                    lines.append(f"- **Reasoning:** ❌ Not supported{tag_info}")
+            elif r.test_name == "token_accuracy":
+                if meta.get("usage_available"):
+                    lines.append(
+                        f"- **Token Usage:** ✅ Available  "
+                        f"(prompt={meta.get('prompt_tokens', '?')}, "
+                        f"completion={meta.get('completion_tokens', '?')}, "
+                        f"total={meta.get('total_tokens', '?')})"
+                    )
+                else:
+                    lines.append(f"- **Token Usage:** ❌ Not returned by API")
+            if r.error:
+                lines.append(f"  - Error: {r.error}")
+        lines.append("")
+
+    lines.extend(
+        [
+            "## Dimension Scores",
+            "",
+            "| Dimension | Score |",
+            "|-----------|-------|",
+            f"| Planning | {cap.planning.score:.1%} |",
+            f"| Task Completion | {cap.task_completion.score:.1%} |",
+            f"| JSON Formatting | {cap.json_formatting.score:.1%} |",
+            f"| Chain of Thought | {cap.chain_of_thought.score:.1%} |",
+            f"| Code Review | {cap.code_review.score:.1%} |",
+            "",
+            "## Sub-dimension Breakdown",
+            "",
+            "### Planning",
+            f"- DAG Correctness: {cap.planning.dag_correctness:.1%}",
+            f"- Task Granularity: {cap.planning.task_granularity_appropriateness:.1%}",
+            f"- Dependency Accuracy: {cap.planning.dependency_accuracy:.1%}",
+            "",
+            "### Task Completion",
+            f"- Code Correctness: {cap.task_completion.code_correctness:.1%}",
+            f"- Test Pass Rate: {cap.task_completion.test_pass_rate:.1%}",
+            "",
+            "### JSON Formatting",
+            f"- Valid JSON Rate: {cap.json_formatting.valid_json_rate:.1%}",
+            f"- Schema Compliance: {cap.json_formatting.schema_compliance:.1%}",
+            f"- Self Correction: {cap.json_formatting.self_correction:.1%}",
+            "",
+            "### Chain of Thought",
+            f"- Reasoning Depth: {cap.chain_of_thought.reasoning_depth:.1%}",
+            f"- Error Diagnosis: {cap.chain_of_thought.error_diagnosis:.1%}",
+            f"- Debugging Skill: {cap.chain_of_thought.debugging_skill:.1%}",
+            "",
+            "### Code Review",
+            f"- Bug Detection: {cap.code_review.bug_detection:.1%}",
+            f"- Structured Output: {cap.code_review.structured_output:.1%}",
+            f"- Style Consistency: {cap.code_review.style_consistency:.1%}",
+            "",
+            "## Individual Test Results",
+            "",
+            "| Test | Dimension | Score | Notes |",
+            "|------|-----------|-------|-------|",
+        ]
+    )
+
+    for r in scored_results:
         notes = r.error if r.error else ""
         if r.metadata:
             meta = ", ".join(f"{k}={v}" for k, v in r.metadata.items() if not isinstance(v, list))

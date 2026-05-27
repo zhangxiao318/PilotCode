@@ -81,7 +81,8 @@ class TestTUIv2Startup:
         from pilotcode.tui_v2.controller.controller import TUIController
 
         # Create controller with mocked query engine
-        with patch("pilotcode.tui_v2.controller.controller.QueryEngine") as MockEngine:
+        # QueryEngine is imported inside SessionService, so patch it there
+        with patch("pilotcode.ui.session_service.QueryEngine") as MockEngine:
             mock_engine = MagicMock()
             mock_engine.count_tokens.return_value = 0
             MockEngine.return_value = mock_engine
@@ -192,6 +193,8 @@ class TestTUIv2Integration:
         mapping = {
             UIMessageType.USER: "user",
             UIMessageType.ASSISTANT: "assistant",
+            UIMessageType.THINKING: "thinking",
+            UIMessageType.REASONING: "reasoning",
             UIMessageType.TOOL_USE: "tool",
             UIMessageType.TOOL_RESULT: "tool-result",
             UIMessageType.ERROR: "error",
@@ -210,6 +213,8 @@ class TestTUIv2Integration:
         labels = {
             UIMessageType.USER: "You",
             UIMessageType.ASSISTANT: "🤖",
+            UIMessageType.THINKING: "💭 Thinking",
+            UIMessageType.REASONING: "🔮 Reasoning",
             UIMessageType.TOOL_USE: "🔧",
             UIMessageType.TOOL_RESULT: "📤",
             UIMessageType.ERROR: "❌",

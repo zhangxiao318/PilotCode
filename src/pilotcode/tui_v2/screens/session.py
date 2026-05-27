@@ -149,13 +149,14 @@ class SessionScreen(Screen):
         if self.status_bar and self.controller and self.controller._session_id:
             self.status_bar.set_session_id(self.controller._session_id)
 
-        # Initialize status bar context info
+        # Initialize status bar context info and token count
         if self.status_bar and self.controller:
             info = self.controller.get_token_info()
             self.status_bar.set_context_info(
                 info["context_window"],
                 info["max_output_tokens"],
             )
+            self.status_bar.set_token_count(info["count"])
 
         # Focus prompt
         if self.prompt:
@@ -183,6 +184,29 @@ class SessionScreen(Screen):
                         type=UIMessageType.ASSISTANT, content=msg.content or "", is_complete=True
                     )
                 )
+                # DeepSeek reasoning_content stored on AssistantMessage
+                if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+                    self.message_list.add_message(
+                        UIMessage(
+                            type=UIMessageType.REASONING,
+                            content=msg.reasoning_content,
+                            is_complete=True,
+                        )
+                    )
+            elif msg.__class__.__name__ == "ThinkingMessage" or (
+                hasattr(msg, "thinking") and msg.thinking
+            ):
+                thinking_content = getattr(msg, "thinking", "") or (
+                    msg.content if hasattr(msg, "content") else ""
+                )
+                if thinking_content:
+                    self.message_list.add_message(
+                        UIMessage(
+                            type=UIMessageType.THINKING,
+                            content=thinking_content,
+                            is_complete=True,
+                        )
+                    )
             elif isinstance(msg, ToolUseMessage):
                 self.message_list.add_message(
                     UIMessage(
@@ -258,6 +282,11 @@ class SessionScreen(Screen):
             )
             self.message_list.add_message(user_msg)
 
+        # Bash shortcut: !command executes directly without LLM
+        if text.startswith("!"):
+            self.run_worker(self._execute_bash_shortcut(text[1:].strip()), exit_on_error=False)
+            return
+
         # Check for commands
         if text.startswith("/"):
             cmd_name, args = parse_command(text)
@@ -272,7 +301,12 @@ class SessionScreen(Screen):
                     self._process_message(description, force_plan=True), exit_on_error=False
                 )
                 return
-            await self._handle_command(text)
+            # Run long-running commands (like /index) in a background worker
+            # so they don't block the UI event loop and starve other workers.
+            if cmd_name in ("index", "idx", "reindex"):
+                self.run_worker(self._handle_command(text), exit_on_error=False)
+            else:
+                await self._handle_command(text)
             return
 
         # Process as normal message in background worker
@@ -292,6 +326,10 @@ class SessionScreen(Screen):
             async for msg in self.controller.submit_message(text, force_plan=force_plan):
                 # Skip user messages as they're already displayed
                 if msg.type == UIMessageType.USER:
+                    # Still update token count — messages list already has the new user message
+                    if self.status_bar:
+                        info = self.controller.get_token_info()
+                        self.status_bar.set_token_count(info["count"])
                     continue
 
                 self.message_list.add_message(msg)
@@ -328,16 +366,77 @@ class SessionScreen(Screen):
                         info["max_output_tokens"],
                     )
 
+    async def _execute_bash_shortcut(self, command: str):
+        """Execute a bash command directly (! prefix) without LLM involvement."""
+        if not command:
+            if self.message_list:
+                self.message_list.add_message(
+                    UIMessage(type=UIMessageType.ERROR, content="Empty command after '!'")
+                )
+            return
+
+        from pilotcode.tools.bash_tool import execute_bash
+
+        if self.status_bar:
+            self.status_bar.set_processing(True)
+
+        try:
+            result = await execute_bash(command, cwd=str(Path.cwd()), timeout=60)
+
+            # Build output display
+            lines: list[str] = []
+            lines.append(f"$ {result.command}")
+            if result.stdout:
+                lines.append(result.stdout)
+            if result.stderr:
+                lines.append(f"[stderr] {result.stderr}")
+            if result.exit_code != 0:
+                lines.append(f"[exit code: {result.exit_code}]")
+
+            output = "\n".join(lines)
+            if not output.strip():
+                output = (
+                    f"$ {result.command}\n(command completed with exit code {result.exit_code})"
+                )
+
+            if self.message_list:
+                self.message_list.add_message(
+                    UIMessage(
+                        type=UIMessageType.TOOL_RESULT,
+                        content=output,
+                        metadata={"tool_name": "Bash", "command": result.command},
+                        is_complete=True,
+                    )
+                )
+        except Exception as e:
+            if self.message_list:
+                self.message_list.add_message(
+                    UIMessage(type=UIMessageType.ERROR, content=f"Bash error: {e}")
+                )
+        finally:
+            if self.status_bar:
+                self.status_bar.set_processing(False)
+
     async def _handle_command(self, text: str):
         """Handle slash commands using the command registry."""
         # Create command context
         # Note: user message is already displayed by on_prompt_with_mode_submitted
 
-        get_store()
+        store = get_store()
+        # Use session's cwd (updated by bash cd) instead of process cwd
+        session_cwd = str(Path.cwd())
+        if store:
+            session_cwd = getattr(store.get_state(), "cwd", session_cwd) or session_cwd
+
+        def _progress_callback(msg: str) -> None:
+            if self.status_bar:
+                self.status_bar.set_status(msg)
+
         ctx = CommandContext(
-            cwd=str(Path.cwd()),
+            cwd=session_cwd,
             query_engine=self.controller.query_engine if self.controller else None,
             session_id=self.controller._session_id if self.controller else None,
+            progress_callback=_progress_callback,
         )
 
         try:
@@ -386,6 +485,11 @@ class SessionScreen(Screen):
                     self.message_list.clear_messages()
                 if self.controller:
                     self.controller.clear_history()
+                    self.controller.reset_session_save_count()
+                if self.status_bar:
+                    self.status_bar.set_token_count(0)
+                    self.status_bar.set_context_info(0, 0)
+                    self.status_bar.set_status("Conversation cleared")
 
         except SystemExit:
             self.app.exit()
@@ -393,6 +497,10 @@ class SessionScreen(Screen):
             msg = UIMessage(type=UIMessageType.ERROR, content=f"Error executing command: {str(e)}")
             if self.message_list:
                 self.message_list.add_message(msg)
+        finally:
+            # Clear any transient progress/status from the status bar
+            if self.status_bar:
+                self.status_bar.set_status("")
 
     async def _request_permission(self, tool_name: str, params: dict) -> PermissionResult:
         """Request permission for tool execution using inline component."""
@@ -516,7 +624,10 @@ class SessionScreen(Screen):
             self.message_list.clear_messages()
         if self.controller:
             self.controller.clear_history()
+            self.controller.reset_session_save_count()
         if self.status_bar:
+            self.status_bar.set_token_count(0)
+            self.status_bar.set_context_info(0, 0)
             self.status_bar.set_status("Conversation cleared")
 
     def action_help(self):

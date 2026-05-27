@@ -115,7 +115,8 @@ async def session_command(args: list[str], context: CommandContext) -> str | dic
 
         # 3. Apply loaded messages into the current query_engine
         if context and context.query_engine and hasattr(context.query_engine, "messages"):
-            context.query_engine.messages = messages
+            context.query_engine.messages[:] = messages
+
             loaded_name = metadata.get("name", session_id)
             restored_cwd = metadata.get("project_path")
             return {

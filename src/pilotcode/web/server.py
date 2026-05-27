@@ -1,6 +1,14 @@
-"""Web server for PilotCode Web UI."""
+"""Web server for PilotCode Web UI.
+
+Partially refactored for MVC: SessionService integration is available
+through WebSocketProtocol, but the main process_query function still
+uses the legacy approach due to the multi-session architecture.
+Full migration to SessionService.process_query() is planned for a
+future iteration.
+"""
 
 import sys
+import re
 import json
 import asyncio
 import traceback
@@ -10,17 +18,32 @@ from datetime import datetime
 from pathlib import Path
 from typing import Set, Dict, Any
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+import os
 import threading
 import websockets
 
 from pilotcode.types.message import SystemMessage
 from pilotcode.services.fileedit_compensation import FileEditCompensationTracker
 from pilotcode.version import __version__
+from pilotcode.ui.protocol import (
+    BlockEvent,
+    BlockKind,
+    BlockPhase,
+    StatusUpdate,
+    PermissionResult,
+)
 
-# Suppress websockets verbose logging - only show errors, not warnings
-logging.getLogger("websockets").setLevel(logging.ERROR)
-logging.getLogger("websockets.server").setLevel(logging.ERROR)
-logging.getLogger("websockets.protocol").setLevel(logging.ERROR)
+logger = logging.getLogger("pilotcode.web.server")
+
+# Plugin mode: suppress verbose internal logs when running inside VS Code extension
+PLUGIN_MODE = os.environ.get("PILOTCODE_PLUGIN_MODE") == "1"
+
+
+def _log_debug(msg: str) -> None:
+    """Print only when not in plugin mode."""
+    if not PLUGIN_MODE:
+        print(msg)
+
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -33,6 +56,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 def _serialize_messages_for_web(messages: list) -> list[dict]:
     """Convert message objects to a web-friendly format for UI rendering."""
+    # Build a lookup map from tool_use_id -> tool_name for result labels
+    tool_name_map: dict[str, str] = {}
+    for msg in messages:
+        if msg.__class__.__name__ == "ToolUseMessage":
+            tool_name_map[msg.tool_use_id] = msg.name
+
     result = []
     for msg in messages:
         msg_type = msg.__class__.__name__
@@ -40,12 +69,30 @@ def _serialize_messages_for_web(messages: list) -> list[dict]:
             result.append({"role": "user", "content": msg.content})
         elif msg_type == "AssistantMessage":
             result.append({"role": "assistant", "content": msg.content or ""})
+            if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+                result.append({"role": "reasoning", "content": msg.reasoning_content})
+        elif msg_type == "SystemMessage":
+            result.append({"role": "system", "content": msg.content})
         elif msg_type == "ToolUseMessage":
-            result.append({"role": "tool_use", "name": msg.name, "input": msg.input})
+            result.append(
+                {
+                    "role": "tool_use",
+                    "tool_use_id": msg.tool_use_id,
+                    "name": msg.name,
+                    "input": msg.input,
+                }
+            )
         elif msg_type == "ToolResultMessage":
             content = msg.content if isinstance(msg.content, str) else str(msg.content)
-            result.append({"role": "tool_result", "content": content})
-        # SystemMessage is intentionally skipped for history view
+            result.append(
+                {
+                    "role": "tool_result",
+                    "tool_use_id": msg.tool_use_id,
+                    "content": content,
+                    "is_error": msg.is_error,
+                    "tool_name": tool_name_map.get(msg.tool_use_id, "unknown"),
+                }
+            )
     return result
 
 
@@ -79,7 +126,34 @@ TOOL_KEYWORDS = {
     "git status",
     "git log",
     "git diff",
+    # Compile / build errors
+    "error:",
+    "fatal error:",
+    "编译",
+    "编译错误",
+    "make[",
+    "cmake",
+    "gcc",
+    "g++",
+    "clang",
+    "build",
+    "linker error",
+    "undefined reference",
+    "no matching",
+    "no such file",
+    "cannot find",
 }
+
+
+# Compile-error patterns (GCC/Clang/make style)
+_COMPILE_ERROR_PATTERNS = [
+    re.compile(r"[\w/]+\.(c|cpp|h|hpp|cc|cxx):\d+:\d+:\s*(error|warning):"),
+    re.compile(r"make\[\d+\]:.*error \d+", re.IGNORECASE),
+    re.compile(r"fatal error:", re.IGNORECASE),
+    re.compile(r"undefined reference to", re.IGNORECASE),
+    re.compile(r"no matching function for call to", re.IGNORECASE),
+    re.compile(r"cannot find.*package|no such file", re.IGNORECASE),
+]
 
 
 def _should_use_tools(query: str, response: str) -> bool:
@@ -107,6 +181,10 @@ def _should_use_tools(query: str, response: str) -> bool:
     for kw in TOOL_KEYWORDS:
         if kw in q:
             return True
+    # Compile / build error heuristics
+    for pattern in _COMPILE_ERROR_PATTERNS:
+        if pattern.search(query):
+            return True
     # Response looks like a pseudo tool-call (model emitted XML-like tags)
     if response and (
         "<parameter>" in response or "<tool_call>" in response or "</tool>" in response
@@ -124,6 +202,157 @@ class PermissionRequest:
         self.tool_input = tool_input
         self.risk_level = risk_level
         self.for_session = False
+
+
+class WebSocketProtocol:
+    """UIProtocol adapter for WebSocket-based Web UI.
+
+    Maps three-channel protocol events to WebSocket JSON messages:
+    - Channel 1 (on_block_event): streaming_start/chunk/complete JSON
+    - Channel 2 (on_status_update): context_usage JSON
+    - Channel 3 (request_permission): permission_request/result round-trip
+    - on_error: streaming_error JSON
+
+    This adapter is designed to be created per-query (not per-session)
+    because the websocket reference changes per query.
+    """
+
+    def __init__(self, ws_manager, websocket, stream_id: str):
+        self._ws_manager = ws_manager
+        self._websocket = websocket
+        self._stream_id = stream_id
+
+    async def on_block_event(self, event: BlockEvent) -> None:
+        """Convert BlockEvent to WebSocket JSON message."""
+        if event.kind == BlockKind.ASSISTANT:
+            if event.phase == BlockPhase.OPEN:
+                await self._ws_manager.send_to_client(
+                    self._websocket,
+                    {"type": "streaming_start", "stream_id": self._stream_id},
+                )
+            elif event.phase == BlockPhase.DELTA:
+                await self._ws_manager.send_to_client(
+                    self._websocket,
+                    {
+                        "type": "streaming_chunk",
+                        "stream_id": self._stream_id,
+                        "chunk": event.content,
+                    },
+                )
+            elif event.phase == BlockPhase.CLOSE:
+                await self._ws_manager.send_to_client(
+                    self._websocket,
+                    {"type": "streaming_complete", "stream_id": self._stream_id},
+                )
+
+        elif event.kind == BlockKind.THINKING:
+            if event.phase == BlockPhase.DELTA:
+                await self._ws_manager.send_to_client(
+                    self._websocket,
+                    {"type": "thinking", "stream_id": self._stream_id, "content": event.content},
+                )
+
+        elif event.kind == BlockKind.TOOL_CALL:
+            if event.phase == BlockPhase.OPEN:
+                await self._ws_manager.send_to_client(
+                    self._websocket,
+                    {
+                        "type": "tool_call",
+                        "stream_id": self._stream_id,
+                        "tool_name": event.metadata.get("tool_name", event.content),
+                        "tool_input": event.metadata.get("tool_input", {}),
+                        "tool_use_id": event.metadata.get("tool_use_id", ""),
+                    },
+                )
+
+        elif event.kind == BlockKind.TOOL_RESULT:
+            if event.phase == BlockPhase.CLOSE:
+                await self._ws_manager.send_to_client(
+                    self._websocket,
+                    {
+                        "type": "tool_result",
+                        "stream_id": self._stream_id,
+                        "tool_name": event.metadata.get("tool_name", ""),
+                        "content": event.content,
+                        "error": event.metadata.get("error", False),
+                    },
+                )
+
+        elif event.kind == BlockKind.SYSTEM:
+            if event.phase == BlockPhase.CLOSE and event.content:
+                await self._ws_manager.send_to_client(
+                    self._websocket,
+                    {"type": "system", "stream_id": self._stream_id, "content": event.content},
+                )
+
+    async def on_status_update(self, update: StatusUpdate) -> None:
+        """Send context_usage update to WebSocket client."""
+        context_window = update.context_window or 0
+        max_output = update.max_output_tokens or 0
+        token_count = update.token_count or 0
+        usable = max(1, context_window - max_output)
+        pct = min(100.0, token_count / context_window * 100) if context_window > 0 else 0.0
+        info = {
+            "token_count": token_count,
+            "context_window": context_window,
+            "max_output_tokens": max_output,
+            "usable_context": usable,
+            "percentage": round(pct, 1),
+            "is_processing": update.is_processing,
+            "model_name": update.model_name,
+            "thinking_mode": update.thinking_mode,
+        }
+        await self._ws_manager.send_to_client(self._websocket, {"type": "context_usage", **info})
+
+    async def request_permission(
+        self, tool_name: str, params: dict, risk_level: str
+    ) -> PermissionResult:
+        """Request permission via WebSocket round-trip."""
+        request_id = f"perm_{uuid.uuid4().hex[:8]}"
+        future = self._ws_manager.permission_manager.create_request(request_id)
+        self._ws_manager.permission_manager._request_info[request_id] = PermissionRequest(
+            request_id=request_id,
+            tool_name=tool_name,
+            tool_input=params,
+            risk_level=risk_level,
+        )
+        await self._ws_manager.send_to_client(
+            self._websocket,
+            {
+                "type": "permission_request",
+                "request_id": request_id,
+                "tool_name": tool_name,
+                "tool_input": params,
+                "risk_level": risk_level,
+            },
+        )
+        result = await future
+        return PermissionResult(
+            allowed=result.allowed,
+            for_session=getattr(result, "for_session", False),
+        )
+
+    async def request_user_input(self, question: str, options: list[str] | None = None) -> str:
+        """Request user input via WebSocket round-trip."""
+        question_id = f"q_{uuid.uuid4().hex[:8]}"
+        future = self._ws_manager.question_manager.create_question(question_id)
+        await self._ws_manager.send_to_client(
+            self._websocket,
+            {
+                "type": "question",
+                "question_id": question_id,
+                "question": question,
+                "options": options,
+            },
+        )
+        return await future
+
+    async def on_error(self, error: str) -> None:
+        """Send error to WebSocket client."""
+        await self._ws_manager.send_to_client(
+            self._websocket,
+            {"type": "streaming_error", "stream_id": self._stream_id, "error": error},
+        )
 
 
 class PermissionRequestManager:
@@ -243,12 +472,35 @@ class WebSocketManager:
 
         self.loop_guard = LoopGuard()
 
+        # _list_sessions cache: (timestamp, result)
+        self._list_sessions_cache: tuple[float, list[dict]] | None = None
+        self._LIST_SESSIONS_CACHE_TTL: float = 3.0
+
     # ------------------------------------------------------------------
     # Session management helpers
     # ------------------------------------------------------------------
 
     def _generate_session_id(self) -> str:
         return f"sess_{uuid.uuid4().hex[:12]}"
+
+    @staticmethod
+    async def _git_run(cmd: list[str], cwd: str | None = None, timeout: float = 10.0) -> Any:
+        """Run a git subprocess without blocking the event loop."""
+        import subprocess
+
+        def _run():
+            kwargs = {
+                "capture_output": True,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "ignore",
+                "timeout": timeout,
+            }
+            if cwd:
+                kwargs["cwd"] = cwd
+            return subprocess.run(cmd, **kwargs)
+
+        return await asyncio.to_thread(_run)
 
     def _update_recent_directories(self, cwd: str) -> None:
         """Add a directory to recent list, deduplicate and limit to 10."""
@@ -274,7 +526,26 @@ class WebSocketManager:
         global_cfg = get_global_config()
 
         def _on_notify(event_type: str, payload: dict) -> None:
-            pass  # Notifications are handled per-query in process_query
+            # Forward notifications to all websockets attached to this session
+            text = payload.get("text", "")
+            if event_type == "auto_compact":
+                saved = payload.get("tokens_saved", 0)
+                cleared = payload.get("tool_results_cleared", 0)
+                if payload.get("fallback"):
+                    text = f"🔄 Auto-compacted context (fallback, ~{saved} tokens saved)"
+                elif cleared > 0:
+                    text = f"🔄 Auto-compacted context ({cleared} old tool results cleared, ~{saved} tokens saved)"
+                else:
+                    text = f"🔄 Auto-compacted context (~{saved} tokens saved)"
+            if text:
+                for ws, sid in list(self.client_sessions.items()):
+                    if sid == session_id:
+                        try:
+                            asyncio.create_task(
+                                self.send_to_client(ws, {"type": "system", "content": text})
+                            )
+                        except Exception:
+                            pass
 
         query_engine = QueryEngine(
             QueryEngineConfig(
@@ -285,6 +556,7 @@ class WebSocketManager:
                 on_notify=_on_notify,
                 auto_review=global_cfg.auto_review,
                 max_review_iterations=global_cfg.max_review_iterations,
+                session_id=session_id,
             )
         )
 
@@ -345,7 +617,46 @@ class WebSocketManager:
         return False
 
     async def _list_sessions(self) -> list[dict]:
-        """List all sessions (memory + disk)."""
+        """List all sessions (memory + disk).
+
+        Uses a TTL cache to avoid repeated disk I/O on frequent requests.
+        """
+        import time
+
+        now = time.monotonic()
+        # Check cache first (only for disk part — in-memory is always fresh)
+        if self._list_sessions_cache is not None:
+            cache_time, cached_result = self._list_sessions_cache
+            if now - cache_time < self._LIST_SESSIONS_CACHE_TTL:
+                # Still need fresh in-memory sessions
+                memory_ids = set()
+                result = []
+                async with self._session_lock:
+                    for sid, ctx in self._session_contexts.items():
+                        memory_ids.add(sid)
+                        result.append(
+                            {
+                                "session_id": sid,
+                                "name": ctx.get("name", sid),
+                                "message_count": len(ctx["query_engine"].messages),
+                                "created_at": ctx["created_at"],
+                                "last_activity": ctx["last_activity"],
+                                "source": "memory",
+                                "project_path": str(
+                                    getattr(ctx["store"].get_state(), "cwd", None)
+                                    or getattr(ctx["query_engine"].config, "cwd", self.cwd)
+                                    or self.cwd
+                                ),
+                                "archived": ctx.get("archived", False),
+                            }
+                        )
+                # Merge with cached disk sessions (filter out any now in memory)
+                for disk_s in cached_result:
+                    if disk_s["session_id"] not in memory_ids and disk_s.get("source") == "disk":
+                        result.append(disk_s)
+                result.sort(key=lambda s: s.get("last_activity", ""), reverse=True)
+                return result
+
         result = []
         memory_ids = set()
         async with self._session_lock:
@@ -393,6 +704,10 @@ class WebSocketManager:
 
         # Sort by last_activity desc
         result.sort(key=lambda s: s.get("last_activity", ""), reverse=True)
+
+        # Update cache (store only disk portion to avoid stale in-memory data)
+        disk_only = [s for s in result if s.get("source") == "disk"]
+        self._list_sessions_cache = (time.monotonic(), disk_only)
         return result
 
     def _touch_session(self, session_id: str):
@@ -402,6 +717,431 @@ class WebSocketManager:
             ctx["last_activity"] = datetime.now().isoformat()
             ctx["message_count"] = len(ctx["query_engine"].messages)
 
+    def _get_context_info(self, session_id: str) -> dict:
+        """Get token/context usage info for a session.
+
+        Auto-detects model changes: if the current model's context_window or
+        max_output_tokens differ from the QueryEngine's cached values, the
+        engine is updated immediately. This ensures the Web UI's bottom-right
+        token bar reflects the correct model after a restart with a new model.
+
+        Uses get_model_limits() which may probe the backend on first call
+        (GET /v1/models, 3s timeout), but caches the result to disk so
+        subsequent calls are instant and HTTP-free.
+        """
+        ctx = self._session_contexts.get(session_id)
+        if not ctx:
+            return {}
+        qe = ctx["query_engine"]
+        try:
+            # Detect model change and refresh cached limits if needed
+            from pilotcode.utils.models_config import get_model_limits
+
+            model_limits = get_model_limits()
+            actual_ctx = model_limits.get("context_window", 0)
+            actual_max = model_limits.get("max_tokens", 0)
+
+            cached_ctx = qe.config.context_window
+            cached_max = getattr(qe, "_max_output_tokens", 0)
+
+            if actual_ctx > 0 and actual_ctx != cached_ctx:
+                from dataclasses import replace
+
+                qe.config = replace(qe.config, context_window=actual_ctx)
+            if actual_max > 0 and actual_max != cached_max:
+                qe._max_output_tokens = min(actual_max, 32_000)
+            if actual_ctx > 0 or actual_max > 0:
+                qe._usable_context = max(1, qe.config.context_window - qe._max_output_tokens)
+
+            context_window = qe.config.context_window
+            max_output = qe._max_output_tokens
+
+            token_count = qe.count_tokens()
+            usable_ctx = getattr(qe, "_usable_context", context_window)
+            pct = min(100.0, token_count / context_window * 100) if context_window > 0 else 0.0
+            return {
+                "token_count": token_count,
+                "context_window": context_window,
+                "max_output_tokens": max_output,
+                "usable_context": usable_ctx,
+                "percentage": round(pct, 1),
+            }
+        except Exception as e:
+            print(f"[ContextInfo] Error: {e}")
+            return {}
+
+    # ------------------------------------------------------------------
+    # File tree & git status helpers
+    # ------------------------------------------------------------------
+
+    # Directories to skip in file tree (case-insensitive)
+    _SKIP_DIRS = frozenset(
+        {
+            "node_modules",
+            ".venv",
+            "venv",
+            "env",
+            ".env",
+            "__pycache__",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".mypy_cache",
+            ".idea",
+            ".vscode",
+            ".vs",
+            ".git",
+            "dist",
+            "build",
+            ".next",
+            ".nuxt",
+            "target",
+            "bin",
+            "obj",
+        }
+    )
+
+    _file_tree_cache: dict[str, tuple[float, list[dict]]] = {}
+    _file_tree_cache_ttl: float = 3.0
+
+    async def _get_file_tree(self, cwd: str, max_depth: int = 3) -> list[dict]:
+        """Build a nested file tree for the given directory.
+
+        Args:
+            cwd: Directory to scan
+            max_depth: Max nesting depth. 3 = show 3 levels by default.
+                       Set to -1 for unlimited (lazy expand).
+        """
+        import os
+        import time
+
+        now = time.monotonic()
+        cached = self._file_tree_cache.get(cwd)
+        if cached and (now - cached[0]) < self._file_tree_cache_ttl:
+            return cached[1]
+
+        root = Path(cwd).resolve()
+        if not root.exists():
+            return []
+
+        node_count = 0
+        MAX_NODES = 3000
+        MAX_PER_DIR = 500
+
+        def _should_skip(name: str, is_dir: bool) -> bool:
+            return is_dir and name.lower() in self._SKIP_DIRS
+
+        def build_tree(path: Path, depth: int = 0) -> dict:
+            nonlocal node_count
+            if node_count >= MAX_NODES:
+                return {"name": "...", "path": "", "type": "truncated"}
+
+            name = path.name or str(path)
+            node = {"name": name, "path": str(path), "type": "file"}
+            if not path.is_dir():
+                node_count += 1
+                return node
+
+            node["type"] = "directory"
+            node["children"] = []
+            node_count += 1
+
+            # If at max_depth, return dir without children (lazy load)
+            if max_depth >= 0 and depth >= max_depth:
+                node["has_more"] = True
+                return node
+
+            try:
+                with os.scandir(path) as it:
+                    entries = sorted(it, key=lambda e: (not e.is_dir(), e.name.lower()))
+                    child_count = 0
+                    total_visible = 0
+                    for entry in entries:
+                        if _should_skip(entry.name, entry.is_dir()):
+                            continue
+                        total_visible += 1
+                        child = build_tree(Path(entry.path), depth + 1)
+                        if child is not None and child.get("type") != "truncated":
+                            node["children"].append(child)
+                            child_count += 1
+                            if child_count >= MAX_PER_DIR:
+                                remaining = total_visible - child_count
+                                if remaining > 0:
+                                    node["children"].append(
+                                        {
+                                            "name": f"... ({remaining} more)",
+                                            "path": "",
+                                            "type": "truncated",
+                                        }
+                                    )
+                                break
+            except PermissionError:
+                pass
+
+            return node
+
+        try:
+            tree = build_tree(root)
+            result = [tree] if tree else []
+            self._file_tree_cache[cwd] = (time.monotonic(), result)
+            return result
+        except Exception as e:
+            print(f"[FileTree] Error building tree: {e}")
+            return []
+
+    async def _get_file_tree_children(self, dir_path: str) -> list[dict]:
+        """Get children of a directory for lazy expansion."""
+        import os
+
+        path = Path(dir_path)
+        if not path.is_dir():
+            return []
+
+        def build_item(p: Path, depth: int = 0) -> dict:
+            node = {"name": p.name, "path": str(p), "type": "file"}
+            if not p.is_dir():
+                return node
+            node["type"] = "directory"
+            node["children"] = []
+            if depth >= 2:
+                node["has_more"] = True
+                return node
+            try:
+                with os.scandir(p) as it:
+                    for entry in sorted(it, key=lambda e: (not e.is_dir(), e.name.lower())):
+                        if entry.name.lower() in self._SKIP_DIRS:
+                            continue
+                        child = build_item(Path(entry.path), depth + 1)
+                        if child.get("type") != "truncated":
+                            node["children"].append(child)
+            except PermissionError:
+                pass
+            return node
+
+        try:
+            result = []
+            with os.scandir(path) as it:
+                entries = sorted(it, key=lambda e: (not e.is_dir(), e.name.lower()))
+                for entry in entries:
+                    if entry.name.lower() in self._SKIP_DIRS:
+                        continue
+                    item = build_item(Path(entry.path))
+                    result.append(item)
+            return result
+        except Exception as e:
+            print(f"[FileTreeChildren] Error: {e}")
+            return []
+
+    async def _get_git_status(self, cwd: str) -> dict:
+        """Get git status for the given directory."""
+        root = Path(cwd).resolve()
+        git_dir = root / ".git"
+        if not git_dir.exists() and not (root / ".git").is_dir():
+            # Try to find git root
+            try:
+                result = await self._git_run(
+                    ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+                    timeout=5.0,
+                )
+                if result.returncode != 0:
+                    return {"is_git": False}
+                root = Path(result.stdout.strip())
+            except Exception:
+                return {"is_git": False}
+
+        try:
+            # Branch
+            branch_result = await self._git_run(
+                ["git", "-C", str(root), "branch", "--show-current"],
+                timeout=5.0,
+            )
+            branch = branch_result.stdout.strip() if branch_result.returncode == 0 else ""
+
+            # Status --porcelain
+            status_result = await self._git_run(
+                ["git", "-C", str(root), "status", "--porcelain"],
+                timeout=5.0,
+            )
+            files = {"modified": [], "added": [], "deleted": [], "untracked": [], "renamed": []}
+            if status_result.returncode == 0:
+                for line in status_result.stdout.strip().splitlines():
+                    if len(line) < 2:
+                        continue
+                    xy = line[:2]
+                    # Porcelain is usually "XY filename" but some lines are "X filename"
+                    file_path = line[3:] if len(line) > 2 and line[2] == " " else line[2:]
+                    if xy[1] == "M" or xy[0] == "M":
+                        files["modified"].append(file_path)
+                    elif xy[1] == "A" or xy[0] == "A":
+                        files["added"].append(file_path)
+                    elif xy[1] == "D" or xy[0] == "D":
+                        files["deleted"].append(file_path)
+                    elif xy[1] == "?":
+                        files["untracked"].append(file_path)
+                    elif xy[0] == "R":
+                        files["renamed"].append(file_path)
+
+            # Ahead/behind
+            ahead_behind = ""
+            try:
+                ab_result = await self._git_run(
+                    ["git", "-C", str(root), "rev-list", "--left-right", "--count", "HEAD...@{u}"],
+                    timeout=5.0,
+                )
+                if ab_result.returncode == 0:
+                    parts = ab_result.stdout.strip().split()
+                    if len(parts) == 2:
+                        ahead, behind = parts
+                        if ahead != "0" or behind != "0":
+                            ahead_behind = f"+{ahead}/-{behind}"
+            except Exception:
+                pass
+
+            # Last commit
+            last_commit = ""
+            try:
+                log_result = await self._git_run(
+                    ["git", "-C", str(root), "log", "-1", "--oneline"],
+                    timeout=5.0,
+                )
+                if log_result.returncode == 0:
+                    last_commit = log_result.stdout.strip()
+            except Exception:
+                pass
+
+            return {
+                "is_git": True,
+                "root": str(root),
+                "branch": branch,
+                "ahead_behind": ahead_behind,
+                "last_commit": last_commit,
+                "files": files,
+            }
+        except Exception as e:
+            print(f"[GitStatus] Error: {e}")
+            return {"is_git": False, "error": str(e)}
+
+    async def _get_git_diff(self, cwd: str, file_path: str, commit: str | None = None) -> str:
+        """Get unified diff for a single file.
+
+        If commit is provided, shows the diff for that file within the commit
+        (compared against its parent). Otherwise shows working tree / staged diff.
+        """
+        try:
+            # Find git root so paths match those from git status --porcelain
+            root_result = await self._git_run(
+                ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+                timeout=5.0,
+            )
+            if root_result.returncode != 0:
+                return f"# Not a git repository: {cwd}\n"
+            root = root_result.stdout.strip()
+
+            # Historical commit diff: compare commit vs its parent for this file
+            if commit:
+                result = await self._git_run(
+                    ["git", "-C", root, "show", commit, "--", file_path],
+                    timeout=10.0,
+                )
+                if result.returncode == 0 and result.stdout:
+                    return result.stdout
+                return f"# No diff available for: {file_path} in commit {commit[:7]}\n"
+
+            # Working tree diff (unstaged)
+            result = await self._git_run(
+                ["git", "-C", root, "diff", "--", file_path],
+                timeout=10.0,
+            )
+            if result.returncode == 0 and result.stdout:
+                return result.stdout
+            # Staged diff
+            result2 = await self._git_run(
+                ["git", "-C", root, "diff", "--cached", "--", file_path],
+                timeout=10.0,
+            )
+            if result2.returncode == 0 and result2.stdout:
+                return result2.stdout
+            return f"# No diff available for: {file_path}\n"
+        except Exception as e:
+            return f"# Error getting diff: {e}\n"
+
+    async def _get_git_log(self, cwd: str, max_count: int = 20) -> list[dict]:
+        """Get recent commit log."""
+        try:
+            result = await self._git_run(
+                ["git", "-C", cwd, "log", f"-{max_count}", "--oneline", "--format=%H|%s|%an|%ar"],
+                timeout=10.0,
+            )
+            if result.returncode != 0:
+                return []
+            commits = []
+            for line in result.stdout.strip().splitlines():
+                parts = line.split("|", 3)
+                if len(parts) >= 2:
+                    commits.append(
+                        {
+                            "hash": parts[0],
+                            "message": parts[1],
+                            "author": parts[2] if len(parts) > 2 else "",
+                            "date": parts[3] if len(parts) > 3 else "",
+                        }
+                    )
+            return commits
+        except Exception as e:
+            print(f"[GitLog] Error: {e}")
+            return []
+
+    async def _get_git_show(self, cwd: str, commit: str) -> dict:
+        """Get show output for a commit."""
+        try:
+            # Stat
+            stat_result = await self._git_run(
+                ["git", "-C", cwd, "show", "--stat", "--format=", commit],
+                timeout=10.0,
+            )
+            # Full diff
+            diff_result = await self._git_run(
+                ["git", "-C", cwd, "show", commit],
+                timeout=10.0,
+            )
+            return {
+                "stat": stat_result.stdout if stat_result.returncode == 0 else "",
+                "diff": diff_result.stdout if diff_result.returncode == 0 else "",
+            }
+        except Exception as e:
+            print(f"[GitShow] Error: {e}")
+            return {"stat": "", "diff": ""}
+
+    async def _get_git_branches(self, cwd: str) -> dict:
+        """Get local and remote branches."""
+        try:
+            local_result = await self._git_run(
+                ["git", "-C", cwd, "branch", "--format=%(refname:short)"],
+                timeout=5.0,
+            )
+            remote_result = await self._git_run(
+                ["git", "-C", cwd, "branch", "-r", "--format=%(refname:short)"],
+                timeout=5.0,
+            )
+            current_result = await self._git_run(
+                ["git", "-C", cwd, "branch", "--show-current"],
+                timeout=5.0,
+            )
+            local = [b for b in local_result.stdout.strip().splitlines() if b]
+            remote = [
+                b
+                for b in remote_result.stdout.strip().splitlines()
+                if b and not b.endswith("/HEAD")
+            ]
+            current = current_result.stdout.strip() if current_result.returncode == 0 else ""
+            return {
+                "current": current,
+                "local": local,
+                "remote": remote,
+            }
+        except Exception as e:
+            print(f"[GitBranches] Error: {e}")
+            return {"current": "", "local": [], "remote": []}
+
     # ------------------------------------------------------------------
     # Connection lifecycle
     # ------------------------------------------------------------------
@@ -410,7 +1150,7 @@ class WebSocketManager:
         """Register a new client."""
         self.clients.add(websocket)
         client_info = getattr(websocket, "remote_address", ("unknown", 0))
-        print(f"[WebSocket] Client connected from {client_info}. Total: {len(self.clients)}")
+        _log_debug(f"[WebSocket] Client connected from {client_info}. Total: {len(self.clients)}")
         await self.send_to_client(
             websocket,
             {"type": "server_info", "version": __version__},
@@ -422,7 +1162,9 @@ class WebSocketManager:
         # Remove connection->session mapping, but DO NOT destroy the session
         self.client_sessions.pop(websocket, None)
         client_info = getattr(websocket, "remote_address", ("unknown", 0))
-        print(f"[WebSocket] Client disconnected from {client_info}. Total: {len(self.clients)}")
+        _log_debug(
+            f"[WebSocket] Client disconnected from {client_info}. Total: {len(self.clients)}"
+        )
         # Cancel all pending permissions and questions for this client
         self.permission_manager.cancel_all()
         self.question_manager.cancel_all()
@@ -457,11 +1199,11 @@ class WebSocketManager:
 
     async def handle_message(self, websocket, message: str):
         """Handle incoming WebSocket message."""
-        print(f"[WebSocket] Received message: {message[:100]}...")
+        _log_debug(f"[WebSocket] Received message: {message[:100]}...")
         try:
             data = json.loads(message)
             msg_type = data.get("type", "")
-            print(f"[WebSocket] Message type: {msg_type}")
+            _log_debug(f"[WebSocket] Message type: {msg_type}")
 
             # ------------------------------------------------------------------
             # Session lifecycle management
@@ -469,6 +1211,16 @@ class WebSocketManager:
             if msg_type == "session_create":
                 sid = data.get("session_id") or self._generate_session_id()
                 new_cwd = data.get("cwd")
+                # If no cwd provided, inherit from current session if available
+                if new_cwd is None:
+                    current_sid = self.client_sessions.get(websocket)
+                    if current_sid:
+                        current_ctx = self._session_contexts.get(current_sid)
+                        if current_ctx:
+                            store_state = current_ctx["store"].get_state()
+                            new_cwd = getattr(store_state, "cwd", None) or getattr(
+                                current_ctx["query_engine"].config, "cwd", None
+                            )
                 if new_cwd:
                     self._update_recent_directories(new_cwd)
                 await self._get_or_create_session(sid, cwd=new_cwd)
@@ -480,6 +1232,7 @@ class WebSocketManager:
                         "session_id": sid,
                         "status": "active",
                         "cwd": new_cwd or self.cwd,
+                        "context": self._get_context_info(sid),
                     },
                 )
                 # Push updated session list so sidebar refreshes immediately
@@ -488,14 +1241,22 @@ class WebSocketManager:
                     websocket,
                     {"type": "session_list", "sessions": sessions},
                 )
-                print(f"[Session] Client attached to new session {sid} cwd={new_cwd or self.cwd}")
+                _log_debug(
+                    f"[Session] Client attached to new session {sid} cwd={new_cwd or self.cwd}"
+                )
 
             elif msg_type == "cwd_options":
+                sid = self.client_sessions.get(websocket)
+                ctx = await self._get_session(sid) if sid else None
+                current_cwd = self.cwd
+                if ctx:
+                    store_state = ctx["store"].get_state()
+                    current_cwd = getattr(store_state, "cwd", current_cwd) or current_cwd
                 await self.send_to_client(
                     websocket,
                     {
                         "type": "cwd_options",
-                        "current": self.cwd,
+                        "current": current_cwd,
                         "recent": self.recent_directories,
                     },
                 )
@@ -508,6 +1269,11 @@ class WebSocketManager:
                     ctx = await self._get_or_create_session(sid)
                 self.client_sessions[websocket] = sid
                 msg_count = len(ctx["query_engine"].messages)
+                session_cwd = str(
+                    getattr(ctx["store"].get_state(), "cwd", None)
+                    or getattr(ctx["query_engine"].config, "cwd", self.cwd)
+                    or self.cwd
+                )
                 await self.send_to_client(
                     websocket,
                     {
@@ -515,9 +1281,13 @@ class WebSocketManager:
                         "session_id": sid,
                         "message_count": msg_count,
                         "status": "active",
+                        "cwd": session_cwd,
+                        "context": self._get_context_info(sid),
                     },
                 )
-                print(f"[Session] Client attached to session {sid} ({msg_count} messages)")
+                print(
+                    f"[Session] Client attached to session {sid} ({msg_count} messages) cwd={session_cwd}"
+                )
 
             elif msg_type == "session_list":
                 sessions = await self._list_sessions()
@@ -592,6 +1362,7 @@ class WebSocketManager:
                             "message_count": len(messages),
                             "project_path": restored_cwd,
                             "messages": _serialize_messages_for_web(messages),
+                            "context": self._get_context_info(sid),
                         },
                     )
                     print(
@@ -611,7 +1382,7 @@ class WebSocketManager:
                         messages, metadata = result
                         # Create/replace in-memory session context
                         ctx = await self._create_session_context(sid)
-                        ctx["query_engine"].messages = messages
+                        ctx["query_engine"].messages[:] = messages
                         ctx["name"] = metadata.get("name", sid)
                         restored_cwd = metadata.get("project_path")
                         if restored_cwd:
@@ -623,6 +1394,21 @@ class WebSocketManager:
                                 ctx["query_engine"].config, cwd=restored_cwd
                             )
                             self._update_recent_directories(restored_cwd)
+                        # Restore extra config fields if present
+                        if metadata.get("custom_system_prompt"):
+                            from dataclasses import replace
+
+                            ctx["query_engine"].config = replace(
+                                ctx["query_engine"].config,
+                                custom_system_prompt=metadata["custom_system_prompt"],
+                            )
+                        if metadata.get("max_turns") is not None:
+                            from dataclasses import replace
+
+                            ctx["query_engine"].config = replace(
+                                ctx["query_engine"].config,
+                                max_turns=metadata["max_turns"],
+                            )
                         self.client_sessions[websocket] = sid
                         await self.send_to_client(
                             websocket,
@@ -633,9 +1419,10 @@ class WebSocketManager:
                                 "message_count": len(messages),
                                 "project_path": restored_cwd,
                                 "messages": _serialize_messages_for_web(messages),
+                                "context": self._get_context_info(sid),
                             },
                         )
-                        print(f"[Session] Loaded {sid} ({len(messages)} messages) from disk")
+                        _log_debug(f"[Session] Loaded {sid} ({len(messages)} messages) from disk")
 
             elif msg_type == "session_rename":
                 sid = data.get("session_id", "")
@@ -717,7 +1504,12 @@ class WebSocketManager:
                         self.client_sessions[websocket] = sid
                         await self.send_to_client(
                             websocket,
-                            {"type": "session_created", "session_id": sid, "status": "auto"},
+                            {
+                                "type": "session_created",
+                                "session_id": sid,
+                                "status": "auto",
+                                "context": self._get_context_info(sid),
+                            },
                         )
 
                 # Cancel any existing task for this websocket
@@ -765,7 +1557,7 @@ class WebSocketManager:
                 success, info = self.permission_manager.resolve_request(
                     request_id, granted, for_session
                 )
-                print(f"[WebSocket] Resolve result: success={success}, info={info}")
+                _log_debug(f"[WebSocket] Resolve result: success={success}, info={info}")
 
                 # If granted for session, add to session grants
                 if success and granted and for_session and info:
@@ -789,11 +1581,155 @@ class WebSocketManager:
             elif msg_type == "user_question_response":
                 request_id = data.get("request_id", "")
                 response = data.get("response", "")
-                print(f"[WebSocket] User question response received: {request_id} = {response}")
+                _log_debug(
+                    f"[WebSocket] User question response received: {request_id} = {response}"
+                )
 
                 # Resolve the question request
                 success, info = self.question_manager.resolve_request(request_id, response)
-                print(f"[WebSocket] Question resolve result: success={success}, info={info}")
+                _log_debug(f"[WebSocket] Question resolve result: success={success}, info={info}")
+
+            elif msg_type == "file_tree":
+                sid = self.client_sessions.get(websocket)
+                ctx = await self._get_session(sid) if sid else None
+                cwd = self.cwd
+                if ctx:
+                    store_state = ctx["store"].get_state()
+                    cwd = getattr(store_state, "cwd", cwd) or cwd
+                tree = await self._get_file_tree(cwd)
+                await self.send_to_client(
+                    websocket, {"type": "file_tree", "cwd": cwd, "tree": tree}
+                )
+
+            elif msg_type == "file_tree_expand":
+                sid = self.client_sessions.get(websocket)
+                ctx = await self._get_session(sid) if sid else None
+                cwd = self.cwd
+                if ctx:
+                    store_state = ctx["store"].get_state()
+                    cwd = getattr(store_state, "cwd", cwd) or cwd
+                dir_path = data.get("path", "")
+                children = await self._get_file_tree_children(dir_path)
+                await self.send_to_client(
+                    websocket,
+                    {"type": "file_tree_children", "path": dir_path, "children": children},
+                )
+
+            elif msg_type == "git_status":
+                sid = self.client_sessions.get(websocket)
+                ctx = await self._get_session(sid) if sid else None
+                cwd = self.cwd
+                if ctx:
+                    store_state = ctx["store"].get_state()
+                    cwd = getattr(store_state, "cwd", cwd) or cwd
+                status = await self._get_git_status(cwd)
+                await self.send_to_client(
+                    websocket, {"type": "git_status", "cwd": cwd, "status": status}
+                )
+
+            elif msg_type == "git_diff":
+                sid = self.client_sessions.get(websocket)
+                ctx = await self._get_session(sid) if sid else None
+                cwd = self.cwd
+                if ctx:
+                    store_state = ctx["store"].get_state()
+                    cwd = getattr(store_state, "cwd", cwd) or cwd
+                file_path = data.get("file_path", "")
+                commit = data.get("commit")
+                diff_text = await self._get_git_diff(cwd, file_path, commit)
+                await self.send_to_client(
+                    websocket,
+                    {"type": "git_diff", "file_path": file_path, "diff": diff_text},
+                )
+
+            elif msg_type == "git_log":
+                sid = self.client_sessions.get(websocket)
+                ctx = await self._get_session(sid) if sid else None
+                cwd = self.cwd
+                if ctx:
+                    store_state = ctx["store"].get_state()
+                    cwd = getattr(store_state, "cwd", cwd) or cwd
+                max_count = data.get("max_count", 20)
+                commits = await self._get_git_log(cwd, max_count)
+                await self.send_to_client(websocket, {"type": "git_log", "commits": commits})
+
+            elif msg_type == "git_show":
+                sid = self.client_sessions.get(websocket)
+                ctx = await self._get_session(sid) if sid else None
+                cwd = self.cwd
+                if ctx:
+                    store_state = ctx["store"].get_state()
+                    cwd = getattr(store_state, "cwd", cwd) or cwd
+                commit = data.get("commit", "HEAD")
+                show_data = await self._get_git_show(cwd, commit)
+                await self.send_to_client(
+                    websocket,
+                    {"type": "git_show", "commit": commit, "data": show_data},
+                )
+
+            elif msg_type == "git_branch_list":
+                sid = self.client_sessions.get(websocket)
+                ctx = await self._get_session(sid) if sid else None
+                cwd = self.cwd
+                if ctx:
+                    store_state = ctx["store"].get_state()
+                    cwd = getattr(store_state, "cwd", cwd) or cwd
+                branches = await self._get_git_branches(cwd)
+                await self.send_to_client(
+                    websocket, {"type": "git_branch_list", "branches": branches}
+                )
+
+            elif msg_type == "git_checkout":
+                sid = self.client_sessions.get(websocket)
+                ctx = await self._get_session(sid) if sid else None
+                cwd = self.cwd
+                if ctx:
+                    store_state = ctx["store"].get_state()
+                    cwd = getattr(store_state, "cwd", cwd) or cwd
+                branch = data.get("branch", "")
+
+                try:
+                    result = await self._git_run(
+                        ["git", "-C", cwd, "checkout", branch],
+                        timeout=10.0,
+                    )
+                    success = result.returncode == 0
+                    await self.send_to_client(
+                        websocket,
+                        {
+                            "type": "git_checkout_result",
+                            "success": success,
+                            "branch": branch,
+                            "message": result.stdout.strip() if success else result.stderr.strip(),
+                        },
+                    )
+                    # Refresh git status after checkout
+                    if success:
+                        status = await self._get_git_status(cwd)
+                        await self.send_to_client(
+                            websocket, {"type": "git_status", "cwd": cwd, "status": status}
+                        )
+                        commits = await self._get_git_log(cwd, 20)
+                        await self.send_to_client(
+                            websocket, {"type": "git_log", "commits": commits}
+                        )
+                except Exception as e:
+                    await self.send_to_client(
+                        websocket,
+                        {
+                            "type": "git_checkout_result",
+                            "success": False,
+                            "branch": branch,
+                            "message": str(e),
+                        },
+                    )
+
+            elif msg_type == "context_info":
+                sid = self.client_sessions.get(websocket)
+                if sid:
+                    ctx_info = self._get_context_info(sid)
+                    if ctx_info:
+                        await self.send_to_client(websocket, {"type": "context_usage", **ctx_info})
 
             else:
                 print(f"[WebSocket] Unknown message type: {msg_type}")
@@ -824,9 +1760,9 @@ class WebSocketManager:
                     "risk_level": risk_level,
                 },
             )
-            print(f"[Permission] Sent request {request_id} for {tool_name}")
+            _log_debug(f"[Permission] Sent request {request_id} for {tool_name}")
         except Exception as e:
-            print(f"[Permission] Failed to send request: {e}")
+            _log_debug(f"[Permission] Failed to send request: {e}")
             self.permission_manager.resolve_request(request_id, False)
             return False, False
 
@@ -838,11 +1774,11 @@ class WebSocketManager:
             )
             return granted, for_session
         except asyncio.TimeoutError:
-            print(f"[Permission] Request {request_id} timed out")
+            _log_debug(f"[Permission] Request {request_id} timed out")
             self.permission_manager.resolve_request(request_id, False)
             return False, False
         except asyncio.CancelledError:
-            print(f"[Permission] Request {request_id} was cancelled")
+            _log_debug(f"[Permission] Request {request_id} was cancelled")
             self.permission_manager.resolve_request(request_id, False)
             raise  # Re-raise to propagate cancellation
         except Exception as e:
@@ -866,23 +1802,23 @@ class WebSocketManager:
                     "options": options,
                 },
             )
-            print(f"[Question] Sent request {request_id}: {question[:50]}...")
+            _log_debug(f"[Question] Sent request {request_id}: {question[:50]}...")
         except Exception as e:
-            print(f"[Question] Failed to send request: {e}")
+            _log_debug(f"[Question] Failed to send request: {e}")
             self.question_manager.resolve_request(request_id, "")
             return ""
 
         # Wait for response with timeout
         try:
             response = await asyncio.wait_for(future, timeout=300.0)
-            print(f"[Question] Request {request_id} result: {response[:50]}...")
+            _log_debug(f"[Question] Request {request_id} result: {response[:50]}...")
             return response
         except asyncio.TimeoutError:
-            print(f"[Question] Request {request_id} timed out")
+            _log_debug(f"[Question] Request {request_id} timed out")
             self.question_manager.resolve_request(request_id, "")
             return ""
         except asyncio.CancelledError:
-            print(f"[Question] Request {request_id} was cancelled")
+            _log_debug(f"[Question] Request {request_id} was cancelled")
             self.question_manager.resolve_request(request_id, "")
             raise  # Re-raise to propagate cancellation
         except Exception as e:
@@ -900,9 +1836,12 @@ class WebSocketManager:
         print(f"[Query] Processing in session {session_id}: {query[:50]}...")
 
         stream_id = f"stream_{uuid.uuid4().hex[:8]}"
+        original_query = query
 
         # Reset LoopGuard for each new query
         self.loop_guard.reset()
+        # Reset tool-call reinforcement counter for each new query
+        self._reinforcement_count = 0
 
         # Retrieve session context (QueryEngine + Store are reused)
         session_ctx = await self._get_session(session_id)
@@ -936,11 +1875,46 @@ class WebSocketManager:
         if query.startswith("/") and not _is_plan_mission:
             from pilotcode.commands.base import process_user_input, CommandContext
 
+            # Use session's cwd (updated by bash cd) instead of server process cwd
+            store_state = store.get_state()
+            session_cwd = (
+                getattr(store_state, "cwd", None)
+                or getattr(query_engine.config, "cwd", self.cwd)
+                or self.cwd
+            )
+
+            # Helper to stream progress from long-running commands (e.g. /index)
+            progress_chunks: list[str] = []
+
+            def _progress_callback(msg: str) -> None:
+                progress_chunks.append(msg)
+                # Fire-and-forget: send immediately if event loop is running
+                try:
+                    asyncio.get_running_loop().create_task(
+                        self.send_to_client(
+                            websocket,
+                            {
+                                "type": "streaming_chunk",
+                                "stream_id": stream_id,
+                                "chunk": msg + "\n",
+                            },
+                        )
+                    )
+                except RuntimeError:
+                    pass  # No running loop, ignore
+
             ctx = CommandContext(
-                cwd=str(Path.cwd()),
+                cwd=str(session_cwd),
                 query_engine=query_engine,
                 session_id=session_id,
+                progress_callback=_progress_callback,
             )
+
+            # Start streaming response for slash commands
+            await self.send_to_client(
+                websocket, {"type": "streaming_start", "stream_id": stream_id, "message": query}
+            )
+
             is_command, result = await process_user_input(query, ctx)
             if is_command:
                 if isinstance(result, str) and result == "__EXIT_TUI__":
@@ -949,17 +1923,79 @@ class WebSocketManager:
                     )
                     return
                 content = result if isinstance(result, str) else str(result)
-                # Follow the streaming protocol so the web UI resets its loading state
-                await self.send_to_client(
-                    websocket, {"type": "streaming_start", "stream_id": stream_id, "message": query}
-                )
+                # Append final result as the last chunk
                 await self.send_to_client(
                     websocket, {"type": "streaming_chunk", "stream_id": stream_id, "chunk": content}
                 )
                 await self.send_to_client(
                     websocket, {"type": "streaming_end", "stream_id": stream_id}
                 )
+                # Push updated context usage
+                sid_ctx = self.client_sessions.get(websocket)
+                if sid_ctx:
+                    ctx_info = self._get_context_info(sid_ctx)
+                    if ctx_info:
+                        await self.send_to_client(websocket, {"type": "context_usage", **ctx_info})
                 return
+
+            # Unknown command — don't send to LLM
+            content = f"Unknown command: {query.split()[0]}"
+            await self.send_to_client(
+                websocket,
+                {"type": "streaming_chunk", "stream_id": stream_id, "chunk": content},
+            )
+            await self.send_to_client(websocket, {"type": "streaming_end", "stream_id": stream_id})
+            # Push updated context usage
+            sid_ctx = self.client_sessions.get(websocket)
+            if sid_ctx:
+                ctx_info = self._get_context_info(sid_ctx)
+                if ctx_info:
+                    await self.send_to_client(websocket, {"type": "context_usage", **ctx_info})
+            return
+
+        # ! shell escape — execute directly, bypass LLM
+        if query.startswith("!"):
+            shell_cmd = query[1:].strip()
+            if not shell_cmd:
+                content = "Empty shell command"
+            else:
+                try:
+                    proc = await asyncio.create_subprocess_shell(
+                        shell_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        cwd=self.cwd,
+                    )
+                    try:
+                        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+                    except asyncio.TimeoutError:
+                        proc.kill()
+                        content = "Shell command timed out (30s)"
+                    else:
+                        content = (stdout or stderr or b"").decode("utf-8", errors="replace")
+                        if not content.strip():
+                            content = "(no output)"
+                        if len(content) > 5000:
+                            content = (
+                                content[:5000] + f"\n... (truncated, {len(content)} chars total)"
+                            )
+                except Exception as e:
+                    content = f"Shell command failed: {e}"
+            await self.send_to_client(
+                websocket, {"type": "streaming_start", "stream_id": stream_id, "message": query}
+            )
+            await self.send_to_client(
+                websocket,
+                {"type": "streaming_chunk", "stream_id": stream_id, "chunk": content},
+            )
+            await self.send_to_client(websocket, {"type": "streaming_end", "stream_id": stream_id})
+            # Push updated context usage
+            sid_ctx = self.client_sessions.get(websocket)
+            if sid_ctx:
+                ctx_info = self._get_context_info(sid_ctx)
+                if ctx_info:
+                    await self.send_to_client(websocket, {"type": "context_usage", **ctx_info})
+            return
 
         try:
             from pilotcode.tools.base import ToolUseContext, ToolResult
@@ -1085,6 +2121,12 @@ class WebSocketManager:
                         },
                     )
                 self._touch_session(session_id)
+                # Push updated context usage
+                sid_ctx = self.client_sessions.get(websocket)
+                if sid_ctx:
+                    ctx_info = self._get_context_info(sid_ctx)
+                    if ctx_info:
+                        await self.send_to_client(websocket, {"type": "context_usage", **ctx_info})
                 return
 
             # Set up notification handler that routes to this websocket
@@ -1110,7 +2152,7 @@ class WebSocketManager:
                     )
 
             # Attach notification callback to the existing query engine for this query
-            query_engine.config.on_notify = _on_notify
+            query_engine.set_on_notify(_on_notify)
 
             # Set up permission callback for Web mode
             perm_manager = get_permission_manager()
@@ -1120,7 +2162,7 @@ class WebSocketManager:
                 if self.auto_allow:
                     print(f"[Permission] Auto-allowing {permission_request.tool_name}")
                     return PermissionLevel.ALWAYS_ALLOW
-                print(f"[Permission] Requesting permission for {permission_request.tool_name}")
+                _log_debug(f"[Permission] Requesting permission for {permission_request.tool_name}")
                 granted, for_session = await self.request_permission_via_websocket(
                     websocket,
                     permission_request.tool_name,
@@ -1178,7 +2220,7 @@ class WebSocketManager:
 
             while iteration < max_iterations:
                 iteration += 1
-                print(f"[Query] Iteration {iteration}, query={query[:50]}...")
+                _log_debug(f"[Query] Iteration {iteration}, query={query[:50]}...")
 
                 # Check if task was cancelled
                 if asyncio.current_task().cancelled():
@@ -1186,6 +2228,8 @@ class WebSocketManager:
                     break
 
                 pending_tools = []
+
+                reasoning_buffer = ""
 
                 async for result in query_engine.submit_message(query):
                     # Check for cancellation frequently during streaming
@@ -1219,6 +2263,9 @@ class WebSocketManager:
                         elif not is_continue_query:
                             # Stream incremental content for user queries only
                             # Skip streaming for continue queries to avoid showing internal prompts
+                            # Also skip UserMessage echo — the question is already shown in .user-query
+                            if msg_type == "UserMessage":
+                                continue
                             content = msg.content
                             if len(content) > sent_content_length:
                                 new_content = content[sent_content_length:]
@@ -1237,26 +2284,59 @@ class WebSocketManager:
                         pending_tools.append(msg)
                         await _render_conversational_tool_call(msg.name, msg.input)
 
+                    # Drain event bus for reasoning content (DeepSeek thinking mode)
+                    while True:
+                        event = query_engine._event_bus.get_nowait()
+                        if not event:
+                            break
+                        if event.type == "reasoning_delta":
+                            reasoning_buffer += event.data.get("text", "")
+                            await self.send_to_client(
+                                websocket,
+                                {
+                                    "type": "reasoning",
+                                    "stream_id": stream_id,
+                                    "content": reasoning_buffer,
+                                },
+                            )
+
+                # Push updated context usage after each LLM response
+                sid_ctx = self.client_sessions.get(websocket)
+                if sid_ctx:
+                    ctx_info = self._get_context_info(sid_ctx)
+                    if ctx_info:
+                        await self.send_to_client(websocket, {"type": "context_usage", **ctx_info})
+
                 # No more tools to execute - this is the final response
                 if not pending_tools:
                     # ---- Tool-call reinforcement: if user explicitly asked for a tool
-                    # but the model answered directly without calling it, nudge once.
-                    if (
-                        iteration == 1
-                        and not is_continue_query
-                        and _should_use_tools(query, full_content)
-                    ):
-                        reinforce_msg = (
-                            "The user explicitly requested a tool operation. "
-                            "You MUST call the appropriate tool instead of answering in text. "
-                            "Do NOT explain your plan — just call the tool now."
-                        )
-                        query_engine.messages.append(SystemMessage(content=reinforce_msg))
-                        print("[Query] Tool reinforcement triggered, retrying with system nudge")
-                        query = "Please execute the requested tool operation now."
-                        is_continue_query = True
-                        sent_content_length = 0
-                        continue
+                    # but the model answered directly without calling it, nudge up to 3x.
+                    reinforcement_count = getattr(self, "_reinforcement_count", 0)
+                    if _should_use_tools(query, full_content):
+                        if reinforcement_count < 3 and not is_continue_query:
+                            reinforce_msg = (
+                                "CRITICAL: The user explicitly requested a tool operation: "
+                                f"'{original_query}'. You MUST call the appropriate tool "
+                                "(e.g. Bash, FileRead, FileEdit, etc.) instead of answering "
+                                "in text. Do NOT explain your plan — just call the tool now."
+                            )
+                            query_engine.messages.append(SystemMessage(content=reinforce_msg))
+                            reinforcement_count += 1
+                            self._reinforcement_count = reinforcement_count
+                            print(
+                                f"[Query] Tool reinforcement #{reinforcement_count} triggered, "
+                                "retrying with system nudge"
+                            )
+                            is_continue_query = True
+                            sent_content_length = 0
+                            continue
+                        # Model refused to call tools after 3 nudges — warn the user
+                        if reinforcement_count >= 3 and full_content:
+                            await _render_system(
+                                "⚠️ The model refused to execute the requested tool operation "
+                                f"after {reinforcement_count} attempts. "
+                                "You may need to rephrase your request or try again."
+                            )
 
                     # Send final content if any (only the new part)
                     if full_content:
@@ -1337,7 +2417,7 @@ class WebSocketManager:
                         sent_content_length = len(full_content)
                     full_content = ""
 
-                print(f"[Query] Executing {len(pending_tools)} tools...")
+                _log_debug(f"[Query] Executing {len(pending_tools)} tools...")
 
                 # Notify client that tools are about to run (keeps connection alive
                 # during long-running operations like CodeIndex)
@@ -1389,15 +2469,11 @@ class WebSocketManager:
                         raise asyncio.CancelledError()
 
                     # Special handling for AskUser tool in Web mode
-                    # Check both primary name and aliases
                     ask_user_aliases = {"AskUser", "ask", "question"}
-                    print(
-                        f"[AskUser] Checking tool: {tool_msg.name}, aliases: {ask_user_aliases}, match: {tool_msg.name in ask_user_aliases}"
-                    )
                     if tool_msg.name in ask_user_aliases:
                         question = tool_msg.input.get("question", "")
                         options = tool_msg.input.get("options")
-                        print(f"[AskUser] Intercepted! Question: {question[:50]}...")
+                        print(f"[AskUser] Intercepted {tool_msg.name}: {question[:50]}...")
 
                         # Send tool use notification
                         await self.send_to_client(
@@ -1429,10 +2505,13 @@ class WebSocketManager:
                             tool_name="AskUser",
                         )
                     else:
+                        _session_cwd = getattr(store.get_state(), "cwd", None) or ""
+                        if not _session_cwd:
+                            _session_cwd = os.getcwd()
                         context = ToolUseContext(
                             get_app_state=store.get_state,
                             set_app_state=lambda f: store.set_state(f),
-                            cwd=getattr(store.get_state(), "cwd", ""),
+                            cwd=_session_cwd,
                         )
 
                         def _send_tool_progress(data):
@@ -1486,6 +2565,14 @@ class WebSocketManager:
                                 await self.send_to_client(
                                     websocket, {"type": "streaming_end", "stream_id": stream_id}
                                 )
+                                # Push updated context usage
+                                sid_ctx = self.client_sessions.get(websocket)
+                                if sid_ctx:
+                                    ctx_info = self._get_context_info(sid_ctx)
+                                    if ctx_info:
+                                        await self.send_to_client(
+                                            websocket, {"type": "context_usage", **ctx_info}
+                                        )
                                 return
 
                     query_engine.add_tool_result(
@@ -1514,6 +2601,15 @@ class WebSocketManager:
                             "success": exec_result.success,
                         },
                     )
+
+                    # Push updated context usage after tool result
+                    sid_ctx = self.client_sessions.get(websocket)
+                    if sid_ctx:
+                        ctx_info = self._get_context_info(sid_ctx)
+                        if ctx_info:
+                            await self.send_to_client(
+                                websocket, {"type": "context_usage", **ctx_info}
+                            )
 
                 # --- Compiler / syntax verification for changed code files ---
                 has_compile_command = any(
@@ -1631,6 +2727,12 @@ class WebSocketManager:
             await self.send_to_client(
                 websocket, {"type": "streaming_complete", "stream_id": stream_id}
             )
+            # Push updated context usage
+            sid_ctx = self.client_sessions.get(websocket)
+            if sid_ctx:
+                ctx_info = self._get_context_info(sid_ctx)
+                if ctx_info:
+                    await self.send_to_client(websocket, {"type": "context_usage", **ctx_info})
             print("[Query] Done")
 
         except asyncio.CancelledError:
@@ -1667,6 +2769,11 @@ class WebSocketManager:
                             or getattr(session_ctx["query_engine"].config, "cwd", self.cwd)
                             or self.cwd
                         ),
+                        cwd=getattr(session_ctx["query_engine"].config, "cwd", None),
+                        custom_system_prompt=getattr(
+                            session_ctx["query_engine"].config, "custom_system_prompt", None
+                        ),
+                        max_turns=getattr(session_ctx["query_engine"].config, "max_turns", None),
                     )
             except Exception as e:
                 print(f"[Session] Auto-save error: {e}")
@@ -1680,7 +2787,7 @@ async def websocket_handler(websocket):
     import websockets
 
     try:
-        print(f"[WebSocket] Connection from {websocket.remote_address}")
+        _log_debug(f"[WebSocket] Connection from {websocket.remote_address}")
         await ws_manager.register(websocket)
         try:
             async for message in websocket:
@@ -1710,7 +2817,7 @@ class CustomHTTPHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(web_dir), **kwargs)
 
     def log_message(self, format, *args):
-        print(f"[HTTP] {args[0]}" if args else "[HTTP] request")
+        _log_debug(f"[HTTP] {args[0]}" if args else "[HTTP] request")
 
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -1721,7 +2828,7 @@ def run_http_server(host: str, port: int):
     """Run HTTP server."""
     try:
         server = HTTPServer((host, port), CustomHTTPHandler)
-        print(f"[HTTP] Server running on http://{host}:{port}")
+        _log_debug(f"[HTTP] Server running on http://{host}:{port}")
         server.serve_forever()
     except Exception as e:
         print(f"[HTTP] Server error: {e}")
@@ -1740,7 +2847,7 @@ def run_websocket_server_sync(host: str, port: int):
         except websockets.exceptions.ConnectionClosed:
             pass
         except EOFError:
-            print("[WebSocket] Client disconnected during handshake")
+            _log_debug("[WebSocket] Client disconnected during handshake")
         except Exception as e:
             if "connection closed" not in str(e).lower():
                 print(f"[WebSocket] Handler error: {e}")
@@ -1775,6 +2882,19 @@ def run_server_standalone(
     """Run both HTTP and WebSocket servers."""
     ws_manager.cwd = str(Path(cwd).resolve())
     ws_manager.auto_allow = auto_allow
+
+    # Suppress verbose websockets handshake-error logs (browser refreshes, probes, etc.)
+    import logging
+    import warnings
+
+    # websockets 16+ logs handshake failures at ERROR; raise to CRITICAL to silence
+    # normal browser noise (preconnect, tab close, refresh) while keeping real errors.
+    logging.getLogger("websockets").setLevel(logging.CRITICAL)
+    logging.getLogger("websockets.server").setLevel(logging.CRITICAL)
+    logging.getLogger("websockets.protocol").setLevel(logging.CRITICAL)
+    # Some third-party / generated code emits SyntaxWarning for invalid escape
+    # sequences (e.g. inside dynamically-compiled Pydantic validators).
+    warnings.filterwarnings("ignore", message="invalid escape sequence", category=SyntaxWarning)
 
     print("=" * 60)
     print("PilotCode Web UI Server")

@@ -248,9 +248,13 @@ class IntelligentContextCompactor:
                     if isinstance(msg, UserMessage):
                         msg = UserMessage(content=truncated)
                     else:
+                        from ..utils.reasoning_compressor import compress_reasoning
+
                         msg = AssistantMessage(
                             content=truncated,
-                            reasoning_content=getattr(msg, "reasoning_content", None),
+                            reasoning_content=compress_reasoning(
+                                getattr(msg, "reasoning_content", None)
+                            ),
                         )
                     summaries_generated += 1
 

@@ -327,6 +327,8 @@ class MessageDisplay(Static):
         mapping = {
             UIMessageType.USER: "user",
             UIMessageType.ASSISTANT: "assistant",
+            UIMessageType.THINKING: "thinking",
+            UIMessageType.REASONING: "reasoning",
             UIMessageType.TOOL_USE: "tool",
             UIMessageType.TOOL_RESULT: "tool-result",
             UIMessageType.ERROR: "error",
@@ -342,6 +344,8 @@ class MessageDisplay(Static):
         headers = {
             UIMessageType.USER: "You",
             UIMessageType.ASSISTANT: "🤖",
+            UIMessageType.THINKING: "💭 Thinking",
+            UIMessageType.REASONING: "🔮 Reasoning",
             UIMessageType.TOOL_USE: "🔧",
             UIMessageType.TOOL_RESULT: "📤",
             UIMessageType.ERROR: "❌",
@@ -394,6 +398,14 @@ class MessageDisplay(Static):
         # User messages - smiley prefix
         if self.message.type == UIMessageType.USER:
             return Text(f"☺ {content}")
+
+        # Thinking messages
+        if self.message.type == UIMessageType.THINKING:
+            return Text(f"💭 {content}", style="dim")
+
+        # Reasoning messages (DeepSeek thinking mode)
+        if self.message.type == UIMessageType.REASONING:
+            return Text(f"🔮 {content}", style="magenta")
 
         # Assistant messages - white dot prefix + markdown
         if self.message.type == UIMessageType.ASSISTANT:

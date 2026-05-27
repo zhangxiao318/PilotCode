@@ -9,11 +9,45 @@ Usage:
     /index import       - Import index from file
 """
 
+import asyncio
+import time
 from pathlib import Path
 
 from .base import CommandHandler, register_command
 from ..types.command import CommandContext
 from ..services.codebase_indexer import get_codebase_indexer
+
+
+def _parse_index_args(args: list[str]) -> tuple[str, int | None]:
+    """Parse /index arguments, extracting subcommand and --batch-size.
+
+    Returns (subcommand, batch_size).
+    """
+    cmd = "incremental"
+    batch_size = None
+
+    i = 0
+    while i < len(args):
+        a = args[i].strip().lower()
+        if a in ("", "incremental", "full", "stats", "clear", "export", "import"):
+            cmd = a if a else "incremental"
+        elif a in ("--batch-size", "-b") and i + 1 < len(args):
+            try:
+                batch_size = int(args[i + 1])
+            except ValueError:
+                pass
+            i += 1
+        i += 1
+
+    return cmd, batch_size
+
+
+def _report_progress(context: CommandContext, msg: str) -> None:
+    """Send progress to UI if a callback is registered, else print."""
+    if context.progress_callback:
+        context.progress_callback(msg)
+    else:
+        print(msg)
 
 
 async def index_command_handler(
@@ -22,87 +56,106 @@ async def index_command_handler(
 ) -> str:
     """Handle /index command."""
 
-    indexer = get_codebase_indexer(context.cwd)
+    cmd, batch_size = _parse_index_args(args)
 
-    # Parse arguments
-    cmd = args[0] if args else "incremental"
-    cmd = cmd.strip().lower()
+    # Re-create indexer with optional larger batch size for big codebases
+    if batch_size:
+        from ..services.codebase_indexer import CodebaseIndexer
+
+        indexer = CodebaseIndexer(context.cwd, batch_size=batch_size)
+    else:
+        indexer = get_codebase_indexer(context.cwd)
 
     if cmd in ("", "incremental"):
-        # Incremental indexing
-        print(f"🗂️  Indexing codebase in: {context.cwd}")
+        _report_progress(context, f"🗂️  Indexing codebase in: {context.cwd}")
 
-        # First, find files without indexing to show what will be indexed
-        files = indexer._find_source_files()
-        print(f"📁 Found {len(files)} source files to index")
+        files = await asyncio.to_thread(indexer._find_source_files)
+        _report_progress(context, f"📁 Found {len(files)} source files to index")
 
         if not files:
-            return f"""No source files found in {context.cwd}
+            return (
+                f"No source files found in {context.cwd}\n\n"
+                f"Supported extensions: {', '.join(sorted(indexer.SUPPORTED_EXTENSIONS))[:100]}...\n"
+                f"Ignored directories: {', '.join(list(indexer.IGNORE_DIRS)[:5])}...\n\n"
+                "Try:\n"
+                "  1. Check you're in the right directory (/pwd)\n"
+                "  2. Use '/index full' for full reindex\n"
+                "  3. Check if files exist: /bash command='find . -name '*.py' | head'\n"
+            )
 
-Supported extensions: {", ".join(sorted(indexer.SUPPORTED_EXTENSIONS))[:100]}...
-Ignored directories: {", ".join(list(indexer.IGNORE_DIRS)[:5])}...
+        _report_progress(context, "⏳ Starting index...")
+        start_time = time.time()
 
-Try:
-  1. Check you're in the right directory (/pwd)
-  2. Use '/index full' for full reindex
-  3. Check if files exist: /bash command="find . -name '*.py' | head"
-"""
+        def _on_progress(file_path: str, current: int, total: int) -> None:
+            pct = current / total * 100 if total else 0
+            elapsed = time.time() - start_time
+            remaining = (elapsed / current) * (total - current) if current else 0
+            _report_progress(
+                context,
+                f"[CodeIndex] {current}/{total} ({pct:.0f}%) ~{remaining:.0f}s remaining",
+            )
 
-        print("⏳ Starting index...")
+        indexer.set_progress_callback(_on_progress)
         stats = await indexer.index_codebase(incremental=True)
+        indexer.set_progress_callback(None)
 
-        # Format language stats
         lang_lines = []
         for lang, count in sorted(stats.languages.items(), key=lambda x: -x[1])[:5]:
             lang_lines.append(f"  {lang}: {count} files")
 
-        message = f"""✅ Indexing complete!
-
-📊 Statistics:
-  Files indexed: {stats.total_files}
-  Symbols: {stats.total_symbols}
-  Snippets: {stats.total_snippets}
-
-📝 Top Languages:
-{chr(10).join(lang_lines)}
-"""
-        return message
+        return (
+            "✅ Indexing complete!\n\n"
+            f"📊 Statistics:\n"
+            f"  Files indexed: {stats.total_files}\n"
+            f"  Symbols: {stats.total_symbols}\n"
+            f"  Snippets: {stats.total_snippets}\n\n"
+            f"📝 Top Languages:\n"
+            f"{chr(10).join(lang_lines)}\n"
+        )
 
     elif cmd == "full":
-        # Full reindex
-        print(f"🗂️  Performing full reindex in: {context.cwd}")
+        _report_progress(context, f"🗂️  Performing full reindex in: {context.cwd}")
 
-        # First, find files without indexing to show what will be indexed
-        files = indexer._find_source_files()
-        print(f"📁 Found {len(files)} source files to index")
+        files = await asyncio.to_thread(indexer._find_source_files)
+        _report_progress(context, f"📁 Found {len(files)} source files to index")
 
         if not files:
-            return f"""No source files found in {context.cwd}
+            return (
+                f"No source files found in {context.cwd}\n\n"
+                f"Supported extensions: {', '.join(sorted(indexer.SUPPORTED_EXTENSIONS))}\n"
+                f"Ignored directories: {', '.join(sorted(indexer.IGNORE_DIRS))}\n\n"
+                "Try:\n"
+                "  1. Check you're in the right directory (/pwd)\n"
+                "  2. Check if files exist: /bash command='find . -name '*.py' | head -5'\n"
+                "  3. List current directory: /ls\n"
+            )
 
-Supported extensions: {", ".join(sorted(indexer.SUPPORTED_EXTENSIONS))}
-Ignored directories: {", ".join(sorted(indexer.IGNORE_DIRS))}
+        _report_progress(context, "⏳ Starting full reindex...")
+        start_time = time.time()
 
-Try:
-  1. Check you're in the right directory (/pwd)
-  2. Check if files exist: /bash command="find . -name '*.py' | head -5"
-  3. List current directory: /ls
-"""
+        def _on_progress(file_path: str, current: int, total: int) -> None:
+            pct = current / total * 100 if total else 0
+            elapsed = time.time() - start_time
+            remaining = (elapsed / current) * (total - current) if current else 0
+            _report_progress(
+                context,
+                f"[CodeIndex] {current}/{total} ({pct:.0f}%) ~{remaining:.0f}s remaining",
+            )
 
-        print("⏳ Starting full reindex...")
         indexer.clear_index()
+        indexer.set_progress_callback(_on_progress)
         stats = await indexer.index_codebase(incremental=False)
+        indexer.set_progress_callback(None)
 
-        message = f"""✅ Full reindex complete!
-
-📊 Statistics:
-  Files indexed: {stats.total_files}
-  Symbols: {stats.total_symbols}
-  Snippets: {stats.total_snippets}
-"""
-        return message
+        return (
+            "✅ Full reindex complete!\n\n"
+            f"📊 Statistics:\n"
+            f"  Files indexed: {stats.total_files}\n"
+            f"  Symbols: {stats.total_symbols}\n"
+            f"  Snippets: {stats.total_snippets}\n"
+        )
 
     elif cmd == "stats":
-        # Show stats
         stats = indexer.get_stats()
 
         from datetime import datetime
@@ -117,25 +170,21 @@ Try:
         for lang, count in sorted(stats.languages.items(), key=lambda x: -x[1]):
             lang_lines.append(f"  {lang}: {count} files")
 
-        message = f"""📊 Index Statistics
-
-Files: {stats.total_files}
-Symbols: {stats.total_symbols}
-Snippets: {stats.total_snippets}
-Last Indexed: {last_indexed}
-
-Languages:
-{chr(10).join(lang_lines) if lang_lines else "  (none)"}
-"""
-        return message
+        return (
+            "📊 Index Statistics\n\n"
+            f"Files: {stats.total_files}\n"
+            f"Symbols: {stats.total_symbols}\n"
+            f"Snippets: {stats.total_snippets}\n"
+            f"Last Indexed: {last_indexed}\n\n"
+            f"Languages:\n"
+            f"{chr(10).join(lang_lines) if lang_lines else '  (none)'}\n"
+        )
 
     elif cmd == "clear":
-        # Clear index
         indexer.clear_index()
         return "✅ Index cleared successfully"
 
     elif cmd == "export":
-        # Export index
         file_path = args[1] if len(args) > 1 else str(Path(context.cwd) / ".pilotcode_index.json")
 
         try:
@@ -145,7 +194,6 @@ Languages:
             return f"❌ Export failed: {e}"
 
     elif cmd == "import":
-        # Import index
         file_path = args[1] if len(args) > 1 else str(Path(context.cwd) / ".pilotcode_index.json")
 
         try:
@@ -156,16 +204,16 @@ Languages:
             return f"❌ Import failed: {e}"
 
     else:
-        return f"""Unknown subcommand: {cmd}
-
-Usage:
-  /index              - Incremental index
-  /index full         - Full reindex
-  /index stats        - Show statistics
-  /index clear        - Clear index
-  /index export       - Export to .pilotcode_index.json
-  /index import       - Import from file
-"""
+        return (
+            f"Unknown subcommand: {cmd}\n\n"
+            "Usage:\n"
+            "  /index              - Incremental index\n"
+            "  /index full         - Full reindex\n"
+            "  /index stats        - Show statistics\n"
+            "  /index clear        - Clear index\n"
+            "  /index export       - Export to .pilotcode_index.json\n"
+            "  /index import       - Import from file\n"
+        )
 
 
 # Register the command

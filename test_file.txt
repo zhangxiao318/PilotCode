@@ -1,0 +1,9 @@
+Hello World!
+This is a test file for C language.
+It contains multiple lines of text.
+We will count characters, words and lines.
+
+Programming in C is fun and educational.
+Let's explore the power of this language!
+12345 67890
+Special chars: @#$%^&*()_+-=[]{}|;':",./<>?

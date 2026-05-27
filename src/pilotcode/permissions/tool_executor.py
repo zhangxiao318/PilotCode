@@ -140,6 +140,22 @@ class ToolExecutor:
         # Normalize field names (handle LLM using different field names)
         tool_input = self._normalize_tool_input(tool_name, tool_input)
 
+        # Doom-loop detection (OpenCode-style): block consecutive identical calls
+        doom_reason = context.check_doom_loop(tool_name, tool_input)
+        if doom_reason:
+            return ToolExecutionResult(
+                success=False,
+                result=None,
+                permission_granted=False,
+                message=(
+                    f"[LOOP DETECTED] {doom_reason}. "
+                    "The previous attempts did not produce the desired result. "
+                    "Try a different approach, re-read the file if needed, "
+                    "or ask the user for guidance instead of repeating the same action."
+                ),
+                tool_name=tool_name,
+            )
+
         # Check if permission is already granted
         is_permitted, reason = self.permission_manager.check_permission(tool_name, tool_input)
 

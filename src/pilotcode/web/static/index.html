@@ -21,7 +21,122 @@
         .sidebar.collapsed .sidebar-footer { padding: 8px; justify-content: center; }
         .sidebar.collapsed .connection-status { display: none; }
         .sidebar.collapsed .sidebar-toggle { transform: rotate(180deg); }
-        .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        .main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+
+        /* Top Toolbar */
+        .toolbar { display: flex; align-items: center; justify-content: space-between; height: 40px; min-height: 40px; padding: 0 16px; border-bottom: 1px solid #e5e5e5; background: #fafafa; }
+        .toolbar-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+        .toolbar-path { font-size: 13px; color: #444; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .toolbar-path svg { width: 14px; height: 14px; color: #666; vertical-align: text-bottom; margin-right: 4px; }
+        .toolbar-right { display: flex; align-items: center; gap: 2px; }
+        .toolbar-btn { width: 28px; height: 28px; border: none; background: transparent; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666; }
+        .toolbar-btn:hover { background: #eee; color: #111; }
+        .toolbar-btn.active { background: #e0e0e0; color: #111; }
+        .toolbar-btn svg { width: 16px; height: 16px; }
+
+        /* File Explorer Panel */
+        .explorer { width: 280px; min-width: 280px; border-left: 1px solid #e5e5e5; display: flex; flex-direction: column; background: #fafafa; font-size: 13px; transition: width 0.2s ease, min-width 0.2s ease; overflow: hidden; position: relative; }
+        .explorer.resizing { transition: none; }
+        .explorer.collapsed { width: 36px; min-width: 36px; }
+        .explorer.collapsed .explorer-body { display: none; }
+        .explorer.collapsed .explorer-tabs { display: none; }
+        .explorer.collapsed .explorer-resizer { display: none; }
+        .explorer.collapsed .explorer-header { padding: 8px; justify-content: center; }
+        .explorer.collapsed .explorer-header-text { display: none; }
+        .explorer-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #e5e5e5; background: #fff; }
+        .explorer-header-text { font-weight: 600; font-size: 12px; color: #666; letter-spacing: 0.5px; text-transform: uppercase; }
+        .explorer-toggle { width: 24px; height: 24px; border: none; background: transparent; cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #666; }
+        .explorer-toggle:hover { background: #f0f0f0; }
+        .explorer-body { flex: 1; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+        .explorer-resizer { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; z-index: 10; }
+        .explorer-resizer:hover { background: #ccc; }
+        .explorer-resizer.dragging { background: #999; }
+        /* Tabs */
+        .explorer-tabs { display: flex; border-bottom: 1px solid #e5e5e5; background: #fff; }
+        .explorer-tab-btn { flex: 1; padding: 8px 4px; border: none; background: transparent; cursor: pointer; font-size: 12px; color: #666; font-weight: 500; position: relative; }
+        .explorer-tab-btn:hover { color: #111; background: #f5f5f5; }
+        .explorer-tab-btn.active { color: #111; }
+        .explorer-tab-btn.active::after { content: ''; position: absolute; bottom: 0; left: 8px; right: 8px; height: 2px; background: #111; border-radius: 1px; }
+        .explorer-tab-badge { display: inline-block; margin-left: 4px; padding: 1px 5px; border-radius: 8px; background: #e5e5e5; font-size: 10px; font-weight: 600; color: #666; min-width: 16px; text-align: center; }
+        .explorer-tab-content { flex: 1; overflow-y: auto; min-height: 0; }
+        .explorer-tab-content.hidden { display: none; }
+        .explorer-section { border-bottom: 1px solid #e5e5e5; }
+        .explorer-section-title { display: flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; user-select: none; }
+        .explorer-section-title:hover { background: #f0f0f0; }
+        .explorer-section-arrow { font-size: 10px; color: #999; transition: transform 0.15s; display: inline-block; width: 12px; }
+        .explorer-section-arrow.expanded { transform: rotate(90deg); }
+        .explorer-section-content { padding: 0 0 8px; }
+        .explorer-section-content.hidden { display: none; }
+        /* Git file list */
+        .git-file-list { padding: 0 4px; }
+        .git-file-category { padding: 4px 8px; font-size: 11px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.3px; }
+        .git-file-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; user-select: none; }
+        .git-file-row:hover { background: #eee; }
+        .git-file-row.selected { background: #e0e0e0; }
+        .git-file-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .git-file-dot.add { background: #16a34a; }
+        .git-file-dot.mod { background: #ca8a04; }
+        .git-file-dot.del { background: #dc2626; }
+        .git-file-dot.untracked { background: #999; }
+        .git-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: #333; white-space: nowrap; }
+        /* Git history nav */
+        .git-history-nav { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid #e5e5e5; background: #fff; }
+        .git-history-btn { width: 24px; height: 24px; border: none; background: transparent; cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px; padding: 0; }
+        .git-history-btn:hover { background: #f0f0f0; color: #111; }
+        .git-history-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .git-history-label { flex: 1; font-size: 11px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; font-weight: 500; }
+        /* Branch row */
+        .git-branch-row { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid #e5e5e5; background: #fff; }
+        .git-branch-select { flex: 1; padding: 4px 6px; border: 1px solid #e5e5e5; border-radius: 4px; font-size: 12px; background: #fff; cursor: pointer; outline: none; }
+        .git-branch-select:focus { border-color: #999; }
+        .git-ahead-behind { font-size: 11px; color: #666; white-space: nowrap; }
+        /* Commit info */
+        .commit-info { padding: 8px 12px; background: #f5f5f5; border-bottom: 1px solid #e5e5e5; }
+        .commit-info.hidden { display: none; }
+        .commit-hash { font-family: 'Fira Code', monospace; font-size: 11px; color: #666; }
+        .commit-message { font-size: 12px; font-weight: 500; color: #333; margin-top: 2px; }
+        .commit-meta { font-size: 11px; color: #999; margin-top: 2px; }
+        /* Diff viewer */
+        .diff-viewer { border-top: 1px solid #e5e5e5; background: #fff; max-height: 50%; overflow-y: auto; }
+        .diff-viewer.hidden { display: none; }
+        .diff-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f5f5f5; border-bottom: 1px solid #e5e5e5; font-size: 12px; font-weight: 500; }
+        .diff-close { width: 20px; height: 20px; border: none; background: transparent; cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 14px; }
+        .diff-close:hover { background: #e0e0e0; }
+        .diff-content { padding: 0; font-family: 'Fira Code', monospace; font-size: 12px; line-height: 1.5; }
+        .diff-line { padding: 1px 12px; white-space: pre; overflow-x: auto; }
+        .diff-line.add { background: #dcfce7; color: #166534; }
+        .diff-line.del { background: #fee2e2; color: #991b1b; }
+        .diff-line.hunk { background: #f0f0f0; color: #666; }
+        .diff-line.info { color: #666; }
+        .diff-empty { padding: 16px 12px; text-align: center; color: #999; font-size: 12px; }
+        /* Git status bar */
+        .git-bar { padding: 8px 12px; background: #fff; border-bottom: 1px solid #e5e5e5; }
+        .git-branch { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #444; font-weight: 500; }
+        .git-branch svg { width: 14px; height: 14px; color: #666; }
+        .git-stats { display: flex; gap: 8px; margin-top: 6px; font-size: 11px; }
+        .git-stat { display: flex; align-items: center; gap: 3px; padding: 2px 6px; border-radius: 4px; background: #f0f0f0; }
+        .git-stat.add { color: #166534; background: #dcfce7; }
+        .git-stat.mod { color: #854d0e; background: #fef9c3; }
+        .git-stat.del { color: #991b1b; background: #fee2e2; }
+        .git-stat.untracked { color: #666; background: #f0f0f0; }
+        /* File tree */
+        .file-tree { padding: 0 4px; }
+        .file-tree-node { display: flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; cursor: pointer; user-select: none; white-space: nowrap; }
+        .file-tree-node:hover { background: #eee; }
+        .file-tree-node.selected { background: #e0e0e0; }
+        .file-tree-icon { width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #666; font-size: 10px; }
+        .file-tree-icon.folder { color: #666; }
+        .file-tree-icon.folder-open { color: #444; }
+        .file-tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: #333; }
+        .file-tree-name.ignored { color: #999; }
+        .file-tree-kind { font-size: 10px; font-weight: 600; width: 16px; text-align: center; flex-shrink: 0; }
+        .file-tree-kind.add { color: #16a34a; }
+        .file-tree-kind.mod { color: #ca8a04; }
+        .file-tree-kind.del { color: #dc2626; }
+        .file-tree-children { padding-left: 14px; }
+        .file-tree-children.hidden { display: none; }
+        .explorer-cwd { padding: 6px 12px; font-size: 11px; color: #999; border-bottom: 1px solid #e5e5e5; background: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .explorer-empty { padding: 20px 12px; text-align: center; color: #999; font-size: 12px; }
 
         /* Sidebar Brand */
         .sidebar-brand { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #e5e5e5; }
@@ -105,8 +220,21 @@
         .status-dot.disconnected { background: #ef4444; }
         
         /* Chat Area */
-        .chat-area { flex: 1; overflow-y: auto; padding: 24px; }
+        .chat-area { flex: 1; overflow-y: auto; padding: 24px; position: relative; }
         .messages-container { max-width: 900px; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+        /* Context Usage */
+        .context-usage { position: absolute; bottom: 92px; right: 8px; z-index: 100; display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: #fff; border: 1px solid #e5e5e5; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); font-size: 11px; color: #666; cursor: default; }
+        .context-usage.hidden { display: none; }
+        .context-bar { width: 40px; height: 6px; background: #e5e5e5; border-radius: 3px; overflow: hidden; }
+        .context-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease, background 0.3s ease; }
+        .context-fill.low { background: #22c55e; }
+        .context-fill.medium { background: #f59e0b; }
+        .context-fill.high { background: #ef4444; }
+        .context-tooltip { position: absolute; bottom: calc(100% + 8px); right: 0; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); font-size: 12px; color: #333; white-space: nowrap; z-index: 101; opacity: 0; visibility: hidden; transition: opacity 0.15s, visibility 0.15s; }
+        .context-usage:hover .context-tooltip { opacity: 1; visibility: visible; }
+        .context-tooltip-row { display: flex; justify-content: space-between; gap: 16px; padding: 2px 0; }
+        .context-tooltip-label { color: #999; }
+        .context-tooltip-value { font-weight: 500; color: #333; font-family: 'Fira Code', monospace; }
         
         /* Welcome */
         .welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 48px 24px; min-height: 60%; }
@@ -142,8 +270,17 @@
             border-left: 3px solid #0ea5e9;
             padding: 10px 14px;
             border-radius: 0 6px 6px 0;
-            margin: 6px 0 12px 0;
+            margin: 6px 0 4px 0;
             font-size: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.5;
+        }
+        
+        /* Stream content container for assistant response */
+        .stream-content {
+            margin-top: 4px;
+            padding-top: 0;
         }
         
         /* Stream blocks */
@@ -159,28 +296,44 @@
             border-color: #999; 
             color: #666; 
         }
+        .stream-block.reasoning { 
+            background: #f5f3ff; 
+            border-color: #8b5cf6; 
+            color: #5b21b6; 
+        }
         .stream-block.result { 
             background: #f0fdf4; 
             border-color: #22c55e; 
         }
+        .stream-block.result.error {
+            background: #fef2f2;
+            border-color: #ef4444;
+        }
+        .stream-block.system {
+            background: #f8f9fa;
+            border-color: #adb5bd;
+            color: #6c757d;
+            font-size: 12px;
+        }
         .stream-block pre { margin: 0; font-family: 'Fira Code', monospace; overflow-x: auto; }
+        .stream-block pre.long-content { max-height: 400px; overflow-y: auto; }
         
-        /* Final response */
-        .final-response { margin-top: 12px; line-height: 1.6; font-size: 14px; }
-        .final-response pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
-        .final-response code { font-family: 'Fira Code', monospace; font-size: 13px; }
-        .final-response p { margin: 6px 0; }
-        .final-response ul, .final-response ol { margin: 6px 0; padding-left: 20px; }
-        .final-response li { margin: 3px 0; }
-        .final-response strong { font-weight: 600; }
-        .final-response a { color: #2563eb; text-decoration: none; }
-        .final-response a:hover { text-decoration: underline; }
-        .final-response h1 { font-size: 20px; font-weight: 600; margin: 16px 0 8px; }
-        .final-response h2 { font-size: 18px; font-weight: 600; margin: 14px 0 7px; }
-        .final-response h3 { font-size: 16px; font-weight: 600; margin: 12px 0 6px; }
-        .final-response h4 { font-size: 15px; font-weight: 600; margin: 10px 0 5px; }
-        .final-response h5 { font-size: 14px; font-weight: 600; margin: 8px 0 4px; }
-        .final-response h6 { font-size: 13px; font-weight: 600; margin: 6px 0 3px; }
+        /* Final response, thinking-response and content prelude */
+        .final-response, .thinking-response, .content-prelude { margin-top: 12px; line-height: 1.6; font-size: 14px; }
+        .final-response pre, .thinking-response pre, .content-prelude pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+        .final-response code, .thinking-response code, .content-prelude code { font-family: 'Fira Code', monospace; font-size: 13px; }
+        .final-response p, .thinking-response p, .content-prelude p { margin: 6px 0; }
+        .final-response ul, .final-response ol, .thinking-response ul, .thinking-response ol, .content-prelude ul, .content-prelude ol { margin: 6px 0; padding-left: 20px; }
+        .final-response li, .thinking-response li, .content-prelude li { margin: 3px 0; }
+        .final-response strong, .thinking-response strong, .content-prelude strong { font-weight: 600; }
+        .final-response a, .thinking-response a, .content-prelude a { color: #2563eb; text-decoration: none; }
+        .final-response a:hover, .thinking-response a:hover, .content-prelude a:hover { text-decoration: underline; }
+        .final-response h1, .thinking-response h1, .content-prelude h1 { font-size: 20px; font-weight: 600; margin: 16px 0 8px; }
+        .final-response h2, .thinking-response h2, .content-prelude h2 { font-size: 18px; font-weight: 600; margin: 14px 0 7px; }
+        .final-response h3, .thinking-response h3, .content-prelude h3 { font-size: 16px; font-weight: 600; margin: 12px 0 6px; }
+        .final-response h4, .thinking-response h4, .content-prelude h4 { font-size: 15px; font-weight: 600; margin: 10px 0 5px; }
+        .final-response h5, .thinking-response h5, .content-prelude h5 { font-size: 14px; font-weight: 600; margin: 8px 0 4px; }
+        .final-response h6, .thinking-response h6, .content-prelude h6 { font-size: 13px; font-weight: 600; margin: 6px 0 3px; }
         
         /* Tool Call Block */
         .tool-call { margin: 8px 0; border: 1px solid #e5e5e5; border-radius: 6px; overflow: hidden; font-size: 13px; }
@@ -189,7 +342,18 @@
         .tool-header .icon { font-size: 12px; color: #666; }
         .tool-content { padding: 10px; background: #fff; }
         .tool-content.hidden { display: none; }
-        .tool-content pre { overflow-x: auto; font-family: 'Fira Code', monospace; background: #f9f9f9; padding: 8px; border-radius: 4px; font-size: 12px; }
+        .tool-content pre { overflow-x: auto; font-family: 'Fira Code', monospace; background: #f9f9f9; padding: 8px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+
+        /* Tool Result Block */
+        .tool-result { margin: 8px 0; border: 1px solid #e5e5e5; border-radius: 6px; overflow: hidden; font-size: 13px; }
+        .tool-result.error { border-color: #fca5a5; }
+        .tool-result-header { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: #f0fdf4; cursor: pointer; }
+        .tool-result.error .tool-result-header { background: #fef2f2; }
+        .tool-result-header:hover { opacity: 0.9; }
+        .tool-result-header .icon { font-size: 12px; color: #666; }
+        .tool-result-content { padding: 10px; background: #fff; }
+        .tool-result-content.hidden { display: none; }
+        .tool-result-content pre { overflow-x: auto; font-family: 'Fira Code', monospace; background: #f9f9f9; padding: 8px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; }
         
         /* Permission Block - Compact */
         .permission-request { margin: 8px 0; padding: 12px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; }
@@ -292,6 +456,21 @@
         
         <!-- Main -->
         <div class="main">
+            <!-- Top Toolbar -->
+            <div class="toolbar" id="toolbar">
+                <div class="toolbar-left">
+                    <div class="toolbar-path" id="toolbarPath" title="">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                        <span id="toolbarPathText">PilotCode</span>
+                    </div>
+                </div>
+                <div class="toolbar-right">
+                    <button class="toolbar-btn" id="toolbarExplorerBtn" title="Toggle Side Panel">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    </button>
+                </div>
+            </div>
+
             <div class="chat-area" id="chatArea">
                 <!-- Welcome -->
                 <div class="welcome" id="welcomeMessage">
@@ -328,6 +507,18 @@
                 <!-- Messages -->
                 <div class="messages-container hidden" id="messagesContainer"></div>
             </div>
+
+            <!-- Context Usage -->
+            <div class="context-usage hidden" id="contextUsage">
+                <span id="contextPercent">--%</span>
+                <div class="context-bar"><div class="context-fill low" id="contextFill" style="width:0%"></div></div>
+                <div class="context-tooltip" id="contextTooltip">
+                    <div class="context-tooltip-row"><span class="context-tooltip-label">Tokens</span><span class="context-tooltip-value" id="tooltipTokens">--</span></div>
+                    <div class="context-tooltip-row"><span class="context-tooltip-label">Usable</span><span class="context-tooltip-value" id="tooltipUsable">--</span></div>
+                    <div class="context-tooltip-row"><span class="context-tooltip-label">Context window</span><span class="context-tooltip-value" id="tooltipWindow">--</span></div>
+                    <div class="context-tooltip-row"><span class="context-tooltip-label">Max output</span><span class="context-tooltip-value" id="tooltipOutput">--</span></div>
+                </div>
+            </div>
             
             <!-- Input -->
             <div class="input-area">
@@ -357,8 +548,75 @@
                 </div>
             </div>
         </div>
+
+        <!-- File Explorer Panel -->
+        <div class="explorer" id="explorerPanel">
+            <div class="explorer-resizer" id="explorerResizer"></div>
+            <div class="explorer-header">
+                <span class="explorer-header-text">Explorer</span>
+                <button class="explorer-toggle" id="explorerToggle" title="Collapse/Expand">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                        <path d="M15 3v18"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="explorer-tabs" id="explorerTabs">
+                <button class="explorer-tab-btn active" data-tab="files" id="tabFiles">
+                    Files
+                </button>
+                <button class="explorer-tab-btn" data-tab="changes" id="tabChanges">
+                    Changes
+                    <span class="explorer-tab-badge hidden" id="changesBadge"></span>
+                </button>
+            </div>
+            <div class="explorer-body" id="explorerBody">
+                <!-- Files Tab -->
+                <div class="explorer-tab-content" id="filesTabContent">
+                    <div class="explorer-cwd" id="explorerCwd" title="">.</div>
+                    <div class="file-tree" id="fileTree">
+                        <div class="explorer-empty">Loading...</div>
+                    </div>
+                </div>
+                <!-- Changes Tab -->
+                <div class="explorer-tab-content hidden" id="changesTabContent">
+                    <!-- History Navigation -->
+                    <div class="git-history-nav" id="gitHistoryNav">
+                        <button class="git-history-btn" id="gitPrevBtn" title="Previous commit">◀</button>
+                        <span class="git-history-label" id="gitHistoryLabel">Working tree</span>
+                        <button class="git-history-btn" id="gitNextBtn" title="Next commit">▶</button>
+                        <button class="git-history-btn" id="gitLatestBtn" title="Back to latest">●</button>
+                    </div>
+                    <!-- Branch & Ahead/Behind -->
+                    <div class="git-branch-row" id="gitBranchRow">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+                        <select class="git-branch-select" id="gitBranchSelect">
+                            <option>Loading...</option>
+                        </select>
+                        <span class="git-ahead-behind" id="gitAheadBehind"></span>
+                    </div>
+                    <!-- Commit Info (for historical commits) -->
+                    <div class="commit-info hidden" id="commitInfo">
+                        <div class="commit-hash" id="commitHash"></div>
+                        <div class="commit-message" id="commitMessage"></div>
+                        <div class="commit-meta" id="commitMeta"></div>
+                    </div>
+                    <div class="git-bar" id="gitBar">
+                        <div class="explorer-empty">Loading...</div>
+                    </div>
+                    <div class="git-file-list" id="gitFileList"></div>
+                    <div class="diff-viewer hidden" id="diffViewer">
+                        <div class="diff-header">
+                            <span id="diffFileName"></span>
+                            <button class="diff-close" id="diffClose">×</button>
+                        </div>
+                        <div class="diff-content" id="diffContent"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    
+
     <!-- CWD Picker Modal -->
     <div class="modal-overlay hidden" id="cwdModal">
         <div class="modal">

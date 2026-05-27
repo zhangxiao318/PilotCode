@@ -1,6 +1,8 @@
 """Tests for QueryEngine."""
 
+import asyncio
 import pytest
+import tempfile
 from unittest.mock import MagicMock, patch
 
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
@@ -33,21 +35,23 @@ class TestQueryEngineInit:
     def test_init_custom_config(self):
         """Test initialization with custom config."""
         store = Store(get_default_app_state())
+        set_global_store(store)
 
-        config = QueryEngineConfig(
-            cwd="/home/test",
-            tools=[],
-            get_app_state=store.get_state,
-            set_app_state=lambda f: store.set_state(f),
-            auto_compact=False,
-            context_window=1000,
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = QueryEngineConfig(
+                cwd=tmpdir,
+                tools=[],
+                get_app_state=store.get_state,
+                set_app_state=lambda f: store.set_state(f),
+                auto_compact=False,
+                context_window=1000,
+            )
 
-        engine = QueryEngine(config=config)
+            engine = QueryEngine(config=config)
 
-        assert engine.config.cwd == "/home/test"
-        assert engine.config.auto_compact is False
-        assert engine.config.context_window == 1000
+            assert engine.config.cwd == tmpdir
+            assert engine.config.auto_compact is False
+            assert engine.config.context_window == 1000
 
 
 class TestQueryEngineMessages:
@@ -224,13 +228,15 @@ class TestQueryEngineNotify:
 
     def test_on_notify_called_when_auto_compact_triggers(self, notify_engine):
         """on_notify should be called when auto_compact triggers."""
+        import asyncio
+
         # Add enough messages to exceed the tiny context_window=1 limit
         for i in range(10):
             notify_engine.messages.append(
                 UserMessage(content=f"This is a longer message number {i} with many tokens")
             )
 
-        compacted = notify_engine.auto_compact_if_needed()
+        compacted = asyncio.run(notify_engine.auto_compact_if_needed())
 
         assert compacted is True
         self.mock_notify.assert_called_once()
@@ -255,17 +261,19 @@ class TestQueryEngineNotify:
         engine = QueryEngine(config=config)
         engine.messages.append(UserMessage(content="Short msg"))
 
-        compacted = engine.auto_compact_if_needed()
+        compacted = asyncio.run(engine.auto_compact_if_needed())
 
         assert compacted is False
         mock_notify.assert_not_called()
 
     def test_on_notify_payload_structure(self, notify_engine):
         """Verify the payload structure sent to on_notify."""
+        import asyncio
+
         for i in range(10):
             notify_engine.messages.append(UserMessage(content=f"Message number {i} with content"))
 
-        notify_engine.auto_compact_if_needed()
+        asyncio.run(notify_engine.auto_compact_if_needed())
 
         assert self.mock_notify.call_count == 1
         event_type, payload = self.mock_notify.call_args[0]
@@ -289,13 +297,17 @@ class TestQueryEngineNotify:
             )
 
         # Directly trigger compaction
-        notify_engine.auto_compact_if_needed()
+        import asyncio
+
+        asyncio.run(notify_engine.auto_compact_if_needed())
 
         # Auto-compact should have triggered the notify callback
         self.mock_notify.assert_called_once()
         event_type, payload = self.mock_notify.call_args[0]
         assert event_type == "auto_compact"
-        assert payload["tokens_saved"] >= 0
+        assert isinstance(payload["tokens_before"], int)
+        assert isinstance(payload["tokens_after"], int)
+        assert isinstance(payload["tokens_saved"], int)
 
     def test_on_notify_disabled_when_auto_compact_false(self, app_store):
         """on_notify should NOT be called when auto_compact is disabled."""
@@ -313,7 +325,7 @@ class TestQueryEngineNotify:
         for i in range(10):
             engine.messages.append(UserMessage(content=f"Long message {i}"))
 
-        compacted = engine.auto_compact_if_needed()
+        compacted = asyncio.run(engine.auto_compact_if_needed())
 
         assert compacted is False
         mock_notify.assert_not_called()

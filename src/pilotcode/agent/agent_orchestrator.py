@@ -318,6 +318,9 @@ Previous discussion:
         client = get_model_client()
         ctx = ToolUseContext(cwd=os.getcwd())
 
+        # Sidechain transcript: we'll record the full conversation
+        sidechain_messages: list[Any] = []
+
         # Build tool list from allowed_tools
         all_tools = []
         for tool_name in agent.definition.allowed_tools:
@@ -344,6 +347,7 @@ Previous discussion:
             MCMessage(role="system", content=agent.definition.system_prompt),
             MCMessage(role="user", content=prompt),
         ]
+        sidechain_messages = list(messages)
 
         agent.status = AgentStatus.RUNNING
         max_iterations = agent.definition.max_turns
@@ -452,6 +456,7 @@ Previous discussion:
                             )
                         )
                 messages.append(assistant_msg)
+                sidechain_messages.append(assistant_msg)
 
                 if content and not tool_calls_raw:
                     # Plain text response (no tool calls) — agent is done
@@ -462,6 +467,8 @@ Previous discussion:
                         get_agent_manager()._save_agent(agent)
                     except Exception:
                         pass
+                    # Save sidechain transcript
+                    self._save_sidechain(agent, sidechain_messages)
                     return content
 
                 if tool_calls_raw:
@@ -497,14 +504,14 @@ Previous discussion:
                                 f"for this agent. Allowed tools: {agent.definition.allowed_tools}"
                             )
 
-                        messages.append(
-                            MCMessage(
-                                role="tool",
-                                content=result_text,
-                                tool_call_id=tool_call_id,
-                                name=tool_name,
-                            )
+                        tool_result_msg = MCMessage(
+                            role="tool",
+                            content=result_text,
+                            tool_call_id=tool_call_id,
+                            name=tool_name,
                         )
+                        messages.append(tool_result_msg)
+                        sidechain_messages.append(tool_result_msg)
                     # Nudge the agent to summarize when we are near the turn limit.
                     if iteration >= max_iterations - 3:
                         messages.append(
@@ -575,6 +582,8 @@ Previous discussion:
                 get_agent_manager()._save_agent(agent)
             except Exception:
                 pass
+            # Save sidechain transcript
+            self._save_sidechain(agent, sidechain_messages)
             return agent.output or ""
         except asyncio.CancelledError:
             agent.status = AgentStatus.FAILED
@@ -596,6 +605,23 @@ Previous discussion:
             except Exception:
                 pass
             return f"[Agent {agent.agent_id} failed: {e}]\n{tb}"
+
+    def _save_sidechain(self, agent: SubAgent, messages: list[Any]) -> None:
+        """Save sub-agent conversation to a sidechain transcript file."""
+        try:
+            from ..services.sidechain_transcript import save_sidechain_transcript
+
+            sidechain_path = save_sidechain_transcript(
+                agent_id=agent.agent_id,
+                messages=messages,
+                summary=agent.output or "",
+                agent_type=agent.definition.name,
+                tools_used=agent.tools_used,
+                worktree_path=agent.worktree_path,
+            )
+            agent.transcript_path = sidechain_path
+        except Exception:
+            pass
 
 
 # Global orchestrator

@@ -217,6 +217,7 @@ class Orchestrator:
                             "mission:redesign_triggered",
                             {"mission_id": mid, "reason": "Critical health risks detected"},
                         )
+                        await self._redesign_mission(mid)
                 last_health_check = now
 
             # --- Fill worker slots ---
@@ -598,6 +599,8 @@ class Orchestrator:
             if not l1.passed:
                 self._handle_verification_failure(mission_id, task, sm, l1)
                 return
+            # Pass L1 context downstream
+            exec_result.artifacts["_verification_1"] = l1
 
         # Auto-approve very simple tasks: skip L2/L3
         is_auto_simple = (
@@ -615,6 +618,8 @@ class Orchestrator:
             if not l2.passed:
                 self._handle_verification_failure(mission_id, task, sm, l2)
                 return
+            # Pass L2 context downstream
+            exec_result.artifacts["_verification_2"] = l2
 
         # L3: Code Review
         l3: VerificationResult | None = None
@@ -780,6 +785,80 @@ class Orchestrator:
                     _cancel_recursive(downstream)
 
         _cancel_recursive(failed_task_id)
+
+    async def _redesign_mission(self, mission_id: str) -> None:
+        """Auto-replan tasks that have failed too many times.
+
+        For tasks with rework_count >= 2:
+        - Downgrade complexity one level (min VERY_SIMPLE)
+        - Halve max_lines constraint
+        - Reset state to PENDING for re-execution
+        - If already redesigned once, mark as REJECTED
+        """
+        dag = self.tracker.get_dag(mission_id)
+        if not dag:
+            return
+
+        redesign_count = dag.mission.metadata.get("redesign_count", 0)
+        redesign_count += 1
+        dag.mission.metadata["redesign_count"] = redesign_count
+
+        for node in dag.nodes.values():
+            rework_count = node.artifacts.get("rework_count", 0)
+            if rework_count < 2:
+                continue
+
+            # Second redesign: give up
+            if redesign_count >= 2:
+                dag.update_task_state(node.task_id, TaskState.REJECTED)
+                self._notify(
+                    "task:rejected",
+                    {
+                        "mission_id": mission_id,
+                        "task_id": node.task_id,
+                        "reason": f"Failed after {rework_count} rework attempts and {redesign_count} redesigns",
+                    },
+                )
+                continue
+
+            # First redesign: downgrade and retry
+            task = node.task
+            if task.estimated_complexity.value > 1:
+                task.estimated_complexity = ComplexityLevel(task.estimated_complexity.value - 1)
+
+            if task.constraints.max_lines is not None:
+                task.constraints.max_lines = max(20, task.constraints.max_lines // 2)
+            else:
+                task.constraints.max_lines = 50
+
+            # Preserve verification history for synergy
+            node.artifacts.setdefault("redesign_history", []).append(
+                {
+                    "redesign_count": redesign_count,
+                    "new_complexity": task.estimated_complexity.name,
+                    "new_max_lines": task.constraints.max_lines,
+                    "rework_count": rework_count,
+                }
+            )
+
+            # Reset state for re-execution
+            dag.update_task_state(node.task_id, TaskState.PENDING)
+            node.result = None
+            node.error = None
+            # Keep artifacts (rework_count, redesign_history)
+
+        # After redesign, recalc ready tasks
+        dag._ready_cache = None
+        self._notify(
+            "mission:redesign_applied",
+            {
+                "mission_id": mission_id,
+                "redesign_count": redesign_count,
+                "affected_tasks": [
+                    n.task_id for n in dag.nodes.values() if n.artifacts.get("rework_count", 0) >= 2
+                ],
+            },
+        )
 
     def _count_rework_attempts(self, mission_id: str, task_id: str) -> int:
         """Count how many times this task has been retried."""

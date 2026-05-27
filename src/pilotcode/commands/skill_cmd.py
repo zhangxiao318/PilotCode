@@ -52,7 +52,7 @@ async def skills_command(args: list[str], context: CommandContext) -> str:
             "commands": [],
         }
 
-        with open(skill_path / "skill.json", "w") as f:
+        with open(skill_path / "skill.json", "w", encoding="utf-8") as f:
             json.dump(skill_config, f, indent=2)
 
         return f"Created skill: {name}\nLocation: {skill_path}"
@@ -67,7 +67,7 @@ async def skills_command(args: list[str], context: CommandContext) -> str:
         if not skill_path.exists():
             return f"Skill not found: {name}"
 
-        with open(skill_path, "r") as f:
+        with open(skill_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
         lines = [

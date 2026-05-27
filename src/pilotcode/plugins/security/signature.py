@@ -232,13 +232,13 @@ class SignatureManager:
     def save_signature(self, signature: PluginSignature, path: Path) -> None:
         """Save signature to file."""
         sig_data = signature.to_dict()
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(sig_data, f, indent=2)
 
     def load_signature(self, path: Path) -> Optional[PluginSignature]:
         """Load signature from file."""
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return PluginSignature.from_dict(data)
         except (json.JSONDecodeError, FileNotFoundError, KeyError):
@@ -267,7 +267,7 @@ class SignatureManager:
             "public_key": public_key,
             "created": datetime.now().isoformat(),
         }
-        with open(key_file, "w") as f:
+        with open(key_file, "w", encoding="utf-8") as f:
             json.dump(key_data, f, indent=2)
 
         return private_key, public_key
@@ -276,7 +276,7 @@ class SignatureManager:
         """Load a key pair."""
         key_file = self.keys_dir / f"{key_id}.json"
         try:
-            with open(key_file, "r") as f:
+            with open(key_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return data["private_key"], data["public_key"]
         except (FileNotFoundError, KeyError):

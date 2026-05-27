@@ -20,7 +20,7 @@ async def share_command(args: list[str], context: CommandContext) -> str:
     share_file = f"share_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
     try:
-        with open(share_file, "w") as f:
+        with open(share_file, "w", encoding="utf-8") as f:
             json.dump(share_data, f, indent=2)
 
         return f"Session share file created: {share_file}\n\nNote: Full sharing functionality would upload to cloud service."

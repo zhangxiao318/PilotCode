@@ -2,7 +2,7 @@
 
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from .base import Tool, Tools
 from ..types.permissions import ToolPermissionContext
 
@@ -41,7 +41,7 @@ _CONTEXT_TOOL_GROUPS: dict[str, set[str]] = {
     "repl": {"REPL"},
     "skill": {"Skill"},
     "sleep": {"Sleep"},
-    "todo": {"TodoWrite"},
+    "todo": {"Todo"},
     "tool_search": {"ToolSearch"},
     "brief": {"Brief"},
     "smart_edit": {"SmartEditPlanner"},
@@ -51,6 +51,56 @@ _CONTEXT_TOOL_GROUPS: dict[str, set[str]] = {
     "ripgrep": {"Ripgrep"},
     "powershell": {"PowerShell"},
 }
+
+
+# Directories to skip during context detection (case-insensitive)
+_SKIP_CONTEXT_DIRS = frozenset(
+    {
+        "node_modules",
+        ".venv",
+        "venv",
+        "env",
+        ".env",
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        ".git",
+        ".idea",
+        ".vscode",
+        ".vs",
+        "dist",
+        "build",
+        ".next",
+        ".nuxt",
+        "target",
+        "bin",
+        "obj",
+    }
+)
+
+
+def _scan_for_notebooks(cwd: str, max_depth: int = 2) -> bool:
+    """Scan for .ipynb files using os.scandir, skipping large directories.
+
+    Returns True if any .ipynb file is found within max_depth levels.
+    """
+    try:
+        with os.scandir(cwd) as it:
+            for entry in it:
+                if entry.is_dir(follow_symlinks=False):
+                    if entry.name.lower() in _SKIP_CONTEXT_DIRS:
+                        continue
+                    if max_depth > 0:
+                        if _scan_for_notebooks(entry.path, max_depth - 1):
+                            return True
+                elif entry.name.endswith(".ipynb"):
+                    return True
+    except PermissionError:
+        pass
+    except OSError:
+        pass
+    return False
 
 
 def _detect_context_groups(cwd: str) -> set[str]:
@@ -66,14 +116,9 @@ def _detect_context_groups(cwd: str) -> set[str]:
     if os.path.exists(os.path.join(cwd, "package.json")):
         groups.add("web")
 
-    # Jupyter notebooks
-    for root, _dirs, files in os.walk(cwd):
-        if any(f.endswith(".ipynb") for f in files):
-            groups.add("notebook")
-            break
-        # Limit walk depth to avoid scanning huge trees
-        if root.count(os.sep) - cwd.count(os.sep) >= 2:
-            break
+    # Jupyter notebooks — use fast os.scandir with skip-dir support
+    if _scan_for_notebooks(cwd, max_depth=2):
+        groups.add("notebook")
 
     # Python project (LSP, REPL useful)
     if os.path.exists(os.path.join(cwd, "pyproject.toml")) or os.path.exists(
@@ -83,7 +128,15 @@ def _detect_context_groups(cwd: str) -> set[str]:
         groups.add("repl")
 
     # Large codebase (code indexing useful)
-    if sum(1 for _ in os.scandir(cwd) if _.is_dir()) >= 3:
+    try:
+        dir_count = sum(
+            1
+            for entry in os.scandir(cwd)
+            if entry.is_dir() and entry.name.lower() not in _SKIP_CONTEXT_DIRS
+        )
+    except Exception:
+        dir_count = 0
+    if dir_count >= 3:
         groups.add("code_index")
 
     # Always load some convenience tools
@@ -140,10 +193,39 @@ class ToolRegistry:
         """Check if tool exists."""
         return name in self._tools or name in self._aliases
 
-    def filter_by_permission(self, permission_context: ToolPermissionContext) -> Tools:
-        """Filter tools based on permission context."""
-        # TODO: Implement permission-based filtering
-        return self.get_all()
+    def filter_by_permission(
+        self,
+        permission_context: ToolPermissionContext,
+        permission_manager: Any | None = None,
+    ) -> Tools:
+        """Filter tools based on permission context.
+
+        Removes tools from the model's view when the permission mode
+        indicates they should not be invoked (e.g. 'dontAsk' mode hides
+        Bash). This prevents the model from hallucinating disallowed tools.
+        """
+        all_tools = self.get_all()
+        mode = permission_context.mode
+
+        # Fast path: no filtering needed
+        if mode in ("default", "acceptEdits", "bypassPermissions", "auto"):
+            return all_tools
+
+        # Use PermissionManager to check visibility
+        if permission_manager is None:
+            try:
+                from ..permissions.permission_manager import get_permission_manager
+
+                permission_manager = get_permission_manager()
+            except Exception:
+                return all_tools
+
+        result: Tools = []
+        for tool in all_tools:
+            if permission_manager.is_tool_visible(tool.name, mode):
+                result.append(tool)
+
+        return result
 
     def get_core_tools(self, cwd: str = ".") -> Tools:
         """Return core + contextually-relevant tools for the given directory.

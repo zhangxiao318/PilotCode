@@ -108,7 +108,7 @@ def write_to_mailbox(
     messages: list[dict] = []
     if inbox_path.exists():
         try:
-            with open(inbox_path, "r") as f:
+            with open(inbox_path, "r", encoding="utf-8") as f:
                 _lock_file(f.fileno(), exclusive=False)
                 data = json.load(f)
                 messages = data if isinstance(data, list) else []
@@ -125,7 +125,7 @@ def write_to_mailbox(
 
     # Write back with exclusive lock
     try:
-        with open(inbox_path, "w") as f:
+        with open(inbox_path, "w", encoding="utf-8") as f:
             _lock_file(f.fileno(), exclusive=True)
             json.dump(messages, f, indent=2)
             _unlock_file(f.fileno())
@@ -155,7 +155,7 @@ def read_unread_messages(
 
     messages: list[dict] = []
     try:
-        with open(inbox_path, "r") as f:
+        with open(inbox_path, "r", encoding="utf-8") as f:
             _lock_file(f.fileno(), exclusive=False)
             data = json.load(f)
             messages = data if isinstance(data, list) else []
@@ -165,7 +165,7 @@ def read_unread_messages(
 
     if clear_after_read:
         try:
-            with open(inbox_path, "w") as f:
+            with open(inbox_path, "w", encoding="utf-8") as f:
                 _lock_file(f.fileno(), exclusive=True)
                 json.dump([], f)
                 _unlock_file(f.fileno())
@@ -195,7 +195,7 @@ def broadcast_to_team(
         return 0
 
     try:
-        team_data = json.loads(team_file.read_text())
+        team_data = json.loads(team_file.read_text(encoding="utf-8"))
         members = team_data.get("members", [])
     except Exception:
         return 0
@@ -224,7 +224,7 @@ def get_team_info(team_name: str) -> dict[str, Any] | None:
         return None
 
     try:
-        return json.loads(team_file.read_text())
+        return json.loads(team_file.read_text(encoding="utf-8"))
     except Exception:
         return None
 
@@ -255,7 +255,7 @@ def create_team(team_name: str, lead_agent: str, members: list[str]) -> bool:
     }
 
     try:
-        team_file.write_text(json.dumps(team_data, indent=2))
+        team_file.write_text(json.dumps(team_data, indent=2), encoding="utf-8")
         return True
     except Exception:
         return False

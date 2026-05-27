@@ -43,7 +43,7 @@ class TestToolDiscovery:
             "WebSearch",
             "WebFetch",
             "AskUser",
-            "TodoWrite",
+            "Todo",
             "Agent",
             "Brief",
             "NotebookEdit",
@@ -363,7 +363,7 @@ class TestUtilityTools:
     @pytest.mark.asyncio
     async def test_todo_write_returns_structured(self):
         result = await allow_all(
-            "TodoWrite", {"todos": [{"content": "item", "status": "in_progress"}]}
+            "Todo", {"action": "write", "todos": [{"content": "item", "status": "in_progress"}]}
         )
         assert result.data is not None
 

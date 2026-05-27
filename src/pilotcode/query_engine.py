@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import re
-import time
 import uuid
 from typing import Any, AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -16,9 +15,6 @@ from .types.message import (
     ToolUseMessage,
     ToolResultMessage,
     SystemMessage,
-    serialize_messages,
-    deserialize_messages,
-    to_api_format,
 )
 from .tools.base import Tools
 from .state.app_state import AppState
@@ -30,49 +26,19 @@ from .utils.model_client import (
     RateLimitError,
     LLMError,
 )
-from .services.token_estimation import get_token_estimator
-from .services.precise_tokenizer import get_precise_tokenizer
+from .query.token_manager import TokenManager
 from .services.stream_events import EventBus, StreamEvent
-from .services.context_compression import get_context_compressor, CompressionResult
-from .services.intelligent_compact import (
-    IntelligentContextCompactor,
-    CompactConfig,
-)
+from .services.context_compression import CompressionResult
+from .query.compaction_manager import CompactionManager
+from .query.prompt_builder import PromptBuilder
+from .query.message_parser import MessageParser
+from .query.session_manager import SessionManager
+from .query.per_turn_snapshot import PerTurnSnapshotTracker
+from .services.knowhow_loader import KnowHowLoader
+from .services.memory_dir import FastMemoryManager
+from .permissions.permission_manager import get_permission_manager
 from .services.tool_orchestrator import get_tool_orchestrator
-from .services import prompts as prompt_service
 from .utils.models_config import get_model_context_window, get_model_max_tokens
-
-
-@dataclass
-class TokenUsage:
-    """OpenCode-style token usage breakdown.
-
-    Mirrors LanguageModelV2Usage from the AI SDK:
-    - prompt_tokens: total input tokens (includes cached)
-    - completion_tokens: total output tokens
-    - total_tokens: prompt + completion
-    - cache_read_tokens: prompt cache read (e.g. Anthropic prompt caching)
-    - cache_write_tokens: prompt cache write (e.g. Anthropic cache creation)
-    - reasoning_tokens: thinking/reasoning tokens inside completion
-    """
-
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
-    reasoning_tokens: int = 0
-
-    @property
-    def adjusted_prompt_tokens(self) -> int:
-        """Prompt tokens excluding cache read/write (for cost calculation)."""
-        return max(0, self.prompt_tokens - self.cache_read_tokens - self.cache_write_tokens)
-
-    @property
-    def output_tokens(self) -> int:
-        """Non-reasoning completion tokens."""
-        return max(0, self.completion_tokens - self.reasoning_tokens)
-
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +61,15 @@ class QueryEngineConfig:
     on_notify: Callable[[str, dict[str, Any]], None] | None = None
     auto_review: bool = False
     model_client: ModelClient | None = None  # Custom model client (for multi-model routing)
+    compact_model: str | None = (
+        None  # Lightweight model for compaction summarization (e.g., "qwen2.5-7b")
+    )
+    summarizer: Callable[[str], Any] | None = None  # Optional custom summarizer callable
     max_review_iterations: int = 3
     ultra_slim_tools: bool = False  # Strip param descriptions from tool schemas
+    session_id: str | None = None  # For unified session persistence
+    permission_mode: str = "default"  # Tool visibility filtering mode
+    enable_thinking: bool | None = None  # None=auto, True=force on, False=force off
 
 
 @dataclass
@@ -124,6 +97,8 @@ class QueryEngine:
         self.messages: list[MessageType] = []
         self.client = config.model_client if config.model_client is not None else get_model_client()
         self.abort_event = asyncio.Event()
+        # Unified session persistence ID
+        self.session_id = config.session_id or f"cli_{uuid.uuid4().hex[:12]}"
 
         # Auto-detect context_window and max_output_tokens from backend
         if self.config.context_window <= 0:
@@ -138,50 +113,71 @@ class QueryEngine:
         # This ensures we always leave headroom for the model to generate output.
         self._usable_context = max(1, self.config.context_window - self._max_output_tokens)
 
-        # Initialize services
-        # OpenCode-style: pass backend URL so the estimator can use precise tokenizers
-        self._token_estimator = get_token_estimator(
-            base_url=config.model_client.base_url if config.model_client else "",
-            model_name=getattr(config.model_client, "model", "") if config.model_client else "",
+        # Compaction management (extracted to CompactionManager)
+        self._compaction_mgr = CompactionManager(
+            messages_ref=self.messages,
+            count_tokens_fn=self.count_tokens,
+            usable_context=self._usable_context,
+            auto_compact=config.auto_compact,
+            on_notify=config.on_notify,
+            summarizer=config.summarizer,
         )
-        self._precise_tokenizer = get_precise_tokenizer(
-            base_url=config.model_client.base_url if config.model_client else "",
-            model_name=getattr(config.model_client, "model", "") if config.model_client else "",
-        )
-        self._context_compressor = get_context_compressor()
-
-        # Create a dedicated compactor instance configured with usable context
-        compact_config = CompactConfig()
-        if self._usable_context > 0:
-            compact_config.compact_threshold = max(1, int(self._usable_context * 0.85))
-            compact_config.critical_threshold = max(1, int(self._usable_context * 0.98))
-        self._intelligent_compactor = IntelligentContextCompactor(config=compact_config)
 
         if config.cache_tool_results:
             self._tool_orchestrator = get_tool_orchestrator()
         else:
             self._tool_orchestrator = None
 
-        # Compaction tracking (token-based cooldown is more reliable)
-        self._last_compaction_token_count: int = 0
-        self._compaction_count = 0
+        # Prompt building (extracted to PromptBuilder)
+        self._prompt_builder = PromptBuilder(
+            cwd=config.cwd,
+            custom_system_prompt=config.custom_system_prompt,
+            get_app_state=config.get_app_state,
+        )
 
-        # OpenCode-style: cache the most recent API-reported usage so we can
-        # use ground-truth token counts instead of pure heuristics.
-        self._last_api_usage: TokenUsage | None = None
-        self._last_api_usage_hash: str | None = None
+        # Fast memory manager (Hermes Tier-1: frozen mid-session + consolidation)
+        self._fast_memory = FastMemoryManager(config.cwd)
 
-        # Precise tokenizer caching: avoid hammering /tokenize on every
-        # stream event.  We cache the result for a few seconds unless the
-        # conversation state changes.
-        self._last_precise_count: int | None = None
-        self._last_precise_count_at: float = 0.0
-        self._last_precise_count_hash: str | None = None
-        self.MIN_PRECISE_INTERVAL: float = 15.0
+        # Token management (extracted to TokenManager)
+        self._token_mgr = TokenManager(
+            session_id=self.session_id,
+            context_window=self.config.context_window,
+            max_output_tokens=self._max_output_tokens,
+            base_url=config.model_client.base_url if config.model_client else "",
+            model_name=getattr(config.model_client, "model", "") if config.model_client else "",
+            tools=self.config.tools or [],
+            messages_ref=self.messages,
+            build_system_fn=self._prompt_builder.build,
+            get_runtime_fn=self._prompt_builder._get_runtime_context,
+            get_app_state_fn=self.config.get_app_state,
+            set_app_state_fn=self.config.set_app_state,
+        )
+
+        # Measure fresh-session token baseline
+        self._token_mgr.measure_baseline()
+
+        # KnowHow: auto-create template on first use
+        _knowhow = KnowHowLoader(config.cwd)
+        if not _knowhow.knowhow_path.exists():
+            _knowhow._create_template()
+
+        # Session persistence (extracted to SessionManager)
+        self._session_mgr = SessionManager(
+            session_id=self.session_id,
+            config=self.config,
+            messages_ref=self.messages,
+        )
 
         # Post-edit review tracking
         self._changed_files: list[str] = []
         self._review_iteration_count: int = 0
+
+        # Per-turn file snapshot tracking
+        self._snapshot_tracker = PerTurnSnapshotTracker(config.cwd)
+
+        # Reasoning history for loop detection (keeps last N reasoning contents)
+        self._reasoning_history: list[str] = []
+        self._max_reasoning_history: int = 5
 
         # OpenCode-style event bus for fine-grained stream observation
         self._event_bus = EventBus()
@@ -202,169 +198,314 @@ class QueryEngine:
         if self.config.set_app_state:
             self.config.set_app_state(lambda s: setattr(s, "cwd", cwd) or s)
 
-    def _build_system_message(self) -> SystemMessage:
-        """Build system message with runtime context."""
-        if self.config.custom_system_prompt:
-            content = self.config.custom_system_prompt
-        else:
-            content = self._get_default_system_prompt()
+    def _build_extra_body(self, prompt: str) -> dict[str, Any] | None:
+        """Build provider-specific extra_body for API requests.
 
-        # Add runtime context (OS, cwd, etc.)
-        context = self._get_runtime_context()
-        if context:
-            content = context + "\n\n" + content
-
-        # Inject archived session memory for continuity across compactions
-        try:
-            from .services.context_archive import ContextArchive
-
-            archive = ContextArchive()
-            session_mem = archive.get_session_memory_prompt()
-            if session_mem:
-                content = session_mem + "\n\n" + content
-        except Exception:
-            pass
-
-        # Lightweight persistence: if this session has observed persistent
-        # FileEdit weakness, inject a常驻 reminder into the system prompt.
-        persistent_hint = self._get_persistent_fileedit_hint()
-        if persistent_hint:
-            content = content + "\n\n" + persistent_hint
-
-        return SystemMessage(content=content)
-
-    def _get_persistent_fileedit_hint(self) -> str | None:
-        """Return a常驻 FileEdit hint if the model is known to be weak."""
-        if self.config.get_app_state is None:
-            return None
-        try:
-            app_state = self.config.get_app_state()
-            stats = getattr(app_state, "fileedit_stats", None)
-            if stats and stats.get("persistent_weak"):
-                return (
-                    "[PERSISTENT FRAMEWORK REMINDER] This session has observed repeated "
-                    "FileEdit difficulties. For EVERY edit you make:\n"
-                    "1. Re-read the file with FileRead BEFORE editing to get the EXACT text.\n"
-                    "2. Copy the old_string EXACTLY — every space, tab, and newline matters.\n"
-                    "3. Make exactly ONE atomic change per FileEdit call.\n"
-                    "4. If FileEdit fails once, switch to SmartEditPlanner or use FileWrite for small files.\n"
-                    "5. After any .py edit, run `python -m py_compile <filepath>` to check syntax."
-                )
-        except Exception:
-            pass
+        Currently controls Qwen/DeepSeek thinking mode based on task complexity.
+        """
+        enable = self.config.enable_thinking
+        if enable is None:
+            # Auto-detect: enable thinking for complex tasks
+            enable = self._should_enable_thinking(prompt)
+        # If enable is set (either True or False) and client supports reasoning content, return it
+        # If enable is not set (None), we still need to return None
+        if enable is not None and getattr(self.client, "supports_reasoning_content", False):
+            return {"enable_thinking": enable}
         return None
 
-    def _get_runtime_context(self) -> str:
-        """Get runtime context (OS, cwd, etc.) for system prompt.
+    def _should_enable_thinking(self, prompt: str) -> bool:
+        """Heuristic: determine if thinking mode should be enabled.
 
-        Uses the centralized environment detector for consistency.
+        Enable for: bug fixes, refactoring, multi-step tasks, file edits.
+        Disable for: greetings, simple queries, short prompts.
         """
-        from .services.environment_detector import get_environment_profile
+        # Disable for very short prompts (likely greetings/simple queries)
+        if not prompt or len(prompt.strip()) < 20:
+            return False
+        # Disable for known greeting patterns
+        text_lower = prompt.strip().lower()
+        greeting_keywords = {
+            "hello",
+            "hi",
+            "hey",
+            "你好",
+            "您好",
+            "嗨",
+            "在吗",
+            "在么",
+            "who are you",
+            "what are you",
+            "introduce yourself",
+            "你是谁",
+            "你叫什么",
+            "介绍一下",
+        }
+        if text_lower in greeting_keywords or any(
+            text_lower.startswith(g) for g in greeting_keywords
+        ):
+            return False
+        # Enable if there are pending file changes (likely complex task)
+        if self._changed_files:
+            return True
+        # Enable for complex task keywords
+        complex_keywords = [
+            "bug",
+            "fix",
+            "error",
+            "debug",
+            "refactor",
+            "重构",
+            "修复",
+            "bug",
+            "design",
+            "architecture",
+            "架构",
+            "设计",
+            "implement",
+            "实现",
+            "编写",
+            "create",
+            "test",
+            "测试",
+            "verify",
+            "验证",
+            "optimize",
+            "优化",
+            "performance",
+            "性能",
+            "migrate",
+            "迁移",
+            "upgrade",
+            "升级",
+        ]
+        if any(kw in text_lower for kw in complex_keywords):
+            return True
+        # Default: disable for simple queries, enable for everything else
+        return False
 
-        env = get_environment_profile(self.config.cwd)
-        return env.to_prompt_section()
+    def _reflect_on_reasoning(self, reasoning: str) -> str | None:
+        """Low-cost reflection on reasoning content using heuristic rules.
 
-    def _get_default_system_prompt(self) -> str:
-        """Get default system prompt for programming assistant.
-
-        Uses unified prompts module for maintainability.
+        Detects common reasoning defects without LLM calls:
+        1. Guessing without verification plan
+        2. Repeated retries without strategy change
+        3. Jumping to fix without root cause analysis
         """
-        return prompt_service.get_system_prompt(include_tools=True)
+        if not reasoning:
+            return None
+
+        defects: list[str] = []
+        reasoning_lower = reasoning.lower()
+
+        # Pattern 1: Guessing without verification
+        guess_markers = ["猜测", "guess", "大概", "可能", "也许", "should be", "probably"]
+        if any(m in reasoning or m in reasoning_lower for m in guess_markers):
+            verify_markers = ["验证", "test", "确认", "check", "verify", "证明"]
+            if not any(m in reasoning or m in reasoning_lower for m in verify_markers):
+                defects.append(
+                    "You made a guess but didn't plan to verify it. "
+                    "Please verify your assumption before acting."
+                )
+
+        # Pattern 2: Retry loop in reasoning
+        retry_markers = ["再试", "retry", "try again", "again", "重新", "再来", "重试"]
+        retry_count = sum(reasoning_lower.count(m) for m in retry_markers)
+        if retry_count >= 3:
+            defects.append(
+                f"You've retried {retry_count} times with similar approaches. "
+                "Consider a fundamentally different strategy."
+            )
+
+        # Pattern 3: Fix without root cause analysis
+        fix_markers = ["fix", "修改", "修复", "patch", "改掉"]
+        has_fix = any(m in reasoning_lower for m in fix_markers)
+        root_cause_markers = [
+            "root cause",
+            "根因",
+            "原因",
+            "because",
+            "why",
+            "为什么",
+            "分析",
+            "analyze",
+            " caused ",
+            "导致",
+        ]
+        has_root_cause = any(m in reasoning or m in reasoning_lower for m in root_cause_markers)
+        if has_fix and not has_root_cause:
+            defects.append(
+                "You jumped to a fix without analyzing the root cause. "
+                "Please identify the true root cause first."
+            )
+
+        if defects:
+            return "\n".join(f"{i + 1}. {d}" for i, d in enumerate(defects[:3]))
+        return None
+
+    def _detect_reasoning_loop(self, reasoning: str) -> str | None:
+        """Detect if the model is stuck in a reasoning loop.
+
+        Compares the current reasoning with the last 2 rounds using
+        SequenceMatcher. If similarity exceeds the threshold for 3
+        consecutive turns, the model is likely repeating the same
+        thought pattern without progress.
+        """
+        if not reasoning or len(self._reasoning_history) < 2:
+            return None
+        from difflib import SequenceMatcher
+
+        # Use first 500 chars for speed; reasoning loops usually repeat early
+        curr = reasoning[:500]
+        prev1 = self._reasoning_history[-1][:500]
+        prev2 = self._reasoning_history[-2][:500]
+
+        sim1 = SequenceMatcher(None, prev1, curr).ratio()
+        sim2 = SequenceMatcher(None, prev2, curr).ratio()
+        threshold = 0.75
+
+        if sim1 > threshold and sim2 > threshold:
+            return (
+                "Your reasoning has been very similar for 3 consecutive turns. "
+                "You may be stuck in a loop. Consider a completely different approach, "
+                "such as reading more files, checking assumptions, or asking the user for clarification."
+            )
+        return None
+
+    def _check_reasoning_action_consistency(
+        self, reasoning: str, tool_calls: dict[int, dict]
+    ) -> str | None:
+        """Check if the model's reasoning matches its actual tool calls.
+
+        Extracts file mentions from reasoning and compares against files
+        targeted by FileEdit/FileWrite tool calls. Returns a warning
+        message if there are mismatches, otherwise None.
+        """
+        import re
+
+        # Extract file paths mentioned in reasoning
+        # Match common patterns: "edit src/foo.py", "modify foo.py", "文件 src/foo.py"
+        reasoning_files: set[str] = set()
+        patterns = [
+            # Verb + file path
+            r"(?:edit|modify|change|update|read|write|创建|修改|编辑|读取)\s+[`\'\"]?([\w\-/\.]+\.(?:py|js|ts|jsx|tsx|java|go|rs|cpp|c|h|md|json|yaml|yml|toml))[`\'\"]?",
+            # "and/or + file path" in lists
+            r"(?:and|or|和|以及)\s+[`\'\"]?([\w\-/\.]+\.(?:py|js|ts|jsx|tsx|java|go|rs|cpp|c|h|md|json|yaml|yml|toml))[`\'\"]?",
+            # Comma/space separated file paths
+            r"[,，]\s+[`\'\"]?([\w\-/\.]+\.(?:py|js|ts|jsx|tsx|java|go|rs|cpp|c|h|md|json|yaml|yml|toml))[`\'\"]?",
+            # Generic file/path mention
+            r"(?:file|path)\s+[`\'\"]?([\w/\.\-]+\.[a-zA-Z0-9]+)[`\'\"]?",
+        ]
+        for pat in patterns:
+            for m in re.finditer(pat, reasoning, re.IGNORECASE):
+                reasoning_files.add(m.group(1))
+
+        if not reasoning_files:
+            return None
+
+        # Extract file paths from actual tool calls
+        actual_files: set[str] = set()
+        for tc_data in tool_calls.values():
+            try:
+                args = json.loads(tc_data.get("arguments", "{}"))
+            except json.JSONDecodeError:
+                continue
+            for key in ("file_path", "path", "filepath"):
+                val = args.get(key)
+                if val and isinstance(val, str):
+                    actual_files.add(val)
+
+        # Check for files mentioned in reasoning but not in tool calls
+        missed = reasoning_files - actual_files
+        if missed:
+            files_str = ", ".join(sorted(missed)[:3])
+            extra = f" (+{len(missed) - 3} more)" if len(missed) > 3 else ""
+            return (
+                f"You mentioned editing '{files_str}{extra}' in your reasoning "
+                f"but did not include them in your tool calls."
+            )
+        return None
+
+    def _get_git_changes(self) -> str:
+        """Get a concise list of modified files from git for injection into system prompt."""
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                ["git", "diff", "--name-only"],
+                cwd=self.config.cwd,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode == 0:
+                files = [f.strip() for f in result.stdout.split("\n") if f.strip()]
+                if files:
+                    return f"[Modified files]: {', '.join(files[:15])}" + (
+                        f" (+{len(files) - 15} more)" if len(files) > 15 else ""
+                    )
+        except Exception:
+            pass
+        return ""
+
+    def _get_snapshot_diff_summary(self) -> str:
+        """Get per-turn file snapshot diff for injection into system prompt."""
+        diff = self._snapshot_tracker.get_last_diff()
+        if diff and diff.has_changes:
+            summary = diff.to_summary(max_files=10)
+            if summary:
+                return f"[Changes since your last turn]: {summary}"
+        return ""
+
+    def _build_system_message(self) -> SystemMessage:
+        """Build system message with runtime context. Delegated to PromptBuilder."""
+        msg = self._prompt_builder.build()
+        parts: list[str] = []
+        snapshot = self._get_snapshot_diff_summary()
+        if snapshot:
+            parts.append(snapshot)
+        changes = self._get_git_changes()
+        if changes:
+            parts.append(changes)
+        if parts:
+            msg.content = msg.content + "\n\n" + "\n".join(parts)
+        return msg
 
     def _parse_content_tool_calls(self, content: str) -> list[dict[str, Any]]:
-        """Parse XML/pseudo-XML tool calls embedded in assistant content.
-
-        Some local models (vLLM, Ollama with certain backends) output tool calls
-        as pseudo-XML in the content field instead of using the standard
-        OpenAI 'tool_calls' delta field. This method extracts them as a fallback.
-
-        Supports formats like:
-          <tool_call><function=Bash><parameter=command>ls</parameter></function></tool_call>
-          <tool_call><name>Bash</name><arguments>{"command":"ls"}</arguments></tool_call>
-          <function=Bash><parameter=command>cd</parameter></tool_call>  (incomplete)
-
-        Returns list of dicts with 'name' and 'arguments' keys.
-        """
-        tool_calls: list[dict[str, Any]] = []
-
-        # Pattern 1: <tool_call>...<function=Name>...<parameter=key>value</parameter>...</function>...</tool_call>
-        pattern = r"<tool_call>\s*<function=(\w+)>\s*(.*?)\s*</function>\s*</tool_call>"
-        for match in re.finditer(pattern, content, re.DOTALL):
-            tool_name = match.group(1)
-            params_block = match.group(2)
-
-            arguments: dict[str, Any] = {}
-            param_pattern = r"<parameter=(\w+)>(.*?)</parameter>"
-            for pmatch in re.finditer(param_pattern, params_block, re.DOTALL):
-                arguments[pmatch.group(1)] = pmatch.group(2).strip()
-
-            if tool_name:
-                tool_calls.append({"name": tool_name, "arguments": arguments})
-
-        # Pattern 2: <tool_call>...</tool_call> with <name> and <arguments> children
-        if not tool_calls:
-            pattern2 = (
-                r"<tool_call>\s*<name>(\w+)</name>\s*<arguments>(.*?)</arguments>\s*</tool_call>"
-            )
-            for match in re.finditer(pattern2, content, re.DOTALL):
-                tool_name = match.group(1)
-                args_text = match.group(2).strip()
-                try:
-                    arguments = json.loads(args_text)
-                except json.JSONDecodeError:
-                    arguments = {"raw": args_text}
-                if tool_name:
-                    tool_calls.append({"name": tool_name, "arguments": arguments})
-
-        # Pattern 3: Incomplete/flaky XML without <tool_call> wrapper or missing closing tags
-        # e.g. <function=Bash> <parameter=command> cd </tool_call>
-        if not tool_calls:
-            pattern3 = r"<function=(\w+)>\s*(.*?)\s*</tool_call>"
-            for match in re.finditer(pattern3, content, re.DOTALL):
-                tool_name = match.group(1)
-                params_block = match.group(2)
-
-                arguments: dict[str, Any] = {}
-                # Try <parameter=key>value</parameter> first
-                param_pattern = r"<parameter=(\w+)>(.*?)(?:</parameter>|\s*</tool_call>|$)"
-                for pmatch in re.finditer(param_pattern, params_block, re.DOTALL):
-                    arguments[pmatch.group(1)] = pmatch.group(2).strip()
-
-                # Also try bare key=value pairs inside
-                if not arguments:
-                    kv_pattern = r"(\w+)\s*=\s*([^\s<]+|<[^>]+>)"
-                    for kvmatch in re.finditer(kv_pattern, params_block):
-                        arguments[kvmatch.group(1)] = kvmatch.group(2).strip()
-
-                if tool_name:
-                    tool_calls.append({"name": tool_name, "arguments": arguments})
-
-        return tool_calls
+        """Parse XML/pseudo-XML tool calls from content. Delegated to MessageParser."""
+        return MessageParser.parse_content_tool_calls(content)
 
     def _remove_xml_tool_calls(self, content: str) -> str:
-        """Remove XML/pseudo-XML tool call blocks from content."""
-        # Pattern 1
-        cleaned = re.sub(
-            r"<tool_call>\s*<function=\w+>\s*.*?\s*</function>\s*</tool_call>",
-            "",
-            content,
-            flags=re.DOTALL,
-        )
-        # Pattern 2
-        cleaned = re.sub(
-            r"<tool_call>\s*<name>\w+</name>\s*<arguments>.*?</arguments>\s*</tool_call>",
-            "",
-            cleaned,
-            flags=re.DOTALL,
-        )
-        # Pattern 3: incomplete XML without wrapper
-        cleaned = re.sub(
-            r"<function=\w+>\s*.*?\s*</tool_call>",
-            "",
-            cleaned,
-            flags=re.DOTALL,
-        )
-        return cleaned.strip()
+        """Remove XML tool call blocks from content. Delegated to MessageParser."""
+        return MessageParser.remove_xml_tool_calls(content)
+
+    def _cleanup_orphaned_tool_calls(self) -> None:
+        """Remove orphaned ToolUseMessages. Delegated to MessageParser."""
+        MessageParser.cleanup_orphaned_tool_calls(self.messages)
+
+    def _convert_to_api_messages(self, messages: list[MessageType]) -> list[dict[str, Any]]:
+        """Convert internal messages to API format. Delegated to MessageParser."""
+        return MessageParser.convert_to_api_messages(messages)
+
+    def _get_visible_tools(self) -> Tools:
+        """Return tools filtered by permission mode.
+
+        Removes tools from the model's view when the permission mode
+        indicates they should not be invoked (e.g. 'dontAsk' hides Bash).
+        """
+        tools = self.config.tools if self.config.tools else []
+        if not tools:
+            return []
+
+        mode = self.config.permission_mode
+        # Fast path: no filtering needed for permissive modes
+        if mode in ("default", "acceptEdits", "bypassPermissions", "auto"):
+            return tools
+
+        try:
+            pm = get_permission_manager()
+            return [t for t in tools if pm.is_tool_visible(t.name, mode)]
+        except Exception:
+            return tools
 
     def _tools_to_api_format(self, tools: Tools) -> list[dict[str, Any]]:
         """Convert tools to slim OpenAI function-calling schema.
@@ -375,45 +516,6 @@ class QueryEngine:
         """
         ultra = self.config.ultra_slim_tools
         return [tool.to_openai_schema(ultra_slim=ultra) for tool in tools]
-
-    def _cleanup_orphaned_tool_calls(self) -> None:
-        """Remove ToolUseMessages that have no corresponding ToolResultMessage.
-
-        The API invariant requires every tool_call in an assistant message
-        to be followed by a tool response with the same tool_call_id.
-        Orphaned ToolUseMessages (no result) cause 400 errors from DeepSeek.
-        """
-        seen_calls: set[str] = set()
-        orphaned_indices: list[int] = []
-
-        # First pass: collect all tool_use_ids that have results
-        for msg in self.messages:
-            if isinstance(msg, ToolResultMessage):
-                seen_calls.add(msg.tool_use_id)
-
-        # Second pass: find orphaned ToolUseMessages
-        for i, msg in enumerate(self.messages):
-            if isinstance(msg, ToolUseMessage):
-                if msg.tool_use_id not in seen_calls:
-                    orphaned_indices.append(i)
-
-        if orphaned_indices:
-            logger.warning(
-                "Cleaning up %d orphaned ToolUseMessages (no matching ToolResultMessage)",
-                len(orphaned_indices),
-            )
-            # Remove from back to front to preserve indices
-            for i in reversed(orphaned_indices):
-                del self.messages[i]
-
-    def _convert_to_api_messages(self, messages: list[MessageType]) -> list[dict[str, Any]]:
-        """Convert internal messages to API format.
-
-        Delegates to types.message.to_api_format() which handles the critical
-        invariant: AssistantMessage + following ToolUseMessages must be merged
-        into a SINGLE API assistant message (content + tool_calls).
-        """
-        return to_api_format(messages)
 
     # Greeting patterns that can be handled locally without calling the API
     _GREETING_PATTERNS_CN = {
@@ -470,6 +572,32 @@ class QueryEngine:
         """
         options = options or {}
 
+        # End previous turn and capture file snapshot diff.
+        # This must happen before building the system message so that
+        # _get_snapshot_diff_summary() can report changes from the
+        # previous turn's tool executions.
+        self._snapshot_tracker.end_turn()
+
+        # Commit staged fast-memory updates at turn boundary (Hermes frozen-mid-session).
+        # Updates staged during the previous turn are now persisted to disk,
+        # and the next turn's system prompt will include the new content.
+        try:
+            commit_result = self._fast_memory.commit_at_turn_boundary()
+            if commit_result.get("consolidation_needed"):
+                for fname in commit_result["consolidation_needed"]:
+                    check = self._fast_memory.check_consolidation()
+                    info = check.get(fname, {})
+                    if info.get("needed"):
+                        # Inject a lightweight system reminder about consolidation
+                        consolidate_msg = (
+                            f"[System notice] {fname} is at {info['current']}/{info['max']} chars. "
+                            f"Consider consolidating outdated entries to stay within limits."
+                        )
+                        self.messages.append(SystemMessage(content=consolidate_msg))
+        except Exception:
+            # Non-blocking: memory commit failure should not break the turn
+            pass
+
         # Add user message
         user_msg = UserMessage(content=prompt)
         self.messages.append(user_msg)
@@ -510,7 +638,7 @@ class QueryEngine:
 
         # Auto-compact if needed before sending to API
         if self.config.auto_compact:
-            self.auto_compact_if_needed()
+            await self._compaction_mgr.auto_compact_if_needed()
 
         # Auto-review after batch edits (interactive modes only)
         if (
@@ -574,15 +702,32 @@ class QueryEngine:
         self._cleanup_orphaned_tool_calls()
 
         # Build API messages
+        # System message must ALWAYS be included — it is not retained by the LLM
+        # across turns. Skipping it on subsequent turns causes the model to forget
+        # critical instructions like language preference.
         api_messages: list[dict[str, Any]] = []
-        if len(self.messages) == 1:
-            system_msg = self._build_system_message()
-            api_messages.append({"role": "system", "content": system_msg.content})
+        system_msg = self._build_system_message()
+        api_messages.append({"role": "system", "content": system_msg.content})
+
+        # Inject relevant memories based on the current user query.
+        # These are ephemeral — injected per-turn without polluting self.messages.
+        if prompt:
+            try:
+                from .services.memory_recall import find_relevant_memories, format_memory_attachment
+
+                relevant = find_relevant_memories(prompt, self.config.cwd, top_k=3)
+                if relevant:
+                    mem_context = format_memory_attachment(relevant)
+                    if mem_context:
+                        api_messages.append({"role": "system", "content": mem_context})
+            except Exception:
+                pass
 
         api_messages.extend(self._convert_to_api_messages(self.messages))
 
-        # Get available tools
-        tools = self.config.tools if self.config.tools else []
+        # Get available tools, applying permission-based pre-filtering
+        # so the model cannot see tools it's not allowed to use.
+        tools = self._get_visible_tools()
 
         # Stream response with automatic context-window recovery
         _context_attempt = 0
@@ -595,12 +740,16 @@ class QueryEngine:
             current_tool_call: dict[int, dict] = {}  # Accumulate tool call parts
             suppress_streaming = False  # Set to True when XML tool calls appear in content
 
+            # Dynamic thinking mode control (Qwen/DeepSeek)
+            extra_body = self._build_extra_body(prompt)
+
             try:
                 async for chunk in self.client.chat_completion(
                     messages=api_messages,
                     tools=self._tools_to_api_format(tools) if tools else None,
                     stream=True,
                     temperature=options.get("temperature", 0.7),
+                    extra_body=extra_body,
                 ):
                     # Check for cancellation during streaming
                     try:
@@ -616,31 +765,11 @@ class QueryEngine:
                     # OpenCode-style: capture usage from the final stream chunk
                     usage = chunk.get("usage")
                     if usage and isinstance(usage, dict):
-                        # Extract detailed token usage (cache, reasoning, etc.)
-                        prompt_tok = usage.get("prompt_tokens", 0)
-                        comp_tok = usage.get("completion_tokens", 0)
-                        total_tok = usage.get("total_tokens", 0)
-
-                        # Cache details (OpenAI-style prompt_tokens_details)
-                        ptd = usage.get("prompt_tokens_details") or {}
-                        cache_read = ptd.get("cached_tokens", 0) if isinstance(ptd, dict) else 0
-
-                        # Anthropic-style cache creation tokens
-                        cache_write = usage.get("cache_creation_input_tokens", 0)
-
                         # Reasoning tokens (DeepSeek/Qwen3 thinking mode)
                         ctd = usage.get("completion_tokens_details") or {}
                         reasoning = ctd.get("reasoning_tokens", 0) if isinstance(ctd, dict) else 0
 
-                        self._last_api_usage = TokenUsage(
-                            prompt_tokens=prompt_tok,
-                            completion_tokens=comp_tok,
-                            total_tokens=total_tok or (prompt_tok + comp_tok),
-                            cache_read_tokens=cache_read,
-                            cache_write_tokens=cache_write,
-                            reasoning_tokens=reasoning,
-                        )
-                        self._last_api_usage_hash = self._compute_state_hash()
+                        self._token_mgr.record_api_usage(usage)
 
                     # Handle reasoning content (DeepSeek thinking mode only)
                     if getattr(self.client, "supports_reasoning_content", False):
@@ -688,14 +817,20 @@ class QueryEngine:
             except ContextWindowError as exc:
                 await self._event_bus.emit(StreamEvent.error(exc))
                 if _context_attempt == 0:
-                    logger.warning("Context window exceeded, auto-compacting and retrying...")
-                    self.intelligent_compact()
-                    if self.count_tokens() > self._usable_context:
-                        self.auto_compact_if_needed()
+                    logger.warning(
+                        "Context window exceeded (estimated %d tokens > %d usable), "
+                        "force-compacting and retrying...",
+                        self.count_tokens(),
+                        self._usable_context,
+                    )
+                    # Force compaction: skip should_compact check, since our
+                    # local token counting may underestimate vs the actual API.
+                    await self._compaction_mgr.intelligent_compact(force=True)
+                    # Double-check: always run fallback compaction chain too
+                    self._compaction_mgr._force_emergency_compact()
                     api_messages = self._convert_to_api_messages(self.messages)
-                    if len(self.messages) == 1:
-                        system_msg = self._build_system_message()
-                        api_messages.insert(0, {"role": "system", "content": system_msg.content})
+                    system_msg = self._build_system_message()
+                    api_messages.insert(0, {"role": "system", "content": system_msg.content})
                     _context_attempt += 1
                     continue
                 raise
@@ -777,6 +912,33 @@ class QueryEngine:
                         else None
                     ),
                 )
+                # Reasoning-Action consistency check (方案2)
+                if accumulated_reasoning and current_tool_call:
+                    inconsistency = self._check_reasoning_action_consistency(
+                        accumulated_reasoning, current_tool_call
+                    )
+                    if inconsistency:
+                        assistant_msg.content = (
+                            f"[Self-check: {inconsistency}]\n\n" + assistant_msg.content
+                        )
+                # Reasoning-based doom loop detection (方案3)
+                if accumulated_reasoning:
+                    loop_warning = self._detect_reasoning_loop(accumulated_reasoning)
+                    if loop_warning:
+                        assistant_msg.content = (
+                            f"[Warning: {loop_warning}]\n\n" + assistant_msg.content
+                        )
+                # Low-cost reasoning reflection (方案5)
+                if accumulated_reasoning:
+                    reflection = self._reflect_on_reasoning(accumulated_reasoning)
+                    if reflection:
+                        assistant_msg.content = (
+                            f"[Reflection]\n{reflection}\n\n" + assistant_msg.content
+                        )
+                    # Update history
+                    self._reasoning_history.append(accumulated_reasoning)
+                    if len(self._reasoning_history) > self._max_reasoning_history:
+                        self._reasoning_history.pop(0)
                 self.messages.append(assistant_msg)
                 yield QueryResult(message=assistant_msg, is_complete=True)
                 await self._event_bus.emit(StreamEvent.text_end())
@@ -829,6 +991,7 @@ class QueryEngine:
                     file_path = self._extract_file_path(msg)
                     if file_path and file_path not in self._changed_files:
                         self._changed_files.append(file_path)
+                        self._snapshot_tracker.track_file(file_path)
                     break
 
         # Dynamic truncation based on available context budget.
@@ -898,532 +1061,96 @@ class QueryEngine:
         """Abort current query."""
         self.abort_event.set()
 
-    def _compute_state_hash(self) -> str:
-        """Return a cheap hash of current conversation state.
-
-        Used to detect whether new messages have arrived since the last
-        API call or precise token count.
-        """
-        parts: list[str] = []
-        for m in self.messages:
-            if hasattr(m, "content"):
-                parts.append(f"{getattr(m, 'role', 'user')}:{m.content}")
-            elif hasattr(m, "name") and hasattr(m, "input"):
-                parts.append(f"tool:{m.name}:{m.input}")
-            else:
-                parts.append(str(m))
-        if self.config.tools:
-            try:
-                parts.append(
-                    json.dumps(
-                        [t.to_dict() if hasattr(t, "to_dict") else t for t in self.config.tools],
-                        sort_keys=True,
-                    )
-                )
-            except Exception:
-                pass
-        return str(hash("|".join(parts)))
-
-    def _count_with_precise_tokenizer(self) -> int | None:
-        """Try to count tokens using the precise backend tokenizer.
-
-        Sends the full message list (system + messages + tools) to the
-        backend's /tokenize endpoint when available.
-        """
-        try:
-            # Build full API message list including system prompt
-            api_msgs: list[dict[str, Any]] = []
-            system_msg = self._build_system_message()
-            api_msgs.append({"role": "system", "content": system_msg.content})
-
-            for m in self.messages:
-                if hasattr(m, "content"):
-                    api_msgs.append({"role": getattr(m, "role", "user"), "content": str(m.content)})
-                elif hasattr(m, "name") and hasattr(m, "input"):
-                    api_msgs.append(
-                        {
-                            "role": "assistant",
-                            "content": f"Tool: {m.name}\nInput: {m.input}",
-                        }
-                    )
-
-            # Build tools list if any are configured
-            api_tools: list[dict[str, Any]] | None = None
-            if self.config.tools:
-                api_tools = []
-                for tool in self.config.tools:
-                    try:
-                        import json
-
-                        # Ensure each tool is a plain dict
-                        if hasattr(tool, "to_dict"):
-                            api_tools.append(tool.to_dict())
-                        elif isinstance(tool, dict):
-                            api_tools.append(tool)
-                        else:
-                            api_tools.append(json.loads(json.dumps(tool, default=str)))
-                    except Exception:
-                        continue
-                if not api_tools:
-                    api_tools = None
-
-            # Try precise message+tools tokenization first (vLLM supports this)
-            count = self._precise_tokenizer.count_messages_with_tools(api_msgs, tools=api_tools)
-            if count is not None:
-                return count
-
-            # Fallback: count text components individually, then add tools
-            total = 0
-            system_msg = self._build_system_message()
-            total += self._precise_tokenizer.count_text(
-                system_msg.content
-            ) or self._token_estimator.estimate(system_msg.content)
-            for m in self.messages:
-                content = str(getattr(m, "content", getattr(m, "name", "")))
-                total += self._precise_tokenizer.count_text(
-                    content
-                ) or self._token_estimator.estimate(content)
-
-            if api_tools:
-                for tool in api_tools:
-                    try:
-                        import json
-
-                        schema = json.dumps(tool, ensure_ascii=False)
-                        total += self._precise_tokenizer.count_text(
-                            schema
-                        ) or self._token_estimator.estimate(schema)
-                    except Exception:
-                        total += 500
-            return total
-        except Exception:
-            return None
-
-    def _heuristic_count_tokens(self) -> int:
-        """Pure heuristic token count (fallback when API usage is unavailable).
-
-        Calibrated against actual API usage for Qwen3-Coder-30B.
-        Typical overhead: ~12 tokens per message (chat template), not 8.
-        """
-        total = 0
-
-        # Count system prompt (always sent on first message, or prepended)
-        system_msg = self._build_system_message()
-        total += self._token_estimator.estimate(system_msg.content)
-        total += 12  # system message format overhead (role + content + template markers)
-
-        # Count conversation messages
-        for m in self.messages:
-            if hasattr(m, "content"):
-                content = str(m.content)
-            elif hasattr(m, "name") and hasattr(m, "input"):
-                content = f"Tool: {m.name}\nInput: {m.input}"
-            else:
-                content = str(m)
-
-            total += self._token_estimator.estimate(content)
-            total += 12  # message format overhead (role, content, tool_call_id, template)
-
-        # Count tool definitions (sent with every request if tools enabled)
-        tools = self.config.tools if self.config.tools else []
-        if tools:
-            total += 12  # tools array wrapper overhead + type hints
-            for tool in tools:
-                try:
-                    import json
-
-                    schema = json.dumps(tool, ensure_ascii=False)
-                    total += self._token_estimator.estimate(schema)
-                    total += 4  # per-tool struct overhead (name, description wrapper)
-                except Exception:
-                    total += 500  # fallback estimate per tool
-
-        # Apply calibration factor based on chat template overhead.
-        # Qwen3 chat template adds ~10% overhead for role/metadata.
-        total = int(total * 1.08)
-        return total
-
     def count_tokens(self) -> int:
-        """Count tokens in current conversation.
-
-        OpenCode-style priority:
-        1. Use API-reported usage from the most recent turn (ground truth).
-        2. Use precise backend tokenizer (/tokenize, transformers, tiktoken).
-        3. Fall back to heuristic estimation.
-
-        Caching logic:
-        - If API usage exists and conversation state hasn't changed,
-          return the cached API total immediately.
-        - If API usage exists but new messages arrived (e.g. streaming),
-          return API total + heuristic estimate for the delta.  This avoids
-          calling /tokenize on every stream chunk.
-        - If no API usage yet, rate-limit precise tokenizer calls to
-          once every ``MIN_PRECISE_INTERVAL`` seconds.
-        """
-        current_hash = self._compute_state_hash()
-
-        # Priority 1: API-reported usage is the most authoritative.
-        if self._last_api_usage:
-            api_total = self._last_api_usage.total_tokens
-            if current_hash == self._last_api_usage_hash:
-                return api_total
-            # New messages since last API call.
-            # Use api_total as baseline + heuristic estimate for new messages only.
-            # Claude Code: msg estimate with 4/3 padding to be conservative.
-            heuristic_total = self._heuristic_count_tokens()
-            # Heuristic is the full estimate. If it exceeds api_total, the delta
-            # is correctly captured. Otherwise clamp to api_total + 10% margin.
-            estimated = max(heuristic_total, int(api_total * 1.1))
-            return estimated
-
-        # Priority 2: Try precise tokenizer, but rate-limit to avoid
-        # hammering the backend with /tokenize requests.
-        now = time.monotonic()
-
-        # 2a: Exact cache hit (same state) → return immediately.
-        if self._last_precise_count is not None and current_hash == self._last_precise_count_hash:
-            return self._last_precise_count
-
-        # 2b: Time-based rate limit. If we computed a precise count recently,
-        # reuse it even if the state changed slightly (e.g. streaming chunks).
-        # This is the key guard against flooding /tokenize on every UI update.
-        if (
-            self._last_precise_count is not None
-            and (now - self._last_precise_count_at) < self.MIN_PRECISE_INTERVAL
-        ):
-            return self._last_precise_count
-
-        precise = self._count_with_precise_tokenizer()
-        if precise is not None:
-            self._last_precise_count = precise
-            self._last_precise_count_at = now
-            self._last_precise_count_hash = current_hash
-            return precise
-
-        # Priority 3: Heuristic fallback
-        return self._heuristic_count_tokens()
+        """Count tokens in current conversation. Delegated to TokenManager."""
+        return self._token_mgr.count_tokens()
 
     def is_overflow(self) -> bool:
-        """OpenCode-style context overflow detection.
-
-        Matches the exact logic from OpenCode's session/overflow.ts:
-
-            count  = total_tokens
-            reserved = min(COMPACTION_BUFFER, max_output_tokens)
-            usable   = context_window - max_output_tokens
-            overflow = count >= usable
-
-        Returns True if the conversation has reached or exceeded the usable
-        input context (i.e. there is no longer guaranteed headroom for the
-        model to generate its full max_output_tokens).
-        """
-        count = self.count_tokens()
-        reserved = min(20_000, self._max_output_tokens)
-        usable = self.config.context_window - reserved
-        if usable <= 0:
-            usable = self._usable_context
-        return count >= usable
+        """OpenCode-style context overflow detection. Delegated to TokenManager."""
+        return self._token_mgr.is_overflow()
 
     def get_token_budget(self) -> dict[str, Any]:
-        """Get current token budget status."""
-        return self._token_estimator.get_budget_status(self.count_tokens(), self._usable_context)
+        """Get current token budget status. Delegated to TokenManager."""
+        return self._token_mgr.get_token_budget()
+
+    def get_token_baseline(self) -> dict[str, Any] | None:
+        """Get the measured token baseline for this session. Delegated to TokenManager."""
+        return self._token_mgr.get_token_baseline()
+
+    def get_token_baseline_report(self) -> str:
+        """Get a human-readable token baseline report. Delegated to TokenManager."""
+        return self._token_mgr.get_token_baseline_report()
 
     def track_cost(self, tokens: int, cost_usd: float) -> None:
-        """Track cost for this session.
-
-        This accumulates into app_state for reporting.
-        """
-        if self.config.get_app_state:
-            state = self.config.get_app_state()
-            state.total_tokens += tokens
-            state.total_cost_usd += cost_usd
-            if self.config.set_app_state:
-                self.config.set_app_state(lambda s: state)
+        """Track cost for this session. Delegated to TokenManager."""
+        return self._token_mgr.track_cost(tokens, cost_usd)
 
     async def smart_compact(self) -> CompressionResult | None:
-        """Intelligently compress conversation using summarization.
+        """Intelligently compress conversation using summarization. Delegated to CompactionManager."""
+        return await self._compaction_mgr.smart_compact()
 
-        Triggers at 85% of usable context to leave headroom for output.
+    async def auto_compact_if_needed(self) -> bool:
+        """Auto-compact conversation if token count exceeds threshold. Delegated to CompactionManager."""
+        return await self._compaction_mgr.auto_compact_if_needed()
 
-        Returns compression result or None if not needed.
-        """
-        token_count = self.count_tokens()
-        threshold = int(self._usable_context * 0.85)
-        if token_count < threshold:
-            return None
+    async def intelligent_compact(self, force: bool = False) -> dict[str, Any]:
+        """Intelligently compact conversation using the five-layer pipeline. Delegated to CompactionManager."""
+        return await self._compaction_mgr.intelligent_compact(force=force)
 
-        # Use smart compression
-        result = await self._context_compressor.compress(
-            self.messages,
-            summarizer=None,  # Could pass Brief tool here
-        )
-
-        if result.summary or result.removed_indices:
-            self.messages = [
-                m for i, m in enumerate(self.messages) if i not in result.removed_indices
-            ]
-            # If we have a summary, prepend it
-            if result.summary:
-                from .types.message import SystemMessage
-
-                self.messages.insert(
-                    1, SystemMessage(content=f"[Earlier conversation]: {result.summary}")
-                )
-
-        return result
-
-    def auto_compact_if_needed(self) -> bool:
-        """Auto-compact conversation if token count exceeds threshold.
-
-        Returns True if compaction was performed.
-
-        OpenCode-style overflow detection:
-        - ``usable = context_window - max_output_tokens``
-        - Compaction triggers at 85% of usable space
-        - Critical compaction at 98% of usable space
-
-        Uses intelligent compaction which clears old tool result content
-        while preserving conversation structure and key context.
-        Falls back to simple compaction if intelligent compaction doesn't
-        effectively reduce token usage.
-        """
-        if not self.config.auto_compact:
-            return False
-
-        token_count = self.count_tokens()
-        # OpenCode-style: usable = context - max_output_tokens
-        threshold = int(self._usable_context * 0.85)
-        critical = int(self._usable_context * 0.98)
-        if token_count < threshold:
-            return False
-
-        # Cooldown: don't re-compact if token count hasn't grown since last compaction
-        # (token-based cooldown is more reliable than message-count-based)
-        # EXCEPTION: always compact if we're over critical threshold or context window
-        if token_count <= getattr(self, "_last_compaction_token_count", 0):
-            if token_count < critical:
-                return False
-
-        # Log compaction trigger details for debugging
-        logger.debug(
-            "auto_compact triggered: tokens=%d threshold=%d critical=%d usable=%d context_window=%d max_output=%d msg_count=%d",
-            token_count,
-            threshold,
-            critical,
-            self._usable_context,
-            self.config.context_window,
-            self._max_output_tokens,
-            len(self.messages),
-        )
-
-        tokens_before = self.count_tokens()
-        result = self.intelligent_compact()
-
-        if result.get("compacted", False):
-            tokens_after = self.count_tokens()
-            if tokens_after < tokens_before:
-                if self.config.on_notify:
-                    self.config.on_notify(
-                        "auto_compact",
-                        {
-                            "tokens_before": tokens_before,
-                            "tokens_after": tokens_after,
-                            "tokens_saved": tokens_before - tokens_after,
-                            "tool_results_cleared": result.get("tool_results_cleared", 0),
-                            "compaction_count": result.get("compaction_count", 0),
-                            "fallback": False,
-                        },
-                    )
-                self._last_compaction_token_count = self.count_tokens()
-                return True
-
-        # Fallback 1: simple compaction (keep system + recent)
-        if self.count_tokens() < threshold:
-            return False
-
-        keep_recent = 4 if token_count > critical else 6
-        compressed = self._context_compressor.simple_compact(self.messages, keep_recent=keep_recent)
-        did_compact = False
-        if len(compressed) < len(self.messages):
-            self.messages = compressed
-            did_compact = True
-
-        # Fallback 2: if still over critical threshold, aggressive truncation.
-        # Preserve system messages and the most recent user message so the LLM
-        # doesn't "forget" its role or the current task objective.
-        if self.count_tokens() > critical and len(self.messages) > 3:
-            from .types.message import SystemMessage, UserMessage
-
-            to_preserve: set[int] = set()
-            # Always preserve system messages
-            for i, msg in enumerate(self.messages):
-                if isinstance(msg, SystemMessage):
-                    to_preserve.add(i)
-            # Always preserve the most recent user message (task objective)
-            for i in range(len(self.messages) - 1, -1, -1):
-                if isinstance(self.messages[i], UserMessage):
-                    to_preserve.add(i)
-                    break
-            # Fill remaining slots with most recent non-preserved messages
-            recent: list[int] = []
-            slots = max(0, 2 - len(to_preserve))
-            for i in range(len(self.messages) - 1, -1, -1):
-                if i not in to_preserve and len(recent) < slots:
-                    recent.append(i)
-            # Combine and preserve original order
-            kept = sorted(to_preserve | set(recent))
-            self.messages = [self.messages[i] for i in kept]
-            did_compact = True
-
-        # Fallback 3: if still over threshold, truncate message content
-        if self.count_tokens() > threshold:
-            from .types.message import UserMessage, AssistantMessage, ToolResultMessage
-
-            # When we have very few messages but massive tokens, the huge content
-            # is likely in the most recent message. In critical mode with <=3 msgs,
-            # we must be willing to truncate even the most recent message.
-            allow_truncate_recent = len(self.messages) <= 3 and self.count_tokens() > critical
-
-            for i, msg in enumerate(self.messages):
-                # Skip the most recent message unless we're in critical emergency mode
-                if i >= len(self.messages) - 1 and not allow_truncate_recent:
-                    continue
-                content = getattr(msg, "content", "")
-                text = content if isinstance(content, str) else str(content)
-                if len(text) > 2000:
-                    truncated_text = text[:1500] + f"\n\n[...truncated from {len(text)} chars]"
-                    if isinstance(msg, UserMessage):
-                        self.messages[i] = UserMessage(content=truncated_text)
-                        did_compact = True
-                    elif isinstance(msg, AssistantMessage):
-                        self.messages[i] = AssistantMessage(
-                            content=truncated_text,
-                            reasoning_content=getattr(msg, "reasoning_content", None),
-                        )
-                        did_compact = True
-                    elif isinstance(msg, ToolResultMessage):
-                        self.messages[i] = ToolResultMessage(
-                            tool_use_id=msg.tool_use_id,
-                            content=truncated_text,
-                            is_error=msg.is_error,
-                        )
-                        did_compact = True
-
-        if did_compact:
-            tokens_after = self.count_tokens()
-            if self.config.on_notify:
-                self.config.on_notify(
-                    "auto_compact",
-                    {
-                        "tokens_before": tokens_before,
-                        "tokens_after": tokens_after,
-                        "tokens_saved": tokens_before - tokens_after,
-                        "tool_results_cleared": 0,
-                        "compaction_count": self._compaction_count,
-                        "fallback": True,
-                    },
-                )
-            self._last_compaction_token_count = self.count_tokens()
-            return True
-
-        return False
-
-    def intelligent_compact(self) -> dict[str, Any]:
-        """Intelligently compact conversation using ClaudeCode-style compaction.
-
-        This method:
-        1. Clears old tool results but keeps markers
-        2. Summarizes conversation context
-        3. Preserves recent message history
-
-        Returns:
-            Compaction statistics
-        """
-        from .types.message import SystemMessage
-
-        token_count = self.count_tokens()
-
-        # Check if compaction is needed
-        if not self._intelligent_compactor.should_compact(self.messages, token_count):
-            return {
-                "compacted": False,
-                "reason": "Compaction not needed",
-                "token_count": token_count,
-            }
-
-        # Generate summary before compaction
-        summary = self._intelligent_compactor.generate_structured_summary(
-            self.messages, include_files=True, include_errors=True
-        )
-
-        # Perform compaction
-        result = self._intelligent_compactor.compact_messages(self.messages, token_count)
-
-        # Update messages from compaction result
-        if result.messages:
-            self.messages = list(result.messages)
-
-        # Add summary as system message if we cleared content
-        if result.tool_results_cleared > 0:
-            summary_text = f"""[Conversation Context Summary]
-Project: {summary.get("primary_request", "N/A")[:100]}
-Files examined: {", ".join(summary.get("files_examined", []))}
-Files modified: {", ".join(summary.get("files_modified", []))}
-Errors: {len(summary.get("errors_encountered", []))}
-"""
-            # Insert after system message or at beginning
-            if self.messages and isinstance(self.messages[0], SystemMessage):
-                self.messages.insert(1, SystemMessage(content=summary_text))
-            else:
-                self.messages.insert(0, SystemMessage(content=summary_text))
-
-        self._compaction_count += 1
-
-        return {
-            "compacted": True,
-            "original_messages": result.original_messages,
-            "compacted_messages": len(self.messages),
-            "original_tokens": result.original_tokens,
-            "compacted_tokens": result.compacted_tokens,
-            "tool_results_cleared": result.tool_results_cleared,
-            "compaction_count": self._compaction_count,
-        }
+    def _force_emergency_compact(self) -> None:
+        """Emergency compaction for ContextWindowError recovery. Delegated to CompactionManager."""
+        self._compaction_mgr._force_emergency_compact()
 
     def clear_history(self) -> None:
-        """Clear conversation history."""
+        """Clear conversation history and all derived state."""
         self.messages.clear()
+        self._changed_files.clear()
+        self._review_iteration_count = 0
+        self._reasoning_history.clear()
+        # Reset token manager caches so the next count starts fresh
+        self._token_mgr.reset_cache()
+        # Reset compaction tracking
+        self._compaction_mgr._last_compaction_token_count = 0
+        self._compaction_mgr._compaction_count = 0
 
     def save_session(self, path: str) -> None:
-        """Save conversation session to disk."""
-        import os
-
-        os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
-        data = {
-            "version": 1,
-            "cwd": self.config.cwd,
-            "custom_system_prompt": self.config.custom_system_prompt,
-            "max_turns": self.config.max_turns,
-            "messages": serialize_messages(self.messages),
-        }
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        """Save conversation session to a single JSON file (legacy format). Delegated to SessionManager."""
+        self._session_mgr.save_session(path)
 
     def load_session(self, path: str) -> bool:
-        """Load conversation session from disk.
+        """Load conversation session from a single JSON file (legacy format). Delegated to SessionManager."""
+        result = self._session_mgr.load_session(path)
+        if result:
+            self._token_mgr.reset_cache()
+        return result
 
-        Returns True if loaded successfully.
+    def save_to_storage(self, name: str | None = None) -> bool:
+        """Save session to unified incremental storage. Delegated to SessionManager."""
+        return self._session_mgr.save_to_storage(name)
+
+    def set_on_notify(self, callback: Callable[[str, dict[str, Any]], None] | None) -> None:
+        """Update the on_notify callback for both config and CompactionManager.
+
+        CompactionManager holds a reference captured at init time, so changing
+        config.on_notify alone does not propagate. This method ensures both
+        copies stay in sync.
         """
-        import os
+        self.config.on_notify = callback
+        self._compaction_mgr._on_notify = callback
 
-        if not os.path.exists(path):
+    def load_from_storage(self, session_id: str | None = None) -> bool:
+        """Load session from unified incremental storage. Delegated to SessionManager."""
+        success, sid, messages = self._session_mgr.load_from_storage(session_id)
+        if not success:
             return False
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        self.messages = deserialize_messages(data.get("messages", []))
-        self.config.cwd = data.get("cwd", self.config.cwd)
-        if data.get("custom_system_prompt"):
-            self.config.custom_system_prompt = data["custom_system_prompt"]
-        self.config.max_turns = data.get("max_turns", self.config.max_turns)
+        self.messages[:] = messages
+        self.session_id = sid
+        # Reset token caches since the conversation state has completely changed
+        self._token_mgr._last_api_usage = None
+        self._token_mgr._last_api_usage_hash = None
+        self._token_mgr._last_precise_count = None
+        self._token_mgr._last_precise_count_hash = None
+        self._compaction_mgr._last_compaction_token_count = 0
         return True
 
 

@@ -9,8 +9,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
+import hashlib
 import json
 import logging
+import time
 
 from .model_capabilities import ModelCapabilities
 
@@ -221,6 +223,91 @@ def get_domestic_models() -> dict[str, ModelInfo]:
 # ------------------------------------------------------------------
 
 _backend_limits_cache: dict[str, dict[str, int]] = {}
+_PROBE_CACHE_TTL: int = 86400  # 24 hours
+_PROBE_CACHE_PATH: Path | None = None
+
+
+def _get_probe_cache_path() -> Path:
+    """Get path to the persistent probe cache file."""
+    global _PROBE_CACHE_PATH
+    if _PROBE_CACHE_PATH is None:
+        from ..utils.paths import get_cache_dir
+
+        _PROBE_CACHE_PATH = get_cache_dir() / "probe_cache.json"
+    return _PROBE_CACHE_PATH
+
+
+def _compute_config_hash() -> str:
+    """Compute SHA256 hash of settings.json content.
+
+    Falls back to hashing base_url + model name when settings.json doesn't
+    exist, so the probe cache still works for env-var-only configurations.
+    """
+    from .config import ConfigManager
+
+    path = ConfigManager.SETTINGS_FILE
+    try:
+        if path.exists():
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        pass
+
+    # Fallback: no settings.json — hash URL + model so the cache key is
+    # stable across restarts and avoids re-probing every startup.
+    try:
+        from .config import get_global_config
+
+        config = get_global_config()
+        fallback = f"{config.base_url or ''}|{config.default_model or ''}"
+        if fallback.strip("|"):
+            return hashlib.sha256(fallback.encode()).hexdigest()
+    except Exception:
+        pass
+
+    return ""
+
+
+def _load_probe_cache() -> None:
+    """Load cached probe results from disk into memory (respects TTL)."""
+    path = _get_probe_cache_path()
+    if not path.exists():
+        return
+    try:
+        data: dict = json.loads(path.read_text(encoding="utf-8"))
+        now = time.time()
+        for config_hash, entry in data.items():
+            ts = entry.get("cached_at", 0)
+            limits = entry.get("limits")
+            if limits is not None and (now - ts) < _PROBE_CACHE_TTL:
+                _backend_limits_cache[config_hash] = limits
+            # Expired entries are silently dropped (not written back)
+    except Exception:
+        pass
+
+
+def _save_probe_cache() -> None:
+    """Persist current config's probe result to disk (with timestamp)."""
+    path = _get_probe_cache_path()
+    config_hash = _compute_config_hash()
+    if not config_hash or config_hash not in _backend_limits_cache:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data: dict = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        # Keep existing entries (may include other config hashes),
+        # overwrite current one with fresh timestamp
+        data[config_hash] = {
+            "cached_at": time.time(),
+            "limits": _backend_limits_cache[config_hash],
+        }
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _probe_backend_limits(
@@ -238,10 +325,15 @@ def _probe_backend_limits(
     if not base_url:
         return None
 
-    # Use cached result if available (including empty-dict sentinel that
-    # means "already probed, nothing found" so we don't hammer the server).
-    if base_url in _backend_limits_cache:
-        cached = _backend_limits_cache[base_url]
+    # Load disk cache on first call in this process
+    # This is cheap (file read) and ensures restarts re-use previous results
+    if not _backend_limits_cache:
+        _load_probe_cache()
+
+    # Check cache by config hash (survives restarts, changes when config changes)
+    config_hash = _compute_config_hash()
+    if config_hash and config_hash in _backend_limits_cache:
+        cached = _backend_limits_cache[config_hash]
         return cached if cached else None
 
     try:
@@ -302,7 +394,8 @@ def _probe_backend_limits(
     # and try /props — meta.n_ctx_train is the *training* length, not the
     # actual runtime n_ctx which may be smaller due to deployment config.
     if cap and not v1_from_meta:
-        _backend_limits_cache[base_url] = cap
+        _backend_limits_cache[config_hash] = cap
+        _save_probe_cache()
         logger.debug("Probed backend limits via /v1/models for %s: %s", base_url, cap)
         return cap
 
@@ -310,14 +403,16 @@ def _probe_backend_limits(
     # this is a standard OpenAI-compatible server (vLLM, TGI, etc.).
     # Don't spam /props — it's llama-server-specific and causes ERROR logs.
     if v1_models_works and not v1_from_meta:
-        _backend_limits_cache[base_url] = {}
+        _backend_limits_cache[config_hash] = {}
+        _save_probe_cache()
         return None
 
     # ------------------------------------------------------------------
     # Anthropic protocol: try /v1/models (already done above) and stop
     # ------------------------------------------------------------------
     if api_protocol == "anthropic":
-        _backend_limits_cache[base_url] = {}
+        _backend_limits_cache[config_hash] = {}
+        _save_probe_cache()
         return None
 
     # ------------------------------------------------------------------
@@ -347,7 +442,8 @@ def _probe_backend_limits(
             logger.debug("Backend probe /props failed: %s", exc)
 
     if cap:
-        _backend_limits_cache[base_url] = cap
+        _backend_limits_cache[config_hash] = cap
+        _save_probe_cache()
         logger.debug("Probed backend limits via /props for %s: %s", base_url, cap)
         return cap
 
@@ -371,13 +467,15 @@ def _probe_backend_limits(
             logger.debug("Backend probe /api/show failed: %s", exc)
 
     if cap:
-        _backend_limits_cache[base_url] = cap
+        _backend_limits_cache[config_hash] = cap
+        _save_probe_cache()
         logger.debug("Probed backend limits via /api/show for %s: %s", base_url, cap)
         return cap
 
     # Cache negative result so we don't keep re-probing a backend that
     # doesn't expose limits (e.g. generic OpenAI-compatible servers).
-    _backend_limits_cache[base_url] = {}
+    _backend_limits_cache[config_hash] = {}
+    _save_probe_cache()
     return None
 
 
@@ -452,6 +550,15 @@ def get_model_limits(model_name: str | None = None) -> dict[str, int]:
     if probed_context and "max_tokens" not in (probed or {}):
         ctx = result["context_window"]
         result["max_tokens"] = min(8_192, max(1_024, ctx // 4))
+
+    # Backfill cache with final resolved values if the probe itself didn't
+    # return anything (e.g. DeepSeek-style API that exposes no limit fields).
+    # This ensures subsequent lookups skip the probe entirely and load from cache.
+    if not probed:
+        config_hash = _compute_config_hash()
+        if config_hash:
+            _backend_limits_cache[config_hash] = result
+            _save_probe_cache()
 
     return result
 

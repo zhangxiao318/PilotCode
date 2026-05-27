@@ -14,6 +14,8 @@
 | **弱模型代偿** | 框架级多维补偿引擎（Qwen3-Coder-30B 实测有效） | ✅ 完整 |
 | **错误恢复** | 容错与降级 | ✅ 完整 |
 | **会话管理** | 对话持久化与恢复 | ✅ 完整 |
+| **Reflection Mode** | 生成→审查→修改闭环（三层：Self-Critique / Pre-Edit / Post-Turn） | 📝 设计完成，待实现 |
+| **Reasoning Content 利用** | DeepSeek/Qwen/Claude thinking 内容全链路后处理（动态开关/一致性/循环检测/压缩/Reflection） | ✅ 已实现 |
 
 ---
 
@@ -30,6 +32,8 @@
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
 | [context-management.md](./context-management.md) | 上下文管理 | Token 监控、自动/手动压缩、MemPO 记忆 |
+| [token-counting-architecture.md](./token-counting-architecture.md) | Token 计算体系 | 四层回退策略、精确/启发式计数、基线测量 |
+| [session-service-mvc.md](./session-service-mvc.md) | SessionService MVC 架构 | UIProtocol 三通道、共用 Controller、消除 UI 重复逻辑 |
 | [error-recovery.md](./error-recovery.md) | 错误恢复与重试 | 网络不稳定、API 限流 |
 | [session-management.md](./session-management.md) | 会话管理 | 多项目管理、历史恢复 |
 
@@ -45,6 +49,19 @@
 | 文档 | 说明 | 适用场景 |
 |------|------|----------|
 | [p-evr-task-orchestration.md](./p-evr-task-orchestration.md) | P-EVR 任务编排 | 结构化任务分解、DAG 执行、三级验证 |
+
+### Agent 模式（规划中）
+
+| 文档 | 说明 | 适用场景 |
+|------|------|----------|
+| [reflection-mode.md](./reflection-mode.md) | Reflection Mode 设计文档 | 生成→审查→修改闭环、代码质量提升 |
+
+### Reasoning 与模型能力
+
+| 文档 | 说明 | 适用场景 |
+|------|------|----------|
+| [reasoning-content-utilization.md](./reasoning-content-utilization.md) | Reasoning Content 全链路利用 | DeepSeek/Qwen/Claude thinking 模式优化、token 节省、防漏改 |
+| [weak-model-compensation.md](./weak-model-compensation.md) | 弱模型多维代偿 | 本地 7B–30B 模型、能力评估、自适应降级 |
 
 ---
 

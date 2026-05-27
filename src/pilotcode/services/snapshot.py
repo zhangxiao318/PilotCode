@@ -211,7 +211,8 @@ class SnapshotManager:
                     "metadata": info.metadata,
                 },
                 indent=2,
-            )
+            ),
+            encoding="utf-8",
         )
 
         return info
@@ -225,7 +226,7 @@ class SnapshotManager:
                 manifest_path = snapshot_path / self.MANIFEST_FILE
                 if manifest_path.exists():
                     try:
-                        data = json.loads(manifest_path.read_text())
+                        data = json.loads(manifest_path.read_text(encoding="utf-8"))
                         snapshots.append(SnapshotInfo(**data))
                     except (json.JSONDecodeError, TypeError):
                         pass
@@ -242,7 +243,7 @@ class SnapshotManager:
             return None
 
         try:
-            data = json.loads(manifest_path.read_text())
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
             return SnapshotInfo(**data)
         except (json.JSONDecodeError, TypeError):
             return None
@@ -430,7 +431,7 @@ class SnapshotManager:
                         return None
 
                     # Load manifest
-                    data = json.loads(manifest_path.read_text())
+                    data = json.loads(manifest_path.read_text(encoding="utf-8"))
                     snapshot_id = data["id"]
 
                     # Copy to snapshots directory

@@ -24,10 +24,11 @@ async def _run_capability_benchmark() -> str:
         Analysis report text with capability scores and file path.
     """
     from ..model_capability import (
-        evaluate_model,
         save_capability,
         format_evaluation_report,
     )
+    from ..model_capability.suite import run_all_benchmarks
+    from ..model_capability.evaluator import evaluate_capability
     from ..model_capability.benchmark import BenchmarkConnectionError
     from ..utils.config import get_global_config
     from pathlib import Path
@@ -36,7 +37,8 @@ async def _run_capability_benchmark() -> str:
     model_name = config.default_model or "unknown"
 
     try:
-        cap = await evaluate_model(model_name)
+        results = await run_all_benchmarks()
+        cap = evaluate_capability(model_name, results)
     except BenchmarkConnectionError as e:
         return (
             f"[red]Benchmark aborted: cannot reach model API.[/red]\n"
@@ -60,7 +62,7 @@ async def _run_capability_benchmark() -> str:
     except Exception:
         pass
 
-    report = format_evaluation_report([], cap)
+    report = format_evaluation_report(results, cap)
     report += f"\n\n[Capability profile saved to: {save_path}]"
     return report
 

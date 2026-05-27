@@ -348,9 +348,18 @@ async def help_command(args: list[str], context: CommandContext) -> str:
 
 
 async def clear_command(args: list[str], context: CommandContext) -> str:
-    """Clear screen."""
+    """Clear screen and reset conversation context."""
     os.system("clear" if os.name != "nt" else "cls")
-    return "Screen cleared."
+
+    cleared = 0
+    if context.query_engine is not None:
+        cleared = len(context.query_engine.messages)
+        context.query_engine.clear_history()
+        # Reset compaction stats so the new session starts fresh
+        context.query_engine._compaction_count = 0
+        context.query_engine._last_compaction_message_count = 0
+
+    return f"Screen and context cleared ({cleared} messages removed)."
 
 
 async def quit_command(args: list[str], context: CommandContext) -> str:
@@ -418,7 +427,10 @@ register_command(
 
 register_command(
     CommandHandler(
-        name="clear", description="Clear the screen", handler=clear_command, aliases=["cls"]
+        name="clear",
+        description="Clear the screen and reset conversation context",
+        handler=clear_command,
+        aliases=["cls"],
     )
 )
 

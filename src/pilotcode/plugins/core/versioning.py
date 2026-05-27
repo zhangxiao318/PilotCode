@@ -146,7 +146,7 @@ class VersionManager:
             import json
 
             try:
-                with open(manifest_file, "r") as f:
+                with open(manifest_file, "r", encoding="utf-8") as f:
                     manifest = json.load(f)
                 manifest_version = manifest.get("version")
                 if manifest_version:

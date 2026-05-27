@@ -77,11 +77,20 @@ class MockModelClient(ModelClient):
         self.api_key = "test-key"
         self.base_url = "http://localhost:9999"
         self.model = "mock-model"
+        self._supports_reasoning_content = True
         self._responses: list[MockLLMResponse] = []
         self._response_index: int = 0
         self._history: list[list[APIMessage]] = []
         self._call_count: int = 0
         self._on_chat_completion: Callable | None = None
+
+    @property
+    def supports_reasoning_content(self) -> bool:
+        return self._supports_reasoning_content
+
+    @supports_reasoning_content.setter
+    def supports_reasoning_content(self, value: bool) -> None:
+        self._supports_reasoning_content = value
 
     def set_responses(self, responses: list[MockLLMResponse]) -> None:
         """Set the sequence of responses to return."""
@@ -118,6 +127,7 @@ class MockModelClient(ModelClient):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         stream: bool = True,
+        extra_body: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Yield mock response chunks."""
         self._call_count += 1

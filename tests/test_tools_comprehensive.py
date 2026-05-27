@@ -250,7 +250,8 @@ class TestMiscTools:
     @pytest.mark.asyncio
     async def test_todo_write(self, temp_dir):
         result = await call_tool(
-            "TodoWrite", {"todos": [{"content": "test todo", "status": "in_progress"}]}
+            "Todo",
+            {"action": "write", "todos": [{"content": "test todo", "status": "in_progress"}]},
         )
         assert not result.is_error
 

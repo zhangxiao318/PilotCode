@@ -84,7 +84,7 @@ def detect_test_framework(cwd: str) -> TestFramework:
     if os.path.exists(os.path.join(cwd, "pytest.ini")):
         return TestFramework.PYTEST
     if os.path.exists(os.path.join(cwd, "pyproject.toml")):
-        with open(os.path.join(cwd, "pyproject.toml"), "r") as f:
+        with open(os.path.join(cwd, "pyproject.toml"), "r", encoding="utf-8") as f:
             content = f.read()
             if "[tool.pytest" in content:
                 return TestFramework.PYTEST
@@ -96,7 +96,7 @@ def detect_test_framework(cwd: str) -> TestFramework:
         return TestFramework.PYTEST
 
     if os.path.exists(os.path.join(cwd, "package.json")):
-        with open(os.path.join(cwd, "package.json"), "r") as f:
+        with open(os.path.join(cwd, "package.json"), "r", encoding="utf-8") as f:
             content = f.read()
             if "jest" in content:
                 return TestFramework.JEST

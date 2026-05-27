@@ -13,6 +13,7 @@ from .base import (
 # Import all commands to register them
 from . import config_cmd  # noqa: F401
 from . import alias_cmd  # noqa: F401
+from . import init_cmd  # noqa: F401
 from . import session_cmd  # noqa: F401
 from . import cost_cmd  # noqa: F401
 from . import tasks_cmd  # noqa: F401

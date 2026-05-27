@@ -1,5 +1,7 @@
 """Tests for token counting and auto-compact."""
 
+import asyncio
+
 from pilotcode.query_engine import QueryEngine, QueryEngineConfig
 from pilotcode.types.message import UserMessage, AssistantMessage
 
@@ -35,7 +37,7 @@ class TestAutoCompact:
         engine = QueryEngine(QueryEngineConfig(cwd=".", auto_compact=False, context_window=10))
         for i in range(10):
             engine.messages.append(UserMessage(content=f"Message {i}"))
-        compacted = engine.auto_compact_if_needed()
+        compacted = asyncio.run(engine.auto_compact_if_needed())
         assert compacted is False
         assert len(engine.messages) == 10
 
@@ -46,7 +48,7 @@ class TestAutoCompact:
             engine.messages.append(
                 UserMessage(content=f"This is a longer message number {i} with many tokens")
             )
-        compacted = engine.auto_compact_if_needed()
+        compacted = asyncio.run(engine.auto_compact_if_needed())
         assert compacted is True
         # Should keep fewer messages after compaction
         assert len(engine.messages) < 10

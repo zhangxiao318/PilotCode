@@ -11,7 +11,7 @@ from typing import Any, Optional
 from enum import Enum
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 from ..services.codebase_indexer import (
     SearchQuery,
@@ -85,7 +85,7 @@ async def code_search_call(
     """Execute code search."""
 
     # Get codebase indexer
-    indexer = get_codebase_indexer()
+    indexer = get_codebase_indexer(resolve_cwd(context))
 
     # Auto-index if empty so the user doesn't need to call CodeIndex first.
     # With hierarchical indexing, large repos are no longer a context problem,

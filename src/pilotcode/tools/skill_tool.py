@@ -16,6 +16,69 @@ SKILLS_DIR = Path.home() / ".local" / "share" / "pilotcode" / "skills"
 # Dynamic skills registry for plugin-provided skills
 _dynamic_skills: dict[str, dict] = {}
 
+# Cache for project-local skills: {cwd: {skill_name: config_dict}}
+_local_skills_cache: dict[str, dict[str, dict]] = {}
+
+
+def _get_local_skills_dir(cwd: str) -> Path:
+    """Get the project-local skills directory."""
+    return Path(cwd) / ".pilotcode" / "skills"
+
+
+def _scan_local_skills(cwd: str) -> dict[str, dict]:
+    """Scan project-local skills from .pilotcode/skills/.
+
+    Supports:
+    - Markdown files (*.md) with YAML frontmatter
+    - Legacy skill.json in subdirectories
+    """
+    local_dir = _get_local_skills_dir(cwd)
+    if not local_dir.exists():
+        return {}
+
+    skills: dict[str, dict] = {}
+
+    # 1. Markdown files (*.md)
+    for md_file in local_dir.glob("*.md"):
+        try:
+            from ..plugins.loader.skills import load_skill_from_file
+
+            skill_def = load_skill_from_file(md_file)
+            skills[skill_def.name] = {
+                "name": skill_def.name,
+                "description": skill_def.description,
+                "version": "local-md",
+                "author": "project",
+                "source": "local",
+                "content": skill_def.content,
+                "allowedTools": skill_def.allowed_tools,
+            }
+        except Exception:
+            pass
+
+    # 2. Legacy skill.json in subdirectories
+    for subdir in local_dir.iterdir():
+        if subdir.is_dir():
+            json_path = subdir / "skill.json"
+            if json_path.exists():
+                try:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        config = json.load(f)
+                    config["source"] = "local"
+                    config["version"] = config.get("version", "local")
+                    skills[subdir.name] = config
+                except Exception:
+                    pass
+
+    return skills
+
+
+def _get_local_skills(cwd: str) -> dict[str, dict]:
+    """Get cached or freshly scanned local skills."""
+    if cwd not in _local_skills_cache:
+        _local_skills_cache[cwd] = _scan_local_skills(cwd)
+    return _local_skills_cache[cwd]
+
 
 class SkillInput(BaseModel):
     """Input for Skill tool."""
@@ -61,38 +124,54 @@ def register_dynamic_skill(
     }
 
 
-def load_skill_config(skill_name: str) -> dict | None:
-    """Load skill configuration."""
+def load_skill_config(skill_name: str, cwd: str = "") -> dict | None:
+    """Load skill configuration.
+
+    Priority: dynamic > project-local > global legacy
+    """
     # Check dynamic skills first
     if skill_name in _dynamic_skills:
         return _dynamic_skills[skill_name]
 
-    # Fall back to legacy skill.json
+    # Check project-local skills
+    if cwd:
+        local_skills = _get_local_skills(cwd)
+        if skill_name in local_skills:
+            return local_skills[skill_name]
+
+    # Fall back to global legacy skill.json
     skill_path = SKILLS_DIR / skill_name / "skill.json"
 
     if not skill_path.exists():
         return None
 
     try:
-        with open(skill_path, "r") as f:
+        with open(skill_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return None
 
 
-def _list_all_skills() -> list[str]:
-    """List all available skills (legacy + dynamic)."""
+def _list_all_skills(cwd: str = "") -> list[str]:
+    """List all available skills (dynamic + local + global legacy)."""
     skills = []
 
     # Add dynamic skills
     for name in _dynamic_skills:
         skills.append(name)
 
-    # Add legacy skills
+    # Add project-local skills
+    if cwd:
+        local_skills = _get_local_skills(cwd)
+        for name in local_skills:
+            if name not in skills:
+                skills.append(name)
+
+    # Add global legacy skills
     if SKILLS_DIR.exists():
         for item in SKILLS_DIR.iterdir():
             if item.is_dir():
-                config = load_skill_config(item.name)
+                config = load_skill_config(item.name, cwd=cwd)
                 if config and item.name not in skills:
                     skills.append(item.name)
 
@@ -110,11 +189,11 @@ async def skill_call(
 
     if input_data.action == "list":
         # List available skills
-        skills = _list_all_skills()
+        skills = _list_all_skills(context.cwd)
 
         skill_list = []
         for skill_name in skills:
-            config = load_skill_config(skill_name)
+            config = load_skill_config(skill_name, cwd=context.cwd)
             if config:
                 desc = config.get("description", "No description")
                 source = config.get("source", "legacy")
@@ -131,7 +210,7 @@ async def skill_call(
 
     elif input_data.action == "info":
         # Show skill info
-        config = load_skill_config(input_data.skill_name)
+        config = load_skill_config(input_data.skill_name, cwd=context.cwd)
 
         if not config:
             return ToolResult(
@@ -167,7 +246,7 @@ Allowed Tools: {", ".join(config.get("allowedTools", [])) if config.get("allowed
 
     elif input_data.action == "run":
         # Run the skill
-        config = load_skill_config(input_data.skill_name)
+        config = load_skill_config(input_data.skill_name, cwd=context.cwd)
 
         if not config:
             return ToolResult(

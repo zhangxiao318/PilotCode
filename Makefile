@@ -95,3 +95,13 @@ setup-git:
 # Documentation
 docs:
 	@echo "Documentation target not implemented yet"
+
+# Remote agent (Rust)
+build-remote-agent:
+	cd agents/remote && cargo build --release
+
+build-remote-agent-arm64:
+	cd agents/remote && cargo build --target aarch64-unknown-linux-musl --release
+
+clean-remote-agent:
+	cd agents/remote && cargo clean

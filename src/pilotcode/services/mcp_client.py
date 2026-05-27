@@ -88,6 +88,13 @@ class MCPClient:
 
         if response and "result" in response:
             connection.tools = response["result"].get("tools", [])
+            # Register each MCP tool as a first-class native Tool
+            try:
+                from pilotcode.tools.mcp_tools import register_mcp_tools_as_native
+
+                register_mcp_tools_as_native(connection.name, connection.tools)
+            except Exception:
+                pass  # Keep unified MCP tool as fallback
 
     async def _send_message(self, connection: MCPServerConnection, message: dict) -> None:
         """Send a message to MCP server."""

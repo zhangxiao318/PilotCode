@@ -8,14 +8,23 @@ from .registry import register_tool
 
 
 class PlanModeState:
-    """Global plan mode state."""
+    """Session-scoped plan mode state."""
 
     is_active: bool = False
     current_plan: list[dict] = []
     completed_steps: list[int] = []
 
 
-_plan_state = PlanModeState()
+_plan_states: dict[str, PlanModeState] = {}
+
+
+def get_plan_state(session_id: str = "") -> PlanModeState:
+    """Get plan state for a session, creating one if needed."""
+    if not session_id:
+        session_id = "_default"
+    if session_id not in _plan_states:
+        _plan_states[session_id] = PlanModeState()
+    return _plan_states[session_id]
 
 
 class EnterPlanModeInput(BaseModel):
@@ -42,14 +51,14 @@ async def enter_plan_mode_call(
     on_progress: Any,
 ) -> ToolResult[EnterPlanModeOutput]:
     """Enter plan mode."""
-    global _plan_state
+    state = get_plan_state()
 
-    _plan_state.is_active = True
-    _plan_state.current_plan = [
+    state.is_active = True
+    state.current_plan = [
         {"step": i + 1, "description": step, "status": "pending"}
         for i, step in enumerate(input_data.steps)
     ]
-    _plan_state.completed_steps = []
+    state.completed_steps = []
 
     plan_id = "plan_" + str(id(input_data))[:8]
 
@@ -87,14 +96,14 @@ async def exit_plan_mode_call(
     on_progress: Any,
 ) -> ToolResult[ExitPlanModeOutput]:
     """Exit plan mode."""
-    global _plan_state
+    state = get_plan_state()
 
-    steps_completed = len(_plan_state.completed_steps)
-    total_steps = len(_plan_state.current_plan)
+    steps_completed = len(state.completed_steps)
+    total_steps = len(state.current_plan)
 
-    _plan_state.is_active = False
-    _plan_state.current_plan = []
-    _plan_state.completed_steps = []
+    state.is_active = False
+    state.current_plan = []
+    state.completed_steps = []
 
     return ToolResult(
         data=ExitPlanModeOutput(
@@ -132,9 +141,9 @@ async def update_plan_step_call(
     on_progress: Any,
 ) -> ToolResult[UpdatePlanStepOutput]:
     """Update plan step status."""
-    global _plan_state
+    state = get_plan_state()
 
-    if not _plan_state.is_active:
+    if not state.is_active:
         return ToolResult(
             data=UpdatePlanStepOutput(
                 plan_id=input_data.plan_id,
@@ -146,7 +155,7 @@ async def update_plan_step_call(
         )
 
     step_idx = input_data.step_number - 1
-    if step_idx < 0 or step_idx >= len(_plan_state.current_plan):
+    if step_idx < 0 or step_idx >= len(state.current_plan):
         return ToolResult(
             data=UpdatePlanStepOutput(
                 plan_id=input_data.plan_id,
@@ -157,12 +166,12 @@ async def update_plan_step_call(
             error=f"Invalid step number: {input_data.step_number}",
         )
 
-    _plan_state.current_plan[step_idx]["status"] = input_data.status
+    state.current_plan[step_idx]["status"] = input_data.status
     if input_data.notes:
-        _plan_state.current_plan[step_idx]["notes"] = input_data.notes
+        state.current_plan[step_idx]["notes"] = input_data.notes
 
-    if input_data.status == "completed" and step_idx not in _plan_state.completed_steps:
-        _plan_state.completed_steps.append(step_idx)
+    if input_data.status == "completed" and step_idx not in state.completed_steps:
+        state.completed_steps.append(step_idx)
 
     return ToolResult(
         data=UpdatePlanStepOutput(

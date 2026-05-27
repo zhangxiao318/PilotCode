@@ -91,3 +91,12 @@ src/pilotcode/utils/env_diagnosis.py
 
 # Temporary test files
 test.txt
+
+# Rust
+agents/**/target/
+agents/**/*.lock
+
+# C build artifacts
+agents/**/*.o
+agents/**/agent
+agents/**/agent-*

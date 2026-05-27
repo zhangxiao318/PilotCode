@@ -55,7 +55,11 @@ def get_capabilities_prompt() -> str:
 1. **Code Generation**: Write code in any language based on user requirements
 2. **Code Analysis**: Review code for bugs, performance issues, best practices
 3. **File Operations**: Read, write, and edit files. FileRead can access ANY file the user mentions.
-4. **Shell Execution**: Run commands, scripts, and build tools"""
+4. **Shell Execution**: Run commands, scripts, and build tools
+5. **Task & Todo Management**: Track work with background Tasks and Todos
+   - **Task tool** (action=create/get/list/stop/update/output/resume): Run long commands in background, query status, stop, or resume/restart failed tasks
+   - **Todo tool** (action=write/list/get/delete): Track human-readable todo items. Todos can be linked to background Tasks via `create_task=True` or `linked_task_id`
+   - Tasks persist across sessions; orphaned running tasks are auto-recovered on startup"""
 
 
 def get_output_style_prompt() -> str:
@@ -66,7 +70,8 @@ def get_output_style_prompt() -> str:
 - When referencing code, include file_path:line_number for navigation.
 - Use complete sentences in flowing prose. Avoid excessive headers or bullet lists.
 - Only use emojis if the user explicitly requests it.
-- **Language**: ALWAYS respond in the SAME LANGUAGE as the user's request. If the user wrote in Chinese, respond in Chinese. If the user wrote in English, respond in English."""
+- **Language**: ALWAYS respond in the SAME LANGUAGE as the user's request. If the user wrote in Chinese, respond in Chinese. If the user wrote in English, respond in English.
+- **Thinking/Reasoning Language**: When generating thinking or reasoning content, ALWAYS use the same language as the user's request. If the user wrote in Chinese, think in Chinese. If the user wrote in English, think in English."""
 
 
 def get_core_instructions_prompt() -> str:
@@ -78,7 +83,19 @@ def get_core_instructions_prompt() -> str:
 3. **TEST YOUR CODE** - Run the actual code/tests, don't just describe. Python: `python filename.py` or `python -m pytest`
 4. **Be specific** - Make precise, targeted file changes
 5. **USE EXACT FILE PATHS** - Never add suffixes like '_new', '_backup', '_fixed'
-6. **Don't assume** - If requirements are ambiguous, present options or ask. State assumptions explicitly."""
+6. **Don't assume** - If requirements are ambiguous, present options or ask. State assumptions explicitly.
+7. **Use AskUser for questions** - When you need to ask the user a question or request confirmation, you MUST call the `AskUser` tool and wait for their response before proceeding. Do NOT write questions as regular text and continue without waiting — the user cannot respond to plain text.
+8. **Track long-running work** - For multi-step or long-running operations:
+   - Use `Task(action="create", description="...", command="...")` to run commands in background
+   - Use `Todo(action="write", todos=[...])` to track progress items for the user
+   - Use `Todo(action="list")` or `Todo(action="get", todo_id="...")` to check todo status
+   - Use `Task(action="get", task_id="...")` or `Task(action="list")` to check background task status
+   - Use `Task(action="resume", task_id="...")` to restart failed or interrupted tasks
+   - Link todos to tasks by setting `create_task=True` in Todo write payload
+   - **When to auto-create todos**: If the user's request has 3+ distinct steps, create a Todo list upfront and update statuses as you progress. Do NOT ask the user for permission to create todos.
+   - **When to auto-create background tasks**: If a command may take longer than 10 seconds (tests, builds, installs, large downloads), run it via Task instead of blocking the conversation.
+   - **When the user asks about progress/status**: Automatically query Todo(action="list") and/or Task(action="list") to give an accurate status report.
+   - **When a task fails**: If Task status is "failed", offer to resume it with Task(action="resume") rather than asking the user to re-run manually."""
 
 
 def get_code_editing_best_practices_prompt() -> str:
@@ -122,7 +139,8 @@ Prefer dedicated tools over Bash when available.""",
 Use FileRead to:
 - Read file contents to understand existing code
 - ALWAYS use this to read files before analyzing or modifying them
-- Access ANY file the user mentions, including external reference files""",
+- Access ANY file the user mentions, including external reference files
+- Read the **entire file in a single call** (omit offset/limit) unless it is very large (>500 lines)""",
     "FileWrite": """## FileWrite Tool
 
 Use FileWrite to:
@@ -851,7 +869,6 @@ def get_static_prompt_sections(
         sections.append(get_all_tools_prompt())
 
     sections.append(get_output_style_prompt())
-    sections.append(PROMPT_DYNAMIC_BOUNDARY)
 
     return sections
 

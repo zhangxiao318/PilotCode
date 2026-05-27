@@ -806,6 +806,9 @@ async def execute_bash(
     try:
         import subprocess
 
+        # Defensive: Windows subprocess rejects None/empty cwd
+        effective_cwd = cwd or os.getcwd()
+
         startupinfo = None
         if sys.platform == "win32":
             startupinfo = subprocess.STARTUPINFO()
@@ -819,7 +822,7 @@ async def execute_bash(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.DEVNULL,
-            cwd=cwd,
+            cwd=effective_cwd,
             env=process_env,
             startupinfo=startupinfo,
         )
@@ -1052,14 +1055,13 @@ async def bash_call(
     if context.set_app_state and result.exit_code == 0:
         _update_cwd_from_cd(input_data.command, cwd, context.set_app_state)
 
-    # Append persistent CWD info so the LLM knows the actual working directory
+    # Append CWD info only when directory actually changed (e.g. after cd).
+    # Avoid polluting every bash output with redundant cwd notes.
     if context.get_app_state:
         app_state = context.get_app_state()
         persistent_cwd = getattr(app_state, "cwd", cwd or os.getcwd())
         if persistent_cwd != cwd:
-            result.stderr += f"\n[NOTE: Persistent working directory is now: {persistent_cwd}]"
-        else:
-            result.stderr += f"\n[NOTE: Working directory: {persistent_cwd}]"
+            result.stderr += f"\n[CWD: {persistent_cwd}]"
 
     # Merge stdout + stderr so the LLM sees errors and cwd notes
     output_for_assistant = result.stdout

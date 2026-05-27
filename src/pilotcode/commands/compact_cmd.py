@@ -21,8 +21,16 @@ async def compact_command(args: list[str], context: CommandContext) -> str:
     ctx_window = get_model_context_window()
     before_pct = min(tokens_before * 100 // ctx_window, 999)
 
-    # Run full compaction chain (intelligent -> simple -> emergency)
-    compacted = qe.auto_compact_if_needed()
+    # Force mode: skip should_compact check (use when /compact -f)
+    force = any(a in ("--force", "-f") for a in args)
+
+    if force:
+        result = await qe.intelligent_compact(force=True)
+        qe._force_emergency_compact()
+        compacted = result.get("compacted", True)
+    else:
+        # Run full compaction chain (five-layer pipeline + fallback)
+        compacted = await qe.auto_compact_if_needed()
 
     if not compacted:
         return (

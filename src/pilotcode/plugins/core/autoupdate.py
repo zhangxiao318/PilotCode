@@ -73,7 +73,7 @@ class AutoUpdater:
             return True
 
         try:
-            last_check_str = self._last_check_file.read_text().strip()
+            last_check_str = self._last_check_file.read_text(encoding="utf-8").strip()
             last_check = datetime.fromisoformat(last_check_str)
 
             interval = timedelta(hours=self.policy.check_interval_hours)
@@ -253,7 +253,7 @@ class AutoUpdater:
         try:
             import json
 
-            with open(self._history_file, "r") as f:
+            with open(self._history_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, IOError):
             return []
@@ -263,7 +263,7 @@ class AutoUpdater:
         try:
             import json
 
-            with open(self._history_file, "w") as f:
+            with open(self._history_file, "w", encoding="utf-8") as f:
                 json.dump(history, f, indent=2)
         except IOError:
             pass

@@ -6,6 +6,7 @@ Provides:
 1. Persistence: save compressed context to .pilotcode/context/ as JSON
 2. Retrieval: query archived context by keyword, time range, or message type
 3. Session memory: structured summaries that survive compaction
+4. FTS5 indexing: automatic SQLite full-text indexing of archives (Hermes Tier 2)
 """
 
 from __future__ import annotations
@@ -18,6 +19,20 @@ from typing import Any
 from dataclasses import dataclass, field, asdict
 
 logger = logging.getLogger(__name__)
+
+# Lazy import to avoid circular dependency
+_history_search_engine = None
+
+
+def _get_history_search_engine(base_dir: Path):
+    """Lazy getter for HistorySearchEngine to avoid circular imports."""
+    global _history_search_engine
+    if _history_search_engine is None:
+        from .history_search import HistorySearchEngine
+
+        _history_search_engine = HistorySearchEngine(base_dir)
+    return _history_search_engine
+
 
 # =============================================================================
 # Data structures
@@ -132,7 +147,7 @@ class ContextArchive:
         path = self.base_dir / "session_memory.json"
         if path.exists():
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 self.session_memory = SessionMemory.from_dict(data)
             except Exception as exc:
                 logger.warning("Failed to load session memory: %s", exc)
@@ -142,7 +157,10 @@ class ContextArchive:
         self.session_memory.updated_at = datetime.now(tz=timezone.utc).isoformat()
         path = self.base_dir / "session_memory.json"
         try:
-            path.write_text(json.dumps(self.session_memory.to_dict(), indent=2, ensure_ascii=False))
+            path.write_text(
+                json.dumps(self.session_memory.to_dict(), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
         except Exception as exc:
             logger.warning("Failed to save session memory: %s", exc)
 
@@ -225,12 +243,21 @@ class ContextArchive:
         # Write archive file
         archive_path = self.base_dir / f"compact_{entry_id}.json"
         try:
-            archive_path.write_text(json.dumps(archive, indent=2, ensure_ascii=False))
+            archive_path.write_text(
+                json.dumps(archive, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
         except Exception as exc:
             logger.warning("Failed to write context archive %s: %s", entry_id, exc)
 
         # Update session memory
         self.update_session_memory(summary)
+
+        # Index into FTS5 for fast retrieval (Hermes Tier 2)
+        try:
+            engine = _get_history_search_engine(self.base_dir)
+            engine.index_archive(archive)
+        except Exception as exc:
+            logger.debug("FTS5 indexing failed for archive %s: %s", entry_id, exc)
 
         return entry_id
 
@@ -243,7 +270,7 @@ class ContextArchive:
         archives = []
         for path in self.base_dir.glob("compact_*.json"):
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 archives.append(
                     (
                         {
@@ -253,12 +280,19 @@ class ContextArchive:
                             "token_saved": data.get("token_saved", 0),
                             "summary": data.get("summary", {}).get("primary_request", "")[:100],
                         },
-                        path.stat().st_mtime,
+                        path.stat().st_mtime_ns,
+                        path.name,
                     )
                 )
             except Exception:
                 continue
-        archives.sort(key=lambda x: (x[0].get("timestamp", ""), x[1]), reverse=True)
+        # Use st_mtime_ns for higher precision (especially on Windows where
+        # st_mtime float precision can be limited), and filename as a stable
+        # tie-breaker so order is deterministic across platforms.
+        archives.sort(
+            key=lambda x: (x[0].get("timestamp", ""), x[1], x[2]),
+            reverse=True,
+        )
         return [a[0] for a in archives]
 
     def get_archive(self, archive_id: str) -> dict[str, Any] | None:
@@ -267,12 +301,15 @@ class ContextArchive:
         if not path.exists():
             return None
         try:
-            return json.loads(path.read_text())
+            return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return None
 
     def query_context(self, keyword: str, max_results: int = 10) -> list[dict[str, Any]]:
         """Search archived context by keyword.
+
+        Uses SQLite + FTS5 if available (Hermes Tier 2), falling back to
+        O(N) JSON traversal when the index is empty or unavailable.
 
         Args:
             keyword: Search term.
@@ -281,12 +318,32 @@ class ContextArchive:
         Returns:
             List of matching context entries.
         """
+        # Try FTS5 first
+        try:
+            engine = _get_history_search_engine(self.base_dir)
+            hits = engine.search(keyword, top_k=max_results)
+            if hits:
+                return [
+                    {
+                        "archive_id": h.archive_id,
+                        "entry_id": h.entry_id,
+                        "content": h.content,
+                        "message_type": h.message_type,
+                        "timestamp": h.timestamp,
+                        "metadata": h.metadata,
+                    }
+                    for h in hits
+                ]
+        except Exception as exc:
+            logger.debug("FTS5 search failed, falling back to JSON traversal: %s", exc)
+
+        # Fallback: O(N) JSON traversal
         results = []
         kw_lower = keyword.lower()
 
         for path in sorted(self.base_dir.glob("compact_*.json"), reverse=True):
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 for entry in data.get("entries", []):
                     if kw_lower in entry.get("content", "").lower():
                         results.append(entry)
@@ -308,7 +365,7 @@ class ContextArchive:
         all_entries = []
         for path in sorted(self.base_dir.glob("compact_*.json"), reverse=True):
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 all_entries.extend(data.get("entries", []))
                 if len(all_entries) >= count:
                     break
@@ -344,7 +401,7 @@ class ContextArchive:
         total = 0
         for path in self.base_dir.glob("compact_*.json"):
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 total += data.get("token_saved", 0)
             except Exception:
                 continue

@@ -54,6 +54,9 @@ async def execute_powershell(
         # Hide window on Windows
         import subprocess
 
+        # Defensive: Windows subprocess rejects None/empty cwd
+        effective_cwd = cwd or os.getcwd()
+
         startupinfo = None
         if is_windows():
             startupinfo = subprocess.STARTUPINFO()
@@ -66,7 +69,7 @@ async def execute_powershell(
             wrapped_command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=cwd,
+            cwd=effective_cwd,
             startupinfo=startupinfo,
         )
 

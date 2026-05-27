@@ -280,7 +280,7 @@ def cached_file_operation(
         class MyTool:
             @cached_file_operation()
             def read_with_cache(self, path: str) -> str:
-                return Path(path).read_text()
+                return Path(path).read_text(encoding="utf-8")
     """
 
     def decorator(func: Callable[P, T]) -> Callable[P, T]:

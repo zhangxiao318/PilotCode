@@ -14,6 +14,8 @@ class CommandContext(BaseModel):
     verbose: bool = False
     query_engine: Any | None = None
     session_id: str | None = None
+    # Optional progress callback for long-running commands (e.g. /index)
+    progress_callback: Callable[[str], None] | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

@@ -1,41 +1,49 @@
-"""TUI Controller - bridges TUI with PilotCode core."""
+"""TUI Controller - bridges TUI with PilotCode core.
+
+Refactored to use SessionService for core business logic while keeping
+TUI-specific concerns (UIMessage generation, P-EVR orchestration,
+permission callbacks) in this controller layer.
+
+The SessionService handles:
+- QueryEngine initialization
+- Session lifecycle (create/restore/auto-save)
+- Main query loop (streaming, tool execution, compilation verification)
+- Context compression
+- Command dispatch
+- FileEdit compensation tracking
+
+The TUIController adds:
+- UIMessage type conversion (BlockEvent -> UIMessage)
+- P-EVR orchestration mode
+- Permission/ask-user callbacks (async Textual widgets)
+- Session fork management
+- Token info for StatusBar
+"""
 
 import asyncio
 import os
 from collections import deque
 from datetime import datetime, timezone
 from typing import AsyncIterator, Optional, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 
-from pilotcode.query_engine import QueryEngine, QueryEngineConfig
 from pilotcode.types.message import (
     UserMessage,
     AssistantMessage,
-    ToolUseMessage,
     SystemMessage,
 )
-from pilotcode.services.fileedit_compensation import FileEditCompensationTracker
-from pilotcode.tools.registry import get_core_tools
-from pilotcode.tools.base import ToolUseContext
-
-try:
-    from pilotcode.tools.bash_tool import is_read_only_command
-except ImportError:
-    # Fallback if bash_tool is not available
-    def is_read_only_command(command: str) -> bool:
-        return False
-
-
-from pilotcode.permissions import get_tool_executor
-from pilotcode.state.app_state import AppState
-from pilotcode.orchestration.adapter import MissionAdapter
-from pilotcode.orchestration.report import (
-    format_failure,
-    format_task_event,
-    _STATE_EMOJI,
+from pilotcode.ui.protocol import (
+    BlockEvent,
+    BlockKind,
+    BlockPhase,
+    StatusUpdate,
+    PermissionResult as ProtocolPermissionResult,
 )
+from pilotcode.ui.config import SessionConfig
+from pilotcode.ui.session_service import SessionService
+from pilotcode.state.app_state import AppState
 
 
 class ToolDeniedError(Exception):
@@ -51,6 +59,8 @@ class UIMessageType(Enum):
 
     USER = auto()
     ASSISTANT = auto()
+    THINKING = auto()
+    REASONING = auto()
     TOOL_USE = auto()
     TOOL_RESULT = auto()
     SYSTEM = auto()
@@ -72,8 +82,160 @@ class UIMessage:
             self.metadata = {}
 
 
+class TUIProtocol:
+    """UIProtocol adapter that collects BlockEvents and converts them to UIMessages.
+
+    Instead of directly rendering, this adapter collects events during
+    SessionService.process_query() and makes them available as UIMessages
+    for the TUI's AsyncIterator-based interface.
+    """
+
+    def __init__(self):
+        self._collected_messages: list[UIMessage] = []
+        self._permission_future: asyncio.Future | None = None
+        self._ask_user_future: asyncio.Future | None = None
+
+    def reset(self):
+        """Clear collected messages for a new query."""
+        self._collected_messages.clear()
+
+    @property
+    def collected_messages(self) -> list[UIMessage]:
+        """Get messages collected during the last query."""
+        return self._collected_messages
+
+    async def on_block_event(self, event: BlockEvent) -> None:
+        """Convert BlockEvent to UIMessage and collect it."""
+        if event.kind == BlockKind.ASSISTANT:
+            self._collected_messages.append(
+                UIMessage(
+                    type=UIMessageType.ASSISTANT,
+                    content=event.content,
+                    is_streaming=(event.phase == BlockPhase.DELTA),
+                    is_complete=(event.phase == BlockPhase.CLOSE),
+                )
+            )
+
+        elif event.kind == BlockKind.THINKING:
+            self._collected_messages.append(
+                UIMessage(
+                    type=UIMessageType.THINKING,
+                    content=event.content,
+                    is_complete=True,
+                )
+            )
+
+        elif event.kind == BlockKind.TOOL_CALL:
+            if event.phase == BlockPhase.OPEN:
+                tool_name = event.metadata.get("tool_name", event.content)
+                tool_input = event.metadata.get("tool_input", {})
+                tool_use_id = event.metadata.get("tool_use_id", "")
+                iteration = event.metadata.get("iteration", 1)
+                max_iterations = event.metadata.get("max_iterations", 50)
+                self._collected_messages.append(
+                    UIMessage(
+                        type=UIMessageType.TOOL_USE,
+                        content=tool_name,
+                        metadata={
+                            "tool_name": tool_name,
+                            "tool_input": tool_input,
+                            "tool_use_id": tool_use_id,
+                            "is_safe": False,  # Will be set by controller
+                            "turn": iteration,
+                            "max_turns": max_iterations,
+                        },
+                        is_complete=False,
+                    )
+                )
+
+        elif event.kind == BlockKind.TOOL_RESULT:
+            if event.phase == BlockPhase.CLOSE:
+                tool_name = event.metadata.get("tool_name", "")
+                error = event.metadata.get("error", False)
+                self._collected_messages.append(
+                    UIMessage(
+                        type=UIMessageType.TOOL_RESULT,
+                        content=event.content,
+                        metadata={"tool_name": tool_name, "error": error},
+                        is_complete=True,
+                    )
+                )
+
+        elif event.kind == BlockKind.SYSTEM:
+            if event.phase == BlockPhase.CLOSE and event.content:
+                self._collected_messages.append(
+                    UIMessage(
+                        type=UIMessageType.SYSTEM,
+                        content=event.content,
+                        is_complete=True,
+                    )
+                )
+
+        elif event.kind == BlockKind.PLAN_PROGRESS:
+            if event.content:
+                self._collected_messages.append(
+                    UIMessage(
+                        type=UIMessageType.SYSTEM,
+                        content=event.content,
+                        is_complete=True,
+                    )
+                )
+
+    async def on_status_update(self, update: StatusUpdate) -> None:
+        """Status updates are handled by the controller directly."""
+        pass
+
+    async def request_permission(
+        self, tool_name: str, params: dict, risk_level: str
+    ) -> ProtocolPermissionResult:
+        """Request permission via the callback set by TUIController."""
+        if self._permission_callback:
+            result = await self._permission_callback(tool_name, params)
+            # Convert TUI PermissionResult to Protocol PermissionResult
+            if isinstance(result, ProtocolPermissionResult):
+                return result
+            # Handle TUI's own PermissionResult type
+            if hasattr(result, "allowed"):
+                return ProtocolPermissionResult(
+                    allowed=result.allowed,
+                    for_session=getattr(result, "for_session", False),
+                )
+            # Handle bool return
+            if isinstance(result, bool):
+                return ProtocolPermissionResult(allowed=result)
+        return ProtocolPermissionResult(allowed=False)
+
+    async def request_user_input(self, question: str, options: list[str] | None = None) -> str:
+        """Request user input via the callback set by TUIController."""
+        if self._ask_user_callback:
+            return await self._ask_user_callback(question, options)
+        return ""
+
+    async def on_error(self, error: str) -> None:
+        """Collect error as UIMessage."""
+        self._collected_messages.append(
+            UIMessage(
+                type=UIMessageType.ERROR,
+                content=error,
+                is_complete=True,
+            )
+        )
+
+    # Callback setters (called by TUIController)
+    _permission_callback: Callable | None = None
+    _ask_user_callback: Callable | None = None
+
+
 class TUIController:
-    """Controller that bridges TUI with PilotCode core functionality."""
+    """Controller that bridges TUI with PilotCode core functionality.
+
+    Uses SessionService for core business logic. Adds TUI-specific:
+    - UIMessage generation for Textual widgets
+    - P-EVR orchestration mode
+    - Permission/ask-user async callbacks
+    - Session fork management
+    - Token info for StatusBar
+    """
 
     def __init__(
         self,
@@ -89,318 +251,135 @@ class TUIController:
         self.max_iterations = max_iterations
         self.session_options = session_options or {}
 
-        self.query_engine: Optional[QueryEngine] = None
-        self.tool_executor = get_tool_executor()
-        self._permission_callback: Optional[Callable[[str, dict], asyncio.Future]] = None
-        self._ask_user_callback: Optional[
-            Callable[[str, list[str] | None], asyncio.Future[str]]
-        ] = None
+        # Create the TUI protocol adapter
+        self._tui_protocol = TUIProtocol()
 
-        # Session-level permission cache: {tool_name: allowed}
-        self._session_permissions: dict[str, bool] = {}
-
-        # Flag to abort the current turn when user denies a tool
-        self._abort_current_turn: bool = False
-
-        # Pending notifications from QueryEngine (e.g., auto-compact)
-        self._pending_notifications: list[tuple[str, dict]] = []
-
-        # P0: Shared FileEdit compensation tracker
-        self._fileedit_tracker = FileEditCompensationTracker(
-            self.get_app_state() if self.get_app_state else None
-        )
-
-        # Session persistence
-        self._session_id: str = ""
-        self._session_name: str = ""
-        self._auto_save_enabled: bool = True
-
-        self._init_engine()
-
-    # ------------------------------------------------------------------
-    # Four-layer rendering helpers
-    # ------------------------------------------------------------------
-
-    def _render_status(self, event_type: str, **kwargs) -> None:
-        """Status Layer: persistent state indicators (placeholder)."""
-        pass
-
-    def _render_conversational_user(self, content: str) -> UIMessage:
-        """Conversational Layer: user input."""
-        return UIMessage(
-            type=UIMessageType.USER,
-            content=content,
-            is_complete=True,
-        )
-
-    def _render_conversational_assistant(
-        self, content: str, is_streaming: bool, is_complete: bool
-    ) -> UIMessage:
-        """Conversational Layer: assistant response."""
-        return UIMessage(
-            type=UIMessageType.ASSISTANT,
-            content=content,
-            is_streaming=is_streaming,
-            is_complete=is_complete,
-        )
-
-    def _render_conversational_tool_use(
-        self,
-        tool_name: str,
-        tool_input: dict,
-        tool_use_id: str,
-        iteration: int,
-        tool_idx: int,
-        total_tools: int,
-    ) -> UIMessage:
-        """Conversational Layer: tool call notification."""
-        is_safe = self._is_safe_tool(tool_name, tool_input if isinstance(tool_input, dict) else {})
-        return UIMessage(
-            type=UIMessageType.TOOL_USE,
-            content=f"{tool_name}",
-            metadata={
-                "tool_name": tool_name,
-                "tool_input": tool_input,
-                "tool_use_id": tool_use_id,
-                "is_safe": is_safe,
-                "turn": iteration,
-                "max_turns": self.max_iterations,
-                "tool_index": tool_idx,
-                "total_tools": total_tools,
-            },
-            is_complete=False,
-        )
-
-    @staticmethod
-    def _format_task_details(details: list[dict], indent: str = "    ") -> str:
-        """Format task execution details (thinking + tool timeline) for display."""
-        if not details:
-            return ""
-        lines: list[str] = []
-        for item in details:
-            typ = item.get("type", "")
-            if typ == "thinking":
-                content = item.get("content", "").strip()
-                if content:
-                    # Truncate very long thinking blocks
-                    if len(content) > 300:
-                        content = content[:300] + " ..."
-                    lines.append(f"{indent}💭 {content}")
-            elif typ == "tool_started":
-                name = item.get("tool_name", "tool")
-                params = item.get("params", {})
-                param_str = ", ".join(f"{k}={v!r}" for k, v in list(params.items())[:3])
-                if len(params) > 3:
-                    param_str += " ..."
-                lines.append(f"{indent}🔧 {name}({param_str})")
-            elif typ == "tool_completed":
-                name = item.get("tool_name", "tool")
-                success = item.get("success", False)
-                summary = item.get("summary", "")
-                emoji = "✅" if success else "❌"
-                # Truncate long summaries
-                if len(summary) > 200:
-                    summary = summary[:200] + " ..."
-                lines.append(f"{indent}  {emoji} {name} → {summary}")
-        return "\n".join(lines)
-
-    def _render_system(self, event_type: str, content: str = "", **kwargs) -> UIMessage:
-        """System Layer: notices, warnings, errors."""
-        return UIMessage(
-            type=UIMessageType.SYSTEM,
-            content=content,
-            is_complete=True,
-        )
-
-    # ------------------------------------------------------------------
-
-    def _update_session_cwd(self, new_cwd: str) -> bool:
-        """Update the session's working directory across all layers.
-
-        This synchronizes the new cwd into:
-        - session_options (for future MissionAdapter runs)
-        - query_engine.config.cwd (for DIRECT mode tool calls)
-        - app_state (for tool resolve_cwd)
-
-        Returns True if the directory was successfully changed.
-        The caller should verify the directory exists before calling this.
-        """
-        # Expand ~ and resolve to absolute path
-        new_cwd = os.path.expanduser(new_cwd)
-        new_cwd = str(Path(new_cwd).resolve())
-        old_cwd = self.session_options.get("cwd", str(Path.cwd()))
-        if new_cwd == old_cwd:
-            return True
-        # Also change the actual OS working directory so external tools
-        # (e.g. git, file dialogs) operate in the correct path.
-        try:
-            os.chdir(new_cwd)
-        except OSError:
-            return False
-        # Only update state if chdir succeeded
-        self.session_options["cwd"] = new_cwd
-        if self.query_engine and self.query_engine.config:
-            self.query_engine.config = replace(self.query_engine.config, cwd=new_cwd)
-        if self.set_app_state:
-            self.set_app_state(lambda s: replace(s, cwd=new_cwd))
-        return True
-
-    def _init_engine(self) -> None:
-        """Initialize QueryEngine and session."""
-
-        def _on_notify(event_type: str, payload: dict) -> None:
-            self._pending_notifications.append((event_type, payload))
-
-        tools = get_core_tools(self.session_options.get("cwd", str(Path.cwd())))
-        from pilotcode.utils.config import get_global_config
-
-        global_cfg = get_global_config()
-        config = QueryEngineConfig(
+        # Create session config from constructor params
+        session_config = SessionConfig(
             cwd=self.session_options.get("cwd", str(Path.cwd())),
-            tools=tools,
-            get_app_state=self.get_app_state,
-            set_app_state=self.set_app_state,
+            auto_allow=auto_allow,
+            max_iterations=max_iterations,
+            auto_save=True,
             auto_compact=True,
-            on_notify=_on_notify,
-            auto_review=global_cfg.auto_review,
-            max_review_iterations=global_cfg.max_review_iterations,
-        )
-        self.query_engine = QueryEngine(config=config)
-
-        # Setup auto-allow if requested
-        if self.auto_allow:
-            self._setup_auto_allow(tools)
-
-        # Initialize session (create new or restore existing)
-        self._init_session()
-
-    def _init_session(self) -> None:
-        """Create a new session or restore an existing one."""
-        from pilotcode.services.session_persistence import (
-            get_session_persistence,
-            load_session,
+            restore_on_start=self.session_options.get("restore", False),
+            session_id=self.session_options.get("session_id", ""),
         )
 
-        restore = self.session_options.get("restore", False)
-        sid = self.session_options.get("session_id")
-        cwd = self.session_options.get("cwd", str(Path.cwd()))
+        # Create SessionService (handles all core business logic)
+        self._service = SessionService(
+            ui=self._tui_protocol,
+            config=session_config,
+            get_app_state=get_app_state,
+            set_app_state=set_app_state,
+        )
 
-        persistence = get_session_persistence()
+        # Expose query_engine for backward compatibility
+        # (TUI session screen accesses it directly)
+        self.query_engine = self._service.query_engine
+        self._session_id = self._service._session_id
+        self._session_name = self._service._session_name
 
-        def _apply_restored_session(session_id: str, messages: list, metadata: dict) -> None:
-            """Apply restored session data and sync cwd."""
-            self.query_engine.messages = messages
-            self._session_id = session_id
-            self._session_name = metadata.get("name", session_id)
-            # Sync the session's original project directory back into the
-            # active session so file tools target the correct workspace.
-            restored_cwd = metadata.get("project_path") or cwd
-            if restored_cwd:
-                self._update_session_cwd(restored_cwd)
-            self._notify_session_change()
+        # P-EVR mode state (TUI-specific)
+        self._current_mission: dict | None = None
+        self._last_pevr_empty: bool = False
 
-        if sid:
-            # Restore specific session
-            result = load_session(sid)
-            if result:
-                messages, metadata = result
-                _apply_restored_session(sid, messages, metadata)
-                return
-            print(f"[Session] Warning: session '{sid}' not found or corrupt, starting new session.")
-        elif restore:
-            # First try: most recent session for this project
-            last = persistence.get_last_session(project_path=cwd)
-            if not last:
-                # Fallback: global most recent session regardless of project
-                last = persistence.get_last_session(project_path=None)
-            if last:
-                result = load_session(last.session_id)
-                if result:
-                    messages, metadata = result
-                    _apply_restored_session(last.session_id, messages, metadata)
-                    return
-            print(f"[Session] Warning: no saved session found for '{cwd}', starting new session.")
+    # ------------------------------------------------------------------
+    # Backward-compatible properties
+    # ------------------------------------------------------------------
 
-        # Create new session
-        now = datetime.now()
-        self._session_id = f"sess_{now.strftime('%Y%m%d_%H%M%S')}"
-        self._session_name = f"Session {now.strftime('%Y-%m-%d %H:%M')}"
-        self._notify_session_change()
+    @property
+    def tool_executor(self):
+        """Access tool executor from SessionService."""
+        return self._service.tool_executor
 
-    def _notify_session_change(self) -> None:
-        """Update app_state with session info."""
-        if self.set_app_state:
-            from pilotcode.state.app_state import AppState
+    @property
+    def _fileedit_tracker(self):
+        """Access FileEdit tracker from SessionService."""
+        return self._service._fileedit_tracker
 
-            def _update(state: AppState) -> AppState:
-                from dataclasses import replace
+    @property
+    def _session_permissions(self):
+        """Access session permissions from SessionService."""
+        return self._service._session_permissions
 
-                return replace(
-                    state,
-                    session_id=self._session_id,
-                    session_name=self._session_name,
-                )
-
-            self.set_app_state(_update)
-
-    def _auto_save(self) -> None:
-        """Auto-save current session to disk."""
-        if not self._auto_save_enabled or not self.query_engine or not self._session_id:
-            return
-        try:
-            from pilotcode.services.session_persistence import get_session_persistence
-
-            persistence = get_session_persistence()
-            persistence.save_session(
-                session_id=self._session_id,
-                messages=self.query_engine.messages,
-                name=self._session_name,
-                project_path=self.session_options.get("cwd", str(Path.cwd())),
-            )
-        except Exception:
-            pass  # Fail silently to not disrupt the user experience
-
-    def _setup_auto_allow(self, tools) -> None:
-        """Setup auto-allow for all tools."""
-        from pilotcode.permissions import get_permission_manager, ToolPermission, PermissionLevel
-
-        pm = get_permission_manager()
-        for tool in tools:
-            pm._permissions[tool.name] = ToolPermission(
-                tool_name=tool.name, level=PermissionLevel.ALWAYS_ALLOW
-            )
+    # ------------------------------------------------------------------
+    # Callback registration (TUI-specific)
+    # ------------------------------------------------------------------
 
     def set_permission_callback(
         self, callback: Callable[[str, dict], asyncio.Future[bool]]
     ) -> None:
-        """Set callback for permission requests.
-
-        The callback receives (tool_name, params) and should return a Future[bool].
-        """
-        self._permission_callback = callback
+        """Set callback for permission requests."""
+        self._tui_protocol._permission_callback = callback
 
     def set_ask_user_callback(
         self, callback: Callable[[str, list[str] | None], asyncio.Future[str]]
     ) -> None:
-        """Set callback for ask user input requests.
+        """Set callback for ask user input requests."""
+        self._tui_protocol._ask_user_callback = callback
 
-        The callback receives (question, options) and should return a Future[str]
-        with the user's response. This replaces the blocking input() in TUI mode.
+    # ------------------------------------------------------------------
+    # Main query interface (kept as AsyncIterator[UIMessage] for TUI)
+    # ------------------------------------------------------------------
+
+    async def submit_message(self, text: str, force_plan: bool = False) -> AsyncIterator[UIMessage]:
+        """Submit a message and yield UI messages.
+
+        For P-EVR mode, delegates to _run_pevr_mode (TUI-specific).
+        For normal mode, delegates to SessionService.process_query()
+        and collects the resulting UIMessages.
         """
-        self._ask_user_callback = callback
+        if not self.query_engine:
+            yield UIMessage(type=UIMessageType.ERROR, content="Query engine not initialized")
+            return
+
+        # P-EVR mode: only when explicitly requested via /plan
+        if force_plan:
+            async for msg in self._run_pevr_mode(text):
+                yield msg
+            if getattr(self, "_last_pevr_empty", False):
+                delattr(self, "_last_pevr_empty")
+            else:
+                return
+
+        # Detect CWD from user message
+        from pilotcode.components.repl import _extract_target_path
+
+        detected_cwd = _extract_target_path(text)
+        current_cwd = self.session_options.get("cwd", str(Path.cwd()))
+        if detected_cwd and detected_cwd != current_cwd:
+            if os.path.isdir(detected_cwd):
+                if self._service._update_session_cwd(detected_cwd):
+                    yield UIMessage(
+                        type=UIMessageType.SYSTEM,
+                        content=f"📁 Working directory updated to: {detected_cwd}",
+                    )
+
+        # Run query via SessionService
+        self._tui_protocol.reset()
+        await self._service.process_query(text)
+
+        # Yield collected UIMessages
+        for msg in self._tui_protocol.collected_messages:
+            yield msg
+
+        # Sync query_engine reference
+        self.query_engine = self._service.query_engine
+        self._session_id = self._service._session_id
+        self._session_name = self._service._session_name
+
+    # ------------------------------------------------------------------
+    # P-EVR orchestration (TUI-specific, kept in controller)
+    # ------------------------------------------------------------------
 
     @property
     def current_mission(self) -> dict | None:
         """Get current mission tracking info, or None if no mission running."""
-        return getattr(self, "_current_mission", None)
+        return self._current_mission
 
     def cancel_mission(self) -> dict | None:
-        """Cancel the currently running mission and return partial status.
-
-        Returns:
-            Dict with partial results if a mission was running, or None.
-        """
-        mission = getattr(self, "_current_mission", None)
+        """Cancel the currently running mission."""
+        mission = self._current_mission
         if mission is None:
             return None
 
@@ -417,11 +396,11 @@ class TUIController:
     async def _run_pevr_mode(self, text: str) -> AsyncIterator[UIMessage]:
         """Run a complex task in P-EVR orchestration mode.
 
-        1. Plans the mission via LLM
-        2. Executes tasks with progress reporting
-        3. Returns completion/failure summary
+        This is TUI-specific and kept in the controller because it uses
+        the UIMessage AsyncIterator pattern directly.
         """
-        import asyncio
+        from pilotcode.orchestration.adapter import MissionAdapter
+        from pilotcode.orchestration.report import format_failure, format_task_event, _STATE_EMOJI
 
         cancel_event = asyncio.Event()
         self._current_mission = {
@@ -431,8 +410,7 @@ class TUIController:
             "cancelled": False,
             "started_at": datetime.now(timezone.utc).isoformat(),
         }
-        # Pass actual context window so strategy selector doesn't fall back
-        # to the default 16K budget (which triggers BALANCED → 300-line limit).
+
         ctx_window = self.query_engine.config.context_window if self.query_engine else 128_000
         cwd = self.session_options.get("cwd", str(Path.cwd()))
         adapter = MissionAdapter(
@@ -442,21 +420,16 @@ class TUIController:
         )
 
         mission_displayed = False
-        last_progress = ""
-        # Progressive disclosure: real-time worker output buffer
         worker_buffer = ""
         worker_streaming = False
         current_task_id = ""
         tool_use_counter = 0
 
         def progress_cb(event_type: str, data: dict) -> None:
-            nonlocal mission_displayed, last_progress, tool_use_counter
-            # Buffer events; actual yielding happens in the generator below
             self._pevr_events.append((event_type, data))
 
         self._pevr_events: deque[tuple[str, dict]] = deque()
 
-        # Start mission execution in background
         mission_task = asyncio.create_task(
             adapter.run(text, progress_callback=progress_cb, cwd=cwd)
         )
@@ -467,10 +440,8 @@ class TUIController:
             content="Task classified as complex — entering PLAN mode with structured execution.",
         )
 
-        # Poll for progress events while mission runs
         result: dict | None = None
         while not mission_task.done():
-            # Check for cancellation signal
             if self._current_mission.get("cancelled"):
                 mission_task.cancel()
                 try:
@@ -481,7 +452,6 @@ class TUIController:
                     type=UIMessageType.SYSTEM,
                     content="⏸  Mission interrupted by user.",
                 )
-                # Report partial progress
                 partial_tasks = self._current_mission.get("partial_tasks", [])
                 if partial_tasks:
                     done = sum(1 for t in partial_tasks if t.get("done"))
@@ -493,7 +463,6 @@ class TUIController:
                     )
                 break
 
-            # Drain event buffer
             while self._pevr_events:
                 event_type, data = self._pevr_events.popleft()
 
@@ -502,7 +471,6 @@ class TUIController:
                     from pilotcode.orchestration.report import format_plan
                     from pilotcode.orchestration.task_spec import Mission, Phase, TaskSpec
 
-                    # Reconstruct Mission from event data
                     display_mission = Mission(
                         mission_id=data.get("mission_id", ""),
                         title=data.get("title", "Untitled Mission"),
@@ -518,38 +486,26 @@ class TUIController:
                         display_mission.phases.append(phase)
                     plan_text = format_plan(display_mission)
                     yield UIMessage(type=UIMessageType.SYSTEM, content=plan_text)
-                elif event_type in (
-                    "task:started",
-                    "task:rejected",
-                    "task:needs_rework",
-                ):
-                    # Discard any accumulated worker text; we no longer stream
-                    # agent thinking in PLAN mode.
+                elif event_type in ("task:started", "task:rejected", "task:needs_rework"):
                     worker_buffer = ""
                     worker_streaming = False
                     msg = format_task_event(event_type, data)
                     yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
                     current_task_id = data.get("task_id", "")
                 elif event_type == "task:verified":
-                    # Discard any accumulated worker text.
                     worker_buffer = ""
                     worker_streaming = False
                     msg = format_task_event(event_type, data)
                     yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
                 elif event_type == "worker:text_delta":
-                    # PLAN mode: do NOT stream agent thinking in real-time.
-                    # Multiple concurrent workers would interleave confusingly.
-                    # The final report already contains per-task output summaries.
                     chunk = data.get("content", "")
                     if chunk:
                         worker_buffer += chunk
                         worker_streaming = True
                 elif event_type == "worker:turn_complete":
-                    # Discard the turn buffer; final report has the summary.
                     worker_buffer = ""
                     worker_streaming = False
                 elif event_type == "worker:tool_start":
-                    # Pause streaming to show tool call (same style as normal mode)
                     if worker_streaming and worker_buffer:
                         yield UIMessage(
                             type=UIMessageType.ASSISTANT,
@@ -576,10 +532,7 @@ class TUIController:
                     tool_name = data.get("tool_name", "tool")
                     success = data.get("success", False)
                     summary = data.get("summary", "")
-                    # Single-line: collapse newlines so display.py's first-line
-                    # truncation works exactly like normal chat mode.
                     summary_oneline = summary.replace("\n", " ").replace("\r", "")
-                    # Cap length to avoid flooding the UI with long tool output.
                     if len(summary_oneline) > 200:
                         summary_oneline = summary_oneline[:197] + "..."
                     yield UIMessage(
@@ -589,7 +542,7 @@ class TUIController:
                         is_complete=True,
                     )
                 elif event_type == "mission:completed":
-                    pass  # Will handle after task finishes
+                    pass
                 elif event_type == "mission:blocked":
                     msg = format_task_event(event_type, data)
                     yield UIMessage(type=UIMessageType.SYSTEM, content=msg)
@@ -611,9 +564,6 @@ class TUIController:
         except Exception as exc:
             result = {"success": False, "error": str(exc)}
 
-        # Build concise completion report.
-        # Detailed task outputs were already streamed live during execution,
-        # so the final report only shows mission status + task list.
         try:
             report_parts: list[str] = []
             snapshot = result.get("snapshot", {}) if result else {}
@@ -621,8 +571,6 @@ class TUIController:
             completed = snapshot.get("completed_tasks", 0)
             failed = snapshot.get("failed_tasks", 0)
 
-            # Detect empty mission (planner returned 0 tasks) so submit_message
-            # can fall back to normal direct-response mode.
             self._last_pevr_empty = total == 0
 
             if result and result.get("success"):
@@ -639,7 +587,6 @@ class TUIController:
                 error = result.get("error", "Unknown error") if result else "Mission failed"
                 report_parts.append(format_failure(result or {}, error))
 
-            # Show task outputs (agent analysis results)
             task_outputs = result.get("task_outputs", {})
             if task_outputs:
                 lines = ["📊 Analysis Results:"]
@@ -650,7 +597,6 @@ class TUIController:
                         if hasattr(output_text, "output"):
                             output_text = getattr(output_text, "output", "")
                         snippet = str(output_text)[:3000].strip()
-                        # Collapse excessive blank lines for cleaner display
                         snippet = __import__("re").sub(r"\n{3,}", "\n\n", snippet)
                         if snippet:
                             lines.append(f"\n**{title}**")
@@ -658,7 +604,6 @@ class TUIController:
                 if len(lines) > 1:
                     report_parts.append("\n".join(lines))
 
-            # Show mission plan with final task states
             mission_dict = result.get("mission", {}) if result else {}
             phases = mission_dict.get("phases", [])
             task_states = snapshot.get("task_states", {})
@@ -676,7 +621,6 @@ class TUIController:
 
             full_report = "\n\n".join(report_parts)
 
-            # Yield to UI
             if result and result.get("success"):
                 yield UIMessage(type=UIMessageType.ASSISTANT, content=full_report)
             else:
@@ -687,20 +631,11 @@ class TUIController:
             full_report = error_msg
             self._last_pevr_empty = False
         finally:
-            # Clean up mission state so cancel can't fire twice
             if hasattr(self, "_current_mission"):
                 delattr(self, "_current_mission")
-            # Persist the conversation into the main query_engine so follow-up
-            # questions have context.  This runs even if report generation fails.
             if self.query_engine:
-                from pilotcode.types.message import UserMessage, AssistantMessage, SystemMessage
-
                 self.query_engine.messages.append(UserMessage(content=text))
                 self.query_engine.messages.append(AssistantMessage(content=full_report))
-
-                # Also preserve per-task outputs so follow-up questions retain
-                # the analysis results from each completed task.
-                # Cap at 5 tasks × 800 chars to avoid blowing the context window.
                 task_outputs = result.get("task_outputs", {}) if result else {}
                 if task_outputs:
                     context_parts = ["[Plan Mode Task Outputs]"]
@@ -714,8 +649,6 @@ class TUIController:
                         self.query_engine.messages.append(
                             SystemMessage(content="\n".join(context_parts))
                         )
-
-                # Auto-compact if we are close to the context limit.
                 try:
                     if self.query_engine.count_tokens() > int(
                         self.query_engine._usable_context * 0.85
@@ -723,440 +656,20 @@ class TUIController:
                         await self.query_engine.auto_compact_if_needed()
                 except Exception:
                     pass
-            # Sync any cwd detected by MissionAdapter back into the session
-            # so follow-up messages target the correct project.
             if adapter._cwd != cwd:
-                if self._update_session_cwd(adapter._cwd):
+                if self._service._update_session_cwd(adapter._cwd):
                     yield UIMessage(
                         type=UIMessageType.SYSTEM,
                         content=f"📁 Working directory updated to: {adapter._cwd}",
                     )
 
-    async def submit_message(self, text: str, force_plan: bool = False) -> AsyncIterator[UIMessage]:
-        """Submit a message and yield UI messages.
+    # ------------------------------------------------------------------
+    # Session management (delegated to SessionService)
+    # ------------------------------------------------------------------
 
-        This handles the full flow:
-        1. Send message to QueryEngine
-        2. Stream back assistant responses
-        3. Intercept tool calls and request permission
-        4. Execute tools and return results
-        5. Continue until complete
-
-        Args:
-            text: User input text.
-            force_plan: If True, bypass auto-detection and always run P-EVR mode.
-        """
-        if not self.query_engine:
-            yield UIMessage(type=UIMessageType.ERROR, content="Query engine not initialized")
-            return
-
-        # Trigger P-EVR mode ONLY when explicitly requested via /plan.
-        # We do NOT auto-detect task complexity on the first message (or any
-        # message) because keyword/LLM heuristics are fragile and cause frequent
-        # false-positives.  This aligns with Claude Code & OpenCode: the user
-        # decides when structured planning is needed.
-        if force_plan:
-            async for msg in self._run_pevr_mode(text):
-                yield msg
-            # If planner produced no tasks, fall back to normal direct-response mode
-            if getattr(self, "_last_pevr_empty", False):
-                delattr(self, "_last_pevr_empty")
-                # Continue to normal mode below instead of returning
-            else:
-                return
-
-        # DIRECT mode: detect if the user mentions a new workspace path
-        # and update session cwd so subsequent tool calls target it.
-        from pilotcode.components.repl import _extract_target_path
-
-        detected_cwd = _extract_target_path(text)
-        current_cwd = self.session_options.get("cwd", str(Path.cwd()))
-        if detected_cwd and detected_cwd != current_cwd:
-            if os.path.isdir(detected_cwd):
-                if self._update_session_cwd(detected_cwd):
-                    yield UIMessage(
-                        type=UIMessageType.SYSTEM,
-                        content=f"📁 Working directory updated to: {detected_cwd}",
-                    )
-            else:
-                # Directory does not exist — don't abort the flow.
-                # Instead, let the LLM know via context so it can respond
-                # naturally to the user (e.g., "That directory doesn't exist,
-                # the current directory is ...").
-                text = (
-                    f"[Context: The user mentioned directory '{detected_cwd}' "
-                    f"but it does not exist. Current directory: {current_cwd}]\n\n"
-                    f"{text}"
-                )
-
-        # New user input = fresh context: reset FileEdit failure tracking
-        self._fileedit_tracker.reset()
-
-        iteration = 0
-        current_prompt = text
-        accumulated_content = ""
-
-        while iteration < self.max_iterations:
-            iteration += 1
-            pending_tools = []
-
-            # Flush any pending notifications from QueryEngine (e.g., auto-compact)
-            while self._pending_notifications:
-                event_type, payload = self._pending_notifications.pop(0)
-                if event_type == "auto_compact":
-                    saved = payload.get("tokens_saved", 0)
-                    cleared = payload.get("tool_results_cleared", 0)
-                    if payload.get("fallback"):
-                        content = f"🔄 Auto-compacted context (fallback, ~{saved} tokens saved)"
-                    elif cleared > 0:
-                        content = f"🔄 Auto-compacted context ({cleared} old tool results cleared, ~{saved} tokens saved)"
-                    else:
-                        content = f"🔄 Auto-compacted context (~{saved} tokens saved)"
-                    yield UIMessage(type=UIMessageType.SYSTEM, content=content)
-                elif event_type == "system":
-                    yield UIMessage(type=UIMessageType.SYSTEM, content=payload.get("text", ""))
-
-            async for result in self.query_engine.submit_message(current_prompt):
-                msg = result.message
-
-                if isinstance(msg, UserMessage):
-                    # -- Conversational Layer: user input --
-                    yield self._render_conversational_user(
-                        msg.content if isinstance(msg.content, str) else str(msg.content)
-                    )
-
-                elif isinstance(msg, AssistantMessage):
-                    # Handle streaming vs final message differently
-                    if result.is_complete:
-                        accumulated_content = msg.content or accumulated_content
-                    else:
-                        if msg.content:
-                            accumulated_content += msg.content
-
-                    # -- Conversational Layer: assistant response --
-                    yield self._render_conversational_assistant(
-                        accumulated_content,
-                        is_streaming=not result.is_complete,
-                        is_complete=result.is_complete,
-                    )
-
-                elif isinstance(msg, ToolUseMessage):
-                    # Collect tool calls for batch processing
-                    pending_tools.append(msg)
-                    # -- Conversational Layer: tool use --
-                    yield self._render_conversational_tool_use(
-                        msg.name,
-                        msg.input if isinstance(msg.input, dict) else {},
-                        msg.tool_use_id,
-                        iteration,
-                        len(pending_tools),
-                        len(pending_tools),
-                    )
-
-            # Process all pending tools
-            if not pending_tools:
-                break
-
-            try:
-                for tool_msg in pending_tools:
-                    async for ui_msg in self._execute_tool(tool_msg):
-                        yield ui_msg
-            except ToolDeniedError as e:
-                # User denied a tool; stop executing remaining tools in this batch
-                if e.stop_task:
-                    self._abort_current_turn = True
-                    yield UIMessage(
-                        type=UIMessageType.SYSTEM,
-                        content="⛔ Tool execution denied by user. Task stopped.",
-                    )
-                    break
-                # Otherwise just skip remaining tools and let LLM respond to the error
-
-            if self._abort_current_turn:
-                break
-
-            # --- Compiler / syntax verification for changed code files ---
-            has_compile_command = any(
-                tool_msg.name in ("Bash", "bash", "PowerShell", "powershell")
-                and any(
-                    kw
-                    in (
-                        tool_msg.input.get("command", "") + " " + tool_msg.input.get("script", "")
-                    ).lower()
-                    for kw in (
-                        "gcc",
-                        "g++",
-                        "make",
-                        "cmake",
-                        "cl ",
-                        "msbuild",
-                        "rustc",
-                        "cargo",
-                        "go build",
-                        "javac",
-                        "npm run build",
-                        "tsc",
-                    )
-                )
-                for tool_msg in pending_tools
-            )
-
-            changed_files: list[str] = []
-            if not has_compile_command:
-                for tool_msg in pending_tools:
-                    if tool_msg.name in (
-                        "FileWrite",
-                        "write",
-                        "FileEdit",
-                        "edit",
-                        "ApplyPatch",
-                        "apply_patch",
-                    ):
-                        path = (
-                            tool_msg.input.get("file_path")
-                            or tool_msg.input.get("path")
-                            or tool_msg.input.get("base_path", "")
-                        )
-                        if path and not path.endswith((".h", ".hpp")) and path not in changed_files:
-                            changed_files.append(path)
-
-            if changed_files:
-                from pilotcode.orchestration.task_spec import TaskSpec
-                from pilotcode.orchestration.results import ExecutionResult
-                from pilotcode.orchestration.verifier.level2_tests import TestRunnerVerifier
-
-                temp_task = TaskSpec(
-                    id="tui_v2_verify",
-                    title="verification",
-                    objective="verify compilation",
-                )
-                temp_exec = ExecutionResult(
-                    task_id="tui_v2_verify",
-                    success=True,
-                    artifacts={
-                        "changed_files": changed_files,
-                        "cwd": self.session_options.get("cwd", str(Path.cwd())),
-                    },
-                )
-                verifier = TestRunnerVerifier()
-                try:
-                    has_file_write = any(
-                        tool_msg.name
-                        in ("FileWrite", "write", "FileEdit", "edit", "ApplyPatch", "apply_patch")
-                        for tool_msg in pending_tools
-                    )
-                    v_result = await verifier.verify(
-                        temp_task, temp_exec, skip_project_build=has_file_write
-                    )
-                    if not v_result.passed and v_result.feedback:
-                        current_prompt = (
-                            "[FRAMEWORK VERIFICATION - COMPILE CHECK]\n"
-                            f"{v_result.feedback}\n"
-                            "Fix these errors before proceeding."
-                        )
-                    else:
-                        current_prompt = ""
-                except Exception:
-                    current_prompt = ""
-            else:
-                current_prompt = ""
-
-            # Continue with prompt to get LLM response to tool results
-            accumulated_content = ""
-        else:
-            # -- System Layer: max iterations reached --
-            yield self._render_system(
-                "max_iterations_reached",
-                content=f"⏹️  Reached maximum tool iterations ({self.max_iterations}). Task paused. Send another message to continue.",
-            )
-
-    def _is_safe_tool(self, tool_name: str, params: dict) -> bool:
-        """Check if a tool operation is safe (read-only/non-destructive).
-
-        Returns True for:
-        - Bash commands that are read-only (ls, cat, date, pwd, etc.)
-        - File reading operations
-        - Information queries
-        """
-        from pilotcode.permissions.permission_manager import PermissionManager
-
-        if tool_name in PermissionManager.SAFE_TOOLS:
-            return True
-
-        if tool_name == "Bash":
-            command = params.get("command", "")
-            return is_read_only_command(command)
-
-        return False
-
-    def _normalize_tool_name(self, name: str) -> str:
-        """Normalize tool name to ensure consistent cache keys.
-
-        LLM may return tool names as 'bash', 'Bash', or aliases like 'shell'.
-        This normalizes them to the canonical tool name.
-        """
-        from pilotcode.tools.registry import get_all_tools
-
-        if not isinstance(name, str):
-            name = str(name) if name is not None else ""
-
-        # Direct match
-        for tool in get_all_tools():
-            if tool.name == name:
-                return tool.name
-            if name in tool.aliases:
-                return tool.name
-
-        # Case-insensitive match
-        name_lower = name.lower()
-        for tool in get_all_tools():
-            if tool.name.lower() == name_lower:
-                return tool.name
-            for alias in tool.aliases:
-                if alias.lower() == name_lower:
-                    return tool.name
-
-        # Return original if no match found
-        return name
-
-    async def _execute_tool(self, tool_msg: ToolUseMessage) -> AsyncIterator[UIMessage]:
-        """Execute a tool and yield UI messages."""
-        # Normalize tool name for consistent cache keys
-        tool_name = self._normalize_tool_name(tool_msg.name)
-        params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
-
-        # Check if tool is safe (read-only) - skip permission for safe operations
-        is_safe = self._is_safe_tool(tool_name, params)
-
-        # Check session-level permission cache
-        if tool_name in self._session_permissions:
-            allowed = self._session_permissions[tool_name]
-            if not allowed:
-                self.query_engine.add_tool_result(
-                    tool_msg.tool_use_id, "Tool execution denied by session policy", is_error=True
-                )
-                yield UIMessage(
-                    type=UIMessageType.TOOL_RESULT,
-                    content="Denied (session policy)",
-                    metadata={"tool_name": tool_name, "error": True},
-                    is_complete=True,
-                )
-                return
-            # Allowed by session policy, continue to execute
-
-        # Request permission if:
-        # 1. Callback is set AND
-        # 2. Not auto-allow AND
-        # 3. Tool is not safe (destructive operation) AND
-        # 4. No session-level permission set
-        elif self._permission_callback and not self.auto_allow and not is_safe:
-            # Import here to avoid circular dependency
-            from pilotcode.tui_v2.components.permission_inline import PermissionResult
-
-            result = await self._permission_callback(tool_name, params)
-
-            # Update session cache if user chose "Allow for this session"
-            if isinstance(result, PermissionResult) and result.for_session:
-                self._session_permissions[tool_name] = result.allowed
-
-            # If user denied, stop here and do not execute this tool or subsequent ones
-            if isinstance(result, PermissionResult) and not result.allowed:
-                self.query_engine.add_tool_result(
-                    tool_msg.tool_use_id,
-                    "Tool execution denied by user. Proceed with your alternative read-only approach immediately without explaining your plan first.",
-                    is_error=True,
-                )
-                yield UIMessage(
-                    type=UIMessageType.TOOL_RESULT,
-                    content="Denied (user)",
-                    metadata={"tool_name": tool_name, "error": True},
-                    is_complete=True,
-                )
-                # Option 3 (DENY) = skip this batch but let LLM try alternate approaches
-                # Option 4 (DENY_SESSION) = stop the entire task
-                stop_task = result.for_session
-                raise ToolDeniedError(f"User denied tool: {tool_name}", stop_task=stop_task)
-
-        # Execute the tool
-        try:
-            ctx = ToolUseContext(
-                get_app_state=self.get_app_state,
-                set_app_state=self.set_app_state,
-                cwd=self.session_options.get("cwd", str(Path.cwd())),
-                ask_user_callback=self._ask_user_callback,
-            )
-
-            # Permission already granted by TUI - set permission_manager callback
-            # to always allow to avoid double permission prompt from tool_executor
-            from pilotcode.permissions.permission_manager import PermissionLevel
-
-            original_callback = self.tool_executor.permission_manager._permission_callback
-
-            async def _always_allow(*args, **kwargs):
-                return PermissionLevel.ALLOW
-
-            self.tool_executor.permission_manager.set_permission_callback(_always_allow)
-
-            # TUI v2 uses textual which fully controls the terminal;
-            # direct print() would corrupt the UI. We skip real-time bash
-            # progress streaming here and rely on the final tool result.
-            try:
-                result = await self.tool_executor.execute_tool_by_name(tool_name, params, ctx)
-            finally:
-                # Restore original callback
-                self.tool_executor.permission_manager.set_permission_callback(original_callback)
-
-            # Extract output
-            if result.success and result.result:
-                if hasattr(result.result, "data"):
-                    tool_data = result.result.data
-                    if hasattr(tool_data, "stdout"):
-                        output = tool_data.stdout
-                    else:
-                        output = str(tool_data)
-                else:
-                    output = str(result.result)
-            else:
-                output = result.message or "Tool execution failed"
-
-            # Add result to query engine
-            self.query_engine.add_tool_result(
-                tool_msg.tool_use_id, output, is_error=not result.success
-            )
-
-            # --- P0: Real-time FileEdit failure detection & compensation ---
-            compensation_hint = self._fileedit_tracker.record_result(
-                tool_name, result.success, output
-            )
-            if compensation_hint:
-                self.query_engine.messages.append(SystemMessage(content=compensation_hint))
-                yield UIMessage(
-                    type=UIMessageType.SYSTEM,
-                    content="⚠️ FileEdit compensation activated",
-                    is_complete=True,
-                )
-
-            # Yield result message
-            yield UIMessage(
-                type=UIMessageType.TOOL_RESULT,
-                content=output[:500] if len(output) > 500 else output,
-                metadata={
-                    "tool_name": tool_name,
-                    "full_output": output,
-                    "error": not result.success,
-                },
-                is_complete=True,
-            )
-
-        except Exception as e:
-            error_msg = str(e)
-            self.query_engine.add_tool_result(tool_msg.tool_use_id, error_msg, is_error=True)
-            yield UIMessage(
-                type=UIMessageType.ERROR,
-                content=error_msg,
-                metadata={"tool_name": tool_name},
-                is_complete=True,
-            )
+    def _auto_save(self) -> None:
+        """Auto-save current session."""
+        self._service._auto_save()
 
     def save_session(self, path: str) -> bool:
         """Save current session."""
@@ -1179,30 +692,39 @@ class TUIController:
 
     def clear_history(self) -> None:
         """Clear conversation history."""
-        if self.query_engine:
-            self.query_engine.clear_history()
+        self._service.clear_history()
+
+    def reset_session_save_count(self) -> None:
+        """Reset the persistence save count for current session."""
+        if not self._session_id:
+            return
+        try:
+            from pilotcode.services.session_persistence import get_session_persistence
+
+            persistence = get_session_persistence()
+            persistence.reset_save_count(self._session_id)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Token info (for StatusBar)
+    # ------------------------------------------------------------------
 
     def get_token_count(self) -> int:
         """Get current token count."""
-        if self.query_engine:
-            return self.query_engine.count_tokens()
-        return 0
+        return self._service.get_token_count()
 
     def get_token_info(self) -> dict[str, int]:
-        """Get full token info for status bar display.
+        """Get full token info for status bar display."""
+        return self._service.get_token_info()
 
-        Returns dict with:
-        - count: current token count
-        - context_window: model context window
-        - max_output_tokens: model max output tokens
-        - usable: context_window - max_output_tokens
-        """
-        if not self.query_engine:
-            return {"count": 0, "context_window": 0, "max_output_tokens": 0, "usable": 0}
-        qe = self.query_engine
-        return {
-            "count": qe.count_tokens(),
-            "context_window": qe.config.context_window,
-            "max_output_tokens": qe._max_output_tokens,
-            "usable": qe._usable_context,
-        }
+    # ------------------------------------------------------------------
+    # Session CWD update (backward compat)
+    # ------------------------------------------------------------------
+
+    def _update_session_cwd(self, new_cwd: str) -> bool:
+        """Update the session's working directory."""
+        result = self._service._update_session_cwd(new_cwd)
+        if result:
+            self.session_options["cwd"] = new_cwd
+        return result

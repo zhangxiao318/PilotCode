@@ -361,11 +361,11 @@ def _get_or_create_slug(agent_id: str | None = None) -> str:
     if key not in _SLUG_CACHE:
         slug_file = get_plans_dir() / f".slug-{key}"
         if slug_file.exists():
-            _SLUG_CACHE[key] = slug_file.read_text().strip()
+            _SLUG_CACHE[key] = slug_file.read_text(encoding="utf-8").strip()
         else:
             slug = _generate_slug()
             _SLUG_CACHE[key] = slug
-            slug_file.write_text(slug)
+            slug_file.write_text(slug, encoding="utf-8")
     return _SLUG_CACHE[key]
 
 
@@ -381,7 +381,7 @@ def write_plan(plan_data: dict[str, Any], agent_id: str | None = None) -> Path:
     """
     file_path = get_plan_file_path(agent_id)
     markdown = _plan_to_markdown(plan_data)
-    file_path.write_text(markdown)
+    file_path.write_text(markdown, encoding="utf-8")
     return file_path
 
 
@@ -396,7 +396,7 @@ def read_plan(agent_id: str | None = None) -> str | None:
     """
     file_path = get_plan_file_path(agent_id)
     if file_path.exists():
-        return file_path.read_text()
+        return file_path.read_text(encoding="utf-8")
     return None
 
 
@@ -415,7 +415,7 @@ def copy_plan_for_fork(agent_id: str, parent_agent_id: str | None = None) -> Pat
         return None
 
     file_path = get_plan_file_path(agent_id)
-    file_path.write_text(parent_plan)
+    file_path.write_text(parent_plan, encoding="utf-8")
     return file_path
 
 

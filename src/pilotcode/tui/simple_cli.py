@@ -2,13 +2,15 @@
 """
 Simple CLI UI for PilotCode - No TUI dependencies.
 Uses standard input/output for maximum compatibility.
+
+Refactored to use SessionService (MVC Controller) with SimpleCLIProtocol
+(View adapter). Business logic has been moved to SessionService; this
+module only handles CLI-specific rendering and the REPL loop.
 """
 
 import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
-from dataclasses import dataclass, field
 
 # Ensure pilotcode can be imported
 current_file = Path(__file__).resolve()
@@ -16,203 +18,120 @@ project_root = current_file.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from pilotcode.query_engine import QueryEngine  # noqa: E402
-from pilotcode.types.message import (  # noqa: E402
-    UserMessage,
-    AssistantMessage,
-    ToolUseMessage,
-    SystemMessage,
+from pilotcode.ui.protocol import (  # noqa: E402
+    BlockEvent,
+    BlockKind,
+    BlockPhase,
+    StatusUpdate,
+    PermissionResult,
 )
-from pilotcode.services.fileedit_compensation import FileEditCompensationTracker  # noqa: E402
+from pilotcode.ui.config import SessionConfig, CommandAction  # noqa: E402
+from pilotcode.ui.session_service import SessionService  # noqa: E402
 from pilotcode.utils.config import get_global_config  # noqa: E402
-from pilotcode.commands.base import process_user_input  # noqa: E402
-from pilotcode.tools.base import ToolUseContext as CommandContext  # noqa: E402
-from pilotcode.services.session_context import (  # noqa: E402
-    get_session_context_manager,
-    reset_session_context,
-)
-from pilotcode.services.context_compression import get_context_compressor  # noqa: E402
-from pilotcode.components.repl import classify_task_complexity  # noqa: E402
-from pilotcode.orchestration.task_spec import TaskSpec  # noqa: E402
-from pilotcode.orchestration.results import ExecutionResult  # noqa: E402
-from pilotcode.orchestration.verifier.level2_tests import TestRunnerVerifier  # noqa: E402
+
+# ------------------------------------------------------------------
+# SimpleCLIProtocol - View adapter for the CLI
+# ------------------------------------------------------------------
 
 
-@dataclass
-class SessionState:
-    """Simple session state."""
+class SimpleCLIProtocol:
+    """UIProtocol adapter for the CLI using print() and input().
 
-    cwd: str = "."
-    auto_allow: bool = False
-    messages: list = field(default_factory=list)
+    Maps three-channel protocol events to simple terminal output:
+    - Channel 1 (on_block_event): print() with emoji prefixes
+    - Channel 2 (on_status_update): no-op (CLI has no status bar)
+    - Channel 3 (request_permission): blocking input() [Y/n]
+    - Channel 3 (request_user_input): blocking input()
+    - on_error: print() error message
+    """
 
+    async def on_block_event(self, event: BlockEvent) -> None:
+        """Render a block event to the terminal."""
+        if event.kind == BlockKind.ASSISTANT:
+            if event.phase == BlockPhase.OPEN:
+                print()
+                print("🤖 Thinking...")
+                print()
+            elif event.phase == BlockPhase.CLOSE:
+                if event.content:
+                    print()
+                    print("📝 Response:")
+                    print(event.content)
+                    print()
 
-class SimpleCLI:
-    """Simple command-line interface for PilotCode."""
+        elif event.kind == BlockKind.THINKING:
+            # Thinking content - show inline (DeepSeek/Qwen3)
+            if event.phase == BlockPhase.DELTA and event.content:
+                # Only show the latest thinking content (not accumulated)
+                pass  # Skip thinking display in CLI for cleanliness
 
-    def __init__(
-        self,
-        model_name: str = "kimi-k2-0713-preview",
-        auto_allow: bool = False,
-        max_iterations: int = 50,
-        cwd: str | None = None,
-        no_verify: bool = False,
-    ):
-        self.config = get_global_config()
-        self.query_engine: Optional[QueryEngine] = None
-        self.auto_allow = auto_allow
-        self.max_iterations = max_iterations
-        self.no_verify = no_verify
-        self.session_file: Optional[str] = None
-        self._cwd = cwd or str(Path.cwd())
+        elif event.kind == BlockKind.TOOL_CALL:
+            if event.phase == BlockPhase.OPEN:
+                tool_name = event.metadata.get("tool_name", event.content)
+                tool_input = event.metadata.get("tool_input", {})
+                self._print_tool_call(tool_name, tool_input)
 
-        # Initialize session context manager for maintaining project context
-        self.session_context = get_session_context_manager()
+        elif event.kind == BlockKind.TOOL_RESULT:
+            if event.phase == BlockPhase.CLOSE:
+                error = event.metadata.get("error", False)
+                tool_name = event.metadata.get("tool_name", "")
+                output = event.content
+                self._print_tool_result(tool_name, output, success=not error)
 
-        # Context compression threshold
-        self.compression_threshold = 20  # Compress after 20 messages
+        elif event.kind == BlockKind.SYSTEM:
+            if event.phase == BlockPhase.CLOSE and event.content:
+                print(event.content)
 
-        # Initialize query engine
-        try:
-            from pilotcode.query_engine import QueryEngineConfig
-            from pilotcode.tools.registry import get_core_tools
-            from pilotcode.permissions import get_tool_executor
-            from pilotcode.permissions.permission_manager import (
-                ToolPermission,
-                PermissionLevel,
-                get_permission_manager,
-            )
-            from pilotcode.state.app_state import get_default_app_state
-            from pilotcode.state.store import Store, set_global_store
+        elif event.kind == BlockKind.PLAN_PROGRESS:
+            if event.phase == BlockPhase.CLOSE and event.content:
+                print(event.content)
 
-            # Initialize store for state management
-            app_state = get_default_app_state()
-            self.store = Store(app_state)
-            from dataclasses import replace
-
-            self.store.set_state(lambda s: replace(s, cwd=self._cwd))
-            set_global_store(self.store)
-
-            def _on_notify(event_type: str, payload: dict) -> None:
-                if event_type == "auto_compact":
-                    saved = payload.get("tokens_saved", 0)
-                    cleared = payload.get("tool_results_cleared", 0)
-                    if payload.get("fallback"):
-                        print(f"\n🔄 Auto-compacted context (fallback, ~{saved} tokens saved)")
-                    elif cleared > 0:
-                        print(
-                            f"\n🔄 Auto-compacted context ({cleared} old tool results cleared, ~{saved} tokens saved)"
-                        )
-                    else:
-                        print(f"\n🔄 Auto-compacted context (~{saved} tokens saved)")
-
-            tools = get_core_tools(self._cwd)
-            global_cfg = get_global_config()
-            config = QueryEngineConfig(
-                cwd=self._cwd,
-                tools=tools,
-                get_app_state=self.store.get_state,
-                set_app_state=lambda f: self.store.set_state(f),
-                on_notify=_on_notify,
-                auto_review=global_cfg.auto_review,
-                max_review_iterations=global_cfg.max_review_iterations,
-            )
-            self.query_engine = QueryEngine(config=config)
-
-            # Set up tool executor
-            self.tool_executor = get_tool_executor()
-
-            # P0: Shared FileEdit compensation tracker
-            self._fileedit_tracker = FileEditCompensationTracker(self.store.get_state())
-
-            # Set up auto-allow if requested
-            if auto_allow:
-                pm = get_permission_manager()
-                for tool in tools:
-                    pm._permissions[tool.name] = ToolPermission(
-                        tool_name=tool.name, level=PermissionLevel.ALWAYS_ALLOW
-                    )
-
-        except Exception as e:
-            print(f"❌ Failed to initialize: {e}")
-            sys.exit(1)
-
-    def is_local_model(self) -> bool:
-        """Check if using a local model (e.g., Ollama) that doesn't need API key.
-
-        Returns:
-            True if using a local model.
-        """
-        model = self.config.default_model or ""
-        base_url = self.config.base_url or ""
-
-        # Check for local model indicators
-        local_indicators = [
-            "ollama",
-            "localhost",
-            "127.0.0.1",
-            ":11434",  # Ollama default port
-        ]
-
-        for indicator in local_indicators:
-            if indicator in model.lower() or indicator in base_url.lower():
-                return True
-
-        return False
-
-    async def test_api_connection(self) -> tuple[bool, str]:
-        """Test LLM API connection by sending an actual request.
-
-        Returns:
-            Tuple of (success, message/error)
-        """
-        from pilotcode.utils.model_client import get_model_client, Message
-
-        try:
-            client = get_model_client()
-            # Send a simple test message
-            messages = [Message(role="user", content="Hi")]
-
-            response_content = ""
-            async for chunk in client.chat_completion(messages, stream=True, max_tokens=10):
-                delta = chunk.get("choices", [{}])[0].get("delta", {})
-                content = delta.get("content")
-                if content:
-                    response_content += content
-
-            # If we got any response, API is working
-            if len(response_content) > 0:
-                return True, response_content.strip()
-            else:
-                return False, "Empty response from model"
-
-        except Exception as e:
-            error_msg = str(e)
-            if "authentication" in error_msg.lower() or "unauthorized" in error_msg.lower():
-                return False, "Authentication failed - check your API key"
-            elif "connection" in error_msg.lower():
-                return False, "Connection failed - check network and base URL"
-            else:
-                return False, f"API error: {error_msg}"
-
-    # ------------------------------------------------------------------
-    # Four-layer rendering framework
-    # ------------------------------------------------------------------
-
-    def _render_status(self, event_type: str, **kwargs) -> None:
-        """Status Layer: persistent state indicators (placeholder)."""
+    async def on_status_update(self, update: StatusUpdate) -> None:
+        """CLI has no status bar - ignore status updates."""
         pass
 
-    def _render_conversational_assistant(self, content: str, is_complete: bool) -> None:
-        """Conversational Layer: assistant response text."""
-        if is_complete and content:
-            print()
-            print("📝 Response:")
-            print(content)
-            print()
+    async def request_permission(
+        self, tool_name: str, params: dict, risk_level: str
+    ) -> PermissionResult:
+        """Ask user for permission via blocking input()."""
+        print()
+        print(f"🔧 Tool Request: {tool_name}")
+        if "path" in params:
+            print(f"   Path: {params['path']}")
+        if "command" in params:
+            print(f"   Command: {params['command']}")
 
-    def _render_conversational_tool_use(self, tool_name: str, tool_input: dict) -> None:
-        """Conversational Layer: tool call notification."""
+        while True:
+            try:
+                response = input("Allow execution? [Y/n]: ").strip().lower()
+                if response in ("", "y", "yes"):
+                    return PermissionResult(allowed=True)
+                elif response in ("n", "no"):
+                    return PermissionResult(allowed=False)
+                else:
+                    print("Please enter 'y' or 'n'")
+            except (EOFError, KeyboardInterrupt):
+                return PermissionResult(allowed=False)
+
+    async def request_user_input(self, question: str, options: list[str] | None = None) -> str:
+        """Ask user a question via blocking input()."""
+        print(f"\n❓ {question}")
+        if options:
+            print(f"   Options: {', '.join(options)}")
+        try:
+            return input("Your answer: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return ""
+
+    async def on_error(self, error: str) -> None:
+        """Print error message."""
+        print(f"❌ Error: {error}")
+
+    # --- CLI-specific rendering helpers ---
+
+    @staticmethod
+    def _print_tool_call(tool_name: str, tool_input: dict) -> None:
+        """Print tool call notification."""
         desc = ""
         if tool_name == "Bash":
             desc = tool_input.get("command", "N/A")[:50]
@@ -228,12 +147,11 @@ class SimpleCLI:
             desc = str(list(tool_input.values())[0])[:50] if tool_input else "N/A"
         print(f"🔧 Executing {tool_name}: {desc}")
 
-    def _render_conversational_tool_result(
-        self, output: str, success: bool, error_msg: str = ""
-    ) -> None:
-        """Conversational Layer: tool execution result."""
+    @staticmethod
+    def _print_tool_result(tool_name: str, output: str, *, success: bool) -> None:
+        """Print tool execution result."""
         if not success:
-            print(f"❌ Error: {error_msg}")
+            print(f"❌ Error: {output}")
             return
         output_display = output.strip()
         if len(output_display) > 500:
@@ -246,45 +164,118 @@ class SimpleCLI:
         else:
             print(f"  Output: {output_display}")
 
-    def _apply_compensation_if_needed(
-        self, tool_name: str, success: bool, result_text: str
-    ) -> None:
-        """Apply FileEdit compensation hint if threshold is reached."""
-        hint = self._fileedit_tracker.record_result(tool_name, success, result_text)
-        if hint:
-            self.query_engine.messages.append(SystemMessage(content=hint))
-            print("\n[yellow]⚠️  FileEdit compensation activated[/yellow]")
 
-    def _render_system(self, event_type: str, **payload) -> None:
-        """System Layer: ephemeral notices, warnings, errors."""
-        if event_type == "max_iterations_reached":
-            max_iters = payload.get("max_iterations", 50)
-            print(
-                f"\n⏹️  Reached maximum tool iterations ({max_iters}). "
-                f"Task paused. Send another message to continue."
-            )
-        elif event_type == "context_warning":
-            usage_pct = payload.get("usage_pct", 0)
-            print(f"\n⚠️  Context at {usage_pct}% — approaching limit.")
-        elif event_type == "error":
-            print(f"❌ Error: {payload.get('content', '')}")
-        elif event_type == "no_response":
-            print()
-            print("⚠️  No response from model. Check your API key and model configuration.")
-            print("   Run: ./pilotcode configure --show")
-            print()
-        else:
-            print(f"\n{payload.get('message', '')}")
+# ------------------------------------------------------------------
+# SimpleCLI - thin shell around SessionService
+# ------------------------------------------------------------------
 
-    def _render_interactive_permission_denied(self) -> None:
-        """Interactive Layer: permission denied feedback."""
-        print("⛔ Tool execution denied")
 
-    # ------------------------------------------------------------------
+class SimpleCLI:
+    """Simple command-line interface for PilotCode.
 
-    def _notify_user(self, event_type: str, payload: dict) -> None:
-        """Backward-compat shim: delegate to _render_system."""
-        self._render_system(event_type, **payload)
+    Uses SessionService for all business logic. This class only handles:
+    - CLI-specific initialization (store, API connection test)
+    - The REPL loop (run method)
+    - Welcome/help display
+    """
+
+    def __init__(
+        self,
+        model_name: str = "kimi-k2-0713-preview",
+        auto_allow: bool = False,
+        max_iterations: int = 50,
+        cwd: str | None = None,
+        no_verify: bool = False,
+    ):
+        self.global_config = get_global_config()
+        self.model_name = model_name
+        self.auto_allow = auto_allow
+        self.max_iterations = max_iterations
+        self.no_verify = no_verify
+        self._cwd = cwd or str(Path.cwd())
+
+        # Initialize store for state management
+        from pilotcode.state.app_state import get_default_app_state
+        from pilotcode.state.store import Store, set_global_store
+        from dataclasses import replace
+
+        app_state = get_default_app_state()
+        self.store = Store(app_state)
+        self.store.set_state(lambda s: replace(s, cwd=self._cwd))
+        set_global_store(self.store)
+
+        # Create the UI protocol adapter
+        self._cli_protocol = SimpleCLIProtocol()
+
+        # Create session config
+        session_config = SessionConfig(
+            cwd=self._cwd,
+            auto_allow=auto_allow,
+            max_iterations=max_iterations,
+            compilation_verify=not no_verify,
+            auto_save=True,
+            auto_compact=True,
+        )
+
+        # Create SessionService - it handles all business logic
+        self._service = SessionService(
+            ui=self._cli_protocol,
+            config=session_config,
+            get_app_state=self.store.get_state,
+            set_app_state=lambda f: self.store.set_state(f),
+        )
+
+    @property
+    def query_engine(self):
+        """Access query engine from SessionService."""
+        return self._service.query_engine
+
+    def is_local_model(self) -> bool:
+        """Check if using a local model (e.g., Ollama) that doesn't need API key."""
+        model = self.global_config.default_model or ""
+        base_url = self.global_config.base_url or ""
+
+        local_indicators = [
+            "ollama",
+            "localhost",
+            "127.0.0.1",
+            ":11434",
+        ]
+
+        for indicator in local_indicators:
+            if indicator in model.lower() or indicator in base_url.lower():
+                return True
+
+        return False
+
+    async def test_api_connection(self) -> tuple[bool, str]:
+        """Test LLM API connection by sending an actual request."""
+        from pilotcode.utils.model_client import get_model_client, Message
+
+        try:
+            client = get_model_client()
+            messages = [Message(role="user", content="Hi")]
+
+            response_content = ""
+            async for chunk in client.chat_completion(messages, stream=True, max_tokens=10):
+                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content")
+                if content:
+                    response_content += content
+
+            if len(response_content) > 0:
+                return True, response_content.strip()
+            else:
+                return False, "Empty response from model"
+
+        except Exception as e:
+            error_msg = str(e)
+            if "authentication" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                return False, "Authentication failed - check your API key"
+            elif "connection" in error_msg.lower():
+                return False, "Connection failed - check network and base URL"
+            else:
+                return False, f"API error: {error_msg}"
 
     def print_welcome(self):
         """Print welcome message and test API connection."""
@@ -292,16 +283,14 @@ class SimpleCLI:
         print("  PilotCode v0.2.0 - Your AI Programming Assistant")
         print("=" * 60)
 
-        # Check if using local model
         is_local = self.is_local_model()
 
         if is_local:
             print()
-            print(f"🖥️  Local model detected: {self.config.default_model}")
-            print(f"   Base URL: {self.config.base_url}")
+            print(f"🖥️  Local model detected: {self.global_config.default_model}")
+            print(f"   Base URL: {self.global_config.base_url}")
         else:
-            # Check if API key looks valid for cloud models
-            api_key = self.config.api_key or ""
+            api_key = self.global_config.api_key or ""
             if (
                 not api_key
                 or api_key in ("sk-placeholder", "", "test-api-key")
@@ -313,20 +302,17 @@ class SimpleCLI:
                 print()
                 return
 
-        # Test API connection with actual request
         print()
         print("🔄 Testing LLM API connection...")
 
         try:
-            import asyncio
-
             api_working, message = asyncio.run(self.test_api_connection())
 
             if not api_working:
                 print()
                 print("❌ API connection failed!")
-                print(f"   Model: {self.config.default_model}")
-                print(f"   Base URL: {self.config.base_url}")
+                print(f"   Model: {self.global_config.default_model}")
+                print(f"   Base URL: {self.global_config.base_url}")
                 print(f"   Error: {message}")
                 print()
 
@@ -334,7 +320,7 @@ class SimpleCLI:
                     print("Please check:")
                     print("  1. Your local model server is running")
                     print("  2. The base URL is correct")
-                    print(f"     Example: ollama run {self.config.default_model}")
+                    print(f"     Example: ollama run {self.global_config.default_model}")
                 else:
                     print("Please check:")
                     print("  1. Your API key is correct")
@@ -346,7 +332,7 @@ class SimpleCLI:
                 print()
                 sys.exit(1)
             else:
-                print(f"✅ API connection successful ({self.config.default_model})")
+                print(f"✅ API connection successful ({self.global_config.default_model})")
                 if not is_local:
                     print(f"   Response preview: {message[:50]}...")
                 print()
@@ -354,11 +340,12 @@ class SimpleCLI:
         except Exception as e:
             print(f"⚠️  Could not test API: {e}")
             print()
+
         print()
         print("Commands:")
         print("  /help     - Show available commands")
-        print("  /save     - Save session to file")
-        print("  /load     - Load session from file")
+        print("  /save     - Save session to unified storage")
+        print("  /load     - Load session from unified storage")
         print("  /clear    - Clear conversation history")
         print("  /quit     - Exit application")
         print()
@@ -373,11 +360,10 @@ class SimpleCLI:
         print()
         print("Available Commands:")
         print("  /help           Show this help message")
-        print("  /save [file]    Save conversation to file (default: session.json)")
-        print("  /load [file]    Load conversation from file")
+        print("  /save [file]    Save to unified storage, or to file if .json given")
+        print("  /load [id/file] Load from unified storage, or from file if .json given")
         print("  /clear          Clear conversation history and context")
-        print("  /context        Show current session context")
-        print("  /project        Set project information")
+        print("  /compact        Manually compress context")
         print("  /quit or /exit  Exit the application")
         print()
         print("Tips:")
@@ -387,646 +373,38 @@ class SimpleCLI:
         print("  • Context compresses automatically when it gets too long")
         print()
 
-    def _is_safe_tool(self, tool_name: str, params: dict) -> bool:
-        """Check if a tool operation is safe (read-only/non-destructive)."""
-        from pilotcode.permissions.permission_manager import PermissionManager
-
-        if tool_name in PermissionManager.SAFE_TOOLS:
-            return True
-
-        if tool_name == "Bash":
-            try:
-                from pilotcode.tools.bash_tool import is_read_only_command
-
-                command = params.get("command", "")
-                return is_read_only_command(command)
-            except ImportError:
-                pass
-
-        return False
-
-    async def _execute_tools_sequential(self, tool_messages: list) -> None:
-        """Execute tools one at a time (safe mode)."""
-
-        for tool_msg in tool_messages:
-            tool_name = tool_msg.name
-            params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
-
-            if not self.ask_permission(tool_name, params):
-                denied_msg = "Tool execution denied by user."
-                self.query_engine.add_tool_result(tool_msg.tool_use_id, denied_msg, is_error=True)
-                for remaining in tool_messages[tool_messages.index(tool_msg) + 1 :]:
-                    self.query_engine.add_tool_result(
-                        remaining.tool_use_id, "Skipped due to previous denial", is_error=True
-                    )
-                break
-
-            await self._execute_single_tool(tool_msg, tool_name, params)
-
-    async def _execute_tools_batch(self, tool_messages: list) -> None:
-        """Execute all tools in parallel when auto_allow=True.
-
-        Uses asyncio.gather for concurrent execution.
-        FileRead tools can run in parallel with FileWrite/Bash.
-        """
-        from pilotcode.tools.base import ToolUseContext
-
-        async def _exec_one(tool_msg) -> tuple[str, dict, bool]:
-            tool_name = tool_msg.name
-            params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
-            try:
-                ctx = ToolUseContext(
-                    get_app_state=self.store.get_state,
-                    set_app_state=lambda f: self.store.set_state(f),
-                    cwd=getattr(self.store.get_state(), "cwd", ""),
-                )
-                result = await self.tool_executor.execute_tool_by_name(tool_name, params, ctx)
-                output = result.result or f"{tool_name} executed successfully"
-                return tool_msg.tool_use_id, output, False
-            except Exception as e:
-                return tool_msg.tool_use_id, str(e), True
-
-        # Run all tools in parallel, preserving order
-        results = await asyncio.gather(*[_exec_one(tm) for tm in tool_messages])
-        for tool_use_id, output, is_error in results:
-            self.query_engine.add_tool_result(tool_use_id, output, is_error=is_error)
-
-    async def _execute_single_tool(self, tool_msg, tool_name: str, params: dict) -> None:
-        """Execute a single tool and add its result."""
-        from pilotcode.tools.base import ToolUseContext
-
-        try:
-            ctx = ToolUseContext(
-                get_app_state=self.store.get_state,
-                set_app_state=lambda f: self.store.set_state(f),
-                cwd=getattr(self.store.get_state(), "cwd", ""),
-            )
-            result = await self.tool_executor.execute_tool_by_name(tool_name, params, ctx)
-            output = result.result or f"{tool_name} executed successfully"
-            self.query_engine.add_tool_result(tool_msg.tool_use_id, output, is_error=False)
-        except Exception as e:
-            self.query_engine.add_tool_result(tool_msg.tool_use_id, str(e), is_error=True)
-
-    def ask_permission(self, tool_name: str, params: dict) -> bool:
-        """Ask user for permission to execute a tool."""
-        if self.auto_allow:
-            return True
-
-        if self._is_safe_tool(tool_name, params):
-            return True
-
-        print()
-        print(f"🔧 Tool Request: {tool_name}")
-
-        # Show relevant params
-        if "path" in params:
-            print(f"   Path: {params['path']}")
-        if "command" in params:
-            print(f"   Command: {params['command']}")
-
-        # Simple Y/n prompt
-        while True:
-            try:
-                response = input("Allow execution? [Y/n]: ").strip().lower()
-                if response in ("", "y", "yes"):
-                    return True
-                elif response in ("n", "no"):
-                    return False
-                else:
-                    print("Please enter 'y' or 'n'")
-            except (EOFError, KeyboardInterrupt):
-                return False
-
-    async def handle_command(self, text: str) -> bool:
-        """Handle slash commands. Returns True to continue, False to exit."""
-        parts = text.split()
-        cmd = parts[0].lower()
-        args = parts[1:] if len(parts) > 1 else []
-
-        if cmd == "/quit" or cmd == "/exit":
-            print("Goodbye! 👋")
-            return False
-
-        elif cmd == "/help":
-            self.print_help()
-
-        elif cmd == "/clear":
-            # Clear conversation in query engine
-            if self.query_engine:
-                # Re-initialize to clear history
-                from pilotcode.query_engine import QueryEngineConfig
-
-                global_cfg = get_global_config()
-                self.query_engine = QueryEngine(
-                    config=QueryEngineConfig(
-                        cwd=self.query_engine.config.cwd,
-                        tools=self.query_engine.config.tools,
-                        get_app_state=self.store.get_state,
-                        set_app_state=lambda f: self.store.set_state(f),
-                        auto_review=global_cfg.auto_review,
-                        max_review_iterations=global_cfg.max_review_iterations,
-                    )
-                )
-            # Reset session context
-            reset_session_context()
-            self.session_context = get_session_context_manager()
-            print("✅ Conversation history and context cleared")
-
-        elif cmd == "/save":
-            filename = args[0] if args else "session.json"
-            try:
-                self.query_engine.save_session(filename)
-                print(f"✅ Session saved to {filename}")
-            except Exception as e:
-                print(f"❌ Failed to save: {e}")
-
-        elif cmd == "/load":
-            filename = args[0] if args else "session.json"
-            try:
-                if Path(filename).exists():
-                    self.query_engine.load_session(filename)
-                    print(f"✅ Session loaded from {filename}")
-                    # Show loaded messages count
-                    msg_count = len(self.query_engine.messages)
-                    print(f"   {msg_count} messages restored")
-                else:
-                    print(f"❌ File not found: {filename}")
-            except Exception as e:
-                print(f"❌ Failed to load: {e}")
-
-        elif cmd == "/context":
-            # Show current session context
-            print()
-            print(self.session_context.get_system_prompt_addition())
-            print(f"   Messages: {len(self.query_engine.messages)}")
-
-        elif cmd == "/project":
-            # Set project information
-            if len(args) >= 1:
-                project_name = args[0]
-                self.session_context.set_project_info(name=project_name)
-                print(f"✅ Project name set to: {project_name}")
-                if len(args) >= 2:
-                    description = " ".join(args[1:])
-                    self.session_context.context.project.description = description
-                    print(f"   Description: {description}")
-            else:
-                print("Usage: /project <name> [description]")
-                print("Example: /project 博客系统 '一个基于Python的博客系统'")
-
-        elif cmd == "/compact":
-            # Manually trigger context compression
-            print("\n🔄 Manually compressing context...")
-            original_count = len(self.query_engine.messages)
-            compressor = get_context_compressor()
-            self.query_engine.messages = compressor.simple_compact(
-                self.query_engine.messages, keep_recent=10
-            )
-            compressed_count = len(self.query_engine.messages)
-            print(f"   Compressed: {original_count} -> {compressed_count} messages")
-
-        else:
-            # Return None to indicate command not handled, will try process_user_input
-            return None
-
-        return True
-
-    async def _try_process_user_input_command(self, text: str):
-        """Try to process command via process_user_input. Returns True if handled, False if should exit, None if not a command."""
-        context = CommandContext(
-            get_app_state=self.store.get_state, set_app_state=lambda f: self.store.set_state(f)
-        )
-        try:
-            is_command, result = await process_user_input(text, context)
-            if is_command:
-                if isinstance(result, str):
-                    print(result)
-                    if result == "__EXIT_TUI__":
-                        return False
-                return True
-        except Exception as e:
-            print(f"❌ Error executing command: {e}")
-        return None
-
-    async def process_query(self, text: str):
-        """Process a user query through the LLM with tool support."""
-        # New user input = fresh context: reset FileEdit failure tracking
-        self._fileedit_tracker.reset()
-
-        if not self.query_engine:
-            print("❌ Query engine not initialized")
-            return
-
-        # Check if it's a local command first
-        if text.startswith("/"):
-            context = CommandContext(
-                get_app_state=self.store.get_state, set_app_state=lambda f: self.store.set_state(f)
-            )
-            is_command, result = await process_user_input(text, context)
-            if is_command:
-                if isinstance(result, str):
-                    print(result)
-                    # Handle web command specially - exit after starting server
-                    if result == "__EXIT_TUI__":
-                        return False
-                return True
-
-        # Auto-detect task complexity for the first user message
-        if len(self.query_engine.messages) == 0:
-            mode = await classify_task_complexity(text)
-            if mode == "PLAN":
-                print()
-                print(
-                    "⚡ Task classified as complex — I'll break this down into steps and work through it interactively."
-                )
-                print()
-                # Continue with normal streaming interaction so the CLI stays
-                # responsive and the user can see real-time progress.
-
-        print()
-        print("🤖 Thinking...")
-        print()
-
-        try:
-            # Check if we need to compress context before processing
-            await self._check_and_compress_context()
-
-            # Add session context to query engine messages if not present
-            self._inject_session_context()
-
-            iteration = 0
-            max_iterations = self.max_iterations
-            current_prompt = text
-
-            while iteration < max_iterations:
-                iteration += 1
-                accumulated_response = ""
-                pending_tools = []
-
-                # Process through query engine with streaming
-                response_received = False
-                async for result in self.query_engine.submit_message(current_prompt):
-                    msg = result.message
-
-                    if isinstance(msg, UserMessage):
-                        # User message - skip
-                        continue
-
-                    elif isinstance(msg, AssistantMessage):
-                        # Handle streaming vs complete message
-                        if result.is_complete:
-                            if isinstance(msg.content, str) and msg.content:
-                                if len(msg.content) >= len(accumulated_response):
-                                    accumulated_response = msg.content
-                                response_received = True
-                        else:
-                            if msg.content:
-                                accumulated_response += msg.content
-                                response_received = True
-
-                        # -- Conversational Layer: flush assistant response --
-                        if result.is_complete:
-                            if accumulated_response:
-                                self._render_conversational_assistant(
-                                    accumulated_response, is_complete=True
-                                )
-                            elif not response_received and not pending_tools:
-                                self._render_system("no_response")
-
-                    elif isinstance(msg, ToolUseMessage):
-                        # Collect tool use requests
-                        pending_tools.append(msg)
-                        # -- Conversational Layer: tool use --
-                        self._render_conversational_tool_use(
-                            msg.name, msg.input if isinstance(msg.input, dict) else {}
-                        )
-
-                # If no tools to execute, we're done
-                if not pending_tools:
-                    break
-
-                # Execute all pending tools sequentially
-                for tool_msg in pending_tools:
-                    tool_name = tool_msg.name
-                    params = tool_msg.input if isinstance(tool_msg.input, dict) else {}
-
-                    # Ask for permission
-                    if not self.ask_permission(tool_name, params):
-                        self._render_interactive_permission_denied()
-                        denied_msg = "Tool execution denied by user. Proceed with your alternative read-only approach immediately without explaining your plan first."
-                        self.query_engine.add_tool_result(
-                            tool_msg.tool_use_id,
-                            denied_msg,
-                            is_error=True,
-                        )
-                        # P0: FileEdit compensation tracking (permission denial = failure)
-                        self._apply_compensation_if_needed(tool_msg.name, False, denied_msg)
-                        break
-
-                    try:
-                        from pilotcode.tools.base import ToolUseContext
-
-                        ctx = ToolUseContext(
-                            get_app_state=self.store.get_state,
-                            set_app_state=lambda f: self.store.set_state(f),
-                            cwd=getattr(self.store.get_state(), "cwd", ""),
-                        )
-
-                        def _on_progress_tui(data):
-                            if isinstance(data, dict) and data.get("type") == "bash_output":
-                                line = data.get("line", "")
-                                if line:
-                                    print(line)
-
-                        result = await self.tool_executor.execute_tool_by_name(
-                            tool_name, params, ctx, on_progress=_on_progress_tui
-                        )
-
-                        # Extract output from result
-                        if result.success and result.result:
-                            output = result.result or "Tool executed successfully"
-                        elif result.success:
-                            output = f"{tool_name} executed successfully"
-                        else:
-                            output = result.message or "Tool execution failed"
-
-                        # -- Conversational Layer: tool result --
-                        self._render_conversational_tool_result(output, success=True)
-                        self.query_engine.add_tool_result(
-                            tool_msg.tool_use_id, output, is_error=False
-                        )
-                        # P0: FileEdit compensation tracking
-                        self._apply_compensation_if_needed(tool_name, True, output)
-                    except Exception as e:
-                        err_text = str(e)
-                        self.query_engine.add_tool_result(
-                            tool_msg.tool_use_id, err_text, is_error=True
-                        )
-                        self._render_system("error", content=err_text)
-                        # P0: FileEdit compensation tracking
-                        self._apply_compensation_if_needed(tool_name, False, err_text)
-
-                # --- Compiler / syntax verification for changed code files ---
-                has_compile_command = any(
-                    tool_msg.name in ("Bash", "bash", "PowerShell", "powershell")
-                    and any(
-                        kw
-                        in (
-                            tool_msg.input.get("command", "")
-                            + " "
-                            + tool_msg.input.get("script", "")
-                        ).lower()
-                        for kw in (
-                            "gcc",
-                            "g++",
-                            "make",
-                            "cmake",
-                            "cl ",
-                            "msbuild",
-                            "rustc",
-                            "cargo",
-                            "go build",
-                            "javac",
-                            "npm run build",
-                            "tsc",
-                        )
-                    )
-                    for tool_msg in pending_tools
-                )
-
-                changed_files: list[str] = []
-                if not has_compile_command:
-                    for tool_msg in pending_tools:
-                        if tool_msg.name in (
-                            "FileWrite",
-                            "write",
-                            "FileEdit",
-                            "edit",
-                            "ApplyPatch",
-                            "apply_patch",
-                        ):
-                            path = (
-                                tool_msg.input.get("file_path")
-                                or tool_msg.input.get("path")
-                                or tool_msg.input.get("base_path", "")
-                            )
-                            # Skip header-only changes — headers cannot be compiled standalone
-                            if (
-                                path
-                                and not path.endswith((".h", ".hpp"))
-                                and path not in changed_files
-                            ):
-                                changed_files.append(path)
-
-                if changed_files:
-                    temp_task = TaskSpec(
-                        id="simple_cli_verify",
-                        title="verification",
-                        objective="verify compilation",
-                    )
-                    temp_exec = ExecutionResult(
-                        task_id="simple_cli_verify",
-                        success=True,
-                        artifacts={
-                            "changed_files": changed_files,
-                            "cwd": getattr(self.store.get_state(), "cwd", ".") or ".",
-                        },
-                    )
-                    verifier = TestRunnerVerifier()
-                    try:
-                        # Skip project build if LLM is still actively writing files this turn
-                        has_file_write = any(
-                            tool_msg.name
-                            in (
-                                "FileWrite",
-                                "write",
-                                "FileEdit",
-                                "edit",
-                                "ApplyPatch",
-                                "apply_patch",
-                            )
-                            for tool_msg in pending_tools
-                        )
-                        v_result = await verifier.verify(
-                            temp_task, temp_exec, skip_project_build=has_file_write
-                        )
-                        if not v_result.passed and v_result.feedback:
-                            current_prompt = (
-                                "[FRAMEWORK VERIFICATION - COMPILE CHECK]\n"
-                                f"{v_result.feedback}\n"
-                                "Fix these errors before proceeding."
-                            )
-                        else:
-                            current_prompt = ""
-                    except Exception:
-                        current_prompt = ""
-                else:
-                    current_prompt = ""
-
-                # Continue loop to get LLM response with tool results
-            else:
-                # Loop exited because max_iterations was reached (not break)
-                max_reached = True
-
-            if max_reached:
-                self._notify_user(
-                    "max_iterations_reached",
-                    {"max_iterations": max_iterations},
-                )
-
-                # Attempt a final summary from the model
-                try:
-                    summary_prompt = (
-                        "The task was paused because the maximum number of tool iterations was reached. "
-                        "Please provide a brief summary of what has been accomplished so far, "
-                        "and what remains to be done."
-                    )
-                    summary_response = ""
-                    async for result in self.query_engine.submit_message(summary_prompt):
-                        msg = result.message
-                        if isinstance(msg, AssistantMessage) and not result.is_complete:
-                            summary_response += msg.content or ""
-                        elif isinstance(msg, AssistantMessage) and result.is_complete:
-                            if isinstance(msg.content, str) and len(msg.content) > len(
-                                summary_response
-                            ):
-                                summary_response = msg.content
-                    if summary_response:
-                        print("\n📋 Progress summary:")
-                        print(summary_response)
-                        print()
-                except Exception:
-                    pass
-                return
-
-            # Update session context with this exchange
-            self.session_context.update_from_message(text, accumulated_response)
-
-            # Show project context hint if available
-            project = self.session_context.context.project
-            if project.name and iteration == 1:  # Only on first response
-                print(f"\n📋 Project: {project.name}")
-                if project.current_focus:
-                    print(f"   Focus: {project.current_focus}")
-
-        except Exception as e:
-            print(f"❌ Error processing query: {e}")
-
-    def _inject_session_context(self):
-        """Inject session context into query engine messages as system message."""
-        context_msg = self.session_context.get_system_prompt_addition()
-
-        # Check if we already have a context message
-        has_context = False
-        for msg in self.query_engine.messages:
-            if isinstance(msg, SystemMessage) and "=== Current Session Context ===" in msg.content:
-                # Update existing context message
-                msg.content = context_msg
-                has_context = True
-                break
-
-        if not has_context and len(self.query_engine.messages) > 0:
-            # Insert after first system message (or at beginning if no system message)
-            first_system_idx = -1
-            for i, msg in enumerate(self.query_engine.messages):
-                if isinstance(msg, SystemMessage):
-                    first_system_idx = i
-                    break
-
-            if first_system_idx >= 0:
-                self.query_engine.messages.insert(
-                    first_system_idx + 1, SystemMessage(content=context_msg)
-                )
-            else:
-                self.query_engine.messages.insert(0, SystemMessage(content=context_msg))
-
-    async def _check_and_compress_context(self):
-        """Check if context needs compression and perform it if necessary.
-
-        Uses token count against the model's context window (80% threshold)
-        rather than raw message count.
-        """
-        from pilotcode.services.token_estimation import estimate_tokens
-        from pilotcode.utils.models_config import get_model_limits
-
-        # Calculate actual token usage
-        total_tokens = sum(
-            estimate_tokens(str(getattr(m, "content", ""))) for m in self.query_engine.messages
-        )
-        limits = get_model_limits()
-        ctx_window = limits.get("context_window", 128_000)
-        max_out = limits.get("max_tokens", 4096)
-        if max_out <= 0:
-            max_out = 4096
-        max_out = min(max_out, 32_000)
-        usable = max(1, ctx_window - max_out)
-        threshold = int(usable * 0.85)
-
-        if total_tokens < threshold:
-            return
-
-        print(
-            f"\n🔄 Context at {total_tokens}/{ctx_window} tokens (usable={usable}, {total_tokens * 100 // ctx_window}%), compressing..."
-        )
-
-        # Get compressor
-        compressor = get_context_compressor()
-
-        # Compress messages
-        original_count = len(self.query_engine.messages)
-        original_tokens = total_tokens
-        self.query_engine.messages = compressor.simple_compact(
-            self.query_engine.messages,
-            keep_recent=10,  # Keep last 10 messages
-        )
-        compressed_count = len(self.query_engine.messages)
-
-        # Record compression
-        self.session_context.record_compression()
-
-        # Estimate remaining tokens
-        remaining_tokens = sum(
-            estimate_tokens(str(getattr(m, "content", ""))) for m in self.query_engine.messages
-        )
-        tokens_saved = original_tokens - remaining_tokens
-
-        print(
-            f"   Compressed: {original_count} -> {compressed_count} messages (~{tokens_saved} tokens saved)"
-        )
-        print("   Older messages summarized. Key context preserved.")
-        print()
-
     async def run(self):
         """Main run loop."""
         self.print_welcome()
 
         while True:
             try:
-                # Get user input
                 print()
                 user_input = input("You: ").strip()
 
                 if not user_input:
                     continue
 
-                # Handle commands
+                # Handle slash commands via SessionService
                 if user_input.startswith("/"):
-                    # First try built-in commands
-                    should_continue = await self.handle_command(user_input)
-                    if should_continue is False:
+                    result = await self._service.handle_command(user_input)
+
+                    if result.action == CommandAction.QUIT:
+                        print("Goodbye! 👋")
                         break
-                    # If not handled by built-in, try process_user_input
-                    if should_continue is not None:
-                        # Check for web command exit signal
-                        cmd_result = await self._try_process_user_input_command(user_input)
-                        if cmd_result is False:
-                            break
-                        if cmd_result is True:
-                            continue
+                    elif result.action == CommandAction.CLEAR:
+                        self._service.clear_history()
+                        print("✅ Conversation history and context cleared")
+                    elif result.action == CommandAction.ERROR:
+                        print(f"❌ {result.message}")
+                    elif result.action == CommandAction.UNKNOWN:
+                        print(f"Unknown command: {user_input}")
+                    elif result.message:
+                        print(result.message)
                     continue
 
-                # Process query
-                await self.process_query(user_input)
+                # Process query via SessionService
+                await self._service.process_query(user_input)
 
             except KeyboardInterrupt:
                 print("\n\nGoodbye! 👋")

@@ -297,7 +297,7 @@ class UpdateChecker:
         """Get timestamp of last check."""
         try:
             if self._cache_file.exists():
-                with open(self._cache_file, "r") as f:
+                with open(self._cache_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     return datetime.fromisoformat(data.get("timestamp", ""))
         except Exception:
@@ -317,7 +317,7 @@ class UpdateChecker:
                 data["latest_version"] = result.info.latest_version
                 data["update_available"] = result.info.update_available
 
-            with open(self._cache_file, "w") as f:
+            with open(self._cache_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception:
             pass
@@ -328,7 +328,7 @@ class UpdateChecker:
             if not self._cache_file.exists():
                 return None
 
-            with open(self._cache_file, "r") as f:
+            with open(self._cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # Check if cache is still valid

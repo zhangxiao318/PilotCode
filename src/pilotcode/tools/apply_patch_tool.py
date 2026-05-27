@@ -50,6 +50,7 @@ def _apply_patch_with_command(
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
         if result.returncode == 0:
             return ApplyPatchOutput(

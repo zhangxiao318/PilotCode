@@ -48,7 +48,7 @@ class TestBuiltInCommands:
         ctx = CommandContext(cwd=".")
         is_cmd, result = await process_user_input("/clear", ctx)
         assert is_cmd is True
-        assert "Screen cleared" in result
+        assert "cleared" in result
 
     @pytest.mark.asyncio
     async def test_quit_command(self):

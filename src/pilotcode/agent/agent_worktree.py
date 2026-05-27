@@ -299,12 +299,12 @@ def read_worktree_head_sha(slug: str) -> str | None:
         return None
 
     try:
-        content = head_file.read_text().strip()
+        content = head_file.read_text(encoding="utf-8").strip()
         if content.startswith("ref: "):
             ref = content[5:]
             ref_file = worktree_path / ".git" / ref
             if ref_file.exists():
-                return ref_file.read_text().strip()
+                return ref_file.read_text(encoding="utf-8").strip()
         return content
     except Exception:
         return None

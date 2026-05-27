@@ -198,17 +198,18 @@ class MyClass {
         """Test removing a file from index."""
         indexer = CodeIndexer()
 
-        indexer._index.symbols = [
+        indexer._index.symbols = {
             Symbol("func1", "function", "file1.py", 1, 0),
             Symbol("func2", "function", "file2.py", 1, 0),
-        ]
+        }
         indexer._indexed_files.add("file1.py")
         indexer._indexed_files.add("file2.py")
 
         await indexer.remove_file("file1.py")
 
         assert len(indexer._index.symbols) == 1
-        assert indexer._index.symbols[0].file_path == "file2.py"
+        remaining = next(iter(indexer._index.symbols))
+        assert remaining.file_path == "file2.py"
         assert "file1.py" not in indexer._indexed_files
 
 

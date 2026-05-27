@@ -126,12 +126,46 @@ class PermissionManager:
         risk_analyzer = get_risk_analyzer()
         return risk_analyzer.assess_tool(tool_name, tool_input)
 
+    def is_tool_visible(self, tool_name: str, permission_mode: str = "default") -> bool:
+        """Check if a tool should be visible in the model's tool pool.
+
+        Tool pre-filtering removes dangerous tools from the model's view
+        when the permission mode dictates they should not be invoked.
+        This prevents the model from hallucinating calls to disallowed tools.
+
+        Visibility rules by mode:
+        - default: All tools visible (permissions checked at execution time).
+        - acceptEdits: All tools visible (file edits auto-allowed).
+        - bypassPermissions: All tools visible.
+        - auto: All tools visible (classifier handles approval).
+        - dontAsk: High-risk tools (Bash, etc.) are HIDDEN to prevent
+          the model from attempting dangerous operations.
+        - plan: Only read-only tools visible (planning mode).
+        """
+        if permission_mode in ("acceptEdits", "bypassPermissions", "auto"):
+            return True
+
+        if permission_mode == "plan":
+            # Planning mode: only read-only tools
+            return tool_name in self.SAFE_TOOLS
+
+        if permission_mode == "dontAsk":
+            # Auto-deny dangerous ops: hide high-risk tools from model view
+            return tool_name not in self.HIGH_RISK_TOOLS
+
+        # default: all tools visible, execution-time permission check
+        return True
+
     def check_permission(self, tool_name: str, tool_input: dict) -> tuple[bool, str]:
         """Check if tool execution is permitted with risk-based auto-allow.
 
         Returns:
             (is_permitted, reason)
         """
+        # Auto-allow safe tools (read-only or harmless)
+        if tool_name in self.SAFE_TOOLS:
+            return True, f"Auto-allowed: {tool_name} is in safe tools list"
+
         # Get risk assessment
         assessment = self.get_risk_assessment(tool_name, tool_input)
 
@@ -227,26 +261,38 @@ class PermissionManager:
         self._session_denies.clear()
 
     def save_permissions(self):
-        """Save persistent permissions to config."""
-        from ..utils.config import get_config_manager
+        """Save persistent permissions to disk."""
+        from ..utils.paths import get_data_dir
 
-        # Only save ALWAYS_ALLOW and NEVER_ALLOW
-        {
+        # Only persist ALWAYS_ALLOW and NEVER_ALLOW
+        persistent = {
             k: v.to_dict()
             for k, v in self._permissions.items()
             if v.level in (PermissionLevel.ALWAYS_ALLOW, PermissionLevel.NEVER_ALLOW)
         }
 
-        manager = get_config_manager()
-        manager.load_global_config()
-
-        # Store in config (you might want to add a field for this)
-        # For now, we'll just keep in memory
+        path = get_data_dir() / "permissions.json"
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(persistent, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
 
     def load_permissions(self):
-        """Load persistent permissions from config."""
-        # TODO: Implement loading from config
-        pass
+        """Load persistent permissions from disk."""
+        from ..utils.paths import get_data_dir
+
+        path = get_data_dir() / "permissions.json"
+        if not path.exists():
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for tool_name, perm_data in data.items():
+                self._permissions[tool_name] = ToolPermission.from_dict(perm_data)
+        except Exception:
+            pass
 
 
 # Global instance

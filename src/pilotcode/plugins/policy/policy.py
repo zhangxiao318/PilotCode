@@ -186,7 +186,7 @@ class PolicyManager:
     def _load_from_path(self, path: Path) -> None:
         """Load policy from a specific path."""
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             self.policy = PluginPolicy.from_dict(data)
             self.policy_path = path
@@ -202,7 +202,7 @@ class PolicyManager:
         save_path = path or self.policy_path or Path(".pilotcode/policy.json")
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(save_path, "w") as f:
+        with open(save_path, "w", encoding="utf-8") as f:
             json.dump(self.policy.to_dict(), f, indent=2)
 
     def check_marketplace(self, marketplace: str) -> tuple[bool, Optional[str]]:

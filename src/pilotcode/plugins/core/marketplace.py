@@ -201,7 +201,7 @@ class MarketplaceManager:
                     target_path.mkdir(parents=True, exist_ok=True)
 
                     marketplace_file = target_path / "marketplace.json"
-                    with open(marketplace_file, "w") as f:
+                    with open(marketplace_file, "w", encoding="utf-8") as f:
                         json.dump(data, f, indent=2)
 
                     # Update timestamp
@@ -263,7 +263,7 @@ class MarketplaceManager:
             return None
 
         try:
-            with open(marketplace_file, "r") as f:
+            with open(marketplace_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             marketplace = PluginMarketplace(**data)

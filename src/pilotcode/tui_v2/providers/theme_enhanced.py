@@ -226,7 +226,7 @@ class ThemeManager:
             return
 
         try:
-            with open(self.themes_file, "r") as f:
+            with open(self.themes_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             for name, theme_data in data.items():
@@ -248,7 +248,7 @@ class ThemeManager:
         }
 
         try:
-            with open(self.themes_file, "w") as f:
+            with open(self.themes_file, "w", encoding="utf-8") as f:
                 json.dump(custom_themes, f, indent=2)
         except Exception as e:
             print(f"Failed to save custom themes: {e}")
@@ -259,7 +259,7 @@ class ThemeManager:
             return
 
         try:
-            with open(self.config_file, "r") as f:
+            with open(self.config_file, "r", encoding="utf-8") as f:
                 config = json.load(f)
             self._current_theme = config.get("current_theme", "default")
         except Exception as e:
@@ -268,7 +268,7 @@ class ThemeManager:
     def _save_config(self):
         """Save theme configuration."""
         try:
-            with open(self.config_file, "w") as f:
+            with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump({"current_theme": self._current_theme}, f)
         except Exception as e:
             print(f"Failed to save theme config: {e}")

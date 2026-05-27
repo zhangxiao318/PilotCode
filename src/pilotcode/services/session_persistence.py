@@ -1,16 +1,17 @@
-"""Session persistence - incremental JSON Lines storage with rolling segments.
+﻿"""Session persistence - incremental JSON Lines storage with rolling segments.
 
 File layout for session "sess_123":
-  sess_123.index.json   – segment index + store metadata
-  sess_123.meta.json    – human-readable metadata (name, project_path, ...)
-  sess_123.data.0.jsonl – JSON Lines segment 0
-  sess_123.data.1.jsonl – JSON Lines segment 1 (created when 0 is full)
+  sess_123.index.json   鈥?segment index + store metadata
+  sess_123.meta.json    鈥?human-readable metadata (name, project_path, ...)
+  sess_123.data.0.jsonl 鈥?JSON Lines segment 0
+  sess_123.data.1.jsonl 鈥?JSON Lines segment 1 (created when 0 is full)
 
 Only the two most recent segments are kept.  After auto_compact a rollover
 rewrites the full in-memory state into a fresh segment and old ones are purged.
 """
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass, asdict
@@ -19,9 +20,8 @@ from ..types.message import (
     Message,
     UserMessage,
     AssistantMessage,
-    SystemMessage,
     ToolResultMessage,
-    ToolUseMessage,
+    deserialize_messages,
 )
 
 
@@ -38,6 +38,10 @@ class SessionMetadata:
     summary: str = ""
     tags: list[str] = None
     archived: bool = False
+    # Extra config fields for CLI compatibility
+    cwd: str | None = None
+    custom_system_prompt: str | None = None
+    max_turns: int | None = None
 
     def __post_init__(self):
         if self.tags is None:
@@ -103,76 +107,39 @@ class SessionPersistence:
     # Message serialization
     # ------------------------------------------------------------------
     def _message_to_dict(self, message: Message) -> dict:
-        timestamp = getattr(message, "timestamp", None)
-        if isinstance(timestamp, datetime):
-            timestamp = timestamp.isoformat()
+        """Serialize message using Pydantic model_dump for full field compatibility.
 
-        if isinstance(message, UserMessage):
-            return {"type": "user", "content": message.content, "timestamp": timestamp}
-        elif isinstance(message, AssistantMessage):
-            return {
-                "type": "assistant",
-                "content": message.content,
-                "reasoning_content": message.reasoning_content,
-                "timestamp": timestamp,
-            }
-        elif isinstance(message, SystemMessage):
-            return {"type": "system", "content": message.content, "timestamp": timestamp}
-        elif isinstance(message, ToolUseMessage):
-            return {
-                "type": "tool_use",
-                "tool_use_id": message.tool_use_id,
-                "name": message.name,
-                "input": message.input,
-                "timestamp": timestamp,
-            }
-        elif isinstance(message, ToolResultMessage):
-            return {
-                "type": "tool_result",
-                "tool_use_id": message.tool_use_id,
-                "content": message.content,
-                "is_error": message.is_error,
-                "timestamp": timestamp,
-            }
-        else:
-            return {"type": "unknown", "content": str(message)}
+        This ensures uuid, timestamp, reasoning_content, and any future fields
+        are automatically preserved without manual mapping.
+        """
+        return message.model_dump(mode="json")
 
     def _dict_to_message(self, data: dict) -> Message | None:
-        msg_type = data.get("type")
+        """Deserialize message using Pydantic model_validate for full field compatibility.
+
+        Falls back to legacy field-name compatibility for old session data.
+        """
         try:
-            if msg_type == "user":
-                return UserMessage(content=data.get("content", ""))
-            elif msg_type == "assistant":
-                return AssistantMessage(
-                    content=data.get("content", ""),
-                    reasoning_content=data.get("reasoning_content"),
-                )
-            elif msg_type == "system":
-                return SystemMessage(content=data.get("content", ""))
-            elif msg_type == "tool_use":
-                tool_use_id = data.get("tool_use_id") or data.get("id", "")
-                name = data.get("name") or data.get("tool_name", "")
-                return ToolUseMessage(
-                    tool_use_id=tool_use_id,
-                    name=name,
-                    input=data.get("input") or data.get("tool_input", {}),
-                )
-            elif msg_type == "tool_result":
-                tool_use_id = data.get("tool_use_id") or data.get("id", "")
-                content = data.get("content")
-                if content is None:
-                    content = data.get("tool_result", "")
-                is_error = data.get("is_error", False)
-                if is_error is False and data.get("tool_error"):
-                    is_error = True
-                return ToolResultMessage(
-                    tool_use_id=tool_use_id,
-                    content=content,
-                    is_error=is_error,
-                )
+            # Legacy field-name compatibility for old sessions
+            if data.get("type") == "tool_use":
+                if "tool_use_id" not in data and "id" in data:
+                    data["tool_use_id"] = data.pop("id")
+                if "name" not in data and "tool_name" in data:
+                    data["name"] = data.pop("tool_name")
+                if "input" not in data and "tool_input" in data:
+                    data["input"] = data.pop("tool_input")
+            elif data.get("type") == "tool_result":
+                if "tool_use_id" not in data and "id" in data:
+                    data["tool_use_id"] = data.pop("id")
+                if "content" not in data and "tool_result" in data:
+                    data["content"] = data.pop("tool_result")
+                if "is_error" not in data and data.get("tool_error"):
+                    data["is_error"] = True
+
+            result = deserialize_messages([data])
+            return result[0] if result else None
         except Exception:
-            pass
-        return None
+            return None
 
     # ------------------------------------------------------------------
     # Core incremental operations
@@ -282,6 +249,9 @@ class SessionPersistence:
         name: str | None = None,
         project_path: str | None = None,
         tags: list[str] | None = None,
+        cwd: str | None = None,
+        custom_system_prompt: str | None = None,
+        max_turns: int | None = None,
     ) -> bool:
         """Save a session incrementally.
 
@@ -290,11 +260,16 @@ class SessionPersistence:
         messages) a rollover is performed instead.
         """
         try:
-            last_count = self._last_saved_counts.get(session_id, 0)
-            current_count = len(messages)
-
             index = self._read_index(session_id)
             store_exists = index is not None
+
+            # Recover last-saved count from disk if memory was lost (e.g. server restart)
+            last_count = self._last_saved_counts.get(session_id)
+            if last_count is None and store_exists:
+                last_count = index.get("total_messages", 0)
+            if last_count is None:
+                last_count = 0
+            current_count = len(messages)
 
             if current_count < last_count or not store_exists:
                 ok = self._rollover(session_id, messages)
@@ -304,16 +279,32 @@ class SessionPersistence:
             if not ok:
                 return False
 
+            # Preserve original created_at if it exists
+            created_at = datetime.now().isoformat()
+            if store_exists:
+                meta_path = self._meta_path(session_id)
+                if meta_path.exists():
+                    try:
+                        with open(meta_path, "r", encoding="utf-8") as f:
+                            old_meta = json.load(f)
+                        if old_meta.get("created_at"):
+                            created_at = old_meta["created_at"]
+                    except Exception:
+                        pass
+
             # Update human-readable metadata
             metadata = SessionMetadata(
                 session_id=session_id,
                 name=name or f"Session {session_id[:8]}",
-                created_at=datetime.now().isoformat(),
+                created_at=created_at,
                 updated_at=datetime.now().isoformat(),
                 message_count=current_count,
                 project_path=project_path,
                 summary=self._generate_summary(messages),
                 tags=tags or [],
+                cwd=cwd,
+                custom_system_prompt=custom_system_prompt,
+                max_turns=max_turns,
             )
             with open(self._meta_path(session_id), "w", encoding="utf-8") as f:
                 json.dump(asdict(metadata), f, indent=2)
@@ -363,14 +354,23 @@ class SessionPersistence:
     def list_sessions(self, project_path: str | None = None) -> list[SessionMetadata]:
         """List available sessions."""
         sessions = []
+        known_fields = {f.name for f in SessionMetadata.__dataclass_fields__.values()}
         try:
             for meta_path in self.DATA_DIR.glob("*.meta.json"):
                 try:
                     with open(meta_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                    metadata = SessionMetadata(**data)
-                    if project_path and metadata.project_path != project_path:
-                        continue
+                    # Filter out unknown fields for forward/backward compatibility
+                    filtered = {k: v for k, v in data.items() if k in known_fields}
+                    metadata = SessionMetadata(**filtered)
+                    if project_path and metadata.project_path:
+                        # On Windows (case-insensitive FS), normalize both sides
+                        # so D:\Source\Project and d:\source\project are treated
+                        # as the same directory.
+                        if os.path.normcase(metadata.project_path) != os.path.normcase(
+                            project_path
+                        ):
+                            continue
                     sessions.append(metadata)
                 except Exception:
                     continue
@@ -503,8 +503,14 @@ def save_session(
     messages: list[Message],
     name: str | None = None,
     project_path: str | None = None,
+    tags: list[str] | None = None,
+    cwd: str | None = None,
+    custom_system_prompt: str | None = None,
+    max_turns: int | None = None,
 ) -> bool:
-    return get_session_persistence().save_session(session_id, messages, name, project_path)
+    return get_session_persistence().save_session(
+        session_id, messages, name, project_path, tags, cwd, custom_system_prompt, max_turns
+    )
 
 
 def load_session(session_id: str) -> tuple[list[Message], dict] | None:

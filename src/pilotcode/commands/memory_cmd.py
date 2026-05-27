@@ -28,7 +28,7 @@ async def memory_command(args: list[str], context: CommandContext) -> str:
             if filename.endswith(".json"):
                 filepath = os.path.join(MEMORY_DIR, filename)
                 try:
-                    with open(filepath, "r") as f:
+                    with open(filepath, "r", encoding="utf-8") as f:
                         data = json.load(f)
                     files.append((filename[:-5], data.get("created", "Unknown")))
                 except Exception:
@@ -54,7 +54,7 @@ async def memory_command(args: list[str], context: CommandContext) -> str:
         filepath = os.path.join(MEMORY_DIR, f"{name}.json")
         data = {"content": content, "created": datetime.now().isoformat(), "context": context.cwd}
 
-        with open(filepath, "w") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
         return f"Memory added: {name}"
@@ -69,7 +69,7 @@ async def memory_command(args: list[str], context: CommandContext) -> str:
         if not os.path.exists(filepath):
             return f"Memory not found: {name}"
 
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         return f"Memory: {name}\n\n{data.get('content', '')}"

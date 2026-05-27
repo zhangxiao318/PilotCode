@@ -80,12 +80,43 @@ class Symbol:
     docstring: str | None = None
     parent: str | None = None  # Parent class/module
 
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.name,
+                self.symbol_type,
+                self.file_path,
+                self.line_number,
+                self.column,
+                self.parent,
+            )
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Symbol):
+            return NotImplemented
+        return (
+            self.name,
+            self.symbol_type,
+            self.file_path,
+            self.line_number,
+            self.column,
+            self.parent,
+        ) == (
+            other.name,
+            other.symbol_type,
+            other.file_path,
+            other.line_number,
+            other.column,
+            other.parent,
+        )
+
 
 @dataclass
 class CodeIndex:
     """Index of code symbols and content."""
 
-    symbols: list[Symbol] = field(default_factory=list)
+    symbols: set[Symbol] = field(default_factory=set)
     symbols_by_file: dict[str, list[Symbol]] = field(default_factory=dict)
     symbols_by_name: dict[str, list[Symbol]] = field(default_factory=dict)
     file_index: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -251,7 +282,11 @@ class CodeIndexer:
         node_map = _tsp_node_maps.get(language, {})
 
         def _find_name(node):
-            """Recursively find the first identifier-like child node."""
+            """Recursively find the first identifier-like child node.
+
+            Skips ERROR nodes to avoid picking up GCC attributes (__init, __exit, etc.)
+            that tree-sitter cannot parse and wraps in ERROR nodes.
+            """
             if node.type in (
                 "identifier",
                 "type_identifier",
@@ -261,6 +296,9 @@ class CodeIndexer:
                 text = node.text
                 if text:
                     return text.decode("utf-8", errors="ignore")
+            # Skip ERROR nodes (e.g., GCC __attribute__ that tree-sitter can't parse)
+            if node.type == "ERROR":
+                return None
             for child in node.children:
                 name = _find_name(child)
                 if name:
@@ -421,9 +459,7 @@ class CodeIndexer:
             return []
 
         try:
-            content = await asyncio.to_thread(
-                Path(file_path).read_text, encoding="utf-8", errors="ignore"
-            )
+            content = Path(file_path).read_text(encoding="utf-8", errors="ignore")
         except (IOError, OSError):
             return []
 
@@ -450,32 +486,35 @@ class CodeIndexer:
                 symbols = []
 
         # Update index
-        async with self._lock:
-            # Remove old symbols for this file from buckets
-            old_symbols = self._index.symbols_by_file.pop(file_path, [])
-            self._index.symbols = [s for s in self._index.symbols if s.file_path != file_path]
-            for symbol in old_symbols:
-                if symbol.name in self._index.symbols_by_name:
-                    self._index.symbols_by_name[symbol.name].remove(symbol)
-                    if not self._index.symbols_by_name[symbol.name]:
-                        del self._index.symbols_by_name[symbol.name]
+        # Note: no async lock needed here because asyncio is single-threaded
+        # and all operations below are pure Python (no await points), so they
+        # run atomically from the event loop's perspective.
+        old_symbols = self._index.symbols_by_file.pop(file_path, [])
+        if old_symbols:
+            self._index.symbols.difference_update(old_symbols)
+        for symbol in old_symbols:
+            if symbol.name in self._index.symbols_by_name:
+                self._index.symbols_by_name[symbol.name].remove(symbol)
+                if not self._index.symbols_by_name[symbol.name]:
+                    del self._index.symbols_by_name[symbol.name]
 
-            # Add new symbols to flat list and buckets
-            self._index.symbols.extend(symbols)
-            self._index.symbols_by_file[file_path] = symbols
-            for symbol in symbols:
-                self._index.symbols_by_name.setdefault(symbol.name, []).append(symbol)
+        # Add new symbols to flat list and buckets
+        if symbols:
+            self._index.symbols.update(symbols)
+        self._index.symbols_by_file[file_path] = symbols
+        for symbol in symbols:
+            self._index.symbols_by_name.setdefault(symbol.name, []).append(symbol)
 
-            # Update file info
-            self._index.file_index[file_path] = {
-                "language": language,
-                "symbol_count": len(symbols),
-                "last_indexed": time.time(),
-                "line_count": len(content.split("\n")),
-            }
+        # Update file info
+        self._index.file_index[file_path] = {
+            "language": language,
+            "symbol_count": len(symbols),
+            "last_indexed": time.time(),
+            "line_count": len(content.split("\n")),
+        }
 
-            self._indexed_files.add(file_path)
-            self._index.last_updated = time.time()
+        self._indexed_files.add(file_path)
+        self._index.last_updated = time.time()
 
         return symbols
 
@@ -512,18 +551,30 @@ class CodeIndexer:
 
     async def remove_file(self, file_path: str) -> None:
         """Remove a file from the index."""
-        async with self._lock:
-            # Remove from buckets
-            old_symbols = self._index.symbols_by_file.pop(file_path, [])
-            self._index.symbols = [s for s in self._index.symbols if s.file_path != file_path]
+        # Remove from buckets (no lock needed: single-threaded event loop)
+        old_symbols = self._index.symbols_by_file.pop(file_path, [])
+        if not old_symbols:
+            # Fallback: scan symbols set directly if buckets are inconsistent
+            old_symbols = [s for s in self._index.symbols if s.file_path == file_path]
+
+        if old_symbols:
+            if isinstance(self._index.symbols, set):
+                self._index.symbols.difference_update(old_symbols)
+            else:
+                # Fallback for list (mainly test fixtures)
+                for sym in old_symbols:
+                    try:
+                        self._index.symbols.remove(sym)
+                    except ValueError:
+                        pass
             for symbol in old_symbols:
                 if symbol.name in self._index.symbols_by_name:
                     self._index.symbols_by_name[symbol.name].remove(symbol)
                     if not self._index.symbols_by_name[symbol.name]:
                         del self._index.symbols_by_name[symbol.name]
 
-            self._index.file_index.pop(file_path, None)
-            self._indexed_files.discard(file_path)
+        self._index.file_index.pop(file_path, None)
+        self._indexed_files.discard(file_path)
 
     def search_symbols(
         self, query: str, symbol_type: str | None = None, file_pattern: str | None = None
@@ -622,13 +673,13 @@ class CodeIndexer:
             "exported_at": time.time(),
         }
 
-        Path(output_path).write_text(json.dumps(data, indent=2))
+        Path(output_path).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def import_index(self, input_path: str) -> None:
         """Import index from JSON file."""
-        data = json.loads(Path(input_path).read_text())
+        data = json.loads(Path(input_path).read_text(encoding="utf-8"))
 
-        self._index.symbols = [
+        self._index.symbols = {
             Symbol(
                 name=s["name"],
                 symbol_type=s["type"],
@@ -638,7 +689,7 @@ class CodeIndexer:
                 parent=s.get("parent"),
             )
             for s in data.get("symbols", [])
-        ]
+        }
 
         self._index.file_index = data.get("files", {})
         self._indexed_files = set(self._index.file_index.keys())

@@ -24,9 +24,15 @@ class MessageNormalizer:
     - Protocol-specific role / content conversion
     """
 
-    def __init__(self, api_protocol: str, provider_name: str = "unknown"):
+    def __init__(
+        self,
+        api_protocol: str,
+        provider_name: str = "unknown",
+        capabilities: Any = None,
+    ):
         self.api_protocol = api_protocol
         self.provider_name = provider_name
+        self.capabilities = capabilities
 
     def normalize(
         self,
@@ -254,16 +260,31 @@ class MessageNormalizer:
     ) -> tuple[list[dict[str, Any]], str | None]:
         """Convert messages to OpenAI-compatible format.
 
+        - Strip ``reasoning_content`` for models that do not support it.
         - Ensure ``reasoning_content`` appears before ``content`` for DeepSeek
           field-order expectations.
         - Ensure ``content`` is always present (OpenAI requires the key).
         """
+        # Determine whether this model supports reasoning_content echo.
+        supports_rc = (
+            self.capabilities is not None
+            and getattr(self.capabilities, "reasoning_content_field", False)
+        ) or self.provider_name in ("deepseek", "qwen")
+
         result: list[dict[str, Any]] = []
         for msg in msgs:
             api_msg = dict(msg)
 
-            # DeepSeek reasoning_content ordering
+            # Strip reasoning_content for unsupported models.
             if (
+                not supports_rc
+                and api_msg.get("role") == "assistant"
+                and "reasoning_content" in api_msg
+            ):
+                api_msg.pop("reasoning_content", None)
+
+            # DeepSeek reasoning_content ordering
+            elif (
                 self.provider_name == "deepseek"
                 and api_msg.get("role") == "assistant"
                 and "reasoning_content" in api_msg
@@ -390,6 +411,22 @@ class ResponseNormalizer:
                             }
                         ]
                     }
+                elif block_type in ("thinking", "redacted_thinking"):
+                    # Extended thinking: emit as reasoning_content for consistency
+                    # (OpenAI-style reasoning_content in the response delta)
+                    text = block.get("thinking", block.get("data", ""))
+                    if text:
+                        yield {
+                            "choices": [
+                                {
+                                    "delta": {
+                                        "content": "",
+                                        "reasoning_content": text,
+                                    },
+                                    "finish_reason": None,
+                                }
+                            ]
+                        }
                 continue
 
             if event_type == "content_block_delta":
@@ -432,6 +469,10 @@ class ResponseNormalizer:
                                 }
                             ]
                         }
+                elif delta_type == "signature_delta":
+                    # signature_delta: Anthropic extended thinking metadata
+                    # containing a cryptographic signature. Silently consume.
+                    pass
                 continue
 
             if event_type == "content_block_stop":
@@ -442,7 +483,13 @@ class ResponseNormalizer:
             if event_type == "message_delta":
                 delta = event.get("delta", {})
                 stop_reason = delta.get("stop_reason")
-                finish = "stop" if stop_reason in ("end_turn", "stop_sequence") else stop_reason
+                # Map Anthropic stop_reason to OpenAI-compatible finish_reason
+                if stop_reason == "tool_use":
+                    finish = "tool_calls"
+                elif stop_reason in ("end_turn", "stop_sequence"):
+                    finish = "stop"
+                else:
+                    finish = stop_reason
                 usage = event.get("usage", {})
                 if usage:
                     accumulated_usage["completion_tokens"] = usage.get("output_tokens", 0)
@@ -511,7 +558,13 @@ class ResponseNormalizer:
             delta["tool_calls"] = tool_calls
 
         stop_reason = data.get("stop_reason")
-        finish = "stop" if stop_reason in ("end_turn", "stop_sequence") else stop_reason
+        # Map Anthropic stop_reason to OpenAI-compatible finish_reason
+        if stop_reason == "tool_use":
+            finish = "tool_calls"
+        elif stop_reason in ("end_turn", "stop_sequence"):
+            finish = "stop"
+        else:
+            finish = stop_reason
 
         chunk: dict[str, Any] = {"choices": [{"delta": delta, "finish_reason": finish}]}
 

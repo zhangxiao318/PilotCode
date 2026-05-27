@@ -598,3 +598,12 @@ orchestration:
 | `src/pilotcode/utils/config.py` | 模型切换检测 |
 | `src/pilotcode/cli.py` | `config --test capability` CLI |
 | `~/.pilotcode/model_capability.json` | 用户能力配置文件 |
+
+---
+
+## 相关系统
+
+- **[Reasoning Content 全链路利用](./reasoning-content-utilization.md)** — 与弱模型代偿协同工作：
+  - 弱模型容易在 reasoning 中陷入循环 → **Reasoning Doom Loop 检测**提前终止
+  - 弱模型容易猜而不验 → **Reasoning Reflection**在思维阶段发现缺陷
+  - 弱模型 token 预算紧张 → **动态 Thinking 开关 + 摘要压缩**节省 20–40% tokens

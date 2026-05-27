@@ -8,27 +8,28 @@ import pytest
 from pilotcode.services.codebase_indexer import CodebaseIndexer
 
 
+@pytest.fixture
+def indexer(temp_dir):
+    """Create a CodebaseIndexer with in-memory embedding service."""
+    from pilotcode.services.embedding_service import EmbeddingService
+
+    emb = EmbeddingService(persist=False)
+    idx = CodebaseIndexer(temp_dir, embedding_service=emb)
+    # Tests run in tests/tmp/ which is in IGNORE_DIRS; remove tmp-related entries
+    # so that test files are not silently ignored.
+    idx.IGNORE_DIRS = {d for d in idx.IGNORE_DIRS if d not in ("tmp", "temp", "_tmp", "_temp")}
+    return idx
+
+
 class TestIncrementalIndexingFixes:
     """Tests for the 3 incremental indexing bug fixes."""
-
-    @pytest.fixture
-    def indexer(self, temp_dir):
-        """Create a CodebaseIndexer with in-memory embedding service."""
-        from pilotcode.services.embedding_service import EmbeddingService
-
-        emb = EmbeddingService(persist=False)
-        idx = CodebaseIndexer(temp_dir, embedding_service=emb)
-        # Tests run in tests/tmp/ which is in IGNORE_DIRS; remove tmp-related entries
-        # so that test files are not silently ignored.
-        idx.IGNORE_DIRS = {d for d in idx.IGNORE_DIRS if d not in ("tmp", "temp", "_tmp", "_temp")}
-        return idx
 
     def _create_files(self, directory, spec):
         """Helper to create files from a dict {rel_path: content}."""
         for rel_path, content in spec.items():
             path = directory / rel_path
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content)
+            path.write_text(content, encoding="utf-8")
 
     @pytest.mark.asyncio
     async def test_incremental_ignores_max_files(self, indexer, temp_dir):
@@ -71,15 +72,19 @@ class TestIncrementalIndexingFixes:
     @pytest.mark.asyncio
     async def test_old_embeddings_cleared_on_reindex(self, indexer, temp_dir):
         """Bugfix 2: old embedding vectors deleted before re-indexing."""
+        import os as _os
+
         file_path = temp_dir / "module.py"
         file_path.write_text("def old_func(): pass\n")
 
         await indexer.index_codebase(incremental=False)
         # Embedding service should have vectors for module.py
+        # Use normalized path to match indexer's path normalization on Windows
+        norm_path = _os.path.normpath(_os.path.normcase(str(file_path)))
         vectors_before = [
             v
             for v in indexer.embedding_service.vector_store.vectors.values()
-            if v.metadata.get("file_path") == str(file_path)
+            if v.metadata.get("file_path") == norm_path
         ]
         assert len(vectors_before) > 0
 
@@ -91,7 +96,7 @@ class TestIncrementalIndexingFixes:
         vectors_after = [
             v
             for v in indexer.embedding_service.vector_store.vectors.values()
-            if v.metadata.get("file_path") == str(file_path)
+            if v.metadata.get("file_path") == norm_path
         ]
         assert len(vectors_after) > 0
         # Ensure no ghost vectors from old content

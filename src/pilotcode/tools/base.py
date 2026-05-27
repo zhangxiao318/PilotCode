@@ -73,9 +73,31 @@ class ToolUseContext:
     set_app_state: Callable[[Callable[["AppState"], "AppState"]], None] | None = None
     cwd: str = ""
     ask_user_callback: Callable[[str, list[str] | None], asyncio.Future[str]] | None = None
+    # Doom-loop detection history: list of (tool_name, input_hash)
+    call_history: list[tuple[str, str]] = field(default_factory=list)
 
     def is_aborted(self) -> bool:
         return self.abort_controller.is_set()
+
+    def check_doom_loop(self, tool_name: str, tool_input: dict) -> str | None:
+        """Detect consecutive identical tool calls (OpenCode-style doom loop).
+
+        Returns a reason string if the same tool+input was called 3 times
+        consecutively, otherwise None.
+        """
+        import hashlib
+        import json
+
+        h = hashlib.md5(json.dumps(tool_input, sort_keys=True, default=str).encode()).hexdigest()[
+            :16
+        ]
+        self.call_history.append((tool_name, h))
+        if len(self.call_history) > 3:
+            self.call_history.pop(0)
+        if len(self.call_history) == 3:
+            if self.call_history[0] == self.call_history[1] == self.call_history[2]:
+                return f"tool '{tool_name}' called 3 times consecutively with identical input"
+        return None
 
 
 def resolve_cwd(context: ToolUseContext) -> str:

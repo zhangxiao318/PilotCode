@@ -4,12 +4,30 @@ let messageId = 0;
 let pendingMessages = new Map();
 let currentStreamId = null;
 let isConnected = false;
+let _wsConnecting = false;  // Guard against duplicate connect attempts
 let currentSessionId = null;
 let sessions = [];
 let expandedGroups = new Set();
 let archivedExpanded = false;
 let contextMenuSessionId = null;
 let isSending = false;
+
+// Explorer state
+let fileTreeData = null;
+let gitStatusData = null;
+let expandedDirs = new Set();
+let selectedFile = null;
+let activeExplorerTab = 'files';
+let selectedDiffFile = null;
+let gitCommitLog = [];
+let gitCommitIndex = -1; // -1 = working tree, 0 = HEAD, 1 = HEAD~1, ...
+let gitBranches = {current: '', local: [], remote: []};
+
+// Refresh debouncing
+let _lastRefreshTime = 0;
+const _REFRESH_DEBOUNCE_MS = 2000;
+// Lazy-loaded directory children cache: path -> children[]
+let _lazyDirCache = {};
 
 // DOM elements
 const chatArea = document.getElementById('chatArea');
@@ -25,6 +43,53 @@ const attachBtn = document.getElementById('attachBtn');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const inputStatus = document.getElementById('inputStatus');
+
+// Toolbar DOM elements
+const toolbarPathText = document.getElementById('toolbarPathText');
+const toolbarPath = document.getElementById('toolbarPath');
+const toolbarExplorerBtn = document.getElementById('toolbarExplorerBtn');
+
+// Explorer DOM elements
+const explorerPanel = document.getElementById('explorerPanel');
+const explorerResizer = document.getElementById('explorerResizer');
+const explorerToggle = document.getElementById('explorerToggle');
+const explorerBody = document.getElementById('explorerBody');
+const explorerCwd = document.getElementById('explorerCwd');
+const fileTree = document.getElementById('fileTree');
+const gitBar = document.getElementById('gitBar');
+const gitFileList = document.getElementById('gitFileList');
+const explorerTabs = document.getElementById('explorerTabs');
+const tabFiles = document.getElementById('tabFiles');
+const tabChanges = document.getElementById('tabChanges');
+const filesTabContent = document.getElementById('filesTabContent');
+const changesTabContent = document.getElementById('changesTabContent');
+const changesBadge = document.getElementById('changesBadge');
+const diffViewer = document.getElementById('diffViewer');
+const diffFileName = document.getElementById('diffFileName');
+const diffClose = document.getElementById('diffClose');
+const diffContent = document.getElementById('diffContent');
+
+// Git history DOM elements
+const gitHistoryNav = document.getElementById('gitHistoryNav');
+const gitPrevBtn = document.getElementById('gitPrevBtn');
+const gitNextBtn = document.getElementById('gitNextBtn');
+const gitLatestBtn = document.getElementById('gitLatestBtn');
+const gitHistoryLabel = document.getElementById('gitHistoryLabel');
+const gitBranchSelect = document.getElementById('gitBranchSelect');
+const gitAheadBehind = document.getElementById('gitAheadBehind');
+const commitInfo = document.getElementById('commitInfo');
+const commitHash = document.getElementById('commitHash');
+const commitMessage = document.getElementById('commitMessage');
+const commitMeta = document.getElementById('commitMeta');
+
+// Context usage DOM elements
+const contextUsage = document.getElementById('contextUsage');
+const contextPercent = document.getElementById('contextPercent');
+const contextFill = document.getElementById('contextFill');
+const tooltipTokens = document.getElementById('tooltipTokens');
+const tooltipUsable = document.getElementById('tooltipUsable');
+const tooltipWindow = document.getElementById('tooltipWindow');
+const tooltipOutput = document.getElementById('tooltipOutput');
 
 // Modal elements
 const cwdModal = document.getElementById('cwdModal');
@@ -44,11 +109,26 @@ function init() {
     setupEventListeners();
     // Initialize button state
     sendBtn.disabled = messageInput.value.trim().length === 0;
+    updateToolbarActiveStates();
+    // Restore explorer width
+    try {
+        const savedWidth = localStorage.getItem('explorerWidth');
+        if (savedWidth && explorerPanel) {
+            explorerPanel.style.width = savedWidth;
+            explorerPanel.style.minWidth = savedWidth;
+        }
+    } catch (e) {
+        // ignore
+    }
     messageInput.focus();
 }
 
 // WebSocket connection
 function connectWebSocket() {
+    if (_wsConnecting || (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN))) {
+        return;
+    }
+    _wsConnecting = true;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.hostname}:${parseInt(window.location.port) + 1}`;
     
@@ -56,6 +136,7 @@ function connectWebSocket() {
     ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
+        _wsConnecting = false;
         console.log('WebSocket connected');
         isConnected = true;
         updateConnectionStatus(true);
@@ -65,6 +146,7 @@ function connectWebSocket() {
     };
     
     ws.onclose = () => {
+        _wsConnecting = false;
         console.log('WebSocket closed');
         isConnected = false;
         updateConnectionStatus(false);
@@ -138,6 +220,9 @@ function handleMessage(data) {
         case 'thinking':
             handleThinking(data);
             break;
+        case 'reasoning':
+            handleReasoning(data);
+            break;
         case 'tool_call':
             handleToolCall(data);
             break;
@@ -166,29 +251,49 @@ function handleMessage(data) {
             break;
         case 'session_created':
             currentSessionId = data.session_id;
+            localStorage.setItem('pilotcode_last_session', data.session_id);
             if (data.cwd) {
                 expandedGroups.add(data.cwd);
             }
             renderSessionList();
+            refreshExplorer();
+            updateToolbarPath(data.cwd || '');
+            if (data.context) renderContextUsage(data.context);
             showToast(`New session created (${data.cwd || ''})`, 'success');
             break;
         case 'session_attached':
             currentSessionId = data.session_id;
+            localStorage.setItem('pilotcode_last_session', data.session_id);
             renderSessionList();
             showToast(`Attached to session ${data.session_id.slice(0, 8)}`, 'success');
+            refreshExplorer();
+            updateToolbarPath(data.cwd || '');
+            if (data.context) renderContextUsage(data.context);
             break;
         case 'session_loaded':
             currentSessionId = data.session_id;
+            localStorage.setItem('pilotcode_last_session', data.session_id);
             clearChatUI();
+            updateToolbarPath(data.project_path || data.cwd || '');
+            if (data.context) renderContextUsage(data.context);
             if (data.messages && data.messages.length > 0) {
                 renderHistoryMessages(data.messages);
             }
             renderSessionList();
             showToast(`Loaded: ${data.name || data.session_id}`, 'success');
+            refreshExplorer();
             break;
         case 'session_list':
             sessions = data.sessions || [];
             renderSessionList();
+            // Auto-restore last session on page refresh, or create a new one
+            const lastSession = localStorage.getItem('pilotcode_last_session');
+            if (lastSession && sessions.some(s => s.session_id === lastSession)) {
+                sendMessage({type: 'session_load', session_id: lastSession});
+            } else if (!currentSessionId) {
+                // No previous session — auto-create one with server's default cwd
+                sendMessage({type: 'session_create'});
+            }
             break;
         case 'session_saved':
             showToast('Session saved', 'success');
@@ -198,7 +303,10 @@ function handleMessage(data) {
             renderSessionList();
             if (currentSessionId === data.session_id) {
                 currentSessionId = null;
+                localStorage.removeItem('pilotcode_last_session');
                 clearChatUI();
+                updateToolbarPath('');
+                if (contextUsage) contextUsage.classList.add('hidden');
             }
             break;
         case 'session_renamed':
@@ -236,6 +344,50 @@ function handleMessage(data) {
                     scrollToBottom();
                 }
             }
+            break;
+        case 'file_tree':
+            fileTreeData = data.tree;
+            if (explorerCwd) explorerCwd.textContent = data.cwd || '.';
+            renderFileTree();
+            break;
+        case 'file_tree_children':
+            _lazyDirCache[data.path] = data.children;
+            // Merge into tree data and re-render
+            if (fileTreeData) {
+                mergeTreeChildren(fileTreeData, data.path, data.children);
+                renderFileTree();
+            }
+            break;
+        case 'git_status':
+            gitStatusData = data.status;
+            renderGitStatus();
+            updateChangesBadge();
+            break;
+        case 'git_diff':
+            renderDiffViewer(data.file_path, data.diff);
+            break;
+        case 'git_log':
+            gitCommitLog = data.commits || [];
+            updateGitHistoryNav();
+            break;
+        case 'git_show':
+            renderCommitShow(data.commit, data.data);
+            break;
+        case 'git_branch_list':
+            gitBranches = data.branches || {current: '', local: [], remote: []};
+            renderBranchSelector();
+            break;
+        case 'git_checkout_result':
+            if (data.success) {
+                showToast(`Switched to ${data.branch}`, 'success');
+                gitCommitIndex = -1;
+                refreshGitData();
+            } else {
+                showToast(data.message || 'Checkout failed', 'error');
+            }
+            break;
+        case 'context_usage':
+            renderContextUsage(data);
             break;
         case 'session_error':
             showToast(data.error || 'Session error', 'error');
@@ -292,6 +444,14 @@ function handleStreamingEnd(data) {
     pendingMessages.delete(data.stream_id);
     currentStreamId = null;
     setInputState(false);
+    // Refresh explorer and git status after each AI response completes
+    // to show any files/directories created or modified by the AI.
+    // Debounce: don't refresh if called within 2 seconds of last refresh.
+    const now = Date.now();
+    if (now - _lastRefreshTime > _REFRESH_DEBOUNCE_MS) {
+        _lastRefreshTime = now;
+        refreshExplorer();
+    }
 }
 
 // Handle streaming error
@@ -327,10 +487,54 @@ function handleThinking(data) {
     scrollToBottom();
 }
 
+// Handle reasoning block (DeepSeek thinking mode)
+function handleReasoning(data) {
+    const contentDiv = document.getElementById(`content-${currentStreamId}`);
+    if (!contentDiv) return;
+    
+    let reasoningDiv = contentDiv.querySelector('.stream-block.reasoning');
+    if (!reasoningDiv) {
+        reasoningDiv = document.createElement('div');
+        reasoningDiv.className = 'stream-block reasoning';
+        reasoningDiv.innerHTML = '<div class="label">Reasoning</div><div class="reasoning-content"></div>';
+        const finalDiv = contentDiv.querySelector('.final-response');
+        if (finalDiv) {
+            contentDiv.insertBefore(reasoningDiv, finalDiv);
+        } else {
+            contentDiv.appendChild(reasoningDiv);
+        }
+    }
+    
+    const reasoningContent = reasoningDiv.querySelector('.reasoning-content');
+    reasoningContent.textContent = data.content;
+    scrollToBottom();
+}
+
 // Handle tool call
 function handleToolCall(data) {
     const contentDiv = document.getElementById(`content-${currentStreamId}`);
     if (!contentDiv) return;
+    
+    const stream = pendingMessages.get(currentStreamId);
+    const finalDiv = contentDiv.querySelector('.final-response');
+    
+    // Extract only the NEW text since the last tool call into a .thinking-response block.
+    // Track an offset (stream._extractedLen) so we extract exactly the text that was
+    // generated since the LAST extraction — not the full accumulated buffer.
+    // Keep stream.content and finalDiv intact so subsequent chunks don't start empty
+    // (which caused truncated text like "ilotCode" instead of "查看PilotCode中...").
+    if (finalDiv && finalDiv.innerHTML.trim() && stream) {
+        const prevLen = stream._extractedLen || 0;
+        const newPart = stream.content.slice(prevLen).trim();
+        stream._extractedLen = stream.content.length;
+
+        if (newPart) {
+            const thinkingDiv = document.createElement('div');
+            thinkingDiv.className = 'thinking-response';
+            thinkingDiv.innerHTML = renderMarkdown(newPart);
+            contentDiv.insertBefore(thinkingDiv, finalDiv);
+        }
+    }
     
     // Format input parameters in one line
     const inputStr = formatToolInput(data.tool_input);
@@ -341,7 +545,7 @@ function handleToolCall(data) {
     toolDiv.innerHTML = `
         <div class="tool-header" onclick="toggleTool(this)">
             <span class="icon">[T]</span>
-            <span>${escapeHtml(data.tool_name)} ${inputStr}</span>
+            <span style="white-space: pre-line;">${escapeHtml(data.tool_name)} ${inputStr.replace(/\n/g, '<br>')}</span>
             <span style="margin-left: auto; color: #999;">▼</span>
         </div>
         <div class="tool-content hidden">
@@ -349,8 +553,7 @@ function handleToolCall(data) {
         </div>
     `;
     
-    // Insert before final response
-    const finalDiv = contentDiv.querySelector('.final-response');
+    // Insert before final response (which now holds future / final answer content)
     if (finalDiv) {
         contentDiv.insertBefore(toolDiv, finalDiv);
     } else {
@@ -359,48 +562,68 @@ function handleToolCall(data) {
     scrollToBottom();
 }
 
-// Format tool input to single line (no brackets)
+// Format tool input to readable multi-line display
 function formatToolInput(input) {
     if (!input || typeof input !== 'object') return '';
-    const pairs = Object.entries(input).map(([k, v]) => {
+    const keyOrder = ['file_path', 'old_string', 'new_string', 'command', 'question', 'code', 'query', 'pattern'];
+    const entries = Object.entries(input).sort((a, b) => {
+        const ia = keyOrder.indexOf(a[0]);
+        const ib = keyOrder.indexOf(b[0]);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return a[0].localeCompare(b[0]);
+    });
+    return entries.map(([k, v]) => {
         let val = v;
         if (typeof v === 'string') {
-            if (v.length > 40) {
-                val = v.substring(0, 20) + '...';
+            // Show first line only in header, full content in collapsed section
+            const firstLine = v.split('\n')[0];
+            if (firstLine.length > 60) {
+                val = firstLine.substring(0, 57) + '...';
             } else {
-                val = v;
+                val = firstLine;
             }
         } else if (Array.isArray(v)) {
             val = v.join(', ');
-            if (val.length > 30) val = val.substring(0, 25) + '...';
+            if (val.length > 40) val = val.substring(0, 37) + '...';
+        } else {
+            val = String(v);
         }
-        return `${k}=${val}`;
-    });
-    return pairs.join(' ');
+        return `${k}: ${val}`;
+    }).join(' | ');
 }
 
 // Handle tool result
 function handleToolResult(data) {
     const contentDiv = document.getElementById(`content-${currentStreamId}`);
     if (!contentDiv) return;
-    
-    // Truncate long results - shorter max for cleaner UI
-    let resultText = data.result || '';
-    const maxLen = 120;
-    if (resultText.length > maxLen) {
-        resultText = resultText.substring(0, 50) + ' ... ' + resultText.substring(resultText.length - 30);
-    }
-    
-    const resultDiv = document.createElement('div');
-    resultDiv.className = 'stream-block result';
-    resultDiv.innerHTML = `<pre><code>${escapeHtml(resultText)}</code></pre>`;
-    
+
+    const resultText = data.result || '';
+    const isError = data.success === false;  // backend sends "success", not "is_error"
+    const toolName = data.tool_name || 'unknown';
+    const label = isError ? `Error: ${escapeHtml(toolName)}` : `Result: ${escapeHtml(toolName)}`;
+    const icon = isError ? '[E]' : '[R]';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tool-result' + (isError ? ' error' : '');
+    wrapper.innerHTML = `
+        <div class="tool-result-header" onclick="toggleTool(this)">
+            <span class="icon">${icon}</span>
+            <span>${label}</span>
+            <span style="margin-left: auto; color: #999;">▶</span>
+        </div>
+        <div class="tool-result-content hidden">
+            <pre><code>${escapeHtml(resultText)}</code></pre>
+        </div>
+    `;
+
     // Insert before final response
     const finalDiv = contentDiv.querySelector('.final-response');
     if (finalDiv) {
-        contentDiv.insertBefore(resultDiv, finalDiv);
+        contentDiv.insertBefore(wrapper, finalDiv);
     } else {
-        contentDiv.appendChild(resultDiv);
+        contentDiv.appendChild(wrapper);
     }
     scrollToBottom();
 }
@@ -785,6 +1008,46 @@ function renderMarkdown(text) {
         return `__CODE_BLOCK_${id}__`;
     });
 
+    // Tables: convert markdown pipe tables to HTML tables
+    // Process before escapeHtml so <table> tags are preserved.
+    const tableBlocks = [];
+    text = text.replace(
+        /^\|(.+)\|\s*$(?:\n^\|[-:| ]+\|\s*$(?:\n^\|.+\|\s*$)*)?/gm,
+        (match) => {
+            const id = tableBlocks.length;
+            const rows = match.trim().split('\n');
+            let html = '<div class="table-wrapper"><table>';
+
+            // First row is header
+            if (rows.length >= 1) {
+                html += '<thead><tr>';
+                const cells = rows[0].split('|').filter(c => c.trim() !== '');
+                for (const cell of cells) {
+                    html += '<th>' + cell.trim() + '</th>';
+                }
+                html += '</tr></thead>';
+            }
+
+            // Skip separator row (row 1) and process remaining data rows
+            if (rows.length >= 3) {
+                html += '<tbody>';
+                for (let i = 2; i < rows.length; i++) {
+                    html += '<tr>';
+                    const cells = rows[i].split('|').filter(c => c.trim() !== '');
+                    for (const cell of cells) {
+                        html += '<td>' + cell.trim() + '</td>';
+                    }
+                    html += '</tr>';
+                }
+                html += '</tbody>';
+            }
+
+            html += '</table></div>';
+            tableBlocks.push(html);
+            return `__TABLE_BLOCK_${id}__`;
+        }
+    );
+
     // Escape HTML
     text = escapeHtml(text);
 
@@ -837,9 +1100,8 @@ function renderMarkdown(text) {
     const result = [];
     for (const para of paragraphs) {
         const trimmed = para.trim();
-        if (!trimmed) continue;
-        // Skip block-level elements (headings, lists, code block placeholders)
-        if (/^<(h[1-6]|ul|ol|blockquote|pre|div)\b/.test(trimmed)) {
+        if (!trimmed) continue;        // Skip block-level elements (headings, lists, code block placeholders)
+        if (/^<(h[1-6]|ul|ol|blockquote|pre|div|table)\b/.test(trimmed)) {
             result.push(trimmed);
         } else {
             const content = trimmed.replace(/\n/g, '<br>');
@@ -858,6 +1120,11 @@ function renderMarkdown(text) {
             </div>
             <pre><code>${escapedCode}</code></pre>
         </div>`);
+    });
+
+    // Restore table blocks
+    tableBlocks.forEach((html, id) => {
+        text = text.replace(`__TABLE_BLOCK_${id}__`, html);
     });
 
     return text;
@@ -1074,7 +1341,7 @@ function renderHistoryMessages(messages) {
                 <div class="tool-call">
                     <div class="tool-header" onclick="toggleTool(this)">
                         <span class="icon">[T]</span>
-                        <span>${escapeHtml(msg.name)} ${inputStr}</span>
+                        <span style="white-space: pre-line;">${escapeHtml(msg.name)} ${inputStr.replace(/\n/g, '<br>')}</span>
                         <span style="margin-left: auto; color: #999;">▼</span>
                     </div>
                     <div class="tool-content hidden">
@@ -1086,11 +1353,38 @@ function renderHistoryMessages(messages) {
         } else if (msg.role === 'tool_result') {
             const div = document.createElement('div');
             div.className = 'message';
-            let content = msg.content || '';
-            if (content.length > 120) {
-                content = content.substring(0, 50) + ' ... ' + content.substring(content.length - 30);
-            }
-            div.innerHTML = `<div class="stream-block result"><pre><code>${escapeHtml(content)}</code></pre></div>`;
+            const content = msg.content || '';
+            const isError = msg.is_error;
+            const toolName = msg.tool_name || 'unknown';
+            const label = isError ? `Error: ${escapeHtml(toolName)}` : `Result: ${escapeHtml(toolName)}`;
+            const icon = isError ? '[E]' : '[R]';
+            div.innerHTML = `
+                <div class="tool-result${isError ? ' error' : ''}">
+                    <div class="tool-result-header" onclick="toggleTool(this)">
+                        <span class="icon">${icon}</span>
+                        <span>${label}</span>
+                        <span style="margin-left: auto; color: #999;">▶</span>
+                    </div>
+                    <div class="tool-result-content hidden">
+                        <pre><code>${escapeHtml(content)}</code></pre>
+                    </div>
+                </div>
+            `;
+            messagesContainer.appendChild(div);
+        } else if (msg.role === 'system') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `<div class="stream-block system">${escapeHtml(msg.content)}</div>`;
+            messagesContainer.appendChild(div);
+        } else if (msg.role === 'thinking') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `<div class="stream-block thinking">${escapeHtml(msg.content)}</div>`;
+            messagesContainer.appendChild(div);
+        } else if (msg.role === 'reasoning') {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `<div class="stream-block reasoning">${escapeHtml(msg.content)}</div>`;
             messagesContainer.appendChild(div);
         }
     });
@@ -1196,6 +1490,601 @@ function updateCwdSelectionUI() {
         });
     }
 }
+
+// ------------------------------------------------------------------
+// File Explorer
+// ------------------------------------------------------------------
+
+function renderFileTree() {
+    if (!fileTree) return;
+    if (!fileTreeData || fileTreeData.length === 0) {
+        fileTree.innerHTML = '<div class="explorer-empty">No files</div>';
+        return;
+    }
+    fileTree.innerHTML = '';
+    fileTreeData.forEach(root => {
+        fileTree.appendChild(buildFileNode(root, 0));
+    });
+}
+
+function buildFileNode(node, level) {
+    const isDir = node.type === 'directory';
+    const isExpanded = expandedDirs.has(node.path);
+    const isSelected = selectedFile === node.path;
+    const el = document.createElement('div');
+
+    const row = document.createElement('div');
+    row.className = 'file-tree-node' + (isSelected ? ' selected' : '');
+    row.style.paddingLeft = (8 + level * 12) + 'px';
+
+    // Icon
+    const icon = document.createElement('span');
+    icon.className = 'file-tree-icon';
+    if (isDir) {
+        icon.className += isExpanded ? ' folder-open' : ' folder';
+        icon.textContent = isExpanded ? '📂' : '📁';
+    } else {
+        icon.textContent = '📄';
+    }
+    row.appendChild(icon);
+
+    // Name
+    const name = document.createElement('span');
+    name.className = 'file-tree-name';
+    name.textContent = node.name;
+    row.appendChild(name);
+
+    // Git kind badge
+    if (gitStatusData && gitStatusData.is_git && !isDir) {
+        const kind = getGitKind(node.path);
+        if (kind) {
+            const badge = document.createElement('span');
+            badge.className = 'file-tree-kind ' + kind;
+            badge.textContent = kind === 'add' ? 'A' : kind === 'mod' ? 'M' : kind === 'del' ? 'D' : '';
+            row.appendChild(badge);
+        }
+    }
+
+    el.appendChild(row);
+
+    // Children
+    if (isDir && node.children && node.children.length > 0) {
+        const children = document.createElement('div');
+        children.className = 'file-tree-children' + (isExpanded ? '' : ' hidden');
+        node.children.forEach(child => {
+            children.appendChild(buildFileNode(child, level + 1));
+        });
+        el.appendChild(children);
+
+        row.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (isExpanded) {
+                expandedDirs.delete(node.path);
+            } else {
+                expandedDirs.add(node.path);
+            }
+            // Lazy load: if dir has more content not yet loaded, request it
+            if (!isExpanded && node.has_more && (!node.children || node.children.length === 0)) {
+                sendMessage({type: 'file_tree_expand', path: node.path});
+            }
+            renderFileTree();
+        });
+    } else if (!isDir) {
+        row.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectedFile = node.path;
+            renderFileTree();
+            requestFileContent(node.path);
+        });
+    }
+
+    return el;
+}
+
+function getGitKind(filePath) {
+    if (!gitStatusData || !gitStatusData.files) return null;
+    const files = gitStatusData.files;
+    // Try relative path matching
+    for (const category of ['added', 'modified', 'deleted', 'renamed']) {
+        const list = files[category] || [];
+        for (const f of list) {
+            if (filePath.endsWith(f) || f.endsWith(filePath)) {
+                return category === 'added' ? 'add' : category === 'modified' ? 'mod' : category === 'deleted' ? 'del' : 'mod';
+            }
+        }
+    }
+    return null;
+}
+
+function requestFileContent(filePath) {
+    // Insert a reference to the file into the input box
+    if (messageInput) {
+        const current = messageInput.value;
+        const ref = `File: ${filePath}\n`;
+        messageInput.value = current + (current ? '\n' : '') + ref;
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+        messageInput.focus();
+    }
+}
+
+function renderGitStatus() {
+    if (!gitBar) return;
+    if (!gitFileList) return;
+    if (!gitStatusData || !gitStatusData.is_git) {
+        gitBar.innerHTML = '<div class="explorer-empty">Not a git repository</div>';
+        gitFileList.innerHTML = '';
+        return;
+    }
+    // If viewing a historical commit, don't overwrite the commit's file list
+    if (gitCommitIndex !== -1) {
+        // Still update branch/ahead-behind info in the bar
+        const s = gitStatusData;
+        const branchHtml = `
+            <div class="git-branch">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="6" y1="3" x2="6" y2="15"></line>
+                    <circle cx="18" cy="6" r="3"></circle>
+                    <circle cx="6" cy="18" r="3"></circle>
+                    <path d="M18 9a9 9 0 0 1-9 9"></path>
+                </svg>
+                <span>${escapeHtml(s.branch || 'unknown')}</span>
+                ${s.ahead_behind ? `<span style="color:#999;font-size:11px;">${escapeHtml(s.ahead_behind)}</span>` : ''}
+            </div>
+        `;
+        gitBar.innerHTML = branchHtml;
+        return;
+    }
+    const s = gitStatusData;
+    const files = s.files || {};
+    const modCount = (files.modified || []).length;
+    const addCount = (files.added || []).length;
+    const delCount = (files.deleted || []).length;
+    const untrackedCount = (files.untracked || []).length;
+
+    let statsHtml = '';
+    if (addCount) statsHtml += `<span class="git-stat add">+${addCount}</span>`;
+    if (modCount) statsHtml += `<span class="git-stat mod">~${modCount}</span>`;
+    if (delCount) statsHtml += `<span class="git-stat del">−${delCount}</span>`;
+    if (untrackedCount) statsHtml += `<span class="git-stat untracked">?${untrackedCount}</span>`;
+
+    const branchHtml = `
+        <div class="git-branch">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="6" y1="3" x2="6" y2="15"></line>
+                <circle cx="18" cy="6" r="3"></circle>
+                <circle cx="6" cy="18" r="3"></circle>
+                <path d="M18 9a9 9 0 0 1-9 9"></path>
+            </svg>
+            <span>${escapeHtml(s.branch || 'unknown')}</span>
+            ${s.ahead_behind ? `<span style="color:#999;font-size:11px;">${escapeHtml(s.ahead_behind)}</span>` : ''}
+        </div>
+    `;
+
+    gitBar.innerHTML = branchHtml + (statsHtml ? `<div class="git-stats">${statsHtml}</div>` : '');
+
+    // Render file list
+    gitFileList.innerHTML = '';
+    const categories = [
+        { key: 'modified', label: 'Modified', dotClass: 'mod' },
+        { key: 'added', label: 'Added', dotClass: 'add' },
+        { key: 'deleted', label: 'Deleted', dotClass: 'del' },
+        { key: 'untracked', label: 'Untracked', dotClass: 'untracked' },
+    ];
+    for (const cat of categories) {
+        const list = files[cat.key] || [];
+        if (list.length === 0) continue;
+        const catLabel = document.createElement('div');
+        catLabel.className = 'git-file-category';
+        catLabel.textContent = `${cat.label} (${list.length})`;
+        gitFileList.appendChild(catLabel);
+        for (const f of list) {
+            const row = document.createElement('div');
+            row.className = 'git-file-row' + (selectedDiffFile === f ? ' selected' : '');
+            row.innerHTML = `<span class="git-file-dot ${cat.dotClass}"></span><span class="git-file-name">${escapeHtml(f)}</span>`;
+            row.addEventListener('click', () => {
+                selectedDiffFile = f;
+                // Update selection highlight
+                gitFileList.querySelectorAll('.git-file-row').forEach(r => r.classList.remove('selected'));
+                row.classList.add('selected');
+                requestGitDiff(f);
+            });
+            gitFileList.appendChild(row);
+        }
+    }
+    if (gitFileList.children.length === 0) {
+        gitFileList.innerHTML = '<div class="explorer-empty">No changes</div>';
+    }
+}
+
+function updateChangesBadge() {
+    if (!changesBadge) return;
+    if (!gitStatusData || !gitStatusData.is_git) {
+        changesBadge.classList.add('hidden');
+        return;
+    }
+    const files = gitStatusData.files || {};
+    const total = (files.modified || []).length + (files.added || []).length + (files.deleted || []).length + (files.untracked || []).length;
+    if (total > 0) {
+        changesBadge.textContent = total;
+        changesBadge.classList.remove('hidden');
+    } else {
+        changesBadge.classList.add('hidden');
+    }
+}
+
+function requestGitDiff(filePath) {
+    if (!isConnected) return;
+    sendMessage({type: 'git_diff', file_path: filePath});
+}
+
+function renderDiffViewer(filePath, diffText) {
+    if (!diffViewer || !diffFileName || !diffContent) return;
+    diffFileName.textContent = filePath;
+    diffContent.innerHTML = '';
+    if (!diffText) {
+        diffContent.innerHTML = '<div class="diff-empty">No diff available</div>';
+        diffViewer.classList.remove('hidden');
+        return;
+    }
+    const lines = diffText.split('\n');
+    for (const line of lines) {
+        const div = document.createElement('div');
+        div.className = 'diff-line';
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+            div.classList.add('add');
+        } else if (line.startsWith('-') && !line.startsWith('---')) {
+            div.classList.add('del');
+        } else if (line.startsWith('@@')) {
+            div.classList.add('hunk');
+        } else if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
+            div.classList.add('info');
+        }
+        div.textContent = line;
+        diffContent.appendChild(div);
+    }
+    diffViewer.classList.remove('hidden');
+}
+
+function hideDiffViewer() {
+    if (diffViewer) diffViewer.classList.add('hidden');
+    selectedDiffFile = null;
+    if (gitFileList) {
+        gitFileList.querySelectorAll('.git-file-row').forEach(r => r.classList.remove('selected'));
+    }
+}
+
+function mergeTreeChildren(treeData, path, children) {
+    // Recursively find the node matching `path` and replace its children
+    for (let i = 0; i < treeData.length; i++) {
+        const node = treeData[i];
+        if (node.path === path) {
+            node.children = children;
+            node.has_more = false;
+            return true;
+        }
+        if (node.children && node.children.length > 0) {
+            if (mergeTreeChildren(node.children, path, children)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function refreshExplorer() {
+    if (!isConnected) return;
+    sendMessage({type: 'file_tree'});
+    refreshGitData();
+}
+
+function refreshGitData() {
+    if (!isConnected) return;
+    sendMessage({type: 'git_status'});
+    sendMessage({type: 'git_log', max_count: 20});
+    sendMessage({type: 'git_branch_list'});
+}
+
+function updateGitHistoryNav() {
+    if (!gitPrevBtn || !gitNextBtn || !gitLatestBtn || !gitHistoryLabel) return;
+    const atHead = gitCommitIndex === -1;
+    gitLatestBtn.disabled = atHead;
+    gitNextBtn.disabled = atHead;
+    gitPrevBtn.disabled = gitCommitLog.length === 0 || gitCommitIndex >= gitCommitLog.length - 1;
+
+    if (atHead) {
+        gitHistoryLabel.textContent = 'Working tree';
+    } else if (gitCommitIndex >= 0 && gitCommitIndex < gitCommitLog.length) {
+        const c = gitCommitLog[gitCommitIndex];
+        gitHistoryLabel.textContent = `${c.hash.slice(0, 7)} ${c.message}`;
+    } else {
+        gitHistoryLabel.textContent = '';
+    }
+}
+
+function goToCommit(index) {
+    if (!gitCommitLog.length) return;
+    gitCommitIndex = index;
+    updateGitHistoryNav();
+    hideDiffViewer();
+
+    if (gitCommitIndex === -1) {
+        // Working tree - show current git status
+        if (commitInfo) commitInfo.classList.add('hidden');
+        if (gitStatusData) renderGitStatus();
+    } else if (gitCommitIndex >= 0 && gitCommitIndex < gitCommitLog.length) {
+        // Historical commit - fetch show data
+        const commit = gitCommitLog[gitCommitIndex].hash;
+        sendMessage({type: 'git_show', commit: commit});
+    }
+}
+
+function renderCommitShow(commitHash, data) {
+    if (!commitInfo || !commitHash || !commitMessage || !commitMeta) return;
+    const stat = data.stat || '';
+    const diff = data.diff || '';
+
+    // Parse commit info from diff header
+    let message = '';
+    let author = '';
+    let date = '';
+    const lines = diff.split('\n');
+    for (const line of lines) {
+        if (line.startsWith('commit ')) {
+            // already have hash
+        } else if (line.startsWith('Author: ')) {
+            author = line.slice(8).trim();
+        } else if (line.startsWith('Date: ')) {
+            date = line.slice(6).trim();
+        } else if (!message && line.trim() && !line.startsWith('diff ') && !line.startsWith('index ')) {
+            message = line.trim();
+            break;
+        }
+    }
+
+    commitHash.textContent = commitHash.slice(0, 7);
+    commitMessage.textContent = message || '(no message)';
+    commitMeta.textContent = author + (date ? ' · ' + date : '');
+    commitInfo.classList.remove('hidden');
+
+    // Render changed files from stat
+    if (gitFileList) {
+        gitFileList.innerHTML = '';
+        const statLines = stat.split('\n').filter(l => l.includes('|'));
+        if (statLines.length === 0) {
+            gitFileList.innerHTML = '<div class="explorer-empty">No file changes</div>';
+        } else {
+            const catLabel = document.createElement('div');
+            catLabel.className = 'git-file-category';
+            catLabel.textContent = `Changed files (${statLines.length})`;
+            gitFileList.appendChild(catLabel);
+            for (const line of statLines) {
+                const parts = line.split('|');
+                const fname = parts[0].trim();
+                const row = document.createElement('div');
+                row.className = 'git-file-row';
+                row.innerHTML = `<span class="git-file-dot mod"></span><span class="git-file-name">${escapeHtml(fname)}</span>`;
+                row.addEventListener('click', () => {
+                    gitFileList.querySelectorAll('.git-file-row').forEach(r => r.classList.remove('selected'));
+                    row.classList.add('selected');
+                    // Show per-file diff within this historical commit
+                    sendMessage({type: 'git_diff', file_path: fname, commit: commitHash});
+                });
+                gitFileList.appendChild(row);
+            }
+        }
+    }
+
+    // Show full commit diff in diff viewer
+    renderDiffViewer(commitHash.slice(0, 7), diff);
+}
+
+function renderBranchSelector() {
+    if (!gitBranchSelect) return;
+    gitBranchSelect.innerHTML = '';
+    const {current, local, remote} = gitBranches;
+    if (local.length === 0 && remote.length === 0) {
+        const opt = document.createElement('option');
+        opt.textContent = 'No branches';
+        gitBranchSelect.appendChild(opt);
+        return;
+    }
+    // Local branches
+    if (local.length > 0) {
+        const grp = document.createElement('optgroup');
+        grp.label = 'Local';
+        for (const b of local) {
+            const opt = document.createElement('option');
+            opt.value = b;
+            opt.textContent = b;
+            opt.selected = b === current;
+            grp.appendChild(opt);
+        }
+        gitBranchSelect.appendChild(grp);
+    }
+    // Remote branches
+    if (remote.length > 0) {
+        const grp = document.createElement('optgroup');
+        grp.label = 'Remote';
+        for (const b of remote) {
+            const opt = document.createElement('option');
+            opt.value = b;
+            opt.textContent = b;
+            grp.appendChild(opt);
+        }
+        gitBranchSelect.appendChild(grp);
+    }
+    // Update ahead/behind
+    if (gitAheadBehind && gitStatusData && gitStatusData.ahead_behind) {
+        gitAheadBehind.textContent = gitStatusData.ahead_behind;
+    } else if (gitAheadBehind) {
+        gitAheadBehind.textContent = '';
+    }
+}
+
+function updateToolbarPath(cwd) {
+    if (toolbarPathText) {
+        toolbarPathText.textContent = cwd || 'PilotCode';
+    }
+    if (toolbarPath) {
+        toolbarPath.title = cwd || '';
+    }
+}
+
+function fmtK(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'm';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+    return String(n);
+}
+
+function renderContextUsage(data) {
+    if (!contextUsage || !contextPercent || !contextFill) return;
+    if (!data || !data.context_window) {
+        contextUsage.classList.add('hidden');
+        return;
+    }
+    const pct = data.percentage || 0;
+    const tokens = data.token_count || 0;
+    const usable = data.usable_context || 1;
+    const window = data.context_window || 0;
+    const output = data.max_output_tokens || 0;
+
+    contextPercent.textContent = pct.toFixed(1) + '%';
+    contextFill.style.width = Math.min(100, pct) + '%';
+    contextFill.className = 'context-fill ' + (pct < 50 ? 'low' : pct < 85 ? 'medium' : 'high');
+
+    if (tooltipTokens) tooltipTokens.textContent = fmtK(tokens);
+    if (tooltipUsable) tooltipUsable.textContent = fmtK(usable);
+    if (tooltipWindow) tooltipWindow.textContent = fmtK(window);
+    if (tooltipOutput) tooltipOutput.textContent = fmtK(output);
+
+    contextUsage.classList.remove('hidden');
+}
+
+function updateToolbarActiveStates() {
+    if (toolbarExplorerBtn) {
+        toolbarExplorerBtn.classList.toggle('active', !explorerPanel.classList.contains('collapsed'));
+    }
+}
+
+// Tab switching
+function switchExplorerTab(tab) {
+    activeExplorerTab = tab;
+    if (tabFiles && tabChanges) {
+        tabFiles.classList.toggle('active', tab === 'files');
+        tabChanges.classList.toggle('active', tab === 'changes');
+    }
+    if (filesTabContent && changesTabContent) {
+        filesTabContent.classList.toggle('hidden', tab !== 'files');
+        changesTabContent.classList.toggle('hidden', tab !== 'changes');
+    }
+}
+
+if (tabFiles) {
+    tabFiles.addEventListener('click', () => switchExplorerTab('files'));
+}
+if (tabChanges) {
+    tabChanges.addEventListener('click', () => switchExplorerTab('changes'));
+}
+
+// Diff viewer close
+if (diffClose) {
+    diffClose.addEventListener('click', hideDiffViewer);
+}
+
+// Git history navigation
+if (gitPrevBtn) {
+    gitPrevBtn.addEventListener('click', () => goToCommit(gitCommitIndex + 1));
+}
+if (gitNextBtn) {
+    gitNextBtn.addEventListener('click', () => goToCommit(Math.max(-1, gitCommitIndex - 1)));
+}
+if (gitLatestBtn) {
+    gitLatestBtn.addEventListener('click', () => goToCommit(-1));
+}
+
+// Branch selector
+if (gitBranchSelect) {
+    gitBranchSelect.addEventListener('change', (e) => {
+        const branch = e.target.value;
+        if (branch && branch !== gitBranches.current) {
+            sendMessage({type: 'git_checkout', branch: branch});
+        }
+    });
+}
+
+function toggleExplorerPanel() {
+    if (!explorerPanel) return;
+    const isCollapsed = explorerPanel.classList.toggle('collapsed');
+    if (isCollapsed) {
+        // Save current width and clear inline styles so CSS .collapsed takes effect
+        const w = explorerPanel.style.width;
+        if (w) {
+            explorerPanel.dataset.savedWidth = w;
+        }
+        explorerPanel.style.width = '';
+        explorerPanel.style.minWidth = '';
+    } else {
+        // Restore saved width
+        const saved = explorerPanel.dataset.savedWidth;
+        if (saved) {
+            explorerPanel.style.width = saved;
+            explorerPanel.style.minWidth = saved;
+        }
+    }
+    updateToolbarActiveStates();
+}
+
+// Explorer event listeners
+if (explorerToggle) {
+    explorerToggle.addEventListener('click', toggleExplorerPanel);
+}
+
+// Toolbar buttons
+if (toolbarExplorerBtn) {
+    toolbarExplorerBtn.addEventListener('click', toggleExplorerPanel);
+}
+
+// Resizer
+let isResizing = false;
+let startX = 0;
+let startWidth = 0;
+
+if (explorerResizer) {
+    explorerResizer.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startX = e.clientX;
+        startWidth = explorerPanel.offsetWidth;
+        explorerPanel.classList.add('resizing');
+        explorerResizer.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+}
+
+document.addEventListener('mousemove', (e) => {
+    if (!isResizing || !explorerPanel) return;
+    const newWidth = startWidth - (e.clientX - startX);
+    const clamped = Math.max(200, Math.min(500, newWidth));
+    explorerPanel.style.width = clamped + 'px';
+    explorerPanel.style.minWidth = clamped + 'px';
+});
+
+document.addEventListener('mouseup', () => {
+    if (!isResizing) return;
+    isResizing = false;
+    if (explorerPanel) explorerPanel.classList.remove('resizing');
+    if (explorerResizer) explorerResizer.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    // Save width
+    try {
+        localStorage.setItem('explorerWidth', explorerPanel.style.width);
+    } catch (e) {
+        // ignore
+    }
+});
 
 // Initialize on load
 init();

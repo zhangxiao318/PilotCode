@@ -153,7 +153,7 @@ class SessionContextManager:
         """Get additional context to add to system prompt."""
         return self.context.to_system_message()
 
-    def update_from_message(self, user_message: str, assistant_response: str):
+    def update_from_message(self, user_message: str, assistant_response: str, tokens: int = 0):
         """Update context from a message pair."""
         self._extraction_counter += 1
 
@@ -161,8 +161,8 @@ class SessionContextManager:
         if self._extraction_counter % 3 == 0:
             self.context.project.update_from_conversation(user_message, assistant_response)
 
-        # Update stats
-        self.context.update_stats(2, 0)  # 2 messages, tokens estimated elsewhere
+        # Update stats - tokens parameter should be API total_tokens if available
+        self.context.update_stats(2, tokens)
 
     def set_project_info(self, name: str = "", description: str = "", type: str = ""):
         """Manually set project information."""

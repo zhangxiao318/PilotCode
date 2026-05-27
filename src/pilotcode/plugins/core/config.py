@@ -76,7 +76,7 @@ class PluginConfig:
             return {}
 
         try:
-            with open(self.known_marketplaces_file, "r") as f:
+            with open(self.known_marketplaces_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return {name: KnownMarketplace(**config) for name, config in data.items()}
         except (json.JSONDecodeError, TypeError) as e:
@@ -88,7 +88,7 @@ class PluginConfig:
         # Ensure directory exists
         self.known_marketplaces_file.parent.mkdir(parents=True, exist_ok=True)
         data = {name: config.model_dump(by_alias=True) for name, config in marketplaces.items()}
-        with open(self.known_marketplaces_file, "w") as f:
+        with open(self.known_marketplaces_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=str)
 
     def load_installed_plugins(self) -> list[PluginInstallation]:
@@ -97,7 +97,7 @@ class PluginConfig:
             return []
 
         try:
-            with open(self.installed_plugins_file, "r") as f:
+            with open(self.installed_plugins_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # Handle both old format (dict) and new format (list)
@@ -118,7 +118,7 @@ class PluginConfig:
     def save_installed_plugins(self, installations: list[PluginInstallation]) -> None:
         """Save installed plugins records."""
         data = [inst.model_dump(by_alias=True) for inst in installations]
-        with open(self.installed_plugins_file, "w") as f:
+        with open(self.installed_plugins_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=str)
 
     def load_settings(self) -> PluginSettings:
@@ -128,7 +128,7 @@ class PluginConfig:
             return PluginSettings()
 
         try:
-            with open(settings_file, "r") as f:
+            with open(settings_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return PluginSettings(
                 enabled_plugins=data.get("enabledPlugins", {}),
@@ -149,7 +149,7 @@ class PluginConfig:
         existing = {}
         if settings_file.exists():
             try:
-                with open(settings_file, "r") as f:
+                with open(settings_file, "r", encoding="utf-8") as f:
                     existing = json.load(f)
             except json.JSONDecodeError:
                 pass
@@ -161,7 +161,7 @@ class PluginConfig:
             for name, config in settings.extra_known_marketplaces.items()
         }
 
-        with open(settings_file, "w") as f:
+        with open(settings_file, "w", encoding="utf-8") as f:
             json.dump(existing, f, indent=2, default=str)
 
     def get_plugin_cache_path(self, plugin_id: str, version: Optional[str] = None) -> Path:

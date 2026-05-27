@@ -1,7 +1,19 @@
 """Four-layer UI display framework.
 
-Provides shared types and helpers for normalizing how all UI modes
-(REPL, Simple CLI, TUI v2, Web) present information to the user.
+.. deprecated::
+    This module is superseded by the three-channel UIProtocol in
+    ``pilotcode.ui.protocol``. New code should use ``BlockEvent``,
+    ``BlockKind``, ``BlockPhase``, ``StatusUpdate``, and ``UIProtocol``
+    instead of ``DisplayEvent`` and ``DisplayLayer``.
+
+    The four-layer model maps to the three-channel protocol as follows:
+    - CONVERSATIONAL -> Channel 1 (on_block_event) with kind=ASSISTANT/THINKING/TOOL_CALL/TOOL_RESULT
+    - SYSTEM         -> Channel 1 (on_block_event) with kind=SYSTEM
+    - STATUS         -> Channel 2 (on_status_update)
+    - INTERACTIVE    -> Channel 3 (request_permission / request_user_input)
+
+    This module is kept for backward compatibility and will be removed
+    in a future release.
 """
 
 from __future__ import annotations

@@ -564,6 +564,9 @@ def main(
     web_host: str = typer.Option(
         "127.0.0.1", "--web-host", help="Host for Web UI server (default: 127.0.0.1)"
     ),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Do not open browser when launching Web UI (default: False)"
+    ),
     config_check: bool = typer.Option(
         False, "--config-check", help="Run live LLM configuration check on startup"
     ),
@@ -605,12 +608,11 @@ def main(
     if version:
         console.print(f"PilotCode {__version__}")
         raise typer.Exit()
-
     # Check configuration only when explicitly requested with --config-check
     # Default is skipped for fast startup; static check still runs if not configured
     if config_check and not prompt:
         if not check_configuration():
-            console.print("\n[yellow]Configuration required. Run:[/yellow]")
+            console.print("\\n[yellow]Configuration required. Run:[/yellow]")
             console.print("  [cyan]python -m pilotcode configure[/cyan]")
             console.print("or")
             console.print("  [cyan]python -m pilotcode.main --configure[/cyan]")
@@ -618,29 +620,41 @@ def main(
     elif not prompt:
         # Fast path: check config exists, then lightweight probe
         if not is_configured():
-            console.print("\n[yellow]Configuration required. Run:[/yellow]")
+            console.print("\\n[yellow]Configuration required. Run:[/yellow]")
             console.print("  [cyan]python -m pilotcode configure[/cyan]")
             console.print("or")
             console.print("  [cyan]python -m pilotcode.main --configure[/cyan]")
             raise typer.Exit(code=1)
 
-        # Lightweight startup probe: 3-second connectivity check
-        try:
-            ok, msg = asyncio.run(asyncio.wait_for(_quick_probe(timeout=3.0), timeout=4.0))
-            if ok:
-                console.print("[dim]✓ LLM reachable[/dim]")
-            else:
-                console.print(f"[yellow]⚠ LLM probe warning: {msg}[/yellow]")
+        # Check if we should skip the probe based on config file modification and last probe time
+        config_manager = get_config_manager()
+        should_skip = config_manager.should_skip_probe()
+        if should_skip:
+            console.print("[dim]✓ Skipping LLM probe (config unchanged within 24h)[/dim]")
+        else:
+            # Lightweight startup probe: 3-second connectivity check
+            try:
+                ok, msg = asyncio.run(asyncio.wait_for(_quick_probe(timeout=3.0), timeout=4.0))
+                if ok:
+                    console.print("[dim]✓ LLM reachable[/dim]")
+                    # Update probe status after successful probe
+                    config_manager.update_probe_status()
+                else:
+                    console.print(f"[yellow]⚠ LLM probe warning: {msg}[/yellow]")
+                    asyncio.run(_diagnose_connection())
+                    if not Confirm.ask("Continue starting anyway?", default=True):
+                        raise typer.Exit(code=1)
+                    # Even if user continues, still update the probe status
+                    config_manager.update_probe_status()
+            except asyncio.TimeoutError:
+                console.print(
+                    "[yellow]⚠ LLM probe timed out (>4s). Server may be slow or unreachable.[/yellow]"
+                )
                 asyncio.run(_diagnose_connection())
                 if not Confirm.ask("Continue starting anyway?", default=True):
                     raise typer.Exit(code=1)
-        except asyncio.TimeoutError:
-            console.print(
-                "[yellow]⚠ LLM probe timed out (>4s). Server may be slow or unreachable.[/yellow]"
-            )
-            asyncio.run(_diagnose_connection())
-            if not Confirm.ask("Continue starting anyway?", default=True):
-                raise typer.Exit(code=1)
+                # Even if user continues, still update the probe status
+                config_manager.update_probe_status()
 
     if prompt is not None:
 
@@ -718,11 +732,12 @@ def main(
 """
         console.print(Panel(banner, border_style="cyan"))
 
-        # Open browser
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
+        # Open browser (unless --no-browser)
+        if not no_browser:
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
 
         # Start server (blocks until Ctrl+C)
         try:
@@ -733,7 +748,9 @@ def main(
         # Launch Simple CLI (non-TUI)
         from .tui.simple_cli import SimpleCLI
 
-        cli = SimpleCLI(auto_allow=auto_allow, max_iterations=max_iterations, no_verify=no_verify)
+        cli = SimpleCLI(
+            auto_allow=auto_allow, max_iterations=max_iterations, no_verify=no_verify, cwd=cwd
+        )
         try:
             asyncio.run(cli.run())
         except KeyboardInterrupt:
@@ -768,7 +785,7 @@ def main(
 
         # Start REPL with options
         try:
-            run_repl(auto_allow=auto_allow, max_iterations=max_iterations)
+            run_repl(auto_allow=auto_allow, max_iterations=max_iterations, cwd=cwd)
         except KeyboardInterrupt:
             print("\nGoodbye! 👋")
 

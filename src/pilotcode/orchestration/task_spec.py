@@ -101,7 +101,7 @@ class TaskSpec:
             inputs=data.get("inputs", []),
             outputs=data.get("outputs", []),
             dependencies=data.get("dependencies", []),
-            estimated_complexity=ComplexityLevel(data.get("estimated_complexity", 3)),
+            estimated_complexity=ComplexityLevel(int(data.get("estimated_complexity", 3))),
             acceptance_criteria=acs,
             constraints=Constraints(
                 max_lines=c.get("max_lines"),
@@ -109,10 +109,10 @@ class TaskSpec:
                 must_not_use=c.get("must_not_use", []),
                 patterns=c.get("patterns", []),
             ),
-            context_budget=data.get("context_budget", 16000),
+            context_budget=int(data.get("context_budget", 16000)),
             phase_id=data.get("phase_id", ""),
-            worker_type=data.get("worker_type", "auto"),
-            timeout_seconds=data.get("timeout_seconds", 300.0),
+            worker_type=str(data.get("worker_type", "auto")),
+            timeout_seconds=float(data.get("timeout_seconds", 300.0)),
             metadata=data.get("metadata", {}),
         )
 

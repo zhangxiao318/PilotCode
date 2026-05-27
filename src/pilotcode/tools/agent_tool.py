@@ -60,6 +60,10 @@ class AgentOutput(BaseModel):
     tools_used: list[str]
     is_background: bool = False
     worktree_path: str | None = None
+    sidechain_path: str | None = Field(
+        default=None,
+        description="Path to the sidechain transcript file storing the full sub-agent conversation",
+    )
 
 
 async def agent_call(
@@ -119,8 +123,18 @@ async def agent_call(
         context_parts.append("\n\nContext files:")
         for file_path in input_data.context_files:
             try:
-                with open(file_path, "r") as f:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
+                # Try to detect actual encoding for better fidelity
+                try:
+                    import sys
+
+                    for enc in (sys.getdefaultencoding(), "cp936", "gbk", "gb18030"):
+                        with open(file_path, "r", encoding=enc) as f:
+                            content = f.read()
+                        break
+                except UnicodeDecodeError:
+                    pass
                 context_parts.append(f"\n--- {file_path} ---\n{content[:2000]}")
             except Exception as e:
                 context_parts.append(f"\n--- {file_path} ---\nError reading: {e}")
@@ -174,6 +188,7 @@ async def agent_call(
                 tools_used=[],
                 is_background=True,
                 worktree_path=agent.worktree_path,
+                sidechain_path=agent.transcript_path,
             )
         )
 
@@ -196,6 +211,7 @@ async def agent_call(
                 turns_used=agent.turns,
                 tools_used=agent.tools_used,
                 worktree_path=agent.worktree_path,
+                sidechain_path=agent.transcript_path,
             )
         )
     except Exception as e:
@@ -208,6 +224,7 @@ async def agent_call(
                 agent_id=agent.agent_id,
                 turns_used=agent.turns,
                 tools_used=agent.tools_used,
+                sidechain_path=agent.transcript_path,
             ),
             error=str(e),
         )

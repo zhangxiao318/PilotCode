@@ -210,14 +210,19 @@ class CodebaseIndexer:
         "go.sum",
     }
 
+    # Configurable batch size for indexing concurrency
+    DEFAULT_BATCH_SIZE = 50
+
     def __init__(
         self,
         root_path: str | Path,
         embedding_service: Optional[EmbeddingService] = None,
         enable_file_watcher: bool = True,
+        batch_size: int | None = None,
     ):
         self.root_path = Path(root_path).resolve()
         self.embedding_service = embedding_service or get_embedding_service()
+        self.batch_size = batch_size or self.DEFAULT_BATCH_SIZE
 
         # Initialize sub-services
         self._symbol_indexer = get_code_indexer()
@@ -313,7 +318,12 @@ class CodebaseIndexer:
                 files_to_index = self._filter_unchanged_files(all_source_files)
 
                 # Bugfix: detect files that were deleted since last index
-                current_files = {str(f) for f in all_source_files}
+                # Normalize paths to match _indexed_files keys (Windows: lowercase)
+                import os as _os
+
+                current_files = {
+                    _os.path.normpath(_os.path.normcase(str(f))) for f in all_source_files
+                }
                 deleted_files = self._indexed_files - current_files
                 if deleted_files:
                     for df in deleted_files:
@@ -324,6 +334,11 @@ class CodebaseIndexer:
                         except Exception:
                             pass
             else:
+                # For full reindex, clear all existing embeddings before reindexing
+                try:
+                    self.embedding_service.clear()
+                except Exception:
+                    pass
                 files_to_index = all_source_files
 
             total = len(files_to_index)
@@ -338,21 +353,27 @@ class CodebaseIndexer:
                     f"for {total} files. Progress will be shown."
                 )
 
-            # Index files in batches for better performance
-            batch_size = 10
-            checkpoint_interval = 50  # Save progress every 500 files
-            batches_since_checkpoint = 0
+            # Index files with bounded concurrency (Semaphore) so that
+            # (a) we don't spawn unlimited tasks, and
+            # (b) progress can be reported per-file instead of per-batch.
+            batch_size = self.batch_size
+            sem = asyncio.Semaphore(batch_size)
+            checkpoint_interval = max(1, total // 10)  # Checkpoint ~10 times
             console_report_interval = max(1, total // 20)  # Report ~20 times
+            progress_interval = max(1, total // 100)  # Report progress ~100 times
 
-            for i in range(0, total, batch_size):
-                batch = files_to_index[i : i + batch_size]
-                await asyncio.gather(*[self._index_single_file(f) for f in batch])
-                indexed += len(batch)
-                batches_since_checkpoint += 1
+            async def _index_one(file_path: Path) -> None:
+                nonlocal indexed
+                async with sem:
+                    await self._index_single_file(file_path)
+                indexed += 1
 
-                if self._on_index_progress:
-                    for f in batch:
-                        self._on_index_progress(str(f), indexed, total)
+                # Report progress every ~1% so the UI doesn't look frozen
+                if self._on_index_progress and indexed % progress_interval == 0:
+                    self._on_index_progress(str(file_path), indexed, total)
+
+                # Yield control so WebSocket heartbeats / UI updates get through
+                await asyncio.sleep(0)
 
                 if self._console_progress_enabled and indexed % console_report_interval == 0:
                     pct = indexed / total * 100
@@ -365,12 +386,13 @@ class CodebaseIndexer:
 
                 # Checkpoint: periodically save intermediate state so that
                 # a crash or cancellation doesn't lose all progress.
-                if batches_since_checkpoint >= checkpoint_interval:
-                    batches_since_checkpoint = 0
+                if indexed % checkpoint_interval == 0:
                     try:
                         self._save_checkpoint()
                     except Exception:
                         pass  # Non-critical, continue indexing
+
+            await asyncio.gather(*[_index_one(f) for f in files_to_index])
 
             # Update stats
             self._stats.total_files = len(self._indexed_files)
@@ -463,6 +485,7 @@ class CodebaseIndexer:
                 ["git", "-C", str(self.root_path), "ls-files", "-z"] + patterns,
                 capture_output=True,
                 text=True,
+                errors="ignore",
                 timeout=30,
             )
             if result.returncode == 0:
@@ -487,6 +510,7 @@ class CodebaseIndexer:
                 + patterns,
                 capture_output=True,
                 text=True,
+                errors="ignore",
                 timeout=30,
             )
             if result.returncode == 0:
@@ -497,10 +521,11 @@ class CodebaseIndexer:
             pass
 
         # Convert to Path objects and apply ignore filter
+        # Skip path.is_file() check: git ls-files only returns files that exist.
         files: list[Path] = []
         for rel_str in all_paths:
             path = self.root_path / rel_str
-            if path.is_file() and not self._should_ignore(path):
+            if not self._should_ignore(path):
                 files.append(path)
 
         return files
@@ -541,8 +566,11 @@ class CodebaseIndexer:
                     return True
                 # Also check if the path contains the ignore_dir as a directory component
                 # This prevents false positives like "bin" in "/some/path/bin/..."
-                # but avoids false negatives for files in directories named like ignore_dir
-                path_parts = path_str.split("/")
+                # but avoids false negatives for files in directories named like ignore_dir.
+                # Use os.sep for cross-platform path splitting (Windows: '\', POSIX: '/').
+                import os
+
+                path_parts = path_str.split(os.sep)
                 if ignore_dir in path_parts:
                     return True
 
@@ -554,8 +582,11 @@ class CodebaseIndexer:
                 return True
 
         # Check file size (skip files > 1MB)
+        # Use os.lstat instead of Path.stat() to avoid symlink resolution overhead.
         try:
-            if path.stat().st_size > 1_000_000:
+            import os
+
+            if os.lstat(path).st_size > 1_000_000:
                 return True
         except OSError:
             return True
@@ -710,33 +741,42 @@ class CodebaseIndexer:
         2. SHA256 content hash (accurate, catches content edits
            that preserve mtime or occur within the same second)
         """
+        import os as _os
+
         changed = []
         for file_path in files:
-            path_str = str(file_path)
+            # Normalize path to prevent key mismatch on Windows:
+            # rglob returns D:\ (uppercase) while Path() returns d:/ (lowercase)
+            path_str = _os.path.normpath(_os.path.normcase(str(file_path)))
             try:
                 stat = file_path.stat()
                 mtime = stat.st_mtime
                 mtime_key = f"{path_str}:mtime"
-                stored_mtime = self._file_hashes.get(mtime_key)
 
                 # Always read content and compare hash so that sub-second
                 # edits (where mtime does not change) are not missed.
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
                 current_hash = hashlib.sha256(content.encode()).hexdigest()
 
+                # Hash is the source of truth; mtime is just a fast-path hint.
+                # On Windows st_mtime can have precision issues, so always trust hash.
+                # IMPORTANT: also verify the file is actually in _indexed_files so that
+                # a prior crash (hash written but add() skipped) does not ghost-skip
+                # the file forever.
                 if (
-                    stored_mtime == str(mtime)
+                    path_str in self._indexed_files
                     and path_str in self._file_hashes
                     and self._file_hashes[path_str] == current_hash
                 ):
-                    # File truly unchanged
+                    # File truly unchanged; update mtime for next fast check
+                    self._file_hashes[mtime_key] = str(mtime)
                     continue
 
-                # Hash differs -> file changed
-                if self._file_hashes.get(path_str) != current_hash:
-                    changed.append(file_path)
-                    self._file_hashes[path_str] = current_hash
-                # Update mtime regardless (so next check is fast)
+                # Hash differs (or file never indexed) -> file changed
+                changed.append(file_path)
+                # NOTE: do NOT write the hash here; only write it after the file is
+                # successfully indexed in _index_single_file. This prevents ghost hashes
+                # when indexing crashes after hash-write but before add().
                 self._file_hashes[mtime_key] = str(mtime)
             except Exception:
                 # If we can't read, include it anyway
@@ -746,17 +786,18 @@ class CodebaseIndexer:
 
     async def _index_single_file(self, file_path: Path | str) -> None:
         """Index a single file across all services."""
+        import os as _os
+
         if isinstance(file_path, str):
             file_path = Path(file_path)
-        path_str = str(file_path)
+        path_str = _os.path.normpath(_os.path.normcase(str(file_path)))
 
         try:
             # Read content
             content = file_path.read_text(encoding="utf-8", errors="ignore")
 
-            # Store hash immediately so incremental filtering can use it
+            # Compute hash but do NOT store it yet (prevents ghost hashes on crash)
             current_hash = hashlib.sha256(content.encode()).hexdigest()
-            self._file_hashes[path_str] = current_hash
 
             # 0. Clear old embeddings for this file before re-indexing
             # (prevents ghost vectors from outdated code)
@@ -789,12 +830,13 @@ class CodebaseIndexer:
             except Exception:
                 pass
 
+            # Only mark as indexed and store hash after ALL steps succeed
             self._indexed_files.add(path_str)
+            self._file_hashes[path_str] = current_hash
 
             # Store mtime for fast incremental filtering
             try:
-                mtime = file_path.stat().st_mtime
-                self._file_hashes[f"{path_str}:mtime"] = str(mtime)
+                self._file_hashes[f"{path_str}:mtime"] = str(file_path.stat().st_mtime)
             except Exception:
                 pass
 
@@ -802,41 +844,59 @@ class CodebaseIndexer:
             lang = self._detect_language(file_path)
             self._stats.languages[lang] = self._stats.languages.get(lang, 0) + 1
 
-        except Exception as e:
-            # Log error but don't stop indexing
-            print(f"Error indexing {file_path}: {e}")
+        except Exception:
+            # Log error but don't stop indexing. Use traceback so we see the
+            # full stack even when pytest swallows stdout.
+            import traceback
+
+            traceback.print_exc()
 
     async def _index_code_snippets(self, file_path: Path, content: str) -> None:
         """Create and index code snippets for semantic search."""
+        import os as _os
+
+        norm_path = _os.path.normpath(_os.path.normcase(str(file_path)))
         # Split content into chunks (functions, classes, or fixed-size blocks)
         chunks = self._chunk_code(content, file_path.suffix)
+        if not chunks:
+            return
 
+        language = self._detect_language(file_path)
+        texts = []
+        metadatas = []
         for chunk in chunks:
-            snippet_id = f"{file_path}:{chunk['start_line']}"
-
-            # Create snippet
-            snippet = CodeSnippet(
-                id=snippet_id,
-                content=chunk["content"],
-                file_path=str(file_path),
-                start_line=chunk["start_line"],
-                end_line=chunk["end_line"],
-                language=self._detect_language(file_path),
-                symbol_name=chunk.get("symbol_name"),
-                symbol_type=chunk.get("symbol_type"),
+            texts.append(chunk["content"])
+            metadatas.append(
+                {
+                    "file_path": norm_path,
+                    "language": language,
+                    "type": "code",
+                    "start_line": chunk["start_line"],
+                    "end_line": chunk["end_line"],
+                    "symbol_name": chunk.get("symbol_name"),
+                    "symbol_type": chunk.get("symbol_type"),
+                }
             )
 
-            # Embed and store
-            try:
-                await self.embedding_service.embed_code(
-                    code=snippet.content,
-                    file_path=snippet.file_path,
-                    language=snippet.language,
-                )
-                self._stats.total_snippets += 1
-            except Exception:
-                # Embedding might fail, continue anyway
-                pass
+        # Batch embed all chunks at once for much better performance
+        try:
+            # Direct await avoids asyncio.run() inside asyncio.to_thread(),
+            # which can fail on Python 3.12 when the thread already has an
+            # event loop (e.g. from a previous task).
+            embeddings = await self.embedding_service.embed_texts(texts, metadatas)
+            self._stats.total_snippets += len(embeddings)
+        except Exception:
+            # Fallback: embed individually if batch fails
+            for chunk in chunks:
+                try:
+                    await self.embedding_service.embed_code(
+                        code=chunk["content"],
+                        file_path=str(file_path),
+                        language=language,
+                    )
+                    self._stats.total_snippets += 1
+                except Exception:
+                    pass
 
     def _chunk_code(
         self,
@@ -1427,6 +1487,10 @@ Use the subgraph names below to drill down with `subgraph="<name>"` if you need 
         self._indexed_files.clear()
         self._file_hashes.clear()
         self._stats = CodebaseStats()
+        try:
+            self.embedding_service.clear()
+        except Exception:
+            pass
 
     def export_index(self, output_path: str) -> None:
         """Export index to file."""
@@ -1435,6 +1499,7 @@ Use the subgraph names below to drill down with `subgraph="<name>"` if you need 
             "stats": {
                 "total_files": self._stats.total_files,
                 "total_symbols": self._stats.total_symbols,
+                "total_snippets": self._stats.total_snippets,
                 "last_indexed": self._stats.last_indexed,
                 "languages": self._stats.languages,
             },
@@ -1442,7 +1507,7 @@ Use the subgraph names below to drill down with `subgraph="<name>"` if you need 
             "file_hashes": self._file_hashes,
         }
 
-        Path(output_path).write_text(json.dumps(data, indent=2))
+        Path(output_path).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
         # Also export symbol index
         symbol_cache_path = str(Path(output_path).with_suffix(".symbols.json"))
@@ -1453,7 +1518,7 @@ Use the subgraph names below to drill down with `subgraph="<name>"` if you need 
 
     def import_index(self, input_path: str) -> None:
         """Import index from file."""
-        data = json.loads(Path(input_path).read_text())
+        data = json.loads(Path(input_path).read_text(encoding="utf-8"))
 
         self._indexed_files = set(data.get("indexed_files", []))
         self._file_hashes = data.get("file_hashes", {})
@@ -1461,6 +1526,7 @@ Use the subgraph names below to drill down with `subgraph="<name>"` if you need 
         stats = data.get("stats", {})
         self._stats.total_files = stats.get("total_files", 0)
         self._stats.total_symbols = stats.get("total_symbols", 0)
+        self._stats.total_snippets = stats.get("total_snippets", 0)
         self._stats.last_indexed = stats.get("last_indexed", 0)
         self._stats.languages = stats.get("languages", {})
 

@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import py_compile
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -666,6 +668,45 @@ class MissionAdapter:
             ]
         )
 
+        # Worker-type specific instructions
+        worker_type = context.get("worker_type", task.worker_type or "auto")
+        if worker_type == "simple":
+            parts.extend(
+                [
+                    "",
+                    "[Worker Mode: SIMPLE]",
+                    "You are a focused, single-file editor. Rules:",
+                    "- ONLY modify the target file(s) explicitly mentioned in the task.",
+                    "- Do NOT use search, grep, or glob to browse unrelated files.",
+                    "- Read the target file first, then make minimal, precise changes.",
+                    "- Return immediately after completing the edit.",
+                ]
+            )
+        elif worker_type == "complex":
+            parts.extend(
+                [
+                    "",
+                    "[Worker Mode: COMPLEX]",
+                    "You are an architect-level engineer handling cross-module changes. Rules:",
+                    "- First, understand the project structure and dependencies.",
+                    "- Design the interface/contracts BEFORE implementing.",
+                    "- Ensure consistency across all affected modules.",
+                    "- Run tests for all modified components.",
+                ]
+            )
+        elif worker_type == "debug":
+            parts.extend(
+                [
+                    "",
+                    "[Worker Mode: DEBUG]",
+                    "You are a surgical debugger. Rules:",
+                    "- Make the MINIMUM possible change to fix the issue.",
+                    "- Do NOT refactor, rename, or reformat unrelated code.",
+                    "- Prefer ApplyPatch or precise FileEdit over FileWrite.",
+                    "- Verify the fix with the provided test or reproduction steps.",
+                ]
+            )
+
         # Inject compensation guidance based on dimension-specific weaknesses
         compensation_guidance = self.compensation.get_worker_prompt_suffix()
         if compensation_guidance:
@@ -849,6 +890,29 @@ class MissionAdapter:
             "TaskStop",
             "Cron",
         }
+        # Worker-type specific tool exclusions
+        worker_type = context.get("worker_type", task.worker_type or "auto")
+        if worker_type == "simple":
+            # Simple worker should not browse or search; only edit target files
+            excluded_tools.update(
+                {
+                    "Glob",
+                    "glob",
+                    "Grep",
+                    "grep",
+                    "Search",
+                    "search",
+                }
+            )
+        elif worker_type == "debug":
+            # Debug worker should not create new files or do large rewrites
+            excluded_tools.update(
+                {
+                    "FileWrite",
+                    "file_write",
+                    "Sleep",
+                }
+            )
         autonomous_tools = [t for t in get_core_tools(self._cwd) if t.name not in excluded_tools]
 
         # Select model client based on task complexity / worker type
@@ -888,6 +952,42 @@ class MissionAdapter:
                             )
 
                 cleanup.on_cleanup(_abort_pending_tools)
+
+                # --- Multi-Agent: Architect phase for complex tasks ---
+                complexity = task.estimated_complexity
+                if complexity.value >= ComplexityLevel.COMPLEX.value:
+                    self._emit_progress(
+                        "worker:tool_start",
+                        {"task_id": task.id, "tool_name": "ArchitectAgent", "params": {}},
+                    )
+                    arch_prompt = (
+                        f"[Architect Agent] Task: {task.title}\n"
+                        f"Objective: {task.objective}\n\n"
+                        "Analyze and produce a concise implementation plan:\n"
+                        "1. Which files need modification/creation\n"
+                        "2. Key interfaces/functions to define\n"
+                        "3. Dependencies between changes\n"
+                        "Do NOT write code yet. Only the plan."
+                    )
+                    arch_buffer = ""
+                    async for aresult in engine.submit_message(arch_prompt):
+                        msg = aresult.message
+                        if isinstance(msg, AssistantMessage) and msg.content:
+                            arch_buffer += str(msg.content)
+                    if arch_buffer:
+                        engine.add_system_message(f"[Architect Plan] {arch_buffer[:2000]}")
+                        task_details.append(
+                            {"type": "architect_plan", "content": arch_buffer[:500]}
+                        )
+                    self._emit_progress(
+                        "worker:tool_result",
+                        {
+                            "task_id": task.id,
+                            "tool_name": "ArchitectAgent",
+                            "success": True,
+                            "summary": arch_buffer[:200],
+                        },
+                    )
 
                 while total_turns < max_turns:
                     if self._cancel_event.is_set():
@@ -1012,7 +1112,73 @@ class MissionAdapter:
                             },
                         )
 
+                    # --- Inline verification after file modifications ---
+                    changed_paths = []
+                    for tu, (result_text, success) in zip(pending_tools, tool_results):
+                        if not success:
+                            continue
+                        if tu.name in (
+                            "FileWrite",
+                            "write",
+                            "FileEdit",
+                            "edit",
+                            "ApplyPatch",
+                            "apply_patch",
+                        ):
+                            for key in ("path", "file_path", "filepath"):
+                                val = tu.input.get(key)
+                                if val and isinstance(val, str):
+                                    changed_paths.append(val)
+                                    break
+
+                    if changed_paths:
+                        inline_issues = await self._run_inline_verification(task, changed_paths)
+                        if inline_issues:
+                            engine.add_system_message(
+                                f"[INLINE VERIFICATION] Issues found in recent changes:\n{inline_issues}\n"
+                                "Please address these issues in your next turn."
+                            )
+                            self._emit_progress(
+                                "worker:inline_verification",
+                                {
+                                    "task_id": task.id,
+                                    "issues": inline_issues,
+                                },
+                            )
+
                     total_turns += 1
+
+                # --- Multi-Agent: Reviewer phase for complex tasks ---
+                if complexity.value >= ComplexityLevel.COMPLEX.value and total_turns < max_turns:
+                    self._emit_progress(
+                        "worker:tool_start",
+                        {"task_id": task.id, "tool_name": "ReviewerAgent", "params": {}},
+                    )
+                    review_prompt = (
+                        "[Reviewer Agent] Review the changes you just made against the objective.\n"
+                        "Check: logic correctness, boundary cases, design consistency, missing tests.\n"
+                        "If you find issues, list them concisely. If everything looks good, say 'APPROVED'."
+                    )
+                    review_buffer = ""
+                    async for rresult in engine.submit_message(review_prompt):
+                        msg = rresult.message
+                        if isinstance(msg, AssistantMessage) and msg.content:
+                            review_buffer += str(msg.content)
+                    if review_buffer and "APPROVED" not in review_buffer.upper():
+                        # Inject reviewer feedback as system message for potential fix turn
+                        engine.add_system_message(f"[Reviewer Feedback] {review_buffer[:1500]}")
+                        task_details.append(
+                            {"type": "reviewer_feedback", "content": review_buffer[:500]}
+                        )
+                    self._emit_progress(
+                        "worker:tool_result",
+                        {
+                            "task_id": task.id,
+                            "tool_name": "ReviewerAgent",
+                            "success": True,
+                            "summary": review_buffer[:200],
+                        },
+                    )
 
                 # Collect changed files as artifacts
                 changed_files: list[str] = []
@@ -1098,7 +1264,7 @@ class MissionAdapter:
         """
         # Map complexity to tier
         complexity = task.estimated_complexity
-        worker_type = task.worker_type.lower()
+        worker_type = str(task.worker_type or "auto").lower()
 
         if worker_type == "simple" or complexity.value <= 2:
             tier = ModelTier.FAST
@@ -1610,6 +1776,65 @@ class MissionAdapter:
                 "error": str(exc),
                 "mission_id": "",
             }
+
+    async def _run_inline_verification(
+        self, task: TaskSpec, changed_paths: list[str]
+    ) -> str | None:
+        """Run lightweight L1+L2 verification on recently changed files.
+
+        Returns a human-readable issue summary, or None if all clear.
+        """
+        issues: list[str] = []
+        checked: set[str] = set()
+
+        for path in changed_paths:
+            if path in checked:
+                continue
+            checked.add(path)
+            abs_path = os.path.join(self._cwd, path) if not os.path.isabs(path) else path
+
+            # L1: existence + non-empty
+            if not os.path.exists(abs_path):
+                issues.append(f"  - {path}: file not found after write")
+                continue
+            if os.path.getsize(abs_path) == 0:
+                issues.append(f"  - {path}: file is empty")
+
+            # L2: syntax check for Python
+            if path.endswith(".py"):
+                try:
+                    py_compile.compile(abs_path, doraise=True)
+                except py_compile.PyCompileError as e:
+                    issues.append(f"  - {path}: syntax error – {e}")
+
+            # L2: syntax check for JavaScript (lightweight)
+            elif path.endswith(".js"):
+                import shutil
+
+                if shutil.which("node"):
+                    proc = await asyncio.create_subprocess_exec(
+                        "node",
+                        "--check",
+                        abs_path,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    _, stderr = await proc.communicate()
+                    if proc.returncode != 0:
+                        err = stderr.decode("utf-8", errors="replace")[:200]
+                        issues.append(f"  - {path}: JS syntax error – {err}")
+
+            # L1: line count constraint
+            if task.constraints.max_lines and os.path.isfile(abs_path):
+                with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                    line_count = sum(1 for _ in f)
+                if line_count > task.constraints.max_lines:
+                    issues.append(
+                        f"  - {path}: {line_count} lines exceeds limit "
+                        f"({task.constraints.max_lines})"
+                    )
+
+        return "\n".join(issues) if issues else None
 
     def _calibrate_from_mission_result(self, mission_id: str) -> None:
         """Analyze mission execution results and update capability scores."""

@@ -1,0 +1,78 @@
+Run ID: 20260430_205625
+Mode: cli
+Tasks: 5
+Output: C:\Users\Administrator\test\pilotcode_e2e_results\20260430_205625
+
+
+============================================================
+Task: c_simple_file_reader
+      File reading utility in C99
+============================================================
+  Elapsed: 173.8s  Files: 5 (1267 lines)
+  Compile: OK  Run: OK  OutputCheck: OK
+
+============================================================
+Task: c_simple_linked_list
+      Singly linked list in C99
+============================================================
+  Elapsed: 284.7s  Files: 5 (1626 lines)
+  Compile: OK  Run: FAIL  OutputCheck: FAIL
+
+============================================================
+Task: c_simple_sorting
+      Sorting algorithms library (bubble, quick, merge) in C99
+============================================================
+  Elapsed: 279.6s  Files: 5 (1277 lines)
+  Compile: OK  Run: FAIL  OutputCheck: FAIL
+
+============================================================
+Task: c_simple_stack
+      Array-based stack in C99
+============================================================
+  Elapsed: 307.9s  Files: 6 (1720 lines)
+  Compile: OK  Run: OK  OutputCheck: OK
+
+============================================================
+Task: c_simple_string_utils
+      String utility library in C99
+============================================================
+  [CRASH] Command '['C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe', '-m', 'pilotcode', '--simple', '--auto-allow', '--no-planning', '--prompt', '请帮我实现C语言字符串工具库，要求：\n1. 包含头文件 string_utils.h，实现文件 string_utils.c\n2. 实现：字符串反转、安全字符串拷贝、忽略大小写字符串比较、子串查找\n3. 不要使用标准库字符串函数（strlen除外）\n4. main.c 中测试每个函数\n5. Makefile 编译项目\n请将所有文件写入当前目录。\n\n\n请使用中文输出所有测试结果和日志信息。', '--cwd', 'C:\\Users\\Administrator\\test\\pilotcode_e2e_results\\20260430_205625\\generated\\c_simple_string_utils', '--max-iterations', '15']' timed out after 360 seconds
+Traceback (most recent call last):
+  File "D:\Source\2026\P2\PilotCode\tests\e2e\run_e2e_tests.py", line 425, in run_all
+    result = run_task_cli(task, task_dir, log_file, timeout=timeout)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Source\2026\P2\PilotCode\tests\e2e\run_e2e_tests.py", line 200, in run_task_cli
+    proc = subprocess.run(
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\subprocess.py", line 1209, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\subprocess.py", line 1628, in _communicate
+    raise TimeoutExpired(self.args, orig_timeout)
+subprocess.TimeoutExpired: Command '['C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe', '-m', 'pilotcode', '--simple', '--auto-allow', '--no-planning', '--prompt', '请帮我实现C语言字符串工具库，要求：\n1. 包含头文件 string_utils.h，实现文件 string_utils.c\n2. 实现：字符串反转、安全字符串拷贝、忽略大小写字符串比较、子串查找\n3. 不要使用标准库字符串函数（strlen除外）\n4. main.c 中测试每个函数\n5. Makefile 编译项目\n请将所有文件写入当前目录。\n\n\n请使用中文输出所有测试结果和日志信息。', '--cwd', 'C:\\Users\\Administrator\\test\\pilotcode_e2e_results\\20260430_205625\\generated\\c_simple_string_utils', '--max-iterations', '15']' timed out after 360 seconds
+  Elapsed: 0.0s  Files: 0 (0 lines)
+  Compile: FAIL  Run: FAIL  OutputCheck: FAIL
+
+============================================================
+All tasks completed. Total time: 1419.4s
+============================================================
+
+Summary saved to: C:\Users\Administrator\test\pilotcode_e2e_results\20260430_205625\summary.json
+
+================================================================================
+FINAL SUMMARY
+================================================================================
+Total tasks: 5
+Compile OK: 4/5
+Run OK: 2/5
+Output Check OK: 2/5
+Total files: 21, Total lines: 5890
+
+  c_simple_file_reader                     C:OK    R:OK    O:OK     173.8s   1267L
+  c_simple_linked_list                     C:OK    R:FAIL  O:FAIL   284.7s   1626L
+  c_simple_sorting                         C:OK    R:FAIL  O:FAIL   279.6s   1277L
+  c_simple_stack                           C:OK    R:OK    O:OK     307.9s   1720L
+  c_simple_string_utils                    C:FAIL  R:FAIL  O:FAIL     0.0s      0L

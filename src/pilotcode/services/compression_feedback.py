@@ -468,7 +468,7 @@ class CompressionFeedbackLoop:
                 "mode_effectiveness": dict(self.mode_effectiveness),
                 "task_type_patterns": dict(self.task_type_patterns),
             }
-            with open(self.storage_path, "w") as f:
+            with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception:
             pass  # Fail silently
@@ -476,7 +476,7 @@ class CompressionFeedbackLoop:
     def _load(self) -> None:
         """Load persisted feedback data."""
         try:
-            with open(self.storage_path, "r") as f:
+            with open(self.storage_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             self.events = {

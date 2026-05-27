@@ -93,6 +93,7 @@ async def git_command(args: list[str], context: CommandContext) -> str:
             ["git", sub] + sub_args,
             capture_output=True,
             text=True,
+            errors="replace",
             cwd=context.cwd,
         )
         if result.returncode == 0:

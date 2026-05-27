@@ -74,6 +74,7 @@ class FileWriteOutput(BaseModel):
     bytes_written: int
     created: bool = False
     previous_size: int | None = None
+    encoding: str | None = None
     error: str | None = None
 
 
@@ -112,7 +113,16 @@ async def write_file_atomic(
     overwrite_warning = ""
     if not append and not created:
         try:
-            existing_lines = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+            # Detect existing encoding for accurate line count
+            warn_enc = "utf-8"
+            for enc in ("utf-8", sys.getdefaultencoding(), "cp936", "gbk", "gb18030", "latin-1"):
+                try:
+                    path.read_text(encoding=enc)
+                    warn_enc = enc
+                    break
+                except UnicodeDecodeError:
+                    continue
+            existing_lines = len(path.read_text(encoding=warn_enc, errors="replace").splitlines())
             if existing_lines > 30:
                 overwrite_warning = (
                     f"\n[WARNING] This file already exists with {existing_lines} lines. "
@@ -129,14 +139,26 @@ async def write_file_atomic(
         if encoding:
             output_encoding = encoding
         elif path.exists():
-            # Detect existing file encoding
-            for enc in ("utf-8", sys.getdefaultencoding(), "cp936", "gbk", "gb18030", "latin-1"):
-                try:
-                    path.read_text(encoding=enc)
-                    output_encoding = enc
-                    break
-                except UnicodeDecodeError:
-                    continue
+            # Detect existing file encoding (lightweight: only first 4KB)
+            try:
+                with open(path, "rb") as f:
+                    raw = f.read(4096)
+                for enc in (
+                    "utf-8",
+                    sys.getdefaultencoding(),
+                    "cp936",
+                    "gbk",
+                    "gb18030",
+                    "latin-1",
+                ):
+                    try:
+                        raw.decode(enc)
+                        output_encoding = enc
+                        break
+                    except UnicodeDecodeError:
+                        continue
+            except Exception:
+                pass
 
         if append and path.exists():
             # Append mode: read existing content, append, then write
@@ -165,6 +187,7 @@ async def write_file_atomic(
             bytes_written=len(content.encode(output_encoding)),
             created=created,
             previous_size=previous_size,
+            encoding=output_encoding,
             error=overwrite_warning if overwrite_warning else None,
         )
     except Exception as e:
@@ -237,23 +260,35 @@ async def file_write_call(
         file_path = os.path.join(cwd, file_path)
 
     # Write file with workspace restriction
-    # Determine encoding: explicit param > read_file_state hint > auto-detect > utf-8
+    # Determine encoding: explicit param > same file in read_file_state > same dir > auto-detect > utf-8
     write_encoding = input_data.encoding
     if not write_encoding and context.read_file_state is not None:
-        # Try to inherit encoding from the most recently read file in the same directory
         import os as _os
 
-        target_dir = _os.path.dirname(_os.path.abspath(file_path))
-        for key, info in sorted(
-            context.read_file_state.items(),
-            key=lambda x: x[1].get("timestamp", 0),
-            reverse=True,
-        ):
-            if _os.path.dirname(_os.path.abspath(key)) == target_dir:
-                enc = info.get("encoding")
-                if enc:
-                    write_encoding = enc
-                    break
+        normalized_target = _os.path.normcase(_os.path.normpath(_os.path.abspath(file_path)))
+
+        # 1. Exact file match (highest priority — FileRead/FileEdit of this exact file)
+        if normalized_target in context.read_file_state:
+            enc = context.read_file_state[normalized_target].get("encoding")
+            if enc:
+                write_encoding = enc
+
+        # 2. Same-directory fallback (only if exact match failed)
+        if not write_encoding:
+            target_dir = _os.path.dirname(normalized_target)
+            for key, info in sorted(
+                context.read_file_state.items(),
+                key=lambda x: x[1].get("timestamp", 0),
+                reverse=True,
+            ):
+                if (
+                    _os.path.dirname(_os.path.normcase(_os.path.normpath(_os.path.abspath(key))))
+                    == target_dir
+                ):
+                    enc = info.get("encoding")
+                    if enc:
+                        write_encoding = enc
+                        break
 
     result = await write_file_atomic(
         file_path, input_data.content, append=input_data.append, cwd=cwd, encoding=write_encoding
@@ -265,7 +300,7 @@ async def file_write_call(
         context.read_file_state[file_path] = {
             "timestamp": time.time(),
             "hash": hashlib.md5(input_data.content.encode()).hexdigest()[:8],
-            "encoding": write_encoding or "utf-8",
+            "encoding": result.encoding or write_encoding or "utf-8",
         }
 
     if result.error and not result.error.startswith("\n[WARNING]"):

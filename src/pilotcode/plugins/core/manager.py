@@ -348,7 +348,7 @@ class PluginManager:
                 # Path to hooks.json
                 hooks_path = path / manifest.hooks
                 if hooks_path.exists():
-                    with open(hooks_path, "r") as f:
+                    with open(hooks_path, "r", encoding="utf-8") as f:
                         hooks_data = json.load(f)
                     loaded.hooks_config = HooksConfig(**hooks_data.get("hooks", {}))
             else:
@@ -391,7 +391,7 @@ class PluginManager:
             # Create default manifest from directory name
             return PluginManifest(name=path.name)
 
-        with open(manifest_file, "r") as f:
+        with open(manifest_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         return PluginManifest(**data)

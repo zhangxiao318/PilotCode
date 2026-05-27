@@ -1,4 +1,4 @@
-"""File edit tool for editing file contents with search/replace."""
+﻿"""File edit tool for editing file contents with search/replace."""
 
 import difflib
 import os
@@ -9,8 +9,6 @@ from pydantic import BaseModel, Field
 
 from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
-
-import ast
 
 # ---------------------------------------------------------------------------
 # FileEdit scope guard: restrict edits to planned/allowed files
@@ -92,17 +90,17 @@ def _check_bracket_balance_delta(old_string: str, new_string: str) -> list[str]:
 
         # If old_string was balanced, new_string should also be balanced
         # (within the edit context).  Exception: edits that intentionally
-        # add/remove an outer wrapper — but those are rare.
+        # add/remove an outer wrapper 鈥?but those are rare.
         if old_balance == 0 and new_balance != 0:
             if new_balance > 0:
                 warnings.append(
-                    f"Bracket imbalance: '{open_ch}{close_ch}' — "
+                    f"Bracket imbalance: '{open_ch}{close_ch}' 鈥?"
                     f"old_string was balanced but new_string has {new_balance} "
                     f"unclosed '{open_ch}'. Missing '{close_ch}'?"
                 )
             else:
                 warnings.append(
-                    f"Bracket imbalance: '{open_ch}{close_ch}' — "
+                    f"Bracket imbalance: '{open_ch}{close_ch}' 鈥?"
                     f"old_string was balanced but new_string has {-new_balance} "
                     f"extra '{close_ch}'."
                 )
@@ -174,7 +172,7 @@ def _check_critical_structure_deletion(old_string: str, new_string: str) -> list
 
 
 # ---------------------------------------------------------------------------
-# Extension → tree-sitter language mapping
+# Extension 鈫?tree-sitter language mapping
 # ---------------------------------------------------------------------------
 
 EXT_TO_TS_LANG = {
@@ -216,7 +214,7 @@ def _check_tree_sitter_syntax(new_string: str, file_path: str) -> tuple[list[str
     """Check syntax using tree-sitter if available.
 
     Status caching:
-      - 0 (unchecked): first encounter → probe, save result, prompt once per session
+      - 0 (unchecked): first encounter 鈫?probe, save result, prompt once per session
       - 1 (installed): use tree-sitter for syntax check
       - -1 (not installed): skip deep check, don't prompt again
 
@@ -236,11 +234,11 @@ def _check_tree_sitter_syntax(new_string: str, file_path: str) -> tuple[list[str
     status = _session_lang_status.get(lang, 0)
 
     if status == -1:
-        # Already known to be unavailable this session — skip silently
+        # Already known to be unavailable this session 鈥?skip silently
         return blockers, install_hints
 
     if status == 0:
-        # First encounter this session — probe availability
+        # First encounter this session 鈥?probe availability
         parser = _get_ts_parser(lang)
         if parser is None:
             _session_lang_status[lang] = -1
@@ -295,54 +293,15 @@ def _check_tree_sitter_syntax(new_string: str, file_path: str) -> tuple[list[str
     return blockers, install_hints
 
 
-def _check_python_ast_fragment(new_string: str, file_path: str) -> list[str]:
-    """Try to parse new_string as Python AST (best-effort for fragments).
-
-    Kept as fallback when tree-sitter is not available for Python.
-    """
-    warnings = []
-
-    if not file_path.endswith(".py"):
-        return warnings
-
-    # If tree-sitter is available, prefer it (already checked above)
-    if _get_ts_parser("python") is not None:
-        return warnings
-
-    # Fallback: stdlib ast module
-    wrapped = "def _fake():\n" + "\n".join("    " + ln for ln in new_string.splitlines())
-    try:
-        ast.parse(wrapped)
-        return warnings
-    except SyntaxError as e:
-        try:
-            ast.parse(new_string)
-            return warnings
-        except SyntaxError:
-            wrapped_cls = "class _Fake:\n" + "\n".join(
-                "    " + ln for ln in new_string.splitlines()
-            )
-            try:
-                ast.parse(wrapped_cls)
-                return warnings
-            except SyntaxError:
-                warnings.append(
-                    f"Python syntax error in new_string (AST parse failed): {e.msg} "
-                    f"at line {e.lineno}. Check brackets, indentation, and quotes."
-                )
-
-    return warnings
-
-
 def _smart_preview_check(
-    old_string: str, new_string: str, file_path: str
+    old_string: str, new_string: str, file_path: str, new_content: str | None = None
 ) -> tuple[bool, list[str]]:
     """Run all smart preview checks on a proposed edit.
 
     Returns (ok, warnings) where ok=True means no blocking issues.
 
     Blocking issues (hard failures):
-      - Python AST syntax error in new_string
+      - Python syntax error in edited file (compile() on full content)
       - Bracket imbalance > 1 (likely missing multiple brackets)
 
     Warning issues (reported but NOT blocking):
@@ -355,7 +314,7 @@ def _smart_preview_check(
     blockers = []
     warnings = []
 
-    # 1. Bracket balance — severity based on imbalance magnitude
+    # 1. Bracket balance 鈥?severity based on imbalance magnitude
     bracket_issues = _check_bracket_balance_delta(old_string, new_string)
     for issue in bracket_issues:
         # Extract imbalance count from message
@@ -366,10 +325,10 @@ def _smart_preview_check(
         else:
             warnings.append(issue)
 
-    # 2. Indentation — always warning (never blocking)
+    # 2. Indentation 鈥?always warning (never blocking)
     warnings.extend(_check_indentation_consistency(old_string, new_string))
 
-    # 3. Critical structure — warning unless paired with bracket blocker
+    # 3. Critical structure 鈥?warning unless paired with bracket blocker
     struct_issues = _check_critical_structure_deletion(old_string, new_string)
     if blockers:
         # Escalate to blocker when brackets are already broken
@@ -382,10 +341,13 @@ def _smart_preview_check(
     blockers.extend(ts_blockers)
     warnings.extend(ts_hints)  # install hints are non-blocking
 
-    # 5. Python AST fallback (only when tree-sitter unavailable)
-    if file_path.endswith(".py") and not ts_blockers and not ts_hints:
-        ast_issues = _check_python_ast_fragment(new_string, file_path)
-        blockers.extend(ast_issues)
+    # 5. Python syntax verification via compile() on full edited content
+    # (100% accurate, no false positives from fragment parsing)
+    if file_path.endswith(".py") and new_content is not None:
+        try:
+            compile(new_content, str(file_path), "exec")
+        except SyntaxError as e:
+            blockers.append(f"Python syntax error in edited file: {e.msg} at line {e.lineno}")
 
     # Build detailed message with code context
     all_issues = blockers + warnings
@@ -542,6 +504,78 @@ def _try_block_level_match(content: str, old_str: str, new_str: str) -> tuple[st
     return matched_block, new_str
 
 
+def _try_whitespace_normalized_match(
+    content: str, old_str: str, new_str: str
+) -> tuple[str | None, str]:
+    """Attempt match after collapsing whitespace runs into generic \s+ patterns.
+
+    This handles cases where the file uses different spacing, tabs vs spaces,
+    or extra blank lines compared to the LLM-provided old_string.
+    """
+    import re
+
+    # Split old_str by whitespace runs, keeping the delimiters
+    parts = re.split(r"(\s+)", old_str)
+    # Build regex: literal non-whitespace parts, \s+ for whitespace runs
+    pattern = ""
+    for part in parts:
+        if not part:
+            continue
+        if part.isspace():
+            pattern += r"\s+"
+        else:
+            pattern += re.escape(part)
+    if not pattern:
+        return None, ""
+
+    match = re.search(pattern, content)
+    if match:
+        return match.group(0), new_str
+    return None, "Whitespace-normalized match failed."
+
+
+def _try_indentation_flexible_match(
+    content: str, old_str: str, new_str: str
+) -> tuple[str | None, str]:
+    """Attempt match after normalizing leading indentation (tabs 鈫?4 spaces).
+
+    Handles cases where the file uses tabs but old_string uses spaces,
+    or vice versa, while preserving the original file's actual indentation
+    on replacement.
+    """
+
+    def tabs_to_spaces(text: str, tabsize: int = 4) -> str:
+        return text.replace("\t", " " * tabsize)
+
+    norm_content = tabs_to_spaces(content)
+    norm_old = tabs_to_spaces(old_str)
+
+    if norm_old and norm_old in norm_content:
+        idx = norm_content.find(norm_old)
+        # Map back to original content 鈥?since tab鈫抯pace expands length,
+        # we approximate by searching around the same area in original content.
+        # Heuristic: look for the first non-whitespace char of old_str in original.
+        first_non_ws = old_str.lstrip()[:20] if old_str.lstrip() else ""
+        if first_non_ws:
+            search_start = max(0, idx - 40)
+            search_end = min(len(content), idx + len(old_str) + 40)
+            region = content[search_start:search_end]
+            inner_idx = region.find(first_non_ws)
+            if inner_idx != -1:
+                actual_start = search_start + inner_idx - (len(old_str) - len(old_str.lstrip()))
+                actual_start = max(0, actual_start)
+                actual_end = actual_start + len(old_str)
+                # Extend to cover any trailing newline/context
+                while actual_end < len(content) and content[actual_end] == "\n":
+                    actual_end += 1
+                matched = content[actual_start:actual_end]
+                return matched, new_str
+        # Fallback: same-length slice (may be slightly off but better than nothing)
+        return content[idx : idx + len(old_str)], new_str
+
+    return None, "Indentation-flexible match failed."
+
+
 def _is_path_within_workspace(file_path: str, cwd: str | None = None) -> tuple[bool, str]:
     """Check if a file path is within the workspace directory.
 
@@ -569,12 +603,70 @@ def _is_path_within_workspace(file_path: str, cwd: str | None = None) -> tuple[b
         return False, f"Path validation error: {e}"
 
 
+# ---------------------------------------------------------------------------
+# Provider-specific edit format parsers
+# ---------------------------------------------------------------------------
+
+_SEARCH_REPLACE_MARKER = "<<<<<<< SEARCH"
+_SPLIT_MARKER = "======="
+_REPLACE_MARKER = ">>>>>>> REPLACE"
+
+
+def _parse_search_replace_blocks(text: str) -> list[tuple[str, str]] | None:
+    """Parse Claude-style search/replace blocks from text.
+
+    Format:
+        <<<<<<< SEARCH
+        old content
+        =======
+        new content
+        >>>>>>> REPLACE
+
+    Returns list of (old_string, new_string) tuples if blocks found,
+    otherwise None so caller falls back to plain old_string/new_string.
+    """
+    if _SEARCH_REPLACE_MARKER not in text:
+        return None
+
+    blocks: list[tuple[str, str]] = []
+    remaining = text
+
+    while _SEARCH_REPLACE_MARKER in remaining:
+        search_idx = remaining.find(_SEARCH_REPLACE_MARKER)
+        split_idx = remaining.find(_SPLIT_MARKER, search_idx)
+        replace_idx = remaining.find(_REPLACE_MARKER, split_idx)
+
+        if search_idx == -1 or split_idx == -1 or replace_idx == -1:
+            break
+
+        old_start = search_idx + len(_SEARCH_REPLACE_MARKER)
+        old_content = remaining[old_start:split_idx].strip("\n")
+        new_content = remaining[split_idx + len(_SPLIT_MARKER) : replace_idx].strip("\n")
+
+        blocks.append((old_content, new_content))
+        remaining = remaining[replace_idx + len(_REPLACE_MARKER) :]
+
+    return blocks if blocks else None
+
+
 class FileEditInput(BaseModel):
     """Input for FileEdit tool."""
 
     file_path: str = Field(description="Path to the file to edit")
-    old_string: str = Field(description="The string to search for and replace")
-    new_string: str = Field(description="The replacement string")
+    old_string: str = Field(
+        description=(
+            "The string to search for and replace. "
+            "You may also use Claude-style search/replace blocks:\n"
+            "<<<<<<< SEARCH\\n"
+            "old content\\n"
+            "=======\\n"
+            "new content\\n"
+            ">>>>>>> REPLACE"
+        )
+    )
+    new_string: str = Field(
+        description="The replacement string (ignored if old_string contains search/replace blocks)"
+    )
     expected_replacements: int | None = Field(
         default=None, description="Expected number of replacements (default: 1)"
     )
@@ -588,6 +680,7 @@ class FileEditOutput(BaseModel):
     original_content: str | None = None
     new_content: str | None = None
     diff: str | None = None  # Unified diff format
+    encoding: str | None = None
     error: str | None = None
 
 
@@ -642,6 +735,85 @@ def _normalize_path(file_path: str, cwd: str | None = None) -> str:
     return os.path.normcase(os.path.normpath(os.path.abspath(file_path)))
 
 
+def _detect_file_encoding(path: Path) -> str:
+    """Detect file encoding with fallback chain."""
+    import sys
+
+    for enc in ("utf-8", sys.getdefaultencoding(), "cp936", "gbk", "gb18030", "latin-1"):
+        try:
+            path.read_text(encoding=enc)
+            return enc
+        except UnicodeDecodeError:
+            continue
+    return "utf-8"
+
+
+def _normalize_for_matching(text: str) -> str:
+    """Normalize smart quotes and unicode whitespace for matching.
+
+    LLMs often output smart quotes (curly quotes) while source code uses
+    straight ASCII quotes. This normalization ensures exact match succeeds
+    even when quote styles differ.
+    """
+    replacements = {
+        "\u201c": '"',  # Left double quotation mark
+        "\u201d": '"',  # Right double quotation mark
+        "\u2018": "'",  # Left single quotation mark
+        "\u2019": "'",  # Right single quotation mark
+        "\u2013": "-",  # En dash
+        "\u2014": "--",  # Em dash
+        "\u00a0": " ",  # Non-breaking space
+        "\u200b": "",  # Zero-width space
+        "\ufeff": "",  # BOM
+    }
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+    return text
+
+
+def _preserve_quote_style(old_string: str, actual_old_string: str, new_string: str) -> str:
+    """Preserve the quote style from the actual file when applying new_string.
+
+    If actual_old_string uses curly quotes and old_string (from LLM) uses
+    straight quotes, we try to apply the same curly-quote style to new_string.
+    """
+    # Quick check: if actual_old_string contains no curly quotes, nothing to do
+    curly_chars = {"\u201c", "\u201d", "\u2018", "\u2019"}
+    if not any(c in actual_old_string for c in curly_chars):
+        return new_string
+
+    result = new_string
+    # Map straight quotes in new_string to curly if the actual file uses curly
+    has_left_double = "\u201c" in actual_old_string
+    has_right_double = "\u201d" in actual_old_string
+    has_left_single = "\u2018" in actual_old_string
+    has_right_single = "\u2019" in actual_old_string
+
+    # Simple heuristic: replace all straight double quotes with curly
+    # if both left and right curly doubles are present in actual_old_string
+    if has_left_double and has_right_double and '"' in result:
+        # We only replace quotes that are *inside* string literals.
+        # For safety, do a simple alternating replacement.
+        parts = result.split('"')
+        new_parts = []
+        for i, part in enumerate(parts):
+            new_parts.append(part)
+            if i < len(parts) - 1:
+                new_parts.append("\u201c" if i % 2 == 0 else "\u201d")
+        result = "".join(new_parts)
+
+    if has_left_single and has_right_single and "'" in result:
+        parts = result.split("'")
+        new_parts = []
+        for i, part in enumerate(parts):
+            new_parts.append(part)
+            if i < len(parts) - 1:
+                new_parts.append("\u2018" if i % 2 == 0 else "\u2019")
+        result = "".join(new_parts)
+
+    return result
+
+
 async def edit_file_content(
     file_path: str,
     old_string: str,
@@ -684,9 +856,12 @@ async def edit_file_content(
             error=f"Failed to create backup before editing: {e}",
         )
 
+    # Detect original file encoding to preserve it on write
+    file_encoding = _detect_file_encoding(path)
+
     try:
         # Read original content
-        original_content = path.read_text(encoding="utf-8", errors="replace")
+        original_content = path.read_text(encoding=file_encoding, errors="replace")
 
         # Normalize line endings for Windows compatibility
         # If file uses CRLF but old_string uses LF, convert old_string/new_string to CRLF
@@ -699,6 +874,24 @@ async def edit_file_content(
 
         # Count occurrences
         occurrences = original_content.count(old_string_normalized)
+
+        # Try quote-normalized exact match before fuzzy matching
+        if occurrences == 0:
+            norm_old = _normalize_for_matching(old_string_normalized)
+            norm_content = _normalize_for_matching(original_content)
+            if norm_old and norm_old in norm_content:
+                # Find the position in normalized content
+                norm_idx = norm_content.find(norm_old)
+                # Map back to original content position
+                # Since normalization is char-by-char replacement, positions are preserved
+                actual_old = original_content[norm_idx : norm_idx + len(old_string_normalized)]
+                # Restore quote style in new_string to match the file
+                restored_new = _preserve_quote_style(
+                    old_string_normalized, actual_old, new_string_normalized
+                )
+                old_string_normalized = actual_old
+                new_string_normalized = restored_new
+                occurrences = 1
 
         if occurrences == 0:
             # Try fuzzy matching before giving up
@@ -745,13 +938,13 @@ async def edit_file_content(
                 new_content = original_content.replace(best_match, new_string_normalized, 1)
                 # Generate unified diff using the actual matched text
                 diff = _generate_unified_diff(original_content, new_content, path.name)
-                path.write_text(new_content, encoding="utf-8")
+                path.write_text(new_content, encoding=file_encoding)
 
                 # Verify write succeeded
                 try:
-                    verify_content = path.read_text(encoding="utf-8")
+                    verify_content = path.read_text(encoding=file_encoding)
                     if verify_content != new_content:
-                        path.write_text(original_content, encoding="utf-8")
+                        path.write_text(original_content, encoding=file_encoding)
                         return FileEditOutput(
                             file_path=str(path),
                             replacements_made=0,
@@ -761,11 +954,12 @@ async def edit_file_content(
                     pass
 
                 # --- Smart preview check (P0) ---
+                new_content_preview = original_content.replace(best_match, new_string_normalized)
                 preview_ok, preview_warnings = _smart_preview_check(
-                    best_match, new_string_normalized, str(path)
+                    best_match, new_string_normalized, str(path), new_content_preview
                 )
                 if not preview_ok:
-                    path.write_text(original_content, encoding="utf-8")
+                    path.write_text(original_content, encoding=file_encoding)
                     warning_text = "\n".join(f"  - {w}" for w in preview_warnings)
                     return FileEditOutput(
                         file_path=str(path),
@@ -784,7 +978,7 @@ async def edit_file_content(
                     try:
                         py_compile.compile(str(path), doraise=True)
                     except py_compile.PyCompileError as e:
-                        path.write_text(original_content, encoding="utf-8")
+                        path.write_text(original_content, encoding=file_encoding)
                         syntax_hint = (
                             f"\n\nSYNTAX ERROR DETAILS: {e}\n"
                             f"TIP: Re-read the file to get the EXACT text. "
@@ -807,7 +1001,7 @@ async def edit_file_content(
                 )
 
             # ------------------------------------------------------------------
-            # P0: Auto-degradation — line-level then block-level matching
+            # P0: Auto-degradation 鈥?line-level then block-level matching
             # ------------------------------------------------------------------
             degradation_attempted = []
 
@@ -826,16 +1020,32 @@ async def edit_file_content(
                 if matched_block is not None:
                     degradation_attempted.append("block-level match")
                     new_content = original_content.replace(matched_block, replacement, 1)
+                else:
+                    # Strategy 3: Whitespace-normalized match
+                    matched_block, replacement = _try_whitespace_normalized_match(
+                        original_content, old_string_normalized, new_string_normalized
+                    )
+                    if matched_block is not None:
+                        degradation_attempted.append("whitespace-normalized match")
+                        new_content = original_content.replace(matched_block, replacement, 1)
+                    else:
+                        # Strategy 4: Indentation-flexible match
+                        matched_block, replacement = _try_indentation_flexible_match(
+                            original_content, old_string_normalized, new_string_normalized
+                        )
+                        if matched_block is not None:
+                            degradation_attempted.append("indentation-flexible match")
+                            new_content = original_content.replace(matched_block, replacement, 1)
 
             if degradation_attempted:
                 diff = _generate_unified_diff(original_content, new_content, path.name)
-                path.write_text(new_content, encoding="utf-8")
+                path.write_text(new_content, encoding=file_encoding)
 
                 # Verify write succeeded
                 try:
-                    verify_content = path.read_text(encoding="utf-8")
+                    verify_content = path.read_text(encoding=file_encoding)
                     if verify_content != new_content:
-                        path.write_text(original_content, encoding="utf-8")
+                        path.write_text(original_content, encoding=file_encoding)
                         return FileEditOutput(
                             file_path=str(path),
                             replacements_made=0,
@@ -845,11 +1055,12 @@ async def edit_file_content(
                     pass
 
                 # --- Smart preview check (P0) ---
+                new_content_preview = original_content.replace(matched_block, new_string_normalized)
                 preview_ok, preview_warnings = _smart_preview_check(
-                    matched_block, new_string_normalized, str(path)
+                    matched_block, new_string_normalized, str(path), new_content_preview
                 )
                 if not preview_ok:
-                    path.write_text(original_content, encoding="utf-8")
+                    path.write_text(original_content, encoding=file_encoding)
                     warning_text = "\n".join(f"  - {w}" for w in preview_warnings)
                     return FileEditOutput(
                         file_path=str(path),
@@ -869,7 +1080,7 @@ async def edit_file_content(
                     try:
                         py_compile.compile(str(path), doraise=True)
                     except py_compile.PyCompileError as e:
-                        path.write_text(original_content, encoding="utf-8")
+                        path.write_text(original_content, encoding=file_encoding)
                         return FileEditOutput(
                             file_path=str(path),
                             replacements_made=0,
@@ -886,7 +1097,7 @@ async def edit_file_content(
                 )
 
             # ------------------------------------------------------------------
-            # All strategies failed — return detailed context to help the model
+            # All strategies failed 鈥?return detailed context to help the model
             # ------------------------------------------------------------------
             context_snippet = ""
             if len(old_string) > 10:
@@ -936,7 +1147,7 @@ async def edit_file_content(
 
         # --- Smart preview check (P0) ---
         preview_ok, preview_warnings = _smart_preview_check(
-            old_string_normalized, new_string_normalized, str(path)
+            old_string_normalized, new_string_normalized, str(path), new_content
         )
         if not preview_ok:
             # Block the edit and return detailed warnings
@@ -957,20 +1168,20 @@ async def edit_file_content(
         diff = _generate_unified_diff(original_content, new_content, filename)
 
         # Write back
-        path.write_text(new_content, encoding="utf-8")
+        path.write_text(new_content, encoding=file_encoding)
 
         # Verify write succeeded
         try:
-            verify_content = path.read_text(encoding="utf-8")
+            verify_content = path.read_text(encoding=file_encoding)
             if verify_content != new_content:
-                path.write_text(original_content, encoding="utf-8")
+                path.write_text(original_content, encoding=file_encoding)
                 return FileEditOutput(
                     file_path=str(path),
                     replacements_made=0,
                     error="Write verification failed (disk readback mismatch), rolled back.",
                 )
         except Exception as verify_err:
-            path.write_text(original_content, encoding="utf-8")
+            path.write_text(original_content, encoding=file_encoding)
             return FileEditOutput(
                 file_path=str(path),
                 replacements_made=0,
@@ -985,7 +1196,7 @@ async def edit_file_content(
                 py_compile.compile(str(path), doraise=True)
             except py_compile.PyCompileError as e:
                 # Rollback to original content
-                path.write_text(original_content, encoding="utf-8")
+                path.write_text(original_content, encoding=file_encoding)
                 return FileEditOutput(
                     file_path=str(path),
                     replacements_made=0,
@@ -999,6 +1210,7 @@ async def edit_file_content(
             original_content=original_content if replacements_made == 1 else None,
             new_content=new_content if replacements_made == 1 else None,
             diff=diff,
+            encoding=file_encoding,
         )
     except Exception as e:
         # Try to restore from backup on unexpected error
@@ -1078,14 +1290,105 @@ async def file_edit_call(
             output_for_assistant=reason,
         )
 
-    # Edit file with workspace restriction
-    result = await edit_file_content(
-        file_path,
-        input_data.old_string,
-        input_data.new_string,
-        input_data.expected_replacements,
-        cwd,
-    )
+    # Detect provider-specific edit format (Claude-style search/replace blocks)
+    sr_blocks = _parse_search_replace_blocks(input_data.old_string)
+
+    if sr_blocks:
+        # Apply multiple search/replace edits sequentially
+        total_replacements = 0
+        combined_diff_parts: list[str] = []
+        last_error: str | None = None
+        last_encoding: str | None = None
+        current_content: str | None = None
+
+        for idx, (old_str, new_str) in enumerate(sr_blocks):
+            result = await edit_file_content(
+                file_path,
+                old_str,
+                new_str,
+                input_data.expected_replacements,
+                cwd,
+            )
+            if result.error:
+                last_error = result.error
+                break
+            total_replacements += result.replacements_made
+            if result.diff:
+                combined_diff_parts.append(result.diff)
+            last_encoding = result.encoding or last_encoding
+            if result.new_content is not None:
+                current_content = result.new_content
+
+        # Rebuild a composite result
+        if last_error:
+            result = FileEditOutput(
+                file_path=file_path,
+                replacements_made=total_replacements,
+                error=last_error,
+                encoding=last_encoding,
+            )
+        else:
+            result = FileEditOutput(
+                file_path=file_path,
+                replacements_made=total_replacements,
+                diff="\n".join(combined_diff_parts) if combined_diff_parts else None,
+                encoding=last_encoding,
+                new_content=current_content,
+            )
+    else:
+        # Standard old_string / new_string edit
+        result = await edit_file_content(
+            file_path,
+            input_data.old_string,
+            input_data.new_string,
+            input_data.expected_replacements,
+            cwd,
+        )
+
+    # Update read_file_state with detected encoding so FileWrite can inherit it
+    if not result.error and context.read_file_state is not None:
+        import time
+
+        normalized_key = os.path.normcase(os.path.normpath(os.path.abspath(file_path)))
+        context.read_file_state[normalized_key] = {
+            "timestamp": time.time(),
+            "mtime": os.path.getmtime(file_path) if os.path.exists(file_path) else None,
+            "encoding": result.encoding or "utf-8",
+        }
+
+    # Attach LSP diagnostics if edit succeeded
+    if not result.error and result.diff:
+        try:
+            from pilotcode.services.lsp_manager import get_lsp_manager
+
+            lsp = get_lsp_manager()
+            if lsp:
+                diagnostics = lsp.get_diagnostics(file_path)
+                errors = [d for d in diagnostics if d.severity == 1]
+                warnings = [d for d in diagnostics if d.severity == 2]
+                if errors or warnings:
+                    diag_lines = ["\n[LSP Diagnostics]"]
+                    for d in errors[:5]:
+                        line = (
+                            d.range.get("start", {}).get("line", "?")
+                            if isinstance(d.range, dict)
+                            else "?"
+                        )
+                        diag_lines.append(f"  [Error] {d.message} (line {line})")
+                    for d in warnings[:3]:
+                        line = (
+                            d.range.get("start", {}).get("line", "?")
+                            if isinstance(d.range, dict)
+                            else "?"
+                        )
+                        diag_lines.append(f"  [Warning] {d.message} (line {line})")
+                    if len(errors) > 5 or len(warnings) > 3:
+                        diag_lines.append(
+                            f"  ... ({len(errors)} errors, {len(warnings)} warnings total)"
+                        )
+                    result.diff = result.diff + "\n" + "\n".join(diag_lines)
+        except Exception:
+            pass
 
     # Propagate error to ToolResult so LLM sees a clear failure message
     if result.error:
@@ -1109,7 +1412,7 @@ def render_file_edit_use(input_data: FileEditInput, options: dict[str, Any]) -> 
     path = Path(input_data.file_path)
     old_preview = input_data.old_string[:30].replace("\n", " ")
     new_preview = input_data.new_string[:30].replace("\n", " ")
-    return f"✏️  Editing {path.name}: '{old_preview}...' → '{new_preview}...'"
+    return f"鉁忥笍  Editing {path.name}: '{old_preview}...' 鈫?'{new_preview}...'"
 
 
 def render_file_edit_result(
@@ -1120,12 +1423,12 @@ def render_file_edit_result(
     Shows the unified diff if available, otherwise a simple success message.
     """
     if result.error:
-        return f"❌ Error editing {Path(result.file_path).name}: {result.error}"
+        return f"鉂?Error editing {Path(result.file_path).name}: {result.error}"
 
     if result.diff:
-        return f"✅ Edited {Path(result.file_path).name} ({result.replacements_made} replacement(s))\n\n{result.diff}"
+        return f"鉁?Edited {Path(result.file_path).name} ({result.replacements_made} replacement(s))\n\n{result.diff}"
 
-    return f"✅ Edited {Path(result.file_path).name} ({result.replacements_made} replacement(s))"
+    return f"鉁?Edited {Path(result.file_path).name} ({result.replacements_made} replacement(s))"
 
 
 # Create the FileEdit tool

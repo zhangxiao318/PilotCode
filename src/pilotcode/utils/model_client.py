@@ -244,7 +244,10 @@ class ModelClient:
         # ------------------------------------------------------------------
         # Three-layer architecture (inspired by opencode)
         # ------------------------------------------------------------------
-        self._msg_normalizer = MessageNormalizer(self._api_protocol, self._provider_name)
+        _capabilities = self._model_info.capabilities if self._model_info else None
+        self._msg_normalizer = MessageNormalizer(
+            self._api_protocol, self._provider_name, capabilities=_capabilities
+        )
         self._resp_normalizer = ResponseNormalizer(self._api_protocol)
         self._param_gen = ParameterGenerator(
             self._api_protocol, self._model_info, self._provider_name
@@ -266,10 +269,21 @@ class ModelClient:
 
     @property
     def supports_reasoning_content(self) -> bool:
-        """Whether the backend uses reasoning_content field (DeepSeek-style)."""
+        """Whether the backend produces reasoning/thinking content.
+
+        Covers:
+        - DeepSeek/Qwen native reasoning_content field (OpenAI-compatible)
+        - Anthropic extended thinking (normalized to reasoning_content by ProtocolNormalizer)
+        """
         if self._model_info and self._model_info.capabilities.reasoning_content_field:
             return True
-        return self._api_protocol == "openai" and self._is_deepseek
+        # DeepSeek / Qwen via OpenAI-compatible protocol
+        if self._api_protocol == "openai" and self._provider_name in ("deepseek", "qwen"):
+            return True
+        # Anthropic extended thinking (thinking blocks → reasoning_content in normalizer)
+        if self._provider_name == "anthropic":
+            return True
+        return False
 
     def _convert_messages(
         self, messages: list[Message] | list[dict[str, Any]]
@@ -283,7 +297,10 @@ class ModelClient:
         Anthropic conversion happens inside _build_anthropic_payload.
         """
         # Force OpenAI normalization so system messages are preserved
-        openai_normalizer = MessageNormalizer("openai", self._provider_name)
+        _capabilities = self._model_info.capabilities if self._model_info else None
+        openai_normalizer = MessageNormalizer(
+            "openai", self._provider_name, capabilities=_capabilities
+        )
         normalized, _ = openai_normalizer.normalize(messages)
         return normalized
 
@@ -346,7 +363,8 @@ class ModelClient:
             data = json.loads(body)
             err = data.get("error", {})
             if isinstance(err, dict):
-                error_code = err.get("code", "")
+                raw_code = err.get("code", "")
+                error_code = str(raw_code) if raw_code is not None else ""
             elif isinstance(err, str):
                 error_code = err
         except (json.JSONDecodeError, AttributeError):
@@ -383,6 +401,7 @@ class ModelClient:
         temperature: float = 0.7,
         max_tokens: int | None = None,
         stream: bool = True,
+        extra_body: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Send chat completion request.
 
@@ -410,6 +429,10 @@ class ModelClient:
             tools,
             system,
         )
+
+        # Merge provider-specific extra_body (e.g., Qwen enable_thinking)
+        if extra_body:
+            payload.update(extra_body)
 
         max_retries = 3
         base_delay = 1.0

@@ -215,7 +215,9 @@ class TestParameterGeneratorPayload:
         )
         assert payload["model"] == "claude-3"
         assert payload["messages"][0]["role"] == "user"
-        assert payload["system"] == "Be helpful"
+        assert payload["system"] == [
+            {"type": "text", "text": "Be helpful", "cache_control": {"type": "ephemeral"}}
+        ]
         assert payload["stream"] is True
         assert payload["max_tokens"] == 1024
         assert "temperature" not in payload  # Claude omits temperature

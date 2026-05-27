@@ -189,7 +189,7 @@ class TestToolRegistry:
         assert "Grep" in tool_names
         assert "FileEdit" in tool_names
         assert "AskUser" in tool_names
-        assert "TodoWrite" in tool_names
+        assert "Todo" in tool_names
         assert "WebSearch" in tool_names
         assert "WebFetch" in tool_names
 

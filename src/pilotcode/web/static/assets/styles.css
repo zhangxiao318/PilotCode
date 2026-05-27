@@ -390,3 +390,43 @@
 .hidden {
     display: none !important;
 }
+
+/* Tables */
+.message-content table,
+.final-response table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.75rem 0;
+    font-size: 0.875rem;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    margin: 0.75rem 0;
+}
+
+.final-response table th,
+.final-response table td {
+    border: 1px solid #e5e5e5;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+}
+
+.final-response table th {
+    background-color: #f5f5f5;
+    font-weight: 600;
+    color: #0f0f0f;
+}
+
+.final-response table td {
+    color: #374151;
+}
+
+.final-response table tr:nth-child(even) td {
+    background-color: #fafafa;
+}
+
+.final-response table tr:hover td {
+    background-color: #f0f0f0;
+}

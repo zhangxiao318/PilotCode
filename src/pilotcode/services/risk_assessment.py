@@ -288,6 +288,27 @@ class ToolRiskAnalyzer:
         elif tool_name in ("FileRead", "FileWrite", "FileEdit"):
             path = params.get("path") or params.get("file_path", "")
             operation = "read" if tool_name == "FileRead" else "write"
+
+            # Auto-allow writes to PilotCode's own memory/context files
+            # These are internal working files, not user project source code.
+            normalized = path.replace("\\", "/")
+            if operation in ("write", "edit") and (
+                "/.pilotcode/memory/" in normalized
+                or "/.pilotcode/context/" in normalized
+                or "/.pilotcode/agent-memory/" in normalized
+                or normalized.startswith(".pilotcode/memory/")
+                or normalized.startswith(".pilotcode/context/")
+                or normalized.startswith(".pilotcode/agent-memory/")
+            ):
+                return RiskAssessment(
+                    level=RiskLevel.LOW,
+                    reason=f"Auto-allowed: {tool_name} to internal pilotcode memory file",
+                    auto_allow=True,
+                    requires_confirmation=False,
+                    destructive=False,
+                    read_only=False,
+                )
+
             return self.command_analyzer.assess_file_path(path, operation)
 
         elif tool_name == "PowerShell":

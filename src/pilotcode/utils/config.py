@@ -4,6 +4,7 @@ import json
 import os
 import asyncio
 import logging
+import time
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Any
@@ -227,7 +228,7 @@ class ConfigManager:
         """
         if self.SETTINGS_FILE.exists():
             try:
-                with open(self.SETTINGS_FILE, "r") as f:
+                with open(self.SETTINGS_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 return GlobalConfig(**data)
             except Exception:
@@ -249,7 +250,7 @@ class ConfigManager:
         # Load from file
         if self.SETTINGS_FILE.exists():
             try:
-                with open(self.SETTINGS_FILE, "r") as f:
+                with open(self.SETTINGS_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 self._global_config = GlobalConfig(**data)
             except Exception:
@@ -276,7 +277,7 @@ class ConfigManager:
         new_model = config.default_model
 
         self._ensure_config_dir()
-        with open(self.SETTINGS_FILE, "w") as f:
+        with open(self.SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(asdict(config), f, indent=2)
         self._global_config = config
         self._settings_mtime = self.SETTINGS_FILE.stat().st_mtime
@@ -359,7 +360,7 @@ class ConfigManager:
 
         if config_file.exists():
             try:
-                with open(config_file, "r") as f:
+                with open(config_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 return ProjectConfig(**data)
             except Exception:
@@ -521,26 +522,46 @@ class ConfigManager:
 
                 # After successful connectivity test, try to fetch actual
                 # model capabilities from the API (overrides static values).
+                # Skip if the probe cache already has valid values (written
+                # within the last 24 hours) to avoid spamming the API on
+                # every startup for backends that don't expose limit fields.
                 try:
-                    api_caps = await client.fetch_model_capabilities()
-                    if api_caps:
-                        mi = result["model_info"]
-                        for key in (
-                            "context_window",
-                            "max_tokens",
-                            "supports_tools",
-                            "supports_vision",
-                        ):
-                            if key in api_caps:
-                                mi[key] = api_caps[key]
-                        mi["source"] = "api"
-                        # Update display name if the API tells us something new
-                        if "display_name" in api_caps:
-                            mi["display_name"] = api_caps["display_name"]
+                    from .models_config import (
+                        _backend_limits_cache,
+                        _load_probe_cache,
+                        _compute_config_hash,
+                    )
+
+                    if not _backend_limits_cache:
+                        _load_probe_cache()
+                    ck = _compute_config_hash()
+                    needs_probe = not (
+                        ck and ck in _backend_limits_cache and _backend_limits_cache[ck]
+                    )
                 except Exception:
-                    # It's okay if the API doesn't expose model metadata;
-                    # we already have static fallback values.
-                    pass
+                    needs_probe = True
+
+                if needs_probe:
+                    try:
+                        api_caps = await client.fetch_model_capabilities()
+                        if api_caps:
+                            mi = result["model_info"]
+                            for key in (
+                                "context_window",
+                                "max_tokens",
+                                "supports_tools",
+                                "supports_vision",
+                            ):
+                                if key in api_caps:
+                                    mi[key] = api_caps[key]
+                            mi["source"] = "api"
+                            # Update display name if the API tells us something new
+                            if "display_name" in api_caps:
+                                mi["display_name"] = api_caps["display_name"]
+                    except Exception:
+                        # It's okay if the API doesn't expose model metadata;
+                        # we already have static fallback values.
+                        pass
             else:
                 result["message"] = "LLM returned empty response"
                 result["error"] = "Empty response from model"
@@ -578,6 +599,75 @@ class ConfigManager:
                 status["env_overrides"][env_var] = "***set***"
 
         return status
+
+    def should_skip_probe(self) -> bool:
+        """
+        Determine if we should skip the probe based on config file modification time and last probe time.
+
+        Returns:
+            True if probe should be skipped, False otherwise
+        """
+        # If config file doesn't exist, we can't skip
+        if not self.SETTINGS_FILE.exists():
+            return False
+
+        # Load current config file modification time
+        config_mtime = self.SETTINGS_FILE.stat().st_mtime
+
+        # Try to get last probe time from settings file or environment
+        try:
+            import json
+            from pathlib import Path
+
+            # Try to read probe tracking file
+            tracker_file = Path.home() / ".pilotcode" / "probe_tracker.json"
+            if tracker_file.exists():
+                with open(tracker_file, "r", encoding="utf-8") as f:
+                    tracker_data = json.load(f)
+                    last_probe_time = tracker_data.get("last_probe_time", 0)
+                    last_config_mtime = tracker_data.get("last_config_mtime", 0)
+
+                    # If config file has been modified since last probe, don't skip
+                    if config_mtime > last_config_mtime:
+                        return False
+
+                    # If last probe was more than 24 hours ago, don't skip
+                    current_time = time.time()
+                    if current_time - last_probe_time > 24 * 60 * 60:  # 24 hours in seconds
+                        return False
+
+                    # If we've reached here, skip the probe
+                    return True
+        except Exception:
+            # If there's any error in reading tracker file, fall back to not skipping
+            pass
+
+        return False
+
+    def update_probe_status(self) -> None:
+        """
+        Update probe status with current timestamp and config file modification time.
+        """
+        try:
+            import json
+            from pathlib import Path
+
+            tracker_file = Path.home() / ".pilotcode" / "probe_tracker.json"
+            tracker_file.parent.mkdir(parents=True, exist_ok=True)
+
+            tracker_data = {}
+            if tracker_file.exists():
+                with open(tracker_file, "r", encoding="utf-8") as f:
+                    tracker_data = json.load(f)
+
+            tracker_data["last_probe_time"] = time.time()
+            tracker_data["last_config_mtime"] = self.SETTINGS_FILE.stat().st_mtime
+
+            with open(tracker_file, "w", encoding="utf-8") as f:
+                json.dump(tracker_data, f, indent=2)
+        except Exception:
+            # Silently fail - tracking is not critical
+            pass
 
 
 # Global instance

@@ -78,7 +78,7 @@ class FrecencyHistory:
             return
 
         try:
-            with open(self.storage_file, "r") as f:
+            with open(self.storage_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             for item in data:
@@ -109,7 +109,7 @@ class FrecencyHistory:
                 for entry in entries_to_save
             ]
 
-            with open(self.storage_file, "w") as f:
+            with open(self.storage_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
             print(f"Failed to save history: {e}")

@@ -21,7 +21,7 @@ def load_cron_jobs():
     """Load cron jobs."""
     if os.path.exists(CRON_FILE):
         try:
-            with open(CRON_FILE, "r") as f:
+            with open(CRON_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
@@ -31,7 +31,7 @@ def load_cron_jobs():
 def save_cron_jobs(jobs):
     """Save cron jobs."""
     ensure_cron_dir()
-    with open(CRON_FILE, "w") as f:
+    with open(CRON_FILE, "w", encoding="utf-8") as f:
         json.dump(jobs, f, indent=2)
 
 

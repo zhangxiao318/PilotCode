@@ -27,6 +27,7 @@ class ParameterGenerator:
             return {
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
+                "anthropic-beta": "prompt-caching-2024-07-31",
                 "Content-Type": "application/json",
             }
         return {
@@ -195,7 +196,17 @@ class ParameterGenerator:
         }
 
         if system:
-            payload["system"] = system
+            # Use array format with cache_control for prompt caching.
+            # Anthropic supports both string and array formats for system;
+            # the array format enables cache_control for the static instruction
+            # portion which remains identical across turns.
+            payload["system"] = [
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
 
         temp = self.get_temperature(temperature)
         if temp is not None:

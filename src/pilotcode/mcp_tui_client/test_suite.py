@@ -95,7 +95,7 @@ class PilotCodeTestSuite:
         """Take a screenshot and save it."""
         screen = await self.client.capture_screen(session_id)
         screenshot_path = os.path.join(self.screenshots_dir, f"{name}.txt")
-        with open(screenshot_path, "w") as f:
+        with open(screenshot_path, "w", encoding="utf-8") as f:
             f.write(screen.raw_text)
         return screenshot_path
 
@@ -224,7 +224,7 @@ class PilotCodeTestSuite:
 
             # Create a test file first
             test_file = os.path.join(self.test_dir, "test.txt")
-            with open(test_file, "w") as f:
+            with open(test_file, "w", encoding="utf-8") as f:
                 f.write("Hello from PilotCode test!")
 
             # Ask PilotCode to read it

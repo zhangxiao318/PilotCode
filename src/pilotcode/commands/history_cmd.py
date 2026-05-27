@@ -21,7 +21,7 @@ def load_history():
     """Load command history."""
     if os.path.exists(HISTORY_FILE):
         try:
-            with open(HISTORY_FILE, "r") as f:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
@@ -31,7 +31,7 @@ def load_history():
 def save_history(history):
     """Save command history."""
     ensure_history_dir()
-    with open(HISTORY_FILE, "w") as f:
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2)
 
 

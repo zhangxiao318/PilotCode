@@ -144,7 +144,18 @@ async def plan_edits(
         try:
             if file_path.stat().st_size > 5 * 1024 * 1024:  # Skip > 5MB
                 continue
-            content = file_path.read_text(encoding="utf-8", errors="replace")
+            # Detect encoding for proper handling of non-ASCII content
+            import sys
+
+            file_enc = "utf-8"
+            for enc in ("utf-8", sys.getdefaultencoding(), "cp936", "gbk", "gb18030", "latin-1"):
+                try:
+                    file_path.read_text(encoding=enc)
+                    file_enc = enc
+                    break
+                except UnicodeDecodeError:
+                    continue
+            content = file_path.read_text(encoding=file_enc, errors="replace")
         except Exception:
             continue
 

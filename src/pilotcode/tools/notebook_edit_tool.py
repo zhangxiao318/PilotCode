@@ -38,16 +38,32 @@ class NotebookOutput(BaseModel):
     message: str = ""
 
 
+def _detect_notebook_encoding(notebook_path: str) -> str:
+    """Detect notebook file encoding with fallback."""
+    import sys
+
+    for enc in ("utf-8", sys.getdefaultencoding(), "cp936", "gbk", "gb18030", "latin-1"):
+        try:
+            with open(notebook_path, "r", encoding=enc) as f:
+                f.read()
+            return enc
+        except UnicodeDecodeError:
+            continue
+    return "utf-8"
+
+
 def read_notebook(notebook_path: str) -> dict:
     """Read notebook file."""
-    with open(notebook_path, "r", encoding="utf-8") as f:
+    enc = _detect_notebook_encoding(notebook_path)
+    with open(notebook_path, "r", encoding=enc) as f:
         return json.load(f)
 
 
 def write_notebook(notebook_path: str, notebook: dict) -> None:
     """Write notebook file."""
-    with open(notebook_path, "w", encoding="utf-8") as f:
-        json.dump(notebook, f, indent=2)
+    enc = _detect_notebook_encoding(notebook_path)
+    with open(notebook_path, "w", encoding=enc) as f:
+        json.dump(notebook, f, indent=2, ensure_ascii=False)
 
 
 async def notebook_edit_call(

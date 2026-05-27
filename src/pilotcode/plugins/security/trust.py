@@ -103,7 +103,7 @@ class TrustStore:
             return
 
         try:
-            with open(self.store_path, "r") as f:
+            with open(self.store_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             for pub_data in data.get("publishers", []):
@@ -119,7 +119,7 @@ class TrustStore:
             "publishers": [p.to_dict() for p in self._publishers.values()],
             "updated": datetime.now().isoformat(),
         }
-        with open(self.store_path, "w") as f:
+        with open(self.store_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
     def get_publisher(self, publisher_id: str) -> Optional[PublisherTrust]:

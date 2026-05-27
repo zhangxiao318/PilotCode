@@ -4,6 +4,87 @@
 
 ---
 
+## 2026-05-16
+
+### Memdir 长期记忆系统（MVP）
+- 实现 `memdir` 长期记忆系统初版，支持关键对话片段、决策理由和上下文摘要的持久化。
+- 为跨会话记忆召回、经验累积和个性化适配奠定架构基础。
+
+---
+
+## 2026-05-14
+
+### QueryEngine 重构（五大子管理器）
+- 将 `QueryEngine` 拆分为 5 个专职子管理器：
+  - `SessionManager` — 会话生命周期与状态管理
+  - `MessageParser` — 消息解析、归一化与格式转换
+  - `PromptBuilder` — prompt 组装与动态边界注入
+  - `CompactionManager` — 上下文压缩策略与调度
+  - `TokenManager` — token 估算、预算分配与基线测量
+- 保持向后兼容的统一导出接口。
+
+### 五层渐进式压缩管道
+- 实现 graduated compaction：Tool result 清理 → 旧消息摘要化 → 侧链归档 → 结构化压缩 → 紧急截断。
+- 新增 fresh-session token 基线测量，以空上下文 token 占用为预算计算基准。
+
+### 工具系统升级
+- 统一 Todo/Task 工具：支持持久化、resume 恢复、LLM 自动触发提示。
+- 基于权限模式的工具预过滤：按安全级别动态筛选可用工具。
+- 子代理侧链归档（sidechain transcript）：子 Agent 完整对话自动归档，避免污染主上下文。
+
+### 索引与存储修复
+- 修复 ghost-hash bug（哈希冲突导致文件索引不完整）。
+- VectorStore eager 重建 numpy 矩阵；修复 async git、WebSocket 稳定性、`/stats` 跟踪和 cwd 解析。
+
+---
+
+## 2026-05-12
+
+### 统一日志架构
+- 全新统一日志系统：文件轮转 + 分级日志；`server.py` 全面迁移到新 logger。
+
+### Anthropic 协议完整支持
+- 支持 extended thinking 事件，启用 prompt caching。
+- 修复流式/非流式 `stop_reason` 映射不兼容、`__PROMPT_DYNAMIC_BOUNDARY__` 泄漏到 system 参数、运行时上下文放置顺序错误。
+
+### Web UI 性能与体验
+- 大幅提升 web 启动速度；AI 响应后自动刷新文件树；Markdown 表格渲染支持。
+- 思考/推理内容语言跟随用户指令。
+
+### CWD 与路径修复
+- `/index` 使用 session 的 `cwd`；`--cwd` 正确透传至 REPL/SimpleCLI。
+- Windows 路径大小写敏感修复；`ReadFile` 作为 `FileRead` 别名。
+
+---
+
+## 2026-05-08
+
+### Web UI 体验优化
+- thinking-response 合并：推理内容与正式回复智能合并。
+- session 自动恢复：刷新或重连后恢复会话状态。
+- tool result cards 卡片化展示；移除用户消息回显。
+
+### Windows 兼容性
+- 所有 `subprocess.run(text=True)` 显式指定 `encoding='utf-8'`。
+
+---
+
+## 2026-05-07
+
+### Web UI 文件浏览器与 Git 面板
+- 新增文件浏览器（File Explorer）和 Git 状态面板（Git Status Panel）。
+- 重写 Markdown 渲染器（heading/list/paragraph）；slash commands 接入流式协议。
+
+### Web UI 稳定性
+- 发送锁防止重复消息；工具调用强化（检测编译错误、拒绝时警告）。
+- Agent 输出改用 ASCII box，禁用 ANSI 防止乱码。
+- `send_to_client` timeout guard 防止 Windows WebSocket 挂起。
+
+### 编排器与错误处理
+- 处理非字符串 `worker_type` 和数字字段；支持 integer 类型 `error.code`。
+
+---
+
 ## 2026-05-06
 
 ### P-EVR 编排器稳定性（核心修复）

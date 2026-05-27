@@ -743,7 +743,7 @@ class HierarchicalMemory:
                 "semantic": {k: v.to_dict() for k, v in self.semantic.knowledge.items()},
                 "patterns": self.semantic.patterns,
             }
-            with open(self.storage_path, "w") as f:
+            with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception:
             pass
@@ -751,7 +751,7 @@ class HierarchicalMemory:
     def _load(self) -> None:
         """Load persisted memory state."""
         try:
-            with open(self.storage_path, "r") as f:
+            with open(self.storage_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             self.episodic.episodes = [EpisodeSummary.from_dict(e) for e in data.get("episodic", [])]

@@ -24,6 +24,8 @@ from ..tools.base import ToolUseContext
 from ..tools.file_edit_tool import set_allowed_files, clear_allowed_files
 from ..commands.base import process_user_input, CommandContext
 from ..query_engine import QueryEngine, QueryEngineConfig
+from dataclasses import replace
+
 from ..state.app_state import get_default_app_state, AppState
 from ..state.store import Store, set_global_store
 from ..utils.config import get_global_config
@@ -52,10 +54,17 @@ class REPL:
     }
 
     def __init__(
-        self, auto_allow: bool = False, max_iterations: int | None = None, read_only: bool = False
+        self,
+        auto_allow: bool = False,
+        max_iterations: int | None = None,
+        read_only: bool = False,
+        cwd: str | None = None,
     ):
         self.console = Console()
-        self.store = Store(get_default_app_state())
+        initial_state = get_default_app_state()
+        if cwd:
+            initial_state = replace(initial_state, cwd=cwd)
+        self.store = Store(initial_state)
         set_global_store(self.store)
 
         # Allow override via parameter or environment variable
@@ -493,6 +502,11 @@ class REPL:
                 if await self.handle_command(user_input):
                     continue
 
+                # Unknown slash command — show error instead of sending to LLM
+                if user_input.startswith("/"):
+                    self.console.print(f"[yellow]Unknown command: {user_input.split()[0]}[/yellow]")
+                    continue
+
                 await self.process_response(user_input)
 
             except KeyboardInterrupt:
@@ -510,14 +524,17 @@ class REPL:
         self.console.print("\n[dim]Goodbye! 👋[/dim]")
 
 
-def run_repl(auto_allow: bool = False, max_iterations: int | None = None) -> None:
+def run_repl(
+    auto_allow: bool = False, max_iterations: int | None = None, cwd: str | None = None
+) -> None:
     """Run the REPL.
 
     Args:
         auto_allow: Automatically allow all tool executions
         max_iterations: Maximum tool execution rounds per query (default: 50)
+        cwd: Working directory to use (falls back to os.getcwd() if not provided)
     """
-    repl = REPL(auto_allow=auto_allow, max_iterations=max_iterations)
+    repl = REPL(auto_allow=auto_allow, max_iterations=max_iterations, cwd=cwd)
     try:
         asyncio.run(repl.run())
     except KeyboardInterrupt:
@@ -1154,9 +1171,9 @@ async def run_headless(
         from ..types.message import deserialize_messages
 
         if isinstance(initial_messages[0], dict):
-            query_engine.messages = deserialize_messages(initial_messages)
+            query_engine.messages[:] = deserialize_messages(initial_messages)
         else:
-            query_engine.messages = initial_messages
+            query_engine.messages[:] = initial_messages
 
     tool_executor = get_tool_executor()
 
@@ -2137,7 +2154,7 @@ def _get_plan_cache_path(cwd: str) -> str:
 def _save_plan_to_cache(plan: dict, cwd: str) -> None:
     """Persist plan to external cache so it survives across rounds."""
     try:
-        Path(_get_plan_cache_path(cwd)).write_text(json.dumps(plan, indent=2))
+        Path(_get_plan_cache_path(cwd)).write_text(json.dumps(plan, indent=2), encoding="utf-8")
     except Exception:
         pass
 
@@ -2147,7 +2164,7 @@ def _load_plan_from_cache(cwd: str) -> dict | None:
     try:
         path = _get_plan_cache_path(cwd)
         if os.path.exists(path):
-            return json.loads(Path(path).read_text())
+            return json.loads(Path(path).read_text(encoding="utf-8"))
     except Exception:
         pass
     return None
@@ -2180,6 +2197,7 @@ def _validate_plan(plan: dict, cwd: str) -> tuple[bool, list[str]]:
             cwd=cwd,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=30,
         )
         tracked_files = set(result.stdout.splitlines()) if result.returncode == 0 else set()

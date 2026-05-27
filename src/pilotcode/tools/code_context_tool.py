@@ -10,7 +10,7 @@ This tool enables RAG (Retrieval Augmented Generation) by:
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 from ..services.codebase_indexer import get_codebase_indexer
 
@@ -112,7 +112,7 @@ async def code_context_call(
     """Build code context for a query."""
 
     # Get codebase indexer
-    indexer = get_codebase_indexer()
+    indexer = get_codebase_indexer(resolve_cwd(context))
 
     # Build context
     try:

@@ -26,7 +26,7 @@ async def export_command(args: list[str], context: CommandContext) -> str:
     }
 
     try:
-        with open(filename, "w") as f:
+        with open(filename, "w", encoding="utf-8") as f:
             json.dump(export_data, f, indent=2)
 
         return f"Session exported to: {filename}"

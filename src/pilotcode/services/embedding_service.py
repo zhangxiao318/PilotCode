@@ -205,6 +205,7 @@ class VectorStore:
         self.name = name
         self._matrix: Any = None
         self._ids: list[str] = []
+        self._matrix_dirty = False
 
         if persist:
             self._store_dir = get_embeddings_dir()
@@ -215,6 +216,7 @@ class VectorStore:
 
     def _rebuild_matrix(self) -> None:
         """Rebuild the numpy matrix and ID list from stored vectors."""
+        self._matrix_dirty = False
         if not self.vectors or not HAS_NUMPY:
             self._matrix = None
             self._ids = []
@@ -233,27 +235,14 @@ class VectorStore:
 
     def add(self, vector: EmbeddingVector) -> None:
         """Add a vector to the store."""
-        replacing = vector.id in self.vectors
         self.vectors[vector.id] = vector
-
-        if HAS_NUMPY:
-            if self._matrix is not None and len(vector.vector) == self._matrix.shape[1]:
-                if replacing and vector.id in self._ids:
-                    idx = self._ids.index(vector.id)
-                    self._matrix[idx] = np.array(vector.vector, dtype=np.float32)
-                else:
-                    self._ids.append(vector.id)
-                    self._matrix = np.vstack(
-                        [
-                            self._matrix,
-                            np.array([vector.vector], dtype=np.float32),
-                        ]
-                    )
-            else:
-                self._rebuild_matrix()
+        self._matrix_dirty = True
 
         if self.persist:
             self._save_vector_to_disk(vector)
+
+        if HAS_NUMPY:
+            self._rebuild_matrix()
 
     def add_many(self, vectors: list[EmbeddingVector]) -> None:
         """Add multiple vectors."""
@@ -262,8 +251,10 @@ class VectorStore:
             if self.persist:
                 self._save_vector_to_disk(vector)
 
-        if HAS_NUMPY:
-            self._rebuild_matrix()
+        if vectors:
+            self._matrix_dirty = True
+            if HAS_NUMPY:
+                self._rebuild_matrix()
 
     def get(self, id: str) -> Optional[EmbeddingVector]:
         """Get vector by ID."""
@@ -273,15 +264,15 @@ class VectorStore:
         """Delete vector by ID."""
         if id in self.vectors:
             del self.vectors[id]
-
-            if HAS_NUMPY:
-                self._rebuild_matrix()
+            self._matrix_dirty = True
 
             if self.persist:
                 file_path = self._store_dir / f"{id}.json.gz"
                 if file_path.exists():
                     file_path.unlink()
 
+            if HAS_NUMPY:
+                self._rebuild_matrix()
             return True
         return False
 
@@ -301,8 +292,10 @@ class VectorStore:
                 if fp.exists():
                     fp.unlink()
 
-        if HAS_NUMPY and ids_to_delete:
-            self._rebuild_matrix()
+        if ids_to_delete:
+            self._matrix_dirty = True
+            if HAS_NUMPY:
+                self._rebuild_matrix()
 
         return len(ids_to_delete)
 
@@ -312,6 +305,9 @@ class VectorStore:
         """Search for similar vectors using cosine similarity."""
         if not self.vectors:
             return []
+
+        if HAS_NUMPY and self._matrix_dirty:
+            self._rebuild_matrix()
 
         # Use numpy batch computation if available and vectors > 100
         if HAS_NUMPY and self._matrix is not None and len(self.vectors) > 100:
@@ -393,6 +389,7 @@ class VectorStore:
     def clear(self) -> None:
         """Clear all vectors."""
         self.vectors.clear()
+        self._matrix_dirty = False
         if HAS_NUMPY:
             self._matrix = None
             self._ids = []

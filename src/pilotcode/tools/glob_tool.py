@@ -26,6 +26,7 @@ class GlobOutput(BaseModel):
     filenames: list[str]
     total_count: int
     truncated: bool
+    error: str | None = None
 
 
 def matches_glob_pattern(file_path: Path, pattern: str) -> bool:
@@ -97,11 +98,18 @@ def _glob_sync(pattern: str, search_path: str, limit: int = 100, offset: int = 0
                     if fnmatch.fnmatch(str(rel_path), pattern) or fnmatch.fnmatch(file, suffix):
                         matches.append(str(rel_path))
         else:
-            # Non-recursive search
-            for item in path.iterdir():
+            # Recursive search (rglob) for patterns like "*.c"
+            for item in path.rglob(pattern):
                 if item.is_file():
-                    if fnmatch.fnmatch(item.name, pattern):
-                        matches.append(item.name)
+                    try:
+                        rel_path = item.relative_to(path)
+                    except ValueError:
+                        continue
+                    # Skip hidden dirs and common ignore patterns
+                    rel_parts = rel_path.parts
+                    if any(part.startswith(".") or part in SKIP_DIRS for part in rel_parts[:-1]):
+                        continue
+                    matches.append(str(rel_path))
 
         # Sort matches
         matches.sort()

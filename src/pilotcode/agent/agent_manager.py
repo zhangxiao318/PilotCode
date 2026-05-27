@@ -325,7 +325,7 @@ class AgentManager:
     def _save_agent(self, agent: SubAgent):
         """Save agent state to disk."""
         path = self._agent_path(agent.agent_id)
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(agent.to_dict(), f, indent=2, default=str)
 
         # Persist transcript for resumability
@@ -337,7 +337,7 @@ class AgentManager:
         if not agent.messages:
             return
         path = self._transcript_path(agent.agent_id)
-        with open(path, "a") as f:
+        with open(path, "a", encoding="utf-8") as f:
             for msg in agent.messages[-5:]:  # Save recent messages
                 f.write(json.dumps(asdict(msg), default=str) + "\n")
 
@@ -366,7 +366,7 @@ class AgentManager:
             if path.name.startswith("workflow_"):
                 continue
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 agent = SubAgent.from_dict(data)
                 status = getattr(agent, "status", None)
                 is_ephemeral = getattr(agent, "is_ephemeral", None)
@@ -414,7 +414,7 @@ class AgentManager:
 
         messages = []
         try:
-            for line in path.read_text().strip().split("\n"):
+            for line in path.read_text(encoding="utf-8").strip().split("\n"):
                 if line:
                     data = json.loads(line)
                     messages.append(AgentMessage(**data))
@@ -745,7 +745,7 @@ class AgentManager:
             "agent_ids": agent_ids,
             "created_at": datetime.now(tz=timezone.utc).isoformat(),
         }
-        team_file.write_text(json.dumps(team_data, indent=2))
+        team_file.write_text(json.dumps(team_data, indent=2), encoding="utf-8")
         return True
 
     def get_team(self, team_name: str) -> list[SubAgent] | None:
@@ -796,7 +796,7 @@ class AgentManager:
     def _save_workflow(self, workflow: AgentWorkflow):
         """Save workflow to disk."""
         path = self._workflow_path(workflow.workflow_id)
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(workflow.to_dict(), f, indent=2)
 
     def get_workflow(self, workflow_id: str) -> AgentWorkflow | None:

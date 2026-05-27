@@ -24,22 +24,26 @@ class TokenEstimator:
     CODE_CHARS_PER_TOKEN = 3.5
     WORDS_PER_TOKEN = 0.75
 
-    def __init__(self, base_url: str = "", model_name: str = ""):
+    # Message format overhead (role markers, separators, etc.)
+    MESSAGE_OVERHEAD = 12
+    SYSTEM_OVERHEAD = 12
+    TOOLS_OVERHEAD = 12
+    TOOL_SCHEMA_OVERHEAD = 4
+
+    # Heuristic correction factors
+    HEURISTIC_CORRECTION = 1.08
+    CLOUD_API_CORRECTION = 1.5
+
+    def __init__(
+        self,
+        base_url: str = "",
+        model_name: str = "",
+        precise_tokenizer: Any | None = None,
+    ):
         self._cache: dict[str, int] = {}
         self._base_url = base_url
         self._model_name = model_name
-        self._precise: Any = None
-
-    def _get_precise(self) -> Any:
-        """Lazy-load PreciseTokenizer."""
-        if self._precise is None:
-            try:
-                from .precise_tokenizer import get_precise_tokenizer
-
-                self._precise = get_precise_tokenizer(self._base_url, self._model_name)
-            except Exception:
-                self._precise = False
-        return self._precise if self._precise is not False else None
+        self._precise = precise_tokenizer
 
     # Provider-specific CJK token ratios (chars per token)
     PROVIDER_CJK_RATIOS: dict[str, float] = {
@@ -59,7 +63,7 @@ class TokenEstimator:
         """Estimate token count for text.
 
         Priority:
-        1. Precise backend tokenizer (llama.cpp / vLLM / Ollama /transformers / tiktoken)
+        1. Injected precise backend tokenizer (llama.cpp / vLLM / Ollama / transformers / tiktoken)
         2. Heuristic estimation
         """
         if not text:
@@ -70,10 +74,9 @@ class TokenEstimator:
             provider = self._detect_provider(self._model_name)
 
         # Try precise tokenizer first
-        precise = self._get_precise()
-        if precise is not None:
+        if self._precise is not None:
             try:
-                count = precise.count_text(text)
+                count = self._precise.count_text(text)
                 if count is not None:
                     return count
             except Exception:
@@ -82,16 +85,19 @@ class TokenEstimator:
         # Fallback to heuristic
         return self._heuristic_estimate(text, is_code, provider)
 
+    def estimate_message(self, content: str) -> int:
+        """Estimate tokens for a single message including format overhead."""
+        return self.estimate(content) + self.MESSAGE_OVERHEAD
+
     def estimate_messages(self, messages: list[dict[str, Any]]) -> int:
         """Estimate tokens for a list of messages.
 
         Tries backend message tokenization first (vLLM supports this natively),
         falls back to text rendering + overhead.
         """
-        precise = self._get_precise()
-        if precise is not None:
+        if self._precise is not None:
             try:
-                count = precise.count_messages(messages)
+                count = self._precise.count_messages(messages)
                 if count is not None:
                     return count
             except Exception:
@@ -107,7 +113,52 @@ class TokenEstimator:
                     if isinstance(block, dict):
                         text = block.get("text", "")
                         total += self.estimate(text)
-            total += 8  # message format overhead (role markers, etc.)
+            total += self.MESSAGE_OVERHEAD
+        return total
+
+    def estimate_tools(self, tools: list[Any]) -> int:
+        """Estimate tokens for tool definitions including schema overhead."""
+        import json
+
+        total = self.TOOLS_OVERHEAD
+        for tool in tools:
+            try:
+                schema = json.dumps(tool, ensure_ascii=False, default=str)
+                total += self.estimate(schema)
+                total += self.TOOL_SCHEMA_OVERHEAD
+            except Exception:
+                total += 500
+        return total
+
+    def estimate_conversation(
+        self,
+        system_msg: str,
+        messages: list[Any],
+        tools: list[Any] | None = None,
+        is_cloud_api: bool = False,
+    ) -> int:
+        """Estimate total tokens for a full conversation.
+
+        Includes system prompt, all messages, tools, and applies
+        heuristic correction factors.
+        """
+        total = self.estimate(system_msg) + self.SYSTEM_OVERHEAD
+
+        for m in messages:
+            if hasattr(m, "content"):
+                content = str(m.content)
+            elif hasattr(m, "name") and hasattr(m, "input"):
+                content = f"Tool: {m.name}\nInput: {m.input}"
+            else:
+                content = str(m)
+            total += self.estimate_message(content)
+
+        if tools:
+            total += self.estimate_tools(tools)
+
+        total = int(total * self.HEURISTIC_CORRECTION)
+        if is_cloud_api:
+            total = int(total * self.CLOUD_API_CORRECTION)
         return total
 
     def _heuristic_estimate(self, text: str, is_code: bool = False, provider: str = "") -> int:

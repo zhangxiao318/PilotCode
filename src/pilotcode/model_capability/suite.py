@@ -11,6 +11,7 @@ from .chain_of_thought import (
     test_reasoning_depth,
 )
 from .code_review import test_bug_detection, test_review_structured_output
+from .model_properties import test_reasoning_support, test_token_accuracy
 from .json_formatting import (
     test_json_in_complex_context,
     test_json_schema_compliance,
@@ -24,6 +25,9 @@ from .planning import (
 from .task_completion import test_bug_fixing, test_code_generation_correctness
 
 ALL_BENCHMARKS: list[Callable[[], Awaitable[BenchmarkResult]]] = [
+    # Model Properties (informational)
+    test_reasoning_support,
+    test_token_accuracy,
     # Planning
     test_planning_json_validity,
     test_planning_dependency_accuracy,
@@ -59,6 +63,8 @@ _DIMENSION_MAP: dict[str, tuple[str, str]] = {
     "test_debugging_skill": ("chain_of_thought", "debugging_skill"),
     "test_bug_detection": ("code_review", "bug_detection"),
     "test_review_structured_output": ("code_review", "structured_output"),
+    "test_reasoning_support": ("properties", "reasoning"),
+    "test_token_accuracy": ("properties", "token_usage"),
 }
 
 

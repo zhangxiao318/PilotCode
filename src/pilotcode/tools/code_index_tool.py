@@ -11,7 +11,7 @@ from typing import Any, Optional
 from enum import Enum
 from pydantic import BaseModel, Field
 
-from .base import ToolResult, ToolUseContext, build_tool
+from .base import ToolResult, ToolUseContext, build_tool, resolve_cwd
 from .registry import register_tool
 from ..services.codebase_indexer import get_codebase_indexer, CodebaseStats
 
@@ -68,7 +68,7 @@ async def code_index_call(
 ) -> ToolResult[CodeIndexOutput]:
     """Execute code index operation."""
 
-    indexer = get_codebase_indexer()
+    indexer = get_codebase_indexer(resolve_cwd(context))
 
     if input_data.action == IndexAction.INDEX:
         # Index the codebase
@@ -86,9 +86,15 @@ async def code_index_call(
         indexer.set_progress_callback(_progress_cb)
 
         try:
+            # For full reindex, clear old state first so that crashed/stale
+            # hashes do not ghost-skip files.
+            if not input_data.incremental:
+                indexer.clear_index()
+            # For full reindex, ignore max_files to ensure complete indexing
+            max_files = input_data.max_files if input_data.incremental else None
             stats = await indexer.index_codebase(
                 incremental=input_data.incremental,
-                max_files=input_data.max_files,
+                max_files=max_files,
             )
             elapsed = time.time() - start_time
 

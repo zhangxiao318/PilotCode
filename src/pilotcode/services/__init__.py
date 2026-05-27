@@ -269,6 +269,49 @@ from .memory_kb import (
     ProjectMemoryKB,
     get_memory_kb,
 )
+from .memory_dir import (
+    get_memory_dir,
+    ensure_memory_dir,
+    load_memory_index,
+    scan_memory_files,
+    build_memory_prompt,
+    build_memory_only_prompt,
+    write_memory_file,
+    update_memory_index,
+    FastMemoryManager,
+    FastMemoryUpdate,
+    FastMemoryState,
+    MEMORY_MD_MAX_CHARS,
+    USER_MD_MAX_CHARS,
+    CONSOLIDATION_THRESHOLD,
+)
+from .history_search import (
+    HistorySearchEngine,
+    HistoryEntry,
+    SearchResult,
+    get_history_search_engine,
+    reset_history_search_engine,
+)
+from .semantic_memory_provider import (
+    SemanticMemoryProvider,
+    MemoryFragment,
+    TurnResult,
+    SessionSummary,
+    NoOpProvider,
+    LocalEmbeddingProvider,
+    get_semantic_provider,
+    register_semantic_provider,
+)
+from .periodic_nudge import (
+    PeriodicNudge,
+    NudgeEvent,
+    NudgeConfig,
+)
+from .memory_recall import (
+    find_relevant_memories,
+    load_memory_content,
+    format_memory_attachment,
+)
 from .adaptive_context_manager import (
     AdaptiveContextManager,
     AdaptiveContextConfig,
@@ -537,4 +580,42 @@ __all__ = [
     "MemoryEntry",
     "ProjectMemoryKB",
     "get_memory_kb",
+    # Memory Dir
+    "get_memory_dir",
+    "ensure_memory_dir",
+    "load_memory_index",
+    "scan_memory_files",
+    "build_memory_prompt",
+    "build_memory_only_prompt",
+    "write_memory_file",
+    "update_memory_index",
+    "FastMemoryManager",
+    "FastMemoryUpdate",
+    "FastMemoryState",
+    "MEMORY_MD_MAX_CHARS",
+    "USER_MD_MAX_CHARS",
+    "CONSOLIDATION_THRESHOLD",
+    # History Search (FTS5)
+    "HistorySearchEngine",
+    "HistoryEntry",
+    "SearchResult",
+    "get_history_search_engine",
+    "reset_history_search_engine",
+    # Semantic Memory Provider
+    "SemanticMemoryProvider",
+    "MemoryFragment",
+    "TurnResult",
+    "SessionSummary",
+    "NoOpProvider",
+    "LocalEmbeddingProvider",
+    "get_semantic_provider",
+    "register_semantic_provider",
+    # Periodic Nudge
+    "PeriodicNudge",
+    "NudgeEvent",
+    "NudgeConfig",
+    # Memory Recall
+    "find_relevant_memories",
+    "load_memory_content",
+    "format_memory_attachment",
 ]

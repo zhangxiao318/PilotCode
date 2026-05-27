@@ -44,7 +44,7 @@ class SessionForkManager:
         forks_file = self.storage_dir / "forks.json"
         if forks_file.exists():
             try:
-                with open(forks_file, "r") as f:
+                with open(forks_file, "r", encoding="utf-8") as f:
                     self._forks = json.load(f)
             except Exception:
                 self._forks = {}
@@ -53,7 +53,7 @@ class SessionForkManager:
         """Save fork relationships to storage."""
         forks_file = self.storage_dir / "forks.json"
         try:
-            with open(forks_file, "w") as f:
+            with open(forks_file, "w", encoding="utf-8") as f:
                 json.dump(self._forks, f, indent=2)
         except Exception as e:
             print(f"Failed to save forks: {e}")
@@ -135,7 +135,7 @@ class SessionForkManager:
         }
 
         try:
-            with open(session_file, "w") as f:
+            with open(session_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
             print(f"Failed to save session: {e}")
@@ -148,7 +148,7 @@ class SessionForkManager:
             return None
 
         try:
-            with open(session_file, "r") as f:
+            with open(session_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             messages = []
