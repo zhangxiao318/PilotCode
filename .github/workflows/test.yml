@@ -21,6 +21,7 @@ jobs:
         python-version: '3.11'
     
     - name: Install dependencies
+      run: |
         python -m pip install --upgrade pip
         pip install ruff black mypy
     
@@ -56,6 +57,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     
     - name: Install dependencies
+      run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
     
@@ -95,6 +97,7 @@ jobs:
         python-version: '3.11'
     
     - name: Install dependencies
+      run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
     
@@ -124,6 +127,7 @@ jobs:
         python-version: '3.11'
     
     - name: Install dependencies
+      run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
     
@@ -153,6 +157,7 @@ jobs:
         python-version: '3.11'
     
     - name: Install dependencies
+      run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
     
@@ -187,6 +192,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     
     - name: Install dependencies
+      run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
         pip install pyyaml  # Required for plugin tests
@@ -226,6 +232,7 @@ jobs:
         python-version: '3.11'
     
     - name: Install dependencies
+      run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
         pip install pyyaml
@@ -257,6 +264,7 @@ jobs:
         python-version: '3.11'
     
     - name: Install dependencies
+      run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
     
