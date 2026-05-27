@@ -22,7 +22,7 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from .memory_dir import FastMemoryManager, FastMemoryUpdate
 

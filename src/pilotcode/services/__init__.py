@@ -288,7 +288,6 @@ from .memory_dir import (
 from .history_search import (
     HistorySearchEngine,
     HistoryEntry,
-    SearchResult,
     get_history_search_engine,
     reset_history_search_engine,
 )
@@ -598,7 +597,6 @@ __all__ = [
     # History Search (FTS5)
     "HistorySearchEngine",
     "HistoryEntry",
-    "SearchResult",
     "get_history_search_engine",
     "reset_history_search_engine",
     # Semantic Memory Provider

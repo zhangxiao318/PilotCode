@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from pilotcode.utils.model_client import get_model_client, Message
 

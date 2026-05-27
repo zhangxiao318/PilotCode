@@ -179,7 +179,7 @@ def format_evaluation_report(results: list[BenchmarkResult], cap: ModelCapabilit
                         f"total={meta.get('total_tokens', '?')})"
                     )
                 else:
-                    lines.append(f"- **Token Usage:** ❌ Not returned by API")
+                    lines.append("- **Token Usage:** ❌ Not returned by API")
             if r.error:
                 lines.append(f"  - Error: {r.error}")
         lines.append("")
