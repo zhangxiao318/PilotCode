@@ -1,4 +1,4 @@
-﻿"""Session persistence - incremental JSON Lines storage with rolling segments.
+"""Session persistence - incremental JSON Lines storage with rolling segments.
 
 File layout for session "sess_123":
   sess_123.index.json   鈥?segment index + store metadata

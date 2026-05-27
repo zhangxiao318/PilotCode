@@ -1,4 +1,4 @@
-﻿"""File edit tool for editing file contents with search/replace."""
+"""File edit tool for editing file contents with search/replace."""
 
 import difflib
 import os
