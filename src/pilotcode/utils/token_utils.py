@@ -9,6 +9,7 @@ def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
     """Count tokens in text using tiktoken with fallback."""
     try:
         import tiktoken
+
         encoding = tiktoken.encoding_for_model(model_name)
         return len(encoding.encode(text))
     except Exception:
@@ -123,6 +124,7 @@ async def get_context_token_usage(
 def get_model_specific_tokenizer(model_name: str) -> Any:
     """Get the appropriate tokenizer for a given model."""
     import tiktoken
+
     try:
         return tiktoken.encoding_for_model(model_name)
     except KeyError:
