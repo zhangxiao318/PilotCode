@@ -1,7 +1,6 @@
 """Token utility functions for calculating and managing token usage."""
 
 import asyncio
-import tiktoken
 from typing import List, Dict, Any, Union
 from pilotcode.utils.model_client import Message
 
@@ -9,6 +8,7 @@ from pilotcode.utils.model_client import Message
 def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
     """Count tokens in text using tiktoken with fallback."""
     try:
+        import tiktoken
         encoding = tiktoken.encoding_for_model(model_name)
         return len(encoding.encode(text))
     except Exception:

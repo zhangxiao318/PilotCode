@@ -25,6 +25,7 @@ dependencies = [
     "sniffio>=1.3.0",
     "mcp>=1.0.0",
     "websockets>=12.0.0",
+    "tiktoken>=0.7.0",
     # "zod@git+https://github.com/danielgtaylor/python-zod",
     # Tree-sitter for C/C++ code indexing (default)
     "tree-sitter>=0.20.0",
