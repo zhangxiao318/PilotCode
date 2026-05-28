@@ -507,7 +507,7 @@ def _try_block_level_match(content: str, old_str: str, new_str: str) -> tuple[st
 def _try_whitespace_normalized_match(
     content: str, old_str: str, new_str: str
 ) -> tuple[str | None, str]:
-    """Attempt match after collapsing whitespace runs into generic \s+ patterns.
+    r"""Attempt match after collapsing whitespace runs into generic \s+ patterns.
 
     This handles cases where the file uses different spacing, tabs vs spaces,
     or extra blank lines compared to the LLM-provided old_string.

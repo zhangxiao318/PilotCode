@@ -21,17 +21,24 @@ from dataclasses import dataclass, field, asdict
 logger = logging.getLogger(__name__)
 
 # Lazy import to avoid circular dependency
-_history_search_engine = None
+_history_search_engines: dict[Path, Any] = {}
 
 
 def _get_history_search_engine(base_dir: Path):
     """Lazy getter for HistorySearchEngine to avoid circular imports."""
-    global _history_search_engine
-    if _history_search_engine is None:
-        from .history_search import HistorySearchEngine
+    from .history_search import HistorySearchEngine
 
-        _history_search_engine = HistorySearchEngine(base_dir)
-    return _history_search_engine
+    if base_dir not in _history_search_engines:
+        _history_search_engines[base_dir] = HistorySearchEngine(base_dir)
+    return _history_search_engines[base_dir]
+
+
+def _reset_history_search_engines() -> None:
+    """Close and clear all cached HistorySearchEngine instances."""
+    global _history_search_engines
+    for engine in list(_history_search_engines.values()):
+        engine.close()
+    _history_search_engines.clear()
 
 
 # =============================================================================

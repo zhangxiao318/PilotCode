@@ -113,12 +113,6 @@ class HistorySearchEngine:
             )
             """)
 
-        # Index on archive_id for fast deletion/re-indexing
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_history_archive_id
-            ON history(archive_id)
-            """)
-
         conn.commit()
 
     def close(self) -> None:

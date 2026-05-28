@@ -28,8 +28,9 @@ jobs:
 
     - name: Verify environment
       run: |
-        python -m pytest --version
-        python -c "import pilotcode; print('pilotcode imported OK')"
+        python -m ruff --version
+        python -m black --version
+        python -m mypy --version
     - name: Lint with ruff
       run: python -m ruff check src/pilotcode
     
