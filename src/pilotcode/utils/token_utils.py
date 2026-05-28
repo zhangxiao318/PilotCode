@@ -120,8 +120,9 @@ async def get_context_token_usage(
     }
 
 
-def get_model_specific_tokenizer(model_name: str) -> tiktoken.Encoding:
+def get_model_specific_tokenizer(model_name: str) -> Any:
     """Get the appropriate tokenizer for a given model."""
+    import tiktoken
     try:
         return tiktoken.encoding_for_model(model_name)
     except KeyError:
